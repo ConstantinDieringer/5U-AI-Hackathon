@@ -13,7 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
-- Approved freight email style implemented in the shared profile: specific openings, grounded thanks/history, I/we, contractions, situational warmth, plain uncertainty and one relevant next step. Composer receives the verified selection rationale for fastest/cheapest; examples remain conditional guidance, not stock templates. No pricing, booking or extra model-call changes.
+- Approved freight voice implemented: specific openings, grounded thanks/history, I/we, contractions, situational warmth, plain uncertainty and one next step; composer gets a short fastest/cheapest rationale. Full suite 540 passed/4 skipped; 35 relevant tests passed after wording refinements. Synthetic EN/DE probes sent no mail; production activation unverified.
 
 - Customer carrier preferences (round 10820, excluded_airline: "do not offer Zephyr Steppe Cargo ... future inquiries"): `app/agents/carrier_prefs.py` parses refusals/preferences in code, stores them per customer (table customer_carrier_prefs). Excluded carriers are never asked for bids nor quoted; a preferred one wins when priced. Also applied in the emergency draft.
 - Setup change ~18:50: RFQs with SLI/packing-spec attachments declaring dangerous goods (UN3481 class 9). 5U rejects quotes without asking for DG documents (reason dg_docs_missing). Clarification now names the UN entry and asks for the Shipper's Declaration + SDS; documents or "attached" in the reply clear it. A ZIP in the mail beats the shipper city in the document.
