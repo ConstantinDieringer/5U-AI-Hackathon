@@ -6,7 +6,6 @@ Entry point: complete(purpose, messages, session_id, max_tokens=...).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
@@ -15,7 +14,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
-from openai import BadRequestError, OpenAI
+from openai import OpenAI
 
 from app import db
 from app.config import settings
@@ -23,26 +22,8 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gpt-5-nano"  # cheapest allowed model by list price; override with LLM_MODEL
-MAX_CALLS_PER_SESSION = min(2, settings.llm_max_calls_per_session)
+MAX_CALLS_PER_SESSION = min(4, settings.llm_max_calls_per_session)
 PRICES_FILE = Path(__file__).with_name("llm_prices.json")
-_cache_key_supported = True
-
-
-def _prompt_cache_key(
-    name: str,
-    purpose: str,
-    messages: list[dict[str, Any]],
-    response_format: dict[str, Any] | None,
-) -> str:
-    """Group identical static prefixes; never put customer/session data in routing keys."""
-    prefix = []
-    for message in messages:
-        if message.get("role") not in ("system", "developer"):
-            break
-        prefix.append(message)
-    frozen = json.dumps([name, purpose, prefix, response_format], sort_keys=True)
-    return "5u-" + hashlib.sha256(frozen.encode()).hexdigest()[:48]
-
 
 _client = OpenAI(
     base_url=f"{settings.base_url}/v1/gateway",
@@ -146,7 +127,6 @@ def complete(
 ) -> str:
     """One chat completion through the gateway. Returns the message text and logs the cost.
     `model_name` overrides LLM_MODEL for this call (the extraction retry uses LLM_RETRY_MODEL)."""
-    global _cache_key_supported
     _reserve(session_id)
     name = model_name or model()
     kw: dict[str, Any] = {
@@ -160,29 +140,10 @@ def complete(
         kw["temperature"] = 0
     if response_format is not None:
         kw["response_format"] = response_format
-    if settings.llm_prompt_cache and _cache_key_supported:
-        kw["prompt_cache_key"] = _prompt_cache_key(name, purpose, messages, response_format)
 
     start = time.monotonic()
     try:
-        try:
-            resp = _client.chat.completions.create(**kw)
-        except BadRequestError as exc:
-            # A rejected optional parameter did not run inference. Retry only that case,
-            # never arbitrary errors or ambiguous timeouts, and keep one budget slot.
-            error = str(exc).lower()
-            if "prompt_cache_key" not in kw or not (
-                "prompt_cache_key" in error
-                and any(
-                    word in error
-                    for word in ("unsupported", "unknown", "unrecognized", "extra", "not permitted")
-                )
-            ):
-                raise
-            _cache_key_supported = False
-            kw.pop("prompt_cache_key")
-            log.info("Gateway rejected prompt_cache_key; continuing with automatic caching")
-            resp = _client.chat.completions.create(**kw)
+        resp = _client.chat.completions.create(**kw)
     except Exception:
         db.record_llm_call(
             session_id,

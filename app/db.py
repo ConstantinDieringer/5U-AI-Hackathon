@@ -602,6 +602,56 @@ def customer_mail_history(sid: int, sender: str, before_mail: int) -> list[dict[
     return [r for r in rows if parseaddr(r["sender"] or "")[1].lower() == owner]
 
 
+def customer_correspondence(sid: int) -> list[dict[str, Any]]:
+    """Small customer-only conversation window, with current thread taking priority."""
+    from email.utils import parseaddr
+
+    root = _one(
+        conn().execute(
+            "SELECT s.customer,m.received_at FROM sessions s JOIN mails m ON m.id=s.id WHERE s.id=?",
+            (sid,),
+        )
+    )
+    if not root:
+        return []
+    owner = parseaddr(root["customer"] or "")[1].lower()
+    if not owner:
+        return []
+    rows = _rows(
+        conn().execute(
+            "SELECT m.id,m.session_id,m.direction,m.sender,m.recipient,m.subject,m.body,"
+            " m.category,m.received_at,s.customer AS session_customer FROM mails m"
+            " JOIN sessions s ON s.id=m.session_id WHERE m.id<>? AND"
+            " (m.session_id=? OR (s.id<? AND julianday(m.received_at)<julianday(?)))"
+            " AND (LOWER(s.customer)=? OR LOWER(s.customer) LIKE ?)"
+            " ORDER BY (m.session_id=?) DESC,julianday(m.received_at) DESC,m.id DESC LIMIT 80",
+            (sid, sid, sid, root["received_at"], owner, f"%<{owner}>", sid),
+        )
+    )
+    selected = []
+    per_scope = {"current_thread": 0, "previous_conversation": 0}
+    for row in rows:
+        if parseaddr(row.pop("session_customer") or "")[1].lower() != owner:
+            continue
+        peer = row["sender"] if row["direction"] == "in" else row["recipient"]
+        if parseaddr(peer or "")[1].lower() != owner:
+            continue
+        if row["category"] not in {
+            "rfq",
+            "customer",
+            "quote",
+            "clarification",
+            "booking_confirmation",
+        }:
+            continue
+        scope = "current_thread" if row["session_id"] == sid else "previous_conversation"
+        if per_scope[scope] >= 4:
+            continue
+        per_scope[scope] += 1
+        selected.append({**row, "scope": scope})
+    return list(reversed(selected))
+
+
 def validation_pending() -> list[dict[str, Any]]:
     return _rows(
         conn().execute(

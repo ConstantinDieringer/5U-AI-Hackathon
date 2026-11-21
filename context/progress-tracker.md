@@ -13,9 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Reverted PR12 shortcuts (local parsing, composer bypass, cache keys). Every quote uses the individual `LLM_COMPOSE_MODEL` (default gpt-5-mini), with bounded same-customer history and audited source IDs; default budget four allows repairs. Synthetic gateway dry-run produced a personal grounded reply; no live customer mail sent or production rollout verified.
 - Round 27 booking review: freeze selected air cost/currency separately from the customer total; airline booking emails exclude truck costs and commercial adjustments. Legacy quotes omit an unverified air amount; customer confirmations keep their all-in total. Offline suite: 350 passed, 4 skipped; migration/reopen and EUR/USD coverage; production deployment not verified.
-
-- LLM savings: complete supported standard RFQs parsed locally with short scoring verification; standard quotes skip the writing call, special questions retain the composer. Prompt-cache routing accepted by a tiny live gateway probe (5 micro-USD estimated); cache hits/production savings not yet demonstrated. Regression tests cover unsafe-format fallback, special questions, verification and cache compatibility.
 
 - Numeric evidence accepts labelled sentence totals with `is` as well as `of`/colon forms. Round 24 was accepted but redundantly asked for 1754 kg already stated in the current mail; regression covers gate evidence, alternate labels and negative/non-gross statements.
 - RFQ 5844 regression: explicit self-delivery to FRA is recovered deterministically from the current body even if LLM origin is null. The final missing-origin guard now asks a durable clarification instead of setting error, including in shadow mode; its answers can continue without enabling the full strict gate.

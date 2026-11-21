@@ -1,6 +1,6 @@
 # Architecture Context
 
-- **LLM savings:** `mail/standard_rfq.py` conservatively parses complete current standard formats without attachments. One short schema-checked gateway verification retains scoring eligibility; unsupported formats use the full extractor. Standard quotes without extra questions/constraints use existing copy directly. `llm.py` uses stable static-prefix/schema cache routing keys with explicit unsupported-parameter fallback; never caches whole shipment answers.
+- **Personal replies:** standard RFQs again use full extraction and the composer. Bounded current-thread and earlier same-customer correspondence informs tone and grounded references; older monetary amounts are removed from this context. Only verified current facts support price/service promises. Default gateway budget is four calls to allow both extraction and composition repairs; templates are a failure fallback.
 
 - **Mailbox ingress:** signed `/hooks/mailbox` persists into `mail_delivery` before acknowledging; workers and fallback polling share atomic claims and exact-ID deduplication. Pending/stored work resumes after restart; ambiguous dispatches become `unknown` with a warning for manual inspection. Only polling advances its cursor. Subscription and its private, persistent signing-secret file are managed explicitly with `python -m app.mail.webhook_admin`; never rotate on startup. See `DEPLOY.md`.
 
