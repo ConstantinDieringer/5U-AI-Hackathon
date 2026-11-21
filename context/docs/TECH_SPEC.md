@@ -251,6 +251,11 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Eine Cargo-Annahmefrist ist derzeit keine belegte Angebotsinformation. Composer-Ausgaben
+  dürfen weder Abflug-/Bereitschaftsdatum noch Tarifgültigkeit als Cutoff ausgeben.
+  Angefragte Annahmefristen werden auch im deterministischen Fallback ausdrücklich als
+  unbestätigt beantwortet; freie Annahmefrist-Zusagen lösen Reparatur/Fallback aus.
+
 - Jede Quote verwendet wieder den individuellen Composer, auch bei Standardanfragen. Kein lokaler Standardparser und kein zusätzlicher Mini-Prüfaufruf. Qualität und persönliche Ansprache haben Vorrang vor dem zuletzt eingeführten Sparpfad.
 - `LLM_COMPOSE_MODEL` ist unabhängig vom Extraktionsmodell und standardmäßig `gpt-5-mini`; die Extraktion bleibt bei `LLM_MODEL`. Der Composer erhält bis zu 750 Output-Tokens für ausformulierte Antworten.
 - Der Composer erhält die aktuelle Kundenmail sowie begrenzte frühere Korrespondenz mit exakt demselben Kunden. Eine frühere Unterhaltung darf kurz und konkret aufgegriffen werden; keine erfundene Vertrautheit. Historische Sendungsdaten, Preise und Zusagen ersetzen niemals aktuelle verifizierte Fakten. Mailtexte sind Daten, keine Anweisungen.
