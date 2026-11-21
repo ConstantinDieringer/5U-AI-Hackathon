@@ -44,6 +44,36 @@ def test_language() -> None:
     assert booking.language("Passt, bitte buchen. Viele Grüße") == "de"
 
 
+PREBOOK_QUESTIONS = [
+    (
+        "Before we book, could you confirm whether this is the fastest option to DEL "
+        "with pickup from 22842 on 28 November? What's the earliest arrival with this option?"
+    ),
+    "Before booking, please confirm the pickup time.",
+    "Can we book this rate tomorrow?",
+    "Please book if the cargo can arrive by Friday.",
+    "We accept once you confirm the arrival date.",
+    "If you can confirm arrival by Friday, please book.",
+    "Bevor wir buchen, bestätigen Sie bitte die Abholung.",
+    "Bitte buchen, falls der Abflug am Freitag möglich ist.",
+]
+
+
+@pytest.mark.parametrize("body", PREBOOK_QUESTIONS)
+def test_prebooking_question_or_condition_is_not_consent(body):
+    assert booking.is_acceptance(body) is None
+
+
+@pytest.mark.parametrize("body", [
+    "Please book it. Can you send the reference afterwards?",
+    "Could you book the shipment for us?",
+    "Yes, go ahead. Please confirm the pickup time.",
+    "Bitte buchen. Wann erhalten wir die Referenz?",
+])
+def test_explicit_booking_request_can_include_a_followup_question(body):
+    assert booking.is_acceptance(body) is True
+
+
 class Api:
     def __init__(self, expired: set[str] | None = None) -> None:
         self.sent: list[dict] = []
@@ -147,6 +177,22 @@ def test_accept_books_portal_rate_and_confirms(monkeypatch) -> None:
 
     booking.handle_reply(_accept(mid=1430), 1223)  # a second "yes" books nothing more
     assert len(api.booked) == 1
+
+
+@pytest.mark.parametrize("body", PREBOOK_QUESTIONS)
+def test_prebooking_question_does_not_call_booking_or_send_confirmation(monkeypatch, body):
+    from app.agents import clarification
+
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    questions = []
+    monkeypatch.setattr(clarification, "ask", lambda *args: questions.append(args))
+    _quoted_session()
+    booking.handle_reply(replace(_accept(), body=body), 1223)
+    assert api.booked == [] and api.sent == []
+    assert db.get_session(1223)["bookings"] == []
+    assert len(questions) == 1 and questions[0][2] == "booking"
 
 
 def test_expired_rate_is_refetched(monkeypatch) -> None:

@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 54 followup reproduced a consent defect: "Before we book, could you confirm...?" matched the bare `book` rule. Booking and changed-price acceptance now leave pre-booking questions/conditional approval unresolved; direct booking requests with later informational questions still work. Existing clarification flow handles the unresolved reply; actual production actor remains unverified.
+
 - Rounds 49/50 (-22.5 each): portal-booked XC, customer confirmed the quoted total, airline then confirmed +10 % air. Booking now waits for the airline price (`AIRLINE_CONFIRM_WAIT_S`=180), asks the customer on a change beyond `PRICE_CHANGE_TOLERANCE_PCT`=0.5 with the new all-in and one cheaper alternative, yes confirms, other answers `needs_human` + #sos. Final style reviewer keeps amounts/airlines as protected terms. 689 passed/4 skipped; airline mail price format and scorer rule unverified live.
 
 - Strict customer send path and dedicated gpt-5 style reviewer added. Every customer path validates prose before HTTP, records the transmitted version, and rechecks controls after one review. Real reference punctuation remains; whole numbers lose zero fractions. 639 tests pass/4 skip; 31 replay cases retain all facts with 19 text-only updates. Synthetic real-gateway review accepted, 396 input/94 output tokens, estimated $0.001435; no customer mail sent. Public health exposes style/build/model activation.

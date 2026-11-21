@@ -260,6 +260,11 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Buchungsfreigabe: Vorabfragen wie „Before we book...“ und bedingte Zustimmung gelten
+  nicht als Auftrag, auch wenn „book“ vorkommt. Direkte Aufträge dürfen zusätzliche
+  Informationsfragen enthalten. Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
+  dieselbe Prüfung gilt bei Annahme eines geänderten Buchungspreises.
+
 - Dedizierter Stilagent `app/agents/email_review.py`: `LLM_REVIEW_MODEL=gpt-5`, `EMAIL_REVIEW_ENABLED=true`, genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens. Kein eigener Versand und keine Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen werden nach dem Review geschützt; bei Fehler/Budgetende bleibt der deterministisch geprüfte Entwurf erhalten. Aufruf und Kosten werden der RFQ zugerechnet. Pause/Handbetrieb und Quote-Deadline werden nach dem Review erneut geprüft.
 
 - Strenge Versanddarstellung: alle Kunden-Sendewege nutzen `hackloop.send_customer`, das den Mailtext unmittelbar vor dem HTTP-Aufruf über `mail/outgoing.py` rendert und prüft. Prosa enthält keine Doppelpunkte, Semikola, Unterstriche, Bindestriche oder Klammern; Referenznummern bleiben zunächst kopierbar. Daten mit ausgeschriebenen Monaten, keine Null-Nachkommastellen, kurze Absätze. Die tatsächlich versandte Fassung wird gespeichert. `/api/health` nennt Stilversion und Build-Revision zur Aktivierungsprüfung. Persönliche Wärme und leichter Humor dürfen keine erfundene Kundentreue, Sonderpreise, Rabatte oder Leistungszusagen behaupten.
