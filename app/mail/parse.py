@@ -1,9 +1,6 @@
 """Validate mailbox API objects at the boundary and turn them into `Mail`.
 
-Field names: context/docs/mail-format.md. Documented in openapi.json: `id`, `to`, `subject`,
-`body`, `in_reply_to`, `references`, `attachments` and the poll's `next_since_id`.
-NOT YET CONFIRMED (A3, needs a real mail): the sender field, the timestamp field and the
-poll's list key. Until then mail_from_api raises MailFormatError for them.
+Field names confirmed on real mail (A3): context/docs/mail-format.md.
 """
 
 from __future__ import annotations
@@ -13,9 +10,9 @@ from typing import Any
 from app.models import Mail
 
 # Filled from the real API response in A3.
-MESSAGES_KEY: str | None = None
-SENDER_KEY: str | None = None
-TIMESTAMP_KEY: str | None = None
+MESSAGES_KEY: str | None = "messages"
+SENDER_KEY: str | None = "from"
+TIMESTAMP_KEY: str | None = "received_at"
 
 
 class MailFormatError(ValueError):

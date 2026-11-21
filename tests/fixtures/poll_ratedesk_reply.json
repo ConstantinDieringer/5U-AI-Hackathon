@@ -1,0 +1,16 @@
+{
+ "messages": [
+  {
+   "id": 208,
+   "from": "ratedesk@hackloop.mail",
+   "to": "austrian-power@hackloop.mail",
+   "subject": "Portal rates FRA-JFK 100.0 kg",
+   "body": "Hello,\n\nportal rates for FRA-JFK, 100.0 kg, 0.5 cbm (your mail \"Rate request FRA-JFK 100 kg\"):\n\n- Polaris Air Logistics (PL): 308.00 EUR, 4 days, rate_id R-nALEHMIOzzMwmqo8, valid until 21 Nov 2026 14:55 UTC\n- Solace Air Cargo (SL): 386.00 EUR, 2 days, rate_id R-CwHsOb69LGrAyB3i, valid until 21 Nov 2026 14:55 UTC\n- Wayzata Air Cargo (WZ): not on the portal, email wayzata-air-cargo@hackloop.mail\n\nBook with the rate_id on the portal or by mail to the airline.\n\nBest regards\nRate Desk\nratedesk@hackloop.mail",
+   "in_reply_to": null,
+   "references": [],
+   "received_at": "2026-11-21T14:41:37.007176+00:00",
+   "attachments": []
+  }
+ ],
+ "next_since_id": 208
+}

@@ -269,7 +269,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 14. Offen / zu bestätigen
 
-- [ ] Exakte Feldnamen der Mailbox-Objekte (A3 → `context/docs/mail-format.md`)
+- [x] Exakte Feldnamen der Mailbox-Objekte (A3 → `context/docs/mail-format.md`): `from`, `to`, `received_at`, …
 - [ ] Erlaubte Modelle im Gateway (`GET /v1/gateway/models`) → `LLM_MODEL` setzen
 - [x] Rate-Limit pro Minute für `/v1/portal/rates` (B4): **10**, Header `X-RateLimit-Limit`
 - [ ] Zählt der Sprung in eine höhere Gewichtsklasse als bester Preis? Schalter `use_breakpoints` in `sheet_options()` (Default an); das Portal rechnet nur das angefragte Gewicht

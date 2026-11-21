@@ -18,6 +18,7 @@ def main() -> None:
         level=settings.log_level,
         format="%(asctime)s %(levelname)s %(name)s [%(threadName)s] %(message)s",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll is noise
     log = logging.getLogger("run")
 
     from app import db

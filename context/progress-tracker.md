@@ -20,14 +20,17 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
 - C3+C4 done: `app/ui/server.py` (REST, SSE via `fastapi.sse`, actions), `static/index.html` (sessions + dashboard, dark), `watchers.py` (deadline, board sync), `demo.py` (seed `data/demo.db`); 20 tests green, checked in a real browser.
 - C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11. 
+- A1 repo setup; fresh clone installs `requirements.txt` (Python 3.11).
+- A2 `config.py` + `hackloop.py` (mailbox, board, portal get_ports/get_brackets/get_rate for B): `/v1/me` OK live; portal calls not tried live.
+- A3 `context/docs/mail-format.md` from a real mail: self-mail is rejected (422), so one rate request went to ratedesk.
+- A4 `mail/poller.py` + `mail/store.py` + `mail/parse.py`: live run stores mail 208 once, a restart resumes at since_id 208; 6 tests (broken mail, restart, attachments).
+- A5 `mail/router.py`: rules only, 10 tests green. A6 `python run.py` = poller + watchers + UI on :8000, checked live.
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 ## In Progress
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
-- Task A, Karim: **blocked on the team API key** (`.env` empty, `GET /v1/me` → 401). Branch `a/mail-intake`, offline-tested only:
-  - A2 `config.py`, `hackloop.py` (me/poll/get_message/get_attachment/send/get_board_me + get_ports/get_brackets/get_rate for B). Not verified live.
-  - A4 `mail/poller.py`, `mail/store.py` (adapter to db.py), `mail/parse.py` (sender/timestamp/list key wait for A3). A5 `mail/router.py` + 10 tests green. A6 `run.py` written, not run.
+- Task A, Karim: A1–A6 done and verified live (see Completed). Now A7 `llm.py`.
 - Task B, Constantin: B1–B7 in PR #2 (pricing, portal, lanes, reference, dataset_version); next door-to-port trucking, bid selection, tariff mails.
 
 ## Next Up
@@ -66,9 +69,10 @@ Goal: the first accepted quote end to end before any polish.
 11. How many carriers to ask and how long to wait for bids within the 2-minute target.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
 13. ~~What one UI session is~~ → one customer-started thread (see design C).
-15. For C (A): `db.ingest_mail` doesn't say if the mail was new. Please return `(session_id, is_new)` or add `save_mail(...) -> bool`; until then `mail/store.py` uses a kv high-water mark.
-16. (A) `POST /v1/mailbox/messages` has no `references` field (openapi). Assumed: the server builds the thread from `in_reply_to`; verify in A3.
 14. 4 airlines (Zephyr, Himalaya Bridge, Lagoon Isles, Pampero) serve only ASU/KTM/PPT/TNR/ULN, on neither sheet nor portal: email bids only.
+15. For C (A): `db.ingest_mail` doesn't say if the mail was new. Please return `(session_id, is_new)` or add `save_mail(...) -> bool`; until then `mail/store.py` uses a kv high-water mark.
+16. (A) Send has no `references` field; the server presumably threads by `in_reply_to`. Not yet seen on a threaded reply.
+17. For C/B (A): **rate desk replies are not threaded** (`in_reply_to` null, `references` []), so they land unassigned. Map them by the quoted subject in the body (see mail-format.md)?
 
 ## Architecture Decisions
 
