@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from app import db, hackloop, llm
+from app import config, db, hackloop, llm
 from app.agents import bids, clarification, rfq
 from app.models import Mail, RateOption, Rfq
 from app.pricing import portal_sync, pricing, served_lanes
@@ -413,6 +413,10 @@ def replay_case(
                 in_reply_to=answer.get("in_reply_to"),
             )
             clarification.handle_reply(reply, sid)
+        row = db.validation_get(sid)
+        if config.settings.clarify_once and row and row["state"] == "awaiting_clarification":
+            # no usable answer among the stored ones: the fallback deadline passes
+            rfq.quote_without_answer(sid, "keine Antwort")
         return _result(sid, run)
 
 
