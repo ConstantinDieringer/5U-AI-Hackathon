@@ -1002,6 +1002,47 @@ def _stored_request(sid: int) -> Rfq | None:
         return None
 
 
+def _portal_bid_carriers(rfq: Rfq, origin: str) -> dict[str, Carrier]:
+    """Known lane carriers whose 503 fallback needs a reserved airline slot."""
+    result: dict[str, Carrier] = {}
+    for airline in airlines_for(origin, rfq.destination):
+        if airline.channel != "portal" or not airline.code or not airline.email:
+            continue
+        carrier = carrier_by_email(airline.email)
+        if (
+            carrier is not None
+            and carrier.name.lower() not in rfq.excluded_airlines
+            and served_lanes.serves(carrier.email, origin, rfq.destination) is not False
+        ):
+            result[airline.code] = carrier
+    return result
+
+
+def _limit_airline_requests(
+    sid: int, candidates: list[Carrier], reserved: int = 0
+) -> list[Carrier]:
+    """Keep existing requests for replay; cap new unique airlines using durable sends."""
+    sent = db.bid_request_recipients(sid)
+    used = sum(
+        1
+        for email in sent
+        if (carrier := carrier_by_email(email)) is not None and carrier.kind == "airline"
+    )
+    remaining = max(0, settings.max_bid_carriers - used - reserved)
+    selected: list[Carrier] = []
+    seen: set[str] = set()
+    for carrier in candidates:
+        if carrier.email in seen:
+            continue
+        seen.add(carrier.email)
+        if carrier.email in sent:
+            selected.append(carrier)
+        elif remaining:
+            selected.append(carrier)
+            remaining -= 1
+    return selected
+
+
 def catch_up() -> int:
     """RFQs left mid-flight by a restart (new/pricing, no quote, still answerable): run them
     again. Extraction and bid requests already done are reused, not repeated."""
@@ -1263,6 +1304,10 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
     if banned:
         truckers = [c for c in truckers if c.name.lower() not in banned]
         email_airlines = [c for c in email_airlines if c.name.lower() not in banned]
+    portal_carriers = _portal_bid_carriers(rfq, origin)
+    already_requested = db.bid_request_recipients(sid)
+    reserved = len({c.email for c in portal_carriers.values()} - already_requested)
+    early_airlines = _limit_airline_requests(sid, email_airlines, reserved)
     if rfq.door_to_port and not truckers:
         db.emit(
             "no_trucker",
@@ -1271,7 +1316,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
             level="warn",
         )
     if not db.is_manual(sid) and not db.is_paused(sid):
-        bids.request(sid, rfq, origin, truckers + email_airlines)
+        bids.request(sid, rfq, origin, truckers + early_airlines)
 
     full_deadline = t0 + settings.quote_full_score_deadline_s
     final_deadline = t0 + min(settings.quote_final_deadline_s, TOO_OLD_S - 1)
@@ -1285,21 +1330,20 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
     )
     portal = portal_result(rfq, deadline=time.monotonic() + max(0.0, budget))
     fallback_codes = set(portal.email_fallbacks)
-    fallback = []
-    for airline in airlines_for(origin, rfq.destination):
-        if airline.code in fallback_codes and airline.email:
-            if served_lanes.serves(airline.email, origin, rfq.destination) is False:
-                continue
-            carrier = carrier_by_email(airline.email)
-            if carrier is not None and carrier.name.lower() not in banned:
-                fallback.append(carrier)
-    requested_emails = {carrier.email for carrier in truckers + email_airlines}
-    remaining_slots = max(0, settings.max_bid_carriers - len(email_airlines))
-    fallback = [carrier for carrier in fallback if carrier.email not in requested_emails]
-    fallback = fallback[:remaining_slots]
-    if fallback:
-        bids.request(sid, rfq, origin, fallback)
-        email_airlines += fallback
+    fallback = [carrier for code, carrier in portal_carriers.items() if code in fallback_codes]
+    email_airlines = _limit_airline_requests(sid, fallback + email_airlines)
+    if email_airlines:
+        bids.request(sid, rfq, origin, email_airlines)
+    selected_emails = {carrier.email for carrier in email_airlines}
+    blocked = [carrier.email for carrier in fallback if carrier.email not in selected_emails]
+    if blocked:
+        db.emit(
+            "portal_fallback_blocked",
+            "Portal-Ersatzanfragen durch bereits verbrauchtes Airline-Limit begrenzt",
+            sid,
+            level="warn",
+            carriers=blocked,
+        )
     if portal.errors:
         db.emit(
             "portal_warning",

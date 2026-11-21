@@ -13,6 +13,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Case 12460 portal outage: reserve slots for eligible portal airlines before speculative bids; 503 fallbacks take priority, healthy results release slots, persisted sends enforce the cap on restart. Full legacy budgets warn instead of silently losing fallbacks; trucking alone remains unquotable. Targeted regression checks cover the outage and complete quote.
+- Case 12460 manual replies: default to the latest customer mail even after carrier replies, show recipient in confirmation, reject customer quotes to carriers, and keep explicit carrier replies out of customer response metrics. Selected-mail support is preserved; a literal JS newline that prevented script parsing is repaired. Local tests only; deployment unverified.
+
 - Customer presentation: €, full EN/DE months, sentence-based copy without parentheses/field names, short paragraphs across quotes/clarifications/bookings/tracking. Composer repairs leaks and safely formats dates/currency/paragraphs. 575 tests pass/4 skipped; 31 replay records unchanged except 18 quote bodies. No live mail sent; deployment unverified.
 
 - Round 45 accepted/booked but customer quote leaked `road_transit`. Shared voice profile now translates timing labels into ordinary language; composer validation rejects internal timing enums/field names and uses its existing repair/fallback. No timing, selection or price changes; production SHA unverified.
