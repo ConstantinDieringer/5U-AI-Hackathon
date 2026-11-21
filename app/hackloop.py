@@ -300,6 +300,17 @@ def send_customer(
     if context is not None and not has_notice(rendered):
         raise CustomerStyleError("Required tracking invitation missing from customer mail")
     validate_customer_text(subject)
+    from app.mail.reply_language import localize
+
+    # fr/es/it customers: one checked translation, English original on any doubt
+    subject, rendered = localize(
+        subject,
+        rendered,
+        session_id=session_id,
+        in_reply_to=in_reply_to,
+        recipient=to,
+        deadline_at=deadline_at,
+    )
     allowed()
     if before_transport is not None:
         try:
