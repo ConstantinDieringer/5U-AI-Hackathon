@@ -39,7 +39,8 @@ RFQ in → route → price → quote → customer accepts → book by rate ID �
   - API:
     - `GET /v1/portal/ports`: the lanes and their airlines. A destination that is missing here is priced by email to the airline.
     - `GET /v1/portal/brackets?airline=`: an airline's weight breaks. An airline that is not on the portal returns 404 with its email address.
-    - `GET /v1/portal/rates?origin=&destination=&airline=&weight_kg=&volume_cbm=`: one priced rate, with `rate_id`, chargeable weight, `total`, `currency`, `transit_days` and `valid_until`. A rate ID is valid for 15 minutes. Rate reads are capped per minute: over the cap you get 429 with `Retry-After`, and the `X-RateLimit-*` headers show the cap and what is left. A 503 says where to get the rate instead.
+    - `GET /v1/portal/rates?origin=&destination=&airline=&weight_kg=&volume_cbm=`: one priced rate, with `rate_id`, chargeable weight, `total`, `currency`, `transit_days` and `valid_until`. A rate ID is valid for 15 minutes. Rate reads are capped per minute (10 at 15:00): over the cap you get 429 with `Retry-After`, and the `X-RateLimit-*` headers show the cap and what is left. A 503 says where to get the rate instead. The portal prices exactly the weight asked, in that weight's bracket.
+    - Coverage at 15:00: 114 lanes, 15 airlines, none of them in the rate sheets (snapshot in `data/portal_lanes.json`).
     - `POST /v1/portal/bookings` with `{rate_id, team_reference}`: book. 201 means booked, 200 is a repeat, 404 is an unknown rate ID, 409 means it is booked under another reference, 410 means expired, and 503 means book by email with the airline. The airline then mails "Booking <ref> confirmed". There is no status call, so our CRM is the record.
   - Browser page `https://start-hack.5u.ai/portal/ui`, behind a bot challenge. Do not try to bypass it.
   - Email desk: `ratedesk@hackloop.mail`.
