@@ -44,6 +44,17 @@ def _board_rows(data: Any) -> list[dict[str, Any]]:
     return []
 
 
+UNDECIDED = {"open", "pending"}  # the round is still running: not a failure yet
+
+
+def is_failure(verdict: object, reason: object) -> bool:
+    """Our early warning for 5U's unannounced setup changes: any decided verdict other than
+    accepted, or any reason code at all."""
+    if reason:
+        return True
+    return isinstance(verdict, str) and verdict not in UNDECIDED and verdict != "accepted"
+
+
 def board_loop() -> None:
     while True:
         try:
@@ -56,15 +67,25 @@ def board_loop() -> None:
                 )
                 if not round_id:
                     continue
-                db.save_board_result(
+                verdict = r.get("verdict")
+                reason = r.get("reason") or r.get("reason_code")
+                failed = is_failure(verdict, reason)
+                sid = _match_session(r)
+                changed = db.save_board_result(
                     round_id=round_id,
-                    verdict=r.get("verdict"),
-                    reason=r.get("reason") or r.get("reason_code"),  # fields: round_no, sent_at,
+                    verdict=verdict,
+                    reason=reason,  # fields: round_no, sent_at,
                     # answered_at, verdict (open|pending|accepted|rejected|...), reason, booked
                     points=r.get("points") if isinstance(r.get("points"), dict) else None,
                     raw=r,
-                    session_id=_match_session(r),
+                    session_id=sid,
+                    failed=failed,
                 )
+                if changed and failed:
+                    log.error(
+                        "board: round %s (session %s) %s, reason %s",
+                        round_id, sid, verdict, reason,
+                    )  # fmt: skip
         except ImportError:
             log.info("board sync waiting for app/hackloop.py")
         except Exception:

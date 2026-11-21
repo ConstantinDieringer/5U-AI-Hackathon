@@ -984,8 +984,10 @@ def save_board_result(
     points: dict[str, Any] | None,
     raw: dict[str, Any],
     session_id: int | None = None,
+    failed: bool = False,
 ) -> bool:
-    """Upsert one board round. Returns True if the verdict is new or changed."""
+    """Upsert one board round. Returns True if the verdict is new or changed. A changed
+    `failed` round is emitted as an error (shows in the UI attention list)."""
     with tx() as c:
         old = _one(c.execute("SELECT verdict FROM board_results WHERE round_id = ?", (round_id,)))
         c.execute(
@@ -1004,7 +1006,7 @@ def save_board_result(
                 Ev.BOARD_VERDICT,
                 f"Board: {verdict}" + (f" ({reason})" if reason else ""),
                 session_id,
-                level="warn" if verdict != "accepted" else "info",
+                level="error" if failed else ("warn" if verdict != "accepted" else "info"),
                 payload={"round_id": round_id, "points": points},
             )
         return changed
