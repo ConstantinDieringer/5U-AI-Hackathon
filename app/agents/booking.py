@@ -23,6 +23,7 @@ from typing import Any
 
 from app import db, hackloop
 from app.config import settings
+from app.mail.language import detect
 from app.mail.router import address
 from app.models import Mail
 from app.pricing.pricing import to_minor
@@ -45,10 +46,6 @@ _NO = re.compile(
 _DECLINE = re.compile(  # wins over any "yes" word ("we will not proceed")
     r"too expensive|decline|not (?:go ahead|proceed|book)|no thanks|zu teuer|absagen|"
     r"nicht buchen",
-    re.IGNORECASE,
-)
-_DE = re.compile(
-    r"\b(bitte|danke|vielen|grüße|gruesse|buchen|passt|sehr geehrte|hallo)\b",
     re.IGNORECASE,
 )
 _CONFIRMED = re.compile(r"\bBooking\s+(BK-[A-Za-z0-9]+)\s+confirmed\b", re.IGNORECASE)
@@ -95,7 +92,7 @@ def is_acceptance(body: str) -> bool | None:
 
 
 def language(body: str) -> str:
-    return "de" if _DE.search(own_text(body)) else "en"
+    return "de" if detect(own_text(body)) == "de" else "en"
 
 
 # ---------------------------------------------------------------- booking

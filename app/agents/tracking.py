@@ -15,6 +15,7 @@ from typing import Any
 
 from app import db, hackloop
 from app.config import settings
+from app.mail.language import detect
 from app.mail.router import address
 from app.models import Mail
 
@@ -24,9 +25,6 @@ _BK = re.compile(r"\bBK-[A-Za-z0-9]{4,}\b", re.IGNORECASE)
 _AP = re.compile(r"\bAP-(\d+)\b", re.IGNORECASE)
 _RATE = re.compile(r"\bR-[A-Za-z0-9_-]{8,40}\b")
 _ROUTE = re.compile(r"\b([A-Z]{3})\s*(?:-|–|to|nach|→|>)\s*([A-Z]{3})\b")
-_DE = re.compile(
-    r"\b(bitte|danke|sendung|wo ist|status der|grüße|guten tag|hallo)\b", re.IGNORECASE
-)
 _QUESTION = re.compile(
     r"\?|\b(status|where|when|arriv\w*|eta|track\w*|wo ist|wann|ankunft)\b",
     re.IGNORECASE,
@@ -210,7 +208,7 @@ def handle(
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:
         text = f"{mail.subject}\n{mail.body}"
-        lang = "de" if _DE.search(text) else "en"
+        lang = "de" if detect(text) == "de" else "en"
         records = db.tracking_records()
         if booked_session is not None:
             rec = next((r for r in records if r["session_id"] == booked_session), None)

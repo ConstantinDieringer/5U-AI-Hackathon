@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids
 from app.config import settings
+from app.mail import language
 from app.models import Mail, RateOption, Rfq
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import portal_options
@@ -51,7 +52,7 @@ EXTRACT_PROMPT = (
     "weight_kg: total gross weight in kg (convert lb/t). volume_cbm: total volume in cbm; if only "
     "dimensions are given, compute pieces x L x W x H in metres.\n"
     "preference: 'fastest' if they ask for the fastest/quickest/express option, else 'cheapest'.\n"
-    "ready_date: ISO date or null. language: ISO 639-1 code of the language the email is written in (not of names).\n"
+    "ready_date: ISO date or null. language: ISO 639-1 code of the email language.\n"
     "customer_name: the sender's first name from the signature, or null."
 )
 
@@ -304,6 +305,8 @@ def _handle(mail: Mail, sid: int) -> None:
     if rfq is None:
         db.set_status(sid, "error", "Anfrage nicht lesbar")
         return
+    # the LLM guesses the language from names/places (English mail from a German firm -> "de")
+    rfq = rfq.model_copy(update={"language": language.detect(mail.body)})
     db.set_request(sid, rfq.model_dump())
     db.emit(
         "extract_done",
