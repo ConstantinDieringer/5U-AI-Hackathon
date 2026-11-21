@@ -94,10 +94,11 @@ def test_replay_cleanup_also_releases_database_on_failure(tmp_path, monkeypatch)
 
 
 def test_replayed_answers_reach_the_clarification(results) -> None:
-    """Round 28's first explicit airport answer now resolves without optional flags."""
+    """Round 28: SELF_DELIVERY_RECOVERY (default on since 21.11) reads "drop it at CGN
+    ourselves" in the request itself, so the quote goes out without the question."""
     got = results[28]
     assert got["outcome"] == "quoted" and got["open_issues"] == []
-    assert got["clarifications_sent"] == 1
+    assert got["clarifications_sent"] == 0
     assert got["airline"] == "Ultraviolet Air Freight" and got["total_minor"] == 39045
 
 

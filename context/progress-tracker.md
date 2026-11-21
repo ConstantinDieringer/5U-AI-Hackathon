@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Mail guard (`app/mail/guard.py`): empty/automatic customer mail and RFQ floods are stored but never processed (no LLM, no reply); outgoing loops to one customer are cut by burst/thread/repeat caps in `hackloop.send` with one #sos error. Screening blocks loop instructions (0 hits on the 175 genuine mails). Seven edge-case flags now default on (SELF_DELIVERY_RECOVERY, CONFLICT_SOURCE_ANSWER, CUTOFF_QUESTION_NOTICE, TARIFF_ON_READY_DATE, UNIT_EVIDENCE, REVISION_NOT_ACCEPTANCE, ALL_EXCLUDED_NOTICE); replay changes only round 28 (quote without question). 826 passed/4 skipped; not verified live.
+
 - Round 56 customer will check whether booking can proceed: current keyword rule still returned acceptance. The shared consent guard now also recognizes pending EN/DE internal approval checks; positive past checks followed by an explicit booking order remain valid. Existing booking/price-change flows reuse it; no live booking triggered.
 
 - Strict customer prose v4 closes the unchecked all-excluded notice and subject paths, including followups without an LLM review. Independent final assertions reject punctuation, including Unicode/HTML variants, and unresolved EUR/numeric dates/zero fractions; transmitted subject/body are stored, reply IDs retain threading. Reviewer acceptance instructions tightened. Integrated Python 3.11 suite: 742 passed/4 skipped; wire tests include a misbehaving reviewer and failed renderer. Existing v3 deployment verified active; v4 rollout pending.
