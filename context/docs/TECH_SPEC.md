@@ -176,6 +176,8 @@ Kundenangebote und Kundenbestätigungen behalten ihren Gesamtpreis.
 
 `mail_screening(mail_id PK, sender, thread_root, verdict, layer, score, blocked, routed_as, reasons_json, detail_json, released_at, created_at)` ist das additive Protokoll des Phishing-Gates (`app/mail/screening.py`), einmal pro Mail vor jeder Aktion. Gesperrte Mails stehen mit `category='phishing'` in `mails`, öffnen keine Session und werden von Catch-ups, Historie, Served-Lanes- und Buchungs-Backfill ignoriert; `hackloop.send` verweigert Antworten auf sie. Freigabe stellt `routed_as` wieder her, öffnet die Session und vertraut dem Absender im Thread.
 
+`board_results.cause_json` (additive nullable Spalte, Migration beim Start) friert bei Board-Urteil `no answer` die Ursache aus eigenen Daten ein: letzter Sessionstatus, letztes Fehlerereignis, Zeit des letzten Ereignisses, Prozessstarts innerhalb der Runde; ohne passende Session `mail_not_received` (bzw. `no_session`, wenn die Mail ohne RFQ-Session gespeichert wurde). Jeder Prozessstart ist ein `process_start`-Event; `/api/health` nennt `process_started_at`.
+
 `llm_calls.accounting_json` speichert abwärtskompatibel Usage-Details, Modellpreise und Kostenkomponenten pro Call. Migration ergänzt die nullable Spalte beim Start. `/api/sessions/{id}` ergänzt `llm_usage` mit Calls und RFQ-Summen. Cached Input wird abgezogen und separat bepreist; Reasoning bleibt Teil des Outputs. Historische Kosten bleiben erhalten, unbekannte Preise/Usage werden als unvollständig angezeigt. Preise sind USD-Schätzungen, keine bestätigten Gateway-Rechnungsbeträge.
 
 > **Maßgeblich für Schema, Session-Zuordnung und DB-Zugriffsmuster ist `context/docs/design/aufgabe-c.md` (Abschnitte 3–5).** Das Schema unten ist überholt, wo es davon abweicht.
@@ -278,8 +280,10 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Buchungsfreigabe: Vorabfragen wie „Before we book...“ und bedingte Zustimmung gelten
   ebenso wie noch laufende interne Prüfungen („check whether we can proceed“) ausdrücklich
   als ungeklärte Freigabe, auch wenn „book“ vorkommt. Eine abgeschlossene Prüfung mit
-  explizitem Auftrag bleibt gültig. Direkte Aufträge dürfen zusätzliche
-  Informationsfragen enthalten. Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
+  explizitem Auftrag bleibt gültig. Direkte Aufträge dürfen zusätzliche Informationsfragen enthalten.
+  Der Test auf laufende interne Prüfung verwendet dieselben Zustimmungsausdrücke wie
+  die Freigabe selbst und gilt pro Satz; separate Sachfragen ersetzen keine Freigabe.
+  Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
   dieselbe Prüfung gilt bei Annahme eines geänderten Buchungspreises.
 
 - Dedizierter Stilagent `app/agents/email_review.py`: `LLM_REVIEW_MODEL=gpt-5`, `EMAIL_REVIEW_ENABLED=true`, genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens. Kein eigener Versand und keine Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen werden nach dem Review geschützt; bei Fehler/Budgetende bleibt der deterministisch geprüfte Entwurf erhalten. Aufruf und Kosten werden der RFQ zugerechnet. Pause/Handbetrieb und Quote-Deadline werden nach dem Review erneut geprüft.
@@ -340,6 +344,20 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   ohne Trucking-Anteil angeboten werden (`ALLOW_INCOMPLETE_DOOR_QUOTE=false`).
 - Offene RFQ-Sessions werden beim Start aus SQLite wieder aufgenommen. Sende-Claims und bereits
   gespeicherte Carrier-Anfragen verhindern doppelte Kundenangebote bzw. unnötige Doppelanfragen.
+- RFQ-Watchdog (`app/agents/watchdog.py`, `RFQ_WATCHDOG`, `RFQ_WATCHDOG_AFTER_S=200`): eine
+  RFQ-Session (Root-Mail `rfq`) ohne Quote und ohne lebenden Worker dieses Prozesses erhält ab
+  200 s bis `TOO_OLD_S` genau einen erzwungenen Preisdurchlauf über `rfq._price_and_quote(forced=True)`:
+  Tarifblatt, Portal (Rate-Gate und Restzeit) und bereits erhaltene Gebote, keine neuen
+  Gebotsanfragen, kein Warten, Versand nur über `claim_quote_send`. Nie bei Pause/Handbetrieb,
+  offenem Gefahrgut, Phishing; Kundenausschlüsse bleiben aktiv, keine Ausschluss-Mitteilung.
+  Offene Rückfrage: nur ausdrücklich genannte Angaben, offene Abflug-/Zielfelder werden verworfen,
+  Abholung ohne Ort wird nicht angeboten. Kein Preis: nichts senden, `watchdog_alert` (error).
+  Ein Quote-Claim ohne Transportmarker (`kv quote.transport.<id>`, unmittelbar vor HTTP gesetzt)
+  wird freigegeben; mit Marker nie, nur Alarm. Weniger als 75 s Restzeit: geprüfte Textvorlage
+  ohne Stilprüfung.
+- Deploy-Ampel `/api/deploy-gate`: grün, wenn die neueste RFQ beantwortet oder ihr 360-s-Fenster
+  vorbei ist und die nächste RFQ (Median-Abstand der letzten Ankünfte, Phase aus der neuesten,
+  Fallback `RFQ_INTERVAL_S=364`) mehr als `DEPLOY_GATE_MARGIN_S=90` entfernt ist.
 
 ## 9. Logging & Fehler
 

@@ -17,6 +17,8 @@ import logging
 import re
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -68,6 +70,43 @@ RFQ_LIFETIME_S = 360  # 5U expires a request 6 min after it was sent
 PORTAL_MIN_S = 20.0  # portal reads always get this long, even for a resumed RFQ
 TOO_OLD_S = 330  # do not start work on a request that cannot be answered in time any more
 COMPOSE_RESERVE_S = 15
+FORCED_FULL_COMPOSE_S = 75  # a forced quote with less time left uses the checked template
+
+
+# ---------------------------------------------------------------- live workers
+
+_working_lock = threading.Lock()
+_working: dict[int, int] = {}  # session id -> RFQ workers running in this process
+
+
+def _hold(sid: int) -> None:
+    with _working_lock:
+        _working[sid] = _working.get(sid, 0) + 1
+
+
+def _drop(sid: int) -> None:
+    with _working_lock:
+        if _working.get(sid, 0) <= 1:
+            _working.pop(sid, None)
+        else:
+            _working[sid] -= 1
+
+
+@contextmanager
+def working(sid: int) -> Iterator[None]:
+    """Mark a session as being priced by a worker of this process. A restart empties the
+    registry, so a session left behind by a killed worker is never mistaken for a live one."""
+    _hold(sid)
+    try:
+        yield
+    finally:
+        _drop(sid)
+
+
+def is_working(sid: int) -> bool:
+    with _working_lock:
+        return sid in _working
+
 
 EXTRACT_PROMPT = (
     "Extract the air freight request from the email as JSON.\n"
@@ -1092,28 +1131,33 @@ def catch_up() -> int:
                 received_at=str(r["received_at"]),
             )
         )
-        db.emit("resumed", "Nach Neustart fortgesetzt", int(r["session_id"]))
-        threading.Thread(
-            target=handle_rfq,
-            args=(mail, int(r["session_id"])),
-            name=f"rfq-{r['session_id']}",
-            daemon=True,
-        ).start()
+        sid = int(r["session_id"])
+        db.emit("resumed", "Nach Neustart fortgesetzt", sid)
+        _hold(sid)  # live before the thread runs: the watchdog must not race the resume
+        threading.Thread(target=_resume, args=(mail, sid), name=f"rfq-{sid}", daemon=True).start()
         n += 1
     if n:
         log.info("resumed %d open RFQ(s) after restart", n)
     return n
 
 
+def _resume(mail: Mail, sid: int) -> None:
+    try:
+        handle_rfq(mail, sid)
+    finally:
+        _drop(sid)
+
+
 def handle_rfq(mail: Mail, session_id: int) -> None:
     """Whole flow for one RFQ. Never raises (runs in a worker thread)."""
-    try:
-        _handle(mail, session_id)
-    except Exception as e:
-        log.exception("session %s: RFQ failed", session_id)
-        db.set_status(session_id, "error", f"{type(e).__name__}: {e}")
-    finally:
-        bids.close(session_id)
+    with working(session_id):
+        try:
+            _handle(mail, session_id)
+        except Exception as e:
+            log.exception("session %s: RFQ failed", session_id)
+            db.set_status(session_id, "error", f"{type(e).__name__}: {e}")
+        finally:
+            bids.close(session_id)
 
 
 def _handle(mail: Mail, sid: int) -> None:
@@ -1287,16 +1331,7 @@ def quote_without_answer(sid: int, reason: str, dg_asked: bool = False) -> bool:
         except ValidationError:
             why = "Sendungsdaten unvollständig"
     if request is not None:
-        from app.mail.rfq_validation import explicit_delivery_origin
-
-        request = request.model_copy(update={"language": language.detect(mail.body)})
-        if not request.origin and not request.door_to_port:
-            stated = explicit_delivery_origin(mail, request.destination)
-            request = (
-                request.model_copy(update={"origin": stated})
-                if stated
-                else locate_origin(request, mail, sid)
-            )
+        request = with_stated_origin(request, mail, sid)
         origin = resolve_origin(request)
         if origin is None or origin == request.destination:
             why = "Abflughafen nicht genannt"
@@ -1324,14 +1359,31 @@ def quote_without_answer(sid: int, reason: str, dg_asked: bool = False) -> bool:
         _received(mail),
         datetime.fromisoformat(session.get("created_at") or mail.received_at).timestamp(),
     )
-    try:
-        _price_and_quote(mail, sid, request, origin, t0, settings.rfq_validation_mode)
-    except Exception as e:
-        log.exception("session %s: quote without answer failed", sid)
-        db.set_status(sid, "error", f"{type(e).__name__}: {e}")
-    finally:
-        bids.close(sid)
+    with working(sid):
+        try:
+            _price_and_quote(mail, sid, request, origin, t0, settings.rfq_validation_mode)
+        except Exception as e:
+            log.exception("session %s: quote without answer failed", sid)
+            db.set_status(sid, "error", f"{type(e).__name__}: {e}")
+        finally:
+            bids.close(sid)
     return True
+
+
+def with_stated_origin(request: Rfq, mail: Mail, sid: int) -> Rfq:
+    """The request in the mail's language, with a departure only where the request states
+    one: self-delivery wording, or the one network airport the current text names."""
+    from app.mail.rfq_validation import explicit_delivery_origin
+
+    request = request.model_copy(update={"language": language.detect(mail.body)})
+    if not request.origin and not request.door_to_port:
+        stated = explicit_delivery_origin(mail, request.destination)
+        request = (
+            request.model_copy(update={"origin": stated})
+            if stated
+            else locate_origin(request, mail, sid)
+        )
+    return request
 
 
 def _all_excluded(rfq: Rfq, origin: str, banned: set[str]) -> bool:
@@ -1403,8 +1455,12 @@ def _tell_all_excluded(mail: Mail, sid: int, rfq: Rfq) -> None:
     )
 
 
-def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str) -> None:
-    """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send."""
+def _price_and_quote(
+    mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str, forced: bool = False
+) -> None:
+    """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send.
+    `forced` (RFQ watchdog): one more pricing pass from sheets, portal and the bids already
+    received; no new bid mail, no waiting, no exclusion notice."""
     # customer carrier preferences (round 10820, excluded_airline): stored per customer,
     # an excluded carrier is never asked for a bid and never quoted
     customer = address(mail.sender)
@@ -1427,7 +1483,11 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
             sid,
             level="warn",
         )
-    if not db.is_manual(sid) and not db.is_paused(sid):
+    if forced:
+        # rebuild the offers from the stored requests and replies only (no new mail)
+        bids.close(sid)
+        bids.request(sid, rfq, origin, [])
+    elif not db.is_manual(sid) and not db.is_paused(sid):
         bids.request(sid, rfq, origin, truckers + early_airlines)
 
     full_deadline = t0 + settings.quote_full_score_deadline_s
@@ -1444,7 +1504,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
     fallback_codes = set(portal.email_fallbacks)
     fallback = [carrier for code, carrier in portal_carriers.items() if code in fallback_codes]
     email_airlines = _limit_airline_requests(sid, fallback + email_airlines)
-    if email_airlines:
+    if email_airlines and not forced:
         bids.request(sid, rfq, origin, email_airlines)
     selected_emails = {carrier.email for carrier in email_airlines}
     blocked = [carrier.email for carrier in fallback if carrier.email not in selected_emails]
@@ -1467,7 +1527,8 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
     air = [o for o in _sheets(rfq) + portal.options if o.airline.lower() not in banned]
     db.emit("priced", f"{len(air)} Preise aus Tarifblatt und Portal", sid)
 
-    bids.wait(sid, pricing_deadline - time.time())
+    if not forced:
+        bids.wait(sid, pricing_deadline - time.time())
     need: set[str] = set()
     if truckers and best_truck(bids.offers(sid)) is None:
         need.add("trucker")
@@ -1477,7 +1538,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
         and not any(o.carrier.kind == "airline" for o in bids.offers(sid))
     ):
         need.add("airline")
-    if need:
+    if need and not forced:
         db.emit(
             "waiting",
             f"Warte bis {final_deadline - t0:.0f} s auf: {', '.join(sorted(need))}",
@@ -1521,7 +1582,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
     if choice is None:
         db.emit("no_price", "Kein Preis gefunden, kein Angebot", sid, level="error")
         db.set_status(sid, "error", "kein Preis")
-        if settings.all_excluded_notice and _all_excluded(rfq, origin, banned):
+        if settings.all_excluded_notice and not forced and _all_excluded(rfq, origin, banned):
             _tell_all_excluded(mail, sid, rfq)
         return
     truck = best_truck(offers) if rfq.door_to_port else None
@@ -1546,7 +1607,13 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
             sid,
         )
 
-    body = compose_quote_text(rfq, choice, total, truck, sid)
+    template = forced and t0 + RFQ_LIFETIME_S - time.time() < FORCED_FULL_COMPOSE_S
+    if template:
+        # little time left: the checked deterministic copy, no composer and no style review
+        db.emit("forced_template", "Wenig Zeit: geprüfte Textvorlage ohne Stilprüfung", sid)
+        body = _fallback_with_coverage(rfq, choice, total, truck, sid, None)
+    else:
+        body = compose_quote_text(rfq, choice, total, truck, sid)
     if rfq.pickup_assumed and truck is not None:
         body = with_pickup_note(body, rfq)
     from dataclasses import asdict
@@ -1582,6 +1649,9 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
             session_id=sid,
             protected_terms=(choice.airline, choice.origin, choice.destination),
             deadline_at=t0 + RFQ_LIFETIME_S,
+            review=not template,
+            # from here the quote may be out: the watchdog never frees this claim again
+            before_transport=lambda: db.kv_set(f"quote.transport.{sid}", db.now()),
         )
     except hackloop.CustomerSendBlocked:
         if time.time() >= t0 + RFQ_LIFETIME_S:

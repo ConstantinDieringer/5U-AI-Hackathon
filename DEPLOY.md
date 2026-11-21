@@ -23,18 +23,33 @@
 ## Deploy rules (during live rounds)
 
 A push to `main` restarts the live container. While it restarts, nobody answers mail.
+Rounds 4, 9, 15, 16 and 17 had one to four pushes between 2 minutes before and 4 minutes after
+their RFQ and got no answer (a correlation, not a proven cause).
+
+**The rule: one person pushes to `main`, and only while the deploy light is green.**
+The light sits in the dashboard's top bar ("Deploy: frei" / "Deploy: warten", hover for the
+reason) and is `GET /api/deploy-gate` (`safe`, `reason`, `seconds_to_next`). Green means the
+newest RFQ has our answer (or its 360 s window is over) and the next RFQ is more than
+`DEPLOY_GATE_MARGIN_S` (90 s) away. RFQs come about every 6 min 4 s; the spacing and phase are
+read from the last arrivals, nothing is hardcoded. Railway builds before it restarts: push at
+the start of a green window, not at its end. Say in the team chat who is pushing.
 
 1. Run `python -m pytest -q` first. Push nothing that is red.
-2. Push only right after a quote has gone out. RFQs arrive about every 6 minutes, so the
-   restart then falls into the gap. Never push while a session is in `pricing`.
+2. Wait for green, then push. Never push while a session is in `pricing`.
 3. After the deploy, check the log for `agents loaded: bids, booking, clarification, rfq,
-   tariff, tracking` and `poller started at since_id=...`. A line `agent <name> does not
+   tariff, tracking, watchdog` and `poller started at since_id=...`; `/api/health` shows the new
+   `process_started_at` and `build_revision`. A line `agent <name> does not
    import` (also an `agent_import_failed` event and a #sos alert) means that agent is broken
    while the others keep running: roll back to the previous deployment before the next RFQ.
 4. Then open the attention list (Übersicht or `GET /api/attention`) and watch the next
    round: an `error` there means a round without a quote.
 5. An RFQ that was open during the restart is resumed at startup if it is younger than
-   330 s. Do not start `python run.py` on a laptop to help it along: a second instance
+   330 s. With `RFQ_WATCHDOG=true`, any RFQ still without our quote 200 s after arrival (an
+   open question, a dead end, a restart while it waited) gets the best quote real prices allow;
+   no price means nothing is sent and a `watchdog_alert` appears. Each unanswered board round
+   shows its cause in "Zu tun" and in `python -m app.agents.watchdog report` (one line per
+   round, reads only the local DB). `mail not received` there means the mail never reached us
+   (rate limit, outage); `restart at +N s` means a process start inside the round. Do not start `python run.py` on a laptop to help it along: a second instance
    answers mail twice. For local work use `AGENTS_ENABLED=false` or the demo DB.
 
 The whole forwarder runs as **one** container: poller, agents and UI. Only one instance may

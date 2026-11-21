@@ -314,6 +314,12 @@ def init_db(path: str | None = None) -> None:
         ):
             if column not in booking_columns:
                 migration.execute(f"ALTER TABLE bookings ADD COLUMN {column} {kind}")
+        board_columns = {
+            row["name"] for row in migration.execute("PRAGMA table_info(board_results)")
+        }
+        if "cause_json" not in board_columns:
+            # why a round got no answer, frozen when the board first reports it
+            migration.execute("ALTER TABLE board_results ADD COLUMN cause_json TEXT")
     remap_unassigned()
     backfill_bookings_from_confirmations()
     if path_changed:
@@ -1677,19 +1683,22 @@ def save_board_result(
     raw: dict[str, Any],
     session_id: int | None = None,
     failed: bool = False,
+    cause: dict[str, Any] | None = None,
 ) -> bool:
     """Upsert one board round. Returns True if the verdict is new or changed. A changed
-    `failed` round is emitted as an error (shows in the UI attention list)."""
+    `failed` round is emitted as an error (shows in the UI attention list). `cause` (why a
+    round got no answer) is kept from the first sync that brings one."""
     with tx() as c:
         old = _one(c.execute("SELECT verdict FROM board_results WHERE round_id = ?", (round_id,)))
         c.execute(
             "INSERT INTO board_results(round_id, session_id, verdict, reason, points_json, raw_json,"
-            " fetched_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(round_id) DO UPDATE SET"
+            " fetched_at, cause_json) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(round_id) DO UPDATE SET"
             " session_id = COALESCE(excluded.session_id, board_results.session_id),"
             " verdict = excluded.verdict, reason = excluded.reason,"
             " points_json = excluded.points_json, raw_json = excluded.raw_json,"
-            " fetched_at = excluded.fetched_at",
-            (round_id, session_id, verdict, reason, _json(points), _json(raw), now()),
+            " fetched_at = excluded.fetched_at,"
+            " cause_json = COALESCE(board_results.cause_json, excluded.cause_json)",
+            (round_id, session_id, verdict, reason, _json(points), _json(raw), now(), _json(cause)),
         )
         changed = old is None or old["verdict"] != verdict
         if changed and verdict:
@@ -1936,6 +1945,185 @@ def session_by_created_at(ts: str) -> int | None:
     """Find the RFQ session whose first mail arrived at `ts` (board rows carry sent_at)."""
     r = _one(conn().execute("SELECT id FROM sessions WHERE created_at = ?", (ts,)))
     return int(r["id"]) if r else None
+
+
+NO_ANSWER = "no answer"  # board verdict for a round we never answered
+WATCHDOG_REPLY_CATEGORIES = ("quote", "manual_reply", "notice")
+
+
+def watchdog_candidates(created_after: str, created_before: str) -> list[dict[str, Any]]:
+    """RFQ sessions created in (created_after, created_before] with no quote and no other
+    reply of ours that ends the thread (quote, manual reply, all-carriers-excluded notice).
+    Paused/manual/claimed rows are included so the caller can say why it skips them."""
+    return _rows(
+        conn().execute(
+            "SELECT s.id AS session_id, s.status, s.created_at, s.paused, s.mode,"
+            " s.first_reply_at FROM sessions s JOIN mails m ON m.id = s.id"
+            # only a root mail routed as an RFQ starts the RFQ flow (poller.dispatch); a
+            # phishing-blocked mail is stored as 'phishing' and never qualifies
+            " WHERE s.kind = 'rfq' AND m.direction = 'in' AND m.category = 'rfq'"
+            " AND s.created_at > ? AND s.created_at <= ?"
+            " AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = s.id)"
+            " AND NOT EXISTS (SELECT 1 FROM mails o WHERE o.session_id = s.id"
+            f" AND o.direction = 'out' AND o.category IN {WATCHDOG_REPLY_CATEGORIES!r})"
+            " ORDER BY s.created_at",
+            (created_after, created_before),
+        )
+    )
+
+
+def release_unsent_quote_claim(session_id: int) -> bool:
+    """Free a quote claim that provably never reached the mailbox: no quote row, no reply mail
+    of ours and no transport marker (set right before the HTTP send). A claim whose send may
+    have happened is never released, so this cannot cause a second quote."""
+    with tx() as c:
+        cur = c.execute(
+            "UPDATE sessions SET first_reply_at = NULL, updated_at = ? WHERE id = ?"
+            " AND first_reply_at IS NOT NULL AND mode = 'auto'"
+            " AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = sessions.id)"
+            " AND NOT EXISTS (SELECT 1 FROM mails o WHERE o.session_id = sessions.id"
+            f" AND o.direction = 'out' AND o.category IN {WATCHDOG_REPLY_CATEGORIES!r})"
+            " AND NOT EXISTS (SELECT 1 FROM kv WHERE kv.key = 'quote.transport.' || sessions.id)",
+            (now(), session_id),
+        )
+        if cur.rowcount != 1:
+            return False
+        _emit(
+            c,
+            "quote_claim_released",
+            "Quote-Claim ohne Versand freigegeben (Neustart oder Abbruch vor dem Senden)",
+            session_id,
+            level="warn",
+        )
+        return True
+
+
+def llm_calls_used(session_id: int) -> int:
+    """Gateway calls already counted for the session (same rule as reserve_llm_call)."""
+    c = conn()
+    kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (f"llm_calls:{session_id}",)))
+    logged = _one(
+        c.execute("SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ?", (session_id,))
+    )
+    return max(int(kv["value"]) if kv else 0, int(logged["n"]) if logged else 0)
+
+
+def root_mail(session_id: int) -> dict[str, Any] | None:
+    """The customer's first mail of a session (the RFQ itself)."""
+    return _one(
+        conn().execute(
+            "SELECT id, sender, recipient, subject, body, category, received_at, raw_json"
+            " FROM mails WHERE id = ? AND direction = 'in'",
+            (session_id,),
+        )
+    )
+
+
+def round_cause(session_id: int | None, sent_at: str | None) -> dict[str, Any]:
+    """Why a board round got no answer, from our own records: the matching session's last
+    status, last error event and last event time, plus any process start inside the round.
+    No session for the round's sent time: the mail never reached us (rate limit, outage), or
+    it was stored without opening an RFQ session."""
+    c = conn()
+    cause: dict[str, Any] = {"session_id": session_id, "sent_at": sent_at}
+    if sent_at:
+        try:
+            start = datetime.fromisoformat(sent_at)
+            end = (start + DEADLINE).isoformat()
+            restarts = _rows(
+                c.execute(
+                    "SELECT created_at FROM events WHERE kind = 'process_start'"
+                    " AND created_at >= ? AND created_at <= ? ORDER BY id",
+                    (start.isoformat(timespec="seconds"), end),
+                )
+            )
+            cause["restarts_s"] = [
+                int((_parse(r["created_at"]) - start).total_seconds()) for r in restarts
+            ]
+        except ValueError:
+            pass
+    if session_id is None:
+        stored = (
+            _one(
+                c.execute(
+                    "SELECT id, category FROM mails WHERE direction = 'in' AND received_at = ?",
+                    (sent_at,),
+                )
+            )
+            if sent_at
+            else None
+        )
+        if stored:
+            cause.update(
+                kind="no_session",
+                summary=f"Mail {stored['id']} gespeichert ({stored['category']}), keine RFQ-Session",
+            )
+        else:
+            cause.update(kind="mail_not_received", summary="Mail nicht empfangen")
+        return cause
+    s = _one(c.execute("SELECT status, paused, mode FROM sessions WHERE id = ?", (session_id,)))
+    last = _one(
+        c.execute(
+            "SELECT kind, message, created_at FROM events WHERE session_id = ?"
+            " ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        )
+    )
+    error = _one(
+        c.execute(
+            "SELECT kind, message, created_at FROM events WHERE session_id = ?"
+            " AND level = 'error' AND kind != 'board_verdict' ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        )
+    )
+    status = s["status"] if s else None
+    cause.update(
+        kind="session",
+        status=status,
+        paused=bool(s and s["paused"]),
+        manual=bool(s and s["mode"] == "manual"),
+        last_error=error,
+        last_event_at=last["created_at"] if last else None,
+        last_event_kind=last["kind"] if last else None,
+    )
+    why = (error or {}).get("message") or (last or {}).get("message") or "kein Ereignis"
+    cause["summary"] = f"Status {status}: {why}"[:200]
+    return cause
+
+
+def unanswered_rounds(limit: int = 200) -> list[dict[str, Any]]:
+    """Board rounds with verdict "no answer" and their stored cause, newest round first."""
+    rows = _rows(
+        conn().execute(
+            "SELECT b.round_id, b.session_id, b.raw_json, b.cause_json, s.subject, s.customer"
+            " FROM board_results b LEFT JOIN sessions s ON s.id = b.session_id"
+            " WHERE b.verdict = ?",
+            (NO_ANSWER,),
+        )
+    )
+    out = []
+    for r in rows:
+        raw = json.loads(r.pop("raw_json") or "null") or {}
+        cause = json.loads(r.pop("cause_json") or "null")
+        if cause is None:  # synced before causes were stored: derive it now
+            cause = round_cause(r["session_id"], raw.get("sent_at"))
+        out.append({**r, "sent_at": raw.get("sent_at"), "cause": cause})
+    out.sort(key=lambda r: -int(r["round_id"]) if str(r["round_id"]).isdigit() else 0)
+    return out[:limit]
+
+
+def recent_rfqs(limit: int = 12) -> list[dict[str, Any]]:
+    """Newest customer RFQ sessions first: arrival and whether our quote/reply went out."""
+    return _rows(
+        conn().execute(
+            "SELECT s.id, s.created_at, s.first_reply_at,"
+            " EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = s.id) AS quoted"
+            " FROM sessions s JOIN mails m ON m.id = s.id"
+            " WHERE s.kind = 'rfq' AND m.direction = 'in' AND m.category = 'rfq'"
+            " ORDER BY s.created_at DESC LIMIT ?",
+            (limit,),
+        )
+    )
 
 
 def expire_overdue() -> list[int]:
@@ -2327,17 +2515,24 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
         )
     for r in _rows(
         c.execute(
-            "SELECT b.session_id, b.verdict, b.reason, s.subject, s.customer, s.status"
-            " FROM board_results b JOIN sessions s ON s.id = b.session_id"
-            " WHERE b.verdict NOT IN ('accepted','open','pending') ORDER BY b.fetched_at DESC LIMIT ?",
-            (limit,),
+            "SELECT b.round_id, b.session_id, b.verdict, b.reason, b.cause_json, s.subject,"
+            " s.customer, s.status FROM board_results b LEFT JOIN sessions s"
+            " ON s.id = b.session_id WHERE b.verdict NOT IN ('accepted','open','pending')"
+            " AND (b.session_id IS NOT NULL OR b.verdict = ?)"
+            " ORDER BY b.fetched_at DESC LIMIT ?",
+            (NO_ANSWER, limit),
         )
     ):
+        cause = json.loads(r["cause_json"]) if r["cause_json"] else None
         items.append(
             {
                 "session_id": r["session_id"],
                 "kind": "board",
-                "reason": f"5U: {r['verdict']}" + (f" ({r['reason']})" if r["reason"] else ""),
+                "round_id": r["round_id"],
+                "reason": f"5U: {r['verdict']}"
+                + (f" ({r['reason']})" if r["reason"] else "")
+                + (f" · {cause['summary']}" if cause and cause.get("summary") else ""),
+                "cause": cause,
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],
@@ -2387,7 +2582,8 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
     seen: set[tuple[Any, str]] = set()
     out = []
     for i in items:
-        key = (i.get("mail_id") or i["session_id"], i["kind"])
+        # phishing items carry mail_id, unanswered rounds without a session their round_id
+        key = (i.get("mail_id") or i["session_id"] or i.get("round_id"), i["kind"])
         if key not in seen:
             seen.add(key)
             out.append(i)
@@ -2852,6 +3048,21 @@ def status_overview() -> dict[str, Any]:
                     "tone": "blue",
                 }
             )
+
+    for r in unanswered_rounds(limit=50):
+        if not r["sent_at"] or r["sent_at"] < since:
+            continue
+        todo.append(
+            {
+                "session_id": r["session_id"],
+                "subject": r["subject"] or f"Runde {r['round_id']}",
+                "customer": r["customer"],
+                "lane": None,
+                "round_id": r["round_id"],
+                "reason": f"Runde {r['round_id']} unbeantwortet: {r['cause'].get('summary')}",
+                "tone": "red",
+            }
+        )
 
     return {
         "checks": checks,

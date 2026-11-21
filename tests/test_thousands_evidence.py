@@ -111,12 +111,19 @@ def test_validate_reads_the_mail_and_attachment_with_known_figures(flags):
     )
     request = Rfq(pickup_zip="73342", destination="BOM", weight_kg=1674, volume_cbm=4.36, pieces=11)
     attachment = {"spec.xlsx": "Total gross weight (kg): | 1.674\nTotal volume (cbm): | 4.36"}
-    flags(thousands_evidence=False)
+    flags(thousands_evidence=False, unit_evidence=False)
     _, draft = validate(_kessler(body), request, attachment)
     assert ("weight_kg", "missing") in {(i["field"], i["code"]) for i in draft.issues}
-    flags(thousands_evidence=True)
+    # UNIT_EVIDENCE (default true since main's defaults change) reads the mail's figure when
+    # the extraction agrees, but nothing reads the unit-less attachment figure
+    flags(thousands_evidence=False, unit_evidence=True)
     _, draft = validate(_kessler(body), request, attachment)
     assert not draft.issues
+    assert draft.evidence["weight_kg"]["observations"] == [("body", "1674")]
+    for unit_evidence in (False, True):
+        flags(thousands_evidence=True, unit_evidence=unit_evidence)
+        _, draft = validate(_kessler(body), request, attachment)
+        assert not draft.issues
     assert draft.evidence["weight_kg"]["observations"] == [
         ("body", "1674"),
         ("spec.xlsx", "1674"),

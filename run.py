@@ -1,6 +1,7 @@
 """Start everything: `python run.py` (from the repo root).
 
 - mail poller in a daemon thread
+- RFQ watchdog in a daemon thread (RFQ_WATCHDOG=true, agents only)
 - C's background watchers (deadline, board sync) in daemon threads
 - C's UI server (FastAPI) via uvicorn in the main thread
 """
@@ -29,6 +30,12 @@ def main() -> None:
     from app.mail import poller, webhook
 
     db.init_db()
+    from app import process
+
+    try:
+        process.record_start(settings.agents_enabled)
+    except Exception:
+        log.exception("could not record the process start: starting anyway")
     _check_agents(log)
     stop = threading.Event()
     if not settings.agents_enabled:
@@ -49,6 +56,13 @@ def main() -> None:
         ).start()
 
     rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
+    if settings.rfq_watchdog:
+        # after catch_up: resumed workers count as live, the rest is due at once
+        from app.agents import watchdog
+
+        threading.Thread(
+            target=watchdog.run, args=(stop,), name="rfq-watchdog", daemon=True
+        ).start()
     booking.catch_up()  # acceptances that arrived while the app was down or had no booking
     from app.agents import followup
 
