@@ -1,5 +1,10 @@
 > Archived progress log (state on 21.11.2026 before the lean-context restructure). Do not read by default; grep for history. Newer overflow from `context/progress-tracker.md` is prepended below this note.
 
+## Overflow from the lean tracker (newest first)
+
+- Kessler BOM thread fix flags `TOTALS_SAME_LINE`, `THOUSANDS_EVIDENCE`, `CLARIFY_CAP_RESOLVE` (default false, recommended true).
+- Follow-up nudges (`app/agents/followup.py`) for stalled offers and unanswered questions.
+
 # Progress Tracker
 
 Keep entries to at most 3 lines; details belong in code and commits.

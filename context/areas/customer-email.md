@@ -13,6 +13,7 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 | `app/mail/voice.py` + `customer_voice.md` | shared voice profile loaded into the composer prompt |
 | `app/agents/email_review.py` | optional style reviewer (`EMAIL_REVIEW_ENABLED=false`) |
 | `app/agents/tracking_notice.py` | repairs a missing tracking paragraph |
+| `app/mail/reply_language.py` | fr/es/it translation of customer replies (`REPLY_IN_CUSTOMER_LANGUAGE`), English fallback |
 
 ## Hard style rules (customer body and subject)
 
