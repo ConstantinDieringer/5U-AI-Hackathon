@@ -5,11 +5,14 @@ The jury judges UX and design, and the pitch will show the UI, so the UI is a sc
 ## Design Principles
 
 - Tokens, components and screens are defined in `DESIGN.md` (repo root). Change it there first.
+- The earlier Twenty-inspired exploration is retained in
+  [docs/design/design-guidelines.md](docs/design/design-guidelines.md) as a historical reference;
+  where it differs, `DESIGN.md` wins.
 
 - Colors and spacing come from shared design tokens. Components use no raw color values.
 - Use a consistent radius scale that grows with surface depth: small controls, then cards, then modals.
 - Use one icon set throughout.
-- Start with a dark theme.
+- Dark theme is the default; a light theme switch exists (same tokens).
 
 ## Screens (proposed)
 
