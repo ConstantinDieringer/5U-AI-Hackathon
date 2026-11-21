@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Ruff config (task 6c): `pyproject.toml` sets line length 100 and py311 as TECH_SPEC says; no file reformatted. At 100, 57 files would rewrap (24 at the old default 88), so format touched files only; 7 existing ruff check findings unchanged.
 - Round 38: preserve collection lead versus explicit road transit in carrier timing evidence; composer rejects road-duration claims for collection/unknown lead, and fallback uses neutral carrier lead wording. 473 tests passed, 4 skipped; replay changes only 8 quote texts, with identical prices/options/schedules. Deployment unverified.
 
 - Round 35 rejected: XLSX labels serialized as `Total gross weight (kg): | 1751` were ignored by the numeric gate despite conflicting mail weight 2644. Accept combined table separators for weight/volume/pieces; preserve explicit conflict clarification and customer corrections. Exact production pricing cause remains unverified.
