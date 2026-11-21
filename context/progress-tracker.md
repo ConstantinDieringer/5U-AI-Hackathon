@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Dashboard overflow: fixed recent-request column proportions, bounded chip/subject ellipsis with full tooltips and a card-local scroll region on narrow screens; score labels and verdicts wrap. Browser checks at 1440/1024/390/320 widths with long subjects/references show no page/card overflow; JS syntax passes. UI-only change, no production deployment.
+
 - Case 12460 portal outage: reserve slots for eligible portal airlines before speculative bids; 503 fallbacks take priority, healthy results release slots, persisted sends enforce the cap on restart. Full legacy budgets warn instead of silently losing fallbacks; trucking alone remains unquotable. Targeted regression checks cover the outage and complete quote.
 - Case 12460 manual replies: default to the latest customer mail even after carrier replies, show recipient in confirmation, reject customer quotes to carriers, and keep explicit carrier replies out of customer response metrics. Selected-mail support is preserved; a literal JS newline that prevented script parsing is repaired. Local tests only; deployment unverified.
 - Case 12460 verification on integrated main: Python 3.11, 615 passed/4 skipped; changed Python files pass Ruff, full console script passes Node syntax check, customer-first mail selection verified in the local browser. Added 14 regressions for outage capacity, complete quotes, restart caps, pause, exclusions and reply targets; no production rollout or live quote verification.
