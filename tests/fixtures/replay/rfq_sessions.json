@@ -3252,7 +3252,7 @@
    "board": {
     "verdict": "accepted",
     "reason": null,
-    "accuracy": null
+    "accuracy": 39.32
    },
    "llm_extraction": {
     "origin": "HAM",
@@ -3407,6 +3407,559 @@
     "transit_days": 3,
     "sent_at": "2026-11-21T17:39:35+00:00",
     "body": "Hi Jonas,\n\nthanks for your request, happy to help.\n\nAir freight HAM to EZE, including pickup at 24489 and trucking to HAM airport: 3.018,37 € all-in.\nIt flies with Meridian Freightways, transit time 3 days from departure.\nEarliest departure from HAM is 27 Nov 2026, arriving in EZE on 30 Nov 2026.\nThe truck takes about 19 hours from your door to the airport, and we'll confirm the exact pickup time once it's booked.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+   }
+  },
+  {
+   "session_id": 7237,
+   "round_no": 28,
+   "board": {
+    "verdict": "rejected",
+    "reason": "too_high",
+    "accuracy": null
+   },
+   "llm_extraction": {
+    "origin": null,
+    "pickup_zip": null,
+    "destination": "DFW",
+    "weight_kg": 85.0,
+    "volume_cbm": 0.7,
+    "pieces": 4,
+    "preference": "cheapest",
+    "ready_date": "2026-11-27",
+    "language": "de",
+    "customer_name": "Klaus",
+    "customer_questions": [
+     "Could you send me an all-in price in EUR for the cheapest air freight option from CGN to DFW (Dallas, US)?",
+     "We’ll deliver the textile samples to Cologne airport (CGN) ourselves, so there’s no need to arrange pickup.",
+     "The shipment will be ready on 2026-11-27 and consists of 4 pieces, with a gross weight of 85 kg and a total volume of 0.70 cbm."
+    ],
+    "service_constraints": []
+   },
+   "llm_extraction_source": "reconstructed: round 28: blocked by the input check before the request was stored; facts from the first validation_result event (nano left origin and pickup_zip empty)",
+   "portal": {
+    "request": {
+     "origin": "CGN",
+     "pickup_zip": null,
+     "destination": "DFW",
+     "weight_kg": 85.0,
+     "volume_cbm": 0.7,
+     "pieces": 4,
+     "preference": "cheapest",
+     "ready_date": "2026-11-27",
+     "language": "de",
+     "customer_name": "Klaus",
+     "customer_questions": [
+      "Could you send me an all-in price in EUR for the cheapest air freight option from CGN to DFW (Dallas, US)?",
+      "We’ll deliver the textile samples to Cologne airport (CGN) ourselves, so there’s no need to arrange pickup.",
+      "The shipment will be ready on 2026-11-27 and consists of 4 pieces, with a gross weight of 85 kg and a total volume of 0.70 cbm."
+     ],
+     "service_constraints": []
+    },
+    "options": [
+     {
+      "airline": "Ultraviolet Air Freight",
+      "origin": "CGN",
+      "destination": "DFW",
+      "transit_days": 4,
+      "total_minor": 39045,
+      "currency": "EUR",
+      "total_eur_minor": 39045,
+      "source": "portal",
+      "rate_id": null,
+      "valid_until": null,
+      "chargeable_kg": 116.9,
+      "billed_kg": 116.9
+     },
+     {
+      "airline": "Lumen Air Cargo",
+      "origin": "CGN",
+      "destination": "DFW",
+      "transit_days": 1,
+      "total_minor": 45708,
+      "currency": "EUR",
+      "total_eur_minor": 45708,
+      "source": "portal",
+      "rate_id": null,
+      "valid_until": null,
+      "chargeable_kg": 116.9,
+      "billed_kg": 116.9
+     }
+    ],
+    "errors": [],
+    "source": "manual: live portal read after the round (reported in the task brief), production read no portal on round 28"
+   },
+   "mails": [
+    {
+     "id": 7237,
+     "sender": "weidner-spielwaren@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Air freight quote: CGN to DFW",
+     "body": "Hi there,\n\nHope your week’s going well. Could you send me an all-in price in EUR for the cheapest air freight option from CGN to DFW (Dallas, US)?\n\nWe’ll deliver the textile samples to Cologne airport (CGN) ourselves, so there’s no need to arrange pickup. The shipment will be ready on 2026-11-27 and consists of 4 pieces, with a gross weight of 85 kg and a total volume of 0.70 cbm.\n\nThanks for your help!\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+     "category": "rfq",
+     "received_at": "2026-11-21T17:44:57.404211+00:00",
+     "in_reply_to": null
+    },
+    {
+     "id": 7307,
+     "sender": "weidner-spielwaren@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: Air freight quote: CGN to DFW",
+     "body": "Hi Moritz,\n\nThanks for getting back to me! We’ll drop the shipment off at CGN ourselves, so there’s no pickup ZIP. Can you quote it from CGN to DFW on that basis?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+     "category": "customer",
+     "received_at": "2026-11-21T17:45:12.254442+00:00",
+     "in_reply_to": 7289
+    },
+    {
+     "id": 7310,
+     "sender": "weidner-spielwaren@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: Air freight quote: CGN to DFW",
+     "body": "Hi Moritz,\n\nThanks for getting back to me! We’ll deliver the shipment directly to CGN ourselves, so there’s no pickup ZIP. Can you quote it from CGN to DFW on that basis?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+     "category": "customer",
+     "received_at": "2026-11-21T17:45:26.405793+00:00",
+     "in_reply_to": 7308
+    },
+    {
+     "id": 7370,
+     "sender": "weidner-spielwaren@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: Air freight quote: CGN to DFW",
+     "body": "Hi Moritz,\n\nThanks for getting back to me! There’s no pickup ZIP, as we’ll drop the shipment off at CGN ourselves. Could you quote it from CGN to DFW on that basis?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+     "category": "customer",
+     "received_at": "2026-11-21T17:45:41.718803+00:00",
+     "in_reply_to": 7334
+    },
+    {
+     "id": 7373,
+     "sender": "weidner-spielwaren@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: Air freight quote: CGN to DFW",
+     "body": "Hi Moritz,\n\nThanks for getting back to me! There’s no pickup ZIP—we’ll drop the shipment off at CGN ourselves. Could you quote it from CGN to DFW on that basis?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+     "category": "customer",
+     "received_at": "2026-11-21T17:45:52.833099+00:00",
+     "in_reply_to": 7371
+    }
+   ],
+   "production_quote": null
+  },
+  {
+   "session_id": 7448,
+   "round_no": 29,
+   "board": {
+    "verdict": "accepted",
+    "reason": null,
+    "accuracy": 45.0
+   },
+   "llm_extraction": {
+    "origin": "FRA",
+    "pickup_zip": "63198",
+    "pickup_city": null,
+    "pickup_assumed": false,
+    "destination": "PVG",
+    "weight_kg": 1225.0,
+    "volume_cbm": 4.62,
+    "pieces": 9,
+    "preference": "cheapest",
+    "ready_date": "2026-11-25",
+    "language": "en",
+    "customer_name": "Anna",
+    "customer_questions": [
+     "Please quote the cheapest air freight option to PVG (Shanghai, CN)?"
+    ],
+    "service_constraints": [
+     "all-in price in EUR, including pickup and trucking to the airport"
+    ]
+   },
+   "llm_extraction_source": "stored",
+   "portal": {
+    "request": {
+     "origin": "FRA",
+     "pickup_zip": "63198",
+     "pickup_city": null,
+     "pickup_assumed": false,
+     "destination": "PVG",
+     "weight_kg": 1225.0,
+     "volume_cbm": 4.62,
+     "pieces": 9,
+     "preference": "cheapest",
+     "ready_date": "2026-11-25",
+     "language": "en",
+     "customer_name": "Anna",
+     "customer_questions": [
+      "Please quote the cheapest air freight option to PVG (Shanghai, CN)?"
+     ],
+     "service_constraints": [
+      "all-in price in EUR, including pickup and trucking to the airport"
+     ]
+    },
+    "options": [],
+    "errors": [
+     "NV: HackloopError: GET /v1/portal/rates -> 503: {\"type\":\"/errors/serviceunavailableexception\",\"title\":\"Service Unavailable\",\"status\":503,\"detail\":\"The rate API is unavailable. Rates are still published on the portal page.\",\"retry_after\":null,\"portal_page\":\"https://start-hack.5u.ai/portal/ui\"}",
+     "NV: HackloopError: GET /v1/portal/rates -> 503: {\"type\":\"/errors/serviceunavailableexception\",\"title\":\"Service Unavailable\",\"status\":503,\"detail\":\"The rate API is unavailable. Rates are still published on the portal page.\",\"retry_after\":null,\"portal_page\":\"https://start-hack.5u.ai/portal/ui\"}"
+    ]
+   },
+   "mails": [
+    {
+     "id": 7448,
+     "sender": "sonnberg-roesterei@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Air freight quote request to PVG",
+     "body": "Dear Sir or Madam,\n\nCould you please quote the cheapest air freight option to PVG (Shanghai, CN)? The shipment will be ready for pickup at our site in Offenbach, Germany (postcode 63198), on 2026-11-25. Please arrange the truck from our site to the departure airport.\n\nThe shipment consists of 9 pieces of furniture samples, with a gross weight of 1225 kg and a total volume of 4.62 cbm.\n\nPlease provide an all-in price in EUR, including pickup and trucking to the airport.\n\nThank you for your assistance.\n\nKind regards\nAnna Sonnberg\nHead of Purchasing and Logistics\nSonnberg Kaffeeroesterei GmbH",
+     "category": "rfq",
+     "received_at": "2026-11-21T17:51:02.408425+00:00",
+     "in_reply_to": null
+    },
+    {
+     "id": 7598,
+     "sender": "domblick-kurierdienst@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7448] Pickup 63198 to FRA airport, 1225 kg / 4.62 cbm",
+     "body": "Hi Moritz,\n\nThanks for reaching out! Our all-in price for road transport to Frankfurt Airport is 202.75 EUR, with pickup within 28 hours. The price is valid until 21 Nov 2026 18:06 UTC.\n\nYour quote reference is TRK-2436. No separate pickup booking is needed.\n\nBest wishes,\nDomblick Kurierdienst",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T17:51:39.792644+00:00",
+     "in_reply_to": 7519
+    },
+    {
+     "id": 7601,
+     "sender": "westfalenroute@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7448] Pickup 63198 to FRA airport, 1225 kg / 4.62 cbm",
+     "body": "Dear Moritz,\n\nOur all-in price for road transport to Frankfurt Airport is 137.50 EUR. The transit time from pickup is 30 hours.\n\nThis offer is valid until 21 Nov 2026 18:06 UTC. The offer reference is TRK-2439. No booking is required for pickup.\n\nKind regards,\nWestfalenroute",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T17:51:39.792751+00:00",
+     "in_reply_to": 7520
+    },
+    {
+     "id": 7599,
+     "sender": "elbflug-air-freight@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7448] Air freight FRA to PVG, 1225 kg / 4.62 cbm",
+     "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: FRA-PVG.\nWe fly CGN-LOS, DUS-HKG, DUS-TLV, FRA-BOG, FRA-DFW, FRA-DXB, FRA-HKG, FRA-MEL, FRA-MIA, FRA-SGN, FRA-SIN, HAM-DFW, HAM-DXB, HAM-MEX, HAM-TLV, MUC-BOG, MUC-SYD, STR-ORD, STR-PVG.\n\nBest regards\nElbflug Air Freight\nelbflug-air-freight@hackloop.mail",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T17:51:39.793014+00:00",
+     "in_reply_to": 7521
+    },
+    {
+     "id": 7603,
+     "sender": "lumen-air-cargo@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7448] Air freight FRA to PVG, 1225 kg / 4.62 cbm",
+     "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: FRA-PVG.\nWe fly CGN-DFW, CGN-MIA, CGN-SGN, DUS-BOM, FRA-LOS, FRA-NRT, FRA-PEK, HAM-RUH, HAM-YYZ, MUC-BOG, MUC-DXB, MUC-YYZ, STR-PVG.\n\nBest regards\nLumen Air Cargo\nlumen-air-cargo@hackloop.mail",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T17:51:39.793524+00:00",
+     "in_reply_to": 7523
+    },
+    {
+     "id": 7604,
+     "sender": "xenon-cargo-airlines@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7448] Air freight FRA to PVG, 1225 kg / 4.62 cbm",
+     "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: FRA-PVG.\nWe fly CGN-LIM, CGN-ORD, DUS-BOM, DUS-MEX, DUS-MIA, MUC-BOG, MUC-NRT, MUC-ORD, MUC-PVG, STR-BOM, STR-SCL.\n\nBest regards\nXenon Cargo Airlines\nxenon-cargo-airlines@hackloop.mail",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T17:51:39.794746+00:00",
+     "in_reply_to": 7525
+    },
+    {
+     "id": 7608,
+     "sender": "nova-atlas-cargo@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7448] Air freight FRA to PVG, 1225 kg / 4.62 cbm",
+     "body": "Hi Moritz,\n\nThanks for reaching out! Our all-in price for your shipment from FRA to PVG is 3479.00 EUR, with a transit time of 4 days.\n\nThe quote is valid until 21 Nov 2026 18:06 UTC. When you’re ready to book, just quote R-mMBg8MG-9NClyOrA.\n\nBest,\nNova Atlas Cargo",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T17:51:40.840555+00:00",
+     "in_reply_to": 7528
+    }
+   ],
+   "production_quote": {
+    "airline": "Nova Atlas Cargo",
+    "source": "bid",
+    "total_minor": 361650,
+    "transit_days": 4,
+    "sent_at": "2026-11-21T17:51:46+00:00",
+    "body": "Hi Anna,\n\nthanks for your request, happy to help.\n\nAir freight FRA to PVG, including pickup at 63198 and trucking to FRA airport: 3.616,50 € all-in.\nIt flies with Nova Atlas Cargo, transit time 4 days from departure.\nEarliest departure from FRA is 26 Nov 2026, arriving in PVG on 30 Nov 2026.\nThe truck takes about 30 hours from your door to the airport, and we'll confirm the exact pickup time once it's booked.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+   }
+  },
+  {
+   "session_id": 7696,
+   "round_no": 30,
+   "board": {
+    "verdict": "accepted",
+    "reason": null,
+    "accuracy": 45.0
+   },
+   "llm_extraction": {
+    "origin": "MUC",
+    "pickup_zip": null,
+    "pickup_city": null,
+    "pickup_assumed": false,
+    "destination": "PVG",
+    "weight_kg": 134.0,
+    "volume_cbm": 0.77,
+    "pieces": 9,
+    "preference": "fastest",
+    "ready_date": "2026-11-28",
+    "language": "en",
+    "customer_name": "Petra",
+    "customer_questions": [
+     "Could you quote the fastest air freight option from MUC to PVG (Shanghai, CN) for us?",
+     "send me your all-in price in EUR, along with the drop-off cutoff and expected arrival at PVG?"
+    ],
+    "service_constraints": [
+     "We’ll deliver the shipment to MUC ourselves, so there’s no need to arrange pickup."
+    ]
+   },
+   "llm_extraction_source": "stored",
+   "portal": {
+    "request": {
+     "origin": "MUC",
+     "pickup_zip": null,
+     "pickup_city": null,
+     "pickup_assumed": false,
+     "destination": "PVG",
+     "weight_kg": 134.0,
+     "volume_cbm": 0.77,
+     "pieces": 9,
+     "preference": "fastest",
+     "ready_date": "2026-11-28",
+     "language": "en",
+     "customer_name": "Petra",
+     "customer_questions": [
+      "Could you quote the fastest air freight option from MUC to PVG (Shanghai, CN) for us?",
+      "send me your all-in price in EUR, along with the drop-off cutoff and expected arrival at PVG?"
+     ],
+     "service_constraints": [
+      "We’ll deliver the shipment to MUC ourselves, so there’s no need to arrange pickup."
+     ]
+    },
+    "options": [
+     {
+      "airline": "Meridian Freightways",
+      "origin": "MUC",
+      "destination": "PVG",
+      "transit_days": 3,
+      "total_minor": 53466,
+      "currency": "EUR",
+      "total_eur_minor": 53466,
+      "source": "portal",
+      "rate_id": "R-nS6s_GiRgOrfcn9J",
+      "valid_until": "2026-11-21T18:12:08.507882+00:00",
+      "chargeable_kg": 134.0,
+      "billed_kg": 134.0,
+      "fx_eur_per_unit": null,
+      "fx_source": "identity",
+      "fx_valid_until": null,
+      "observed_at": "2026-11-21T17:57:08.566280+00:00",
+      "tariff_version": "v1",
+      "plain_total_minor": null,
+      "breakpoint_total_minor": null
+     },
+     {
+      "airline": "Xenon Cargo Airlines",
+      "origin": "MUC",
+      "destination": "PVG",
+      "transit_days": 6,
+      "total_minor": 47704,
+      "currency": "EUR",
+      "total_eur_minor": 47704,
+      "source": "portal",
+      "rate_id": "R-ZbJa1NM1Z6gqqEHz",
+      "valid_until": "2026-11-21T18:12:08.731785+00:00",
+      "chargeable_kg": 134.0,
+      "billed_kg": 134.0,
+      "fx_eur_per_unit": null,
+      "fx_source": "identity",
+      "fx_valid_until": null,
+      "observed_at": "2026-11-21T17:57:08.789744+00:00",
+      "tariff_version": "v1",
+      "plain_total_minor": null,
+      "breakpoint_total_minor": null
+     }
+    ],
+    "errors": []
+   },
+   "mails": [
+    {
+     "id": 7696,
+     "sender": "hofmann-textilwerk@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Air freight quote: MUC to PVG",
+     "body": "Hi there,\n\nHope your week’s going well! Could you quote the fastest air freight option from MUC to PVG (Shanghai, CN) for us?\n\nWe’ll deliver the shipment to MUC ourselves, so there’s no need to arrange pickup. It’ll be ready on 2026-11-28. We have 9 pieces of textile samples, with a gross weight of 134 kg and a total volume of 0.77 cbm.\n\nCould you send me your all-in price in EUR, along with the drop-off cutoff and expected arrival at PVG?\n\nThanks for checking!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+     "category": "rfq",
+     "received_at": "2026-11-21T17:57:05.482398+00:00",
+     "in_reply_to": null
+    }
+   ],
+   "production_quote": {
+    "airline": "Meridian Freightways",
+    "source": "portal",
+    "total_minor": 53466,
+    "transit_days": 3,
+    "sent_at": "2026-11-21T17:57:11+00:00",
+    "body": "Hi Petra,\n\nI’m glad the previous booking went smoothly, here’s the fastest option I can offer for MUC to PVG with Meridian Freightways. We can take your drop-off at MUC for transport on 28 November 2026, with the earliest arrival at PVG on 1 December 2026. The route is MUC to PVG by air with Meridian Freightways, transit about three days, all-in price 534,66 €.\n\nDrop-off cutoff at MUC is until the close of business on 28 November 2026. If that suits you, reply to this message and I’ll proceed with the booking.\n\n\nMoritz\nYour austrian Power Team\n"
+   }
+  },
+  {
+   "session_id": 7885,
+   "round_no": 31,
+   "board": {
+    "verdict": "accepted",
+    "reason": null,
+    "accuracy": null
+   },
+   "llm_extraction": {
+    "origin": "STR",
+    "pickup_zip": "72379",
+    "pickup_city": null,
+    "pickup_assumed": false,
+    "destination": "BOM",
+    "weight_kg": 100.0,
+    "volume_cbm": 0.87,
+    "pieces": 1,
+    "preference": "cheapest",
+    "ready_date": "2026-11-24",
+    "language": "en",
+    "customer_name": "Klaus",
+    "customer_questions": [
+     "Could you send me an all-in price in EUR for the cheapest air freight option to BOM (Mumbai, IN), including the truck you’d arrange from our site to the departure airport?"
+    ],
+    "service_constraints": []
+   },
+   "llm_extraction_source": "stored",
+   "portal": {
+    "request": {
+     "origin": "STR",
+     "pickup_zip": "72379",
+     "pickup_city": null,
+     "pickup_assumed": false,
+     "destination": "BOM",
+     "weight_kg": 100.0,
+     "volume_cbm": 0.87,
+     "pieces": 1,
+     "preference": "cheapest",
+     "ready_date": "2026-11-24",
+     "language": "en",
+     "customer_name": "Klaus",
+     "customer_questions": [
+      "Could you send me an all-in price in EUR for the cheapest air freight option to BOM (Mumbai, IN), including the truck you’d arrange from our site to the departure airport?"
+     ],
+     "service_constraints": []
+    },
+    "options": [
+     {
+      "airline": "Ibisair Cargo",
+      "origin": "STR",
+      "destination": "BOM",
+      "transit_days": 6,
+      "total_minor": 49690,
+      "currency": "EUR",
+      "total_eur_minor": 49690,
+      "source": "portal",
+      "rate_id": "R-G7M8UXAL3A5jeCZS",
+      "valid_until": "2026-11-21T18:18:14.180570+00:00",
+      "chargeable_kg": 145.29,
+      "billed_kg": 145.29,
+      "fx_eur_per_unit": null,
+      "fx_source": "identity",
+      "fx_valid_until": null,
+      "observed_at": "2026-11-21T18:03:14.234115+00:00",
+      "tariff_version": "v1",
+      "plain_total_minor": null,
+      "breakpoint_total_minor": null
+     },
+     {
+      "airline": "Ultraviolet Air Freight",
+      "origin": "STR",
+      "destination": "BOM",
+      "transit_days": 6,
+      "total_minor": 54775,
+      "currency": "EUR",
+      "total_eur_minor": 54775,
+      "source": "portal",
+      "rate_id": "R-zwGTCDufHZ1iHj5_",
+      "valid_until": "2026-11-21T18:18:14.395190+00:00",
+      "chargeable_kg": 145.29,
+      "billed_kg": 145.29,
+      "fx_eur_per_unit": null,
+      "fx_source": "identity",
+      "fx_valid_until": null,
+      "observed_at": "2026-11-21T18:03:14.451480+00:00",
+      "tariff_version": "v1",
+      "plain_total_minor": null,
+      "breakpoint_total_minor": null
+     },
+     {
+      "airline": "Xenon Cargo Airlines",
+      "origin": "STR",
+      "destination": "BOM",
+      "transit_days": 3,
+      "total_minor": 57535,
+      "currency": "EUR",
+      "total_eur_minor": 57535,
+      "source": "portal",
+      "rate_id": "R-Ni43z7QlnQ5Kq6Sn",
+      "valid_until": "2026-11-21T18:18:14.611399+00:00",
+      "chargeable_kg": 145.29,
+      "billed_kg": 145.29,
+      "fx_eur_per_unit": null,
+      "fx_source": "identity",
+      "fx_valid_until": null,
+      "observed_at": "2026-11-21T18:03:14.665979+00:00",
+      "tariff_version": "v1",
+      "plain_total_minor": null,
+      "breakpoint_total_minor": null
+     }
+    ],
+    "errors": []
+   },
+   "mails": [
+    {
+     "id": 7885,
+     "sender": "weidner-spielwaren@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Air freight quote to BOM",
+     "body": "Hi there,\n\nHope your week’s going well! Could you send me an all-in price in EUR for the cheapest air freight option to BOM (Mumbai, IN), including the truck you’d arrange from our site to the departure airport?\n\nThe precision instruments will be ready for pickup on 2026-11-24 at our site in Tuebingen, Germany (postcode 72379). It’s 1 piece with a gross weight of 100 kg and a volume of 0.87 cbm.\n\nThanks for taking a look!\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+     "category": "rfq",
+     "received_at": "2026-11-21T18:03:10.131746+00:00",
+     "in_reply_to": null
+    },
+    {
+     "id": 8013,
+     "sender": "alpenblick-logistik@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7885] Pickup 72379 to STR airport, 100 kg / 0.87 cbm",
+     "body": "Hi Moritz,\n\nThanks for your request. Our all-in price for road transport to Stuttgart Airport is 135.70 EUR. Pickup within 9 hours of cargo readiness.\n\nThis offer is valid until 21 Nov 2026 18:18 UTC. Our offer reference is TRK-2528. No booking is needed for pickup.\n\nBest regards,\nAlpenblick Logistik",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T18:03:43.952570+00:00",
+     "in_reply_to": 7939
+    },
+    {
+     "id": 8017,
+     "sender": "hansekogge-trucking@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7885] Pickup 72379 to STR airport, 100 kg / 0.87 cbm",
+     "body": "Dear Moritz,\n\nOur all-in price for road transport to Stuttgart Airport is 117.79 EUR. The transit time from pickup is 17 hours.\n\nThis offer is valid until 21 Nov 2026 18:18 UTC. Our offer reference is TRK-2527. No booking is required for pickup.\n\nKind regards,\nHansekogge Trucking",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T18:03:45.011137+00:00",
+     "in_reply_to": 7942
+    },
+    {
+     "id": 8019,
+     "sender": "kestrel-airways@hackloop.mail",
+     "recipient": "austrian-power@hackloop.mail",
+     "subject": "Re: [AP-7885] Air freight STR to BOM, 100 kg / 0.87 cbm",
+     "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: STR-BOM.\nWe fly CGN-MIA, DUS-DFW, DUS-KUL, DUS-NRT, FRA-BOM, FRA-CAI, FRA-DEL, FRA-MEX, FRA-MIA, FRA-NRT, HAM-HKG, HAM-PEK, MUC-GRU, MUC-LAX, MUC-MEL, MUC-PEK, MUC-SIN, STR-MIA.\n\nBest regards\nKestrel Airways\nkestrel-airways@hackloop.mail",
+     "category": "carrier_bid",
+     "received_at": "2026-11-21T18:03:45.011524+00:00",
+     "in_reply_to": 7944
+    }
+   ],
+   "production_quote": {
+    "airline": "Ibisair Cargo",
+    "source": "portal",
+    "total_minor": 61469,
+    "transit_days": 6,
+    "sent_at": "2026-11-21T18:03:52+00:00",
+    "body": "Klaus,\n\nI can do the cheapest airfreight option STR to BOM with pickup from your site in Tuebingen included. Routing will be STR to BOM on Ibisair Cargo, earliest departure 2026-11-25 with earliest arrival 2026-12-01, transit about six days. The single piece (100 kg gross, billed at 145.29 kg) is covered and we’ll arrange the truck from postcode 72379; carrier lead time for the road leg is about 17 hours.\n\nThe all-in price for this service is 614,69 € and is bookable until 2026-11-21T18:18:14.180570+00:00. If that suits you, reply and I’ll start the booking.\n\nMoritz\nYour austrian Power Team\n"
    }
   }
  ],
@@ -3698,6 +4251,30 @@
    "sender": "juniper-cargo-lines@hackloop.mail",
    "received_at": "2026-11-21T17:39:30.598655+00:00",
    "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: HAM-EZE.\nWe fly CGN-DEL, CGN-SGN, DUS-SYD, DUS-YYZ, FRA-EZE, FRA-GRU, FRA-MEL, FRA-NBO, FRA-TPE, HAM-SGN, HAM-YYZ, MUC-RUH, STR-SCL.\n\nBest regards\nJuniper Cargo Lines\njuniper-cargo-lines@hackloop.mail"
+  },
+  {
+   "id": 7599,
+   "sender": "elbflug-air-freight@hackloop.mail",
+   "received_at": "2026-11-21T17:51:39.793014+00:00",
+   "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: FRA-PVG.\nWe fly CGN-LOS, DUS-HKG, DUS-TLV, FRA-BOG, FRA-DFW, FRA-DXB, FRA-HKG, FRA-MEL, FRA-MIA, FRA-SGN, FRA-SIN, HAM-DFW, HAM-DXB, HAM-MEX, HAM-TLV, MUC-BOG, MUC-SYD, STR-ORD, STR-PVG.\n\nBest regards\nElbflug Air Freight\nelbflug-air-freight@hackloop.mail"
+  },
+  {
+   "id": 7603,
+   "sender": "lumen-air-cargo@hackloop.mail",
+   "received_at": "2026-11-21T17:51:39.793524+00:00",
+   "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: FRA-PVG.\nWe fly CGN-DFW, CGN-MIA, CGN-SGN, DUS-BOM, FRA-LOS, FRA-NRT, FRA-PEK, HAM-RUH, HAM-YYZ, MUC-BOG, MUC-DXB, MUC-YYZ, STR-PVG.\n\nBest regards\nLumen Air Cargo\nlumen-air-cargo@hackloop.mail"
+  },
+  {
+   "id": 7604,
+   "sender": "xenon-cargo-airlines@hackloop.mail",
+   "received_at": "2026-11-21T17:51:39.794746+00:00",
+   "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: FRA-PVG.\nWe fly CGN-LIM, CGN-ORD, DUS-BOM, DUS-MEX, DUS-MIA, MUC-BOG, MUC-NRT, MUC-ORD, MUC-PVG, STR-BOM, STR-SCL.\n\nBest regards\nXenon Cargo Airlines\nxenon-cargo-airlines@hackloop.mail"
+  },
+  {
+   "id": 8019,
+   "sender": "kestrel-airways@hackloop.mail",
+   "received_at": "2026-11-21T18:03:45.011524+00:00",
+   "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: STR-BOM.\nWe fly CGN-MIA, DUS-DFW, DUS-KUL, DUS-NRT, FRA-BOM, FRA-CAI, FRA-DEL, FRA-MEX, FRA-MIA, FRA-NRT, HAM-HKG, HAM-PEK, MUC-GRU, MUC-LAX, MUC-MEL, MUC-PEK, MUC-SIN, STR-MIA.\n\nBest regards\nKestrel Airways\nkestrel-airways@hackloop.mail"
   }
  ]
 }

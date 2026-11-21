@@ -843,5 +843,118 @@
   "notes": [],
   "network_blocked": 0,
   "quote_body": "Hi Jonas,\n\nthanks for your request, happy to help.\n\nAir freight HAM to EZE, including pickup at 24489 and trucking to HAM airport: 3.018,37 € all-in.\nIt flies with Meridian Freightways, transit time 3 days from departure.\nEarliest departure from HAM is 27 Nov 2026, arriving in EZE on 30 Nov 2026.\nThe trucker reports a lead time of about 19 hours, and we'll confirm the exact pickup time once it's booked.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 7237,
+  "round_no": 28,
+  "outcome": "clarification",
+  "status": "pricing",
+  "request": null,
+  "airline": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [],
+  "clarifications_sent": 2,
+  "open_issues": [
+   "origin"
+  ],
+  "warnings": [
+   "clarification_loop",
+   "validation_blocked",
+   "validation_result"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 7448,
+  "round_no": 29,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "FRA",
+   "destination": "PVG",
+   "pickup_zip": "63198",
+   "weight_kg": 1225.0,
+   "volume_cbm": 4.62,
+   "preference": "cheapest"
+  },
+  "airline": "Nova Atlas Cargo",
+  "source": "bid",
+  "route": "FRA-PVG",
+  "transit_days": 4,
+  "total_minor": 361650,
+  "carriers_asked": [
+   "domblick-kurierdienst@hackloop.mail",
+   "nova-atlas-cargo@hackloop.mail",
+   "westfalenroute@hackloop.mail",
+   "xenon-cargo-airlines@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "portal_warning"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Anna,\n\nthanks for your request, happy to help.\n\nAir freight FRA to PVG, including pickup at 63198 and trucking to FRA airport: 3.616,50 € all-in.\nIt flies with Nova Atlas Cargo, transit time 4 days from departure.\nEarliest departure from FRA is 26 Nov 2026, arriving in PVG on 30 Nov 2026.\nThe trucker reports a lead time of about 30 hours, and we'll confirm the exact pickup time once it's booked.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 7696,
+  "round_no": 30,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "MUC",
+   "destination": "PVG",
+   "pickup_zip": null,
+   "weight_kg": 134.0,
+   "volume_cbm": 0.77,
+   "preference": "fastest"
+  },
+  "airline": "Meridian Freightways",
+  "source": "portal",
+  "route": "MUC-PVG",
+  "transit_days": 3,
+  "total_minor": 53466,
+  "carriers_asked": [],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Petra,\n\nthanks for your request, happy to help.\n\nAir freight MUC to PVG: 534,66 € all-in.\nIt flies with Meridian Freightways, transit time 3 days from departure.\nEarliest departure from MUC is 28 Nov 2026, arriving in PVG on 1 Dec 2026.\nThe rate can be booked until 18:12 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nThe exact cargo acceptance cutoff at the departure airport is not yet confirmed.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 7885,
+  "round_no": 31,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "STR",
+   "destination": "BOM",
+   "pickup_zip": "72379",
+   "weight_kg": 100.0,
+   "volume_cbm": 0.87,
+   "preference": "cheapest"
+  },
+  "airline": "Ibisair Cargo",
+  "source": "portal",
+  "route": "STR-BOM",
+  "transit_days": 6,
+  "total_minor": 61469,
+  "carriers_asked": [
+   "alpenblick-logistik@hackloop.mail",
+   "hansekogge-trucking@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Klaus,\n\nthank you for reaching out, here is our offer.\n\nAir freight STR to BOM, including pickup at 72379 and trucking to STR airport: 614,69 € all-in.\nIt flies with Ibisair Cargo, transit time 6 days from departure.\nEarliest departure from STR is 25 Nov 2026, arriving in BOM on 1 Dec 2026.\nThe trucker reports a lead time of about 17 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 18:18 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
  }
 ]

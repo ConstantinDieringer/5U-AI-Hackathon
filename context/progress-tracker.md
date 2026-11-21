@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Replay corpus to round 31 (task 4): rounds 28 to 31 added (round 28 extraction reconstructed from its validation event, plus the later live portal read UV 390.45 €/LM 457.08 €, labelled manual). Harness fix: replayed customer answers now get an id after our question, so the reply ledger no longer drops them; round 28 now replays today's two-question loop. Rounds after 31 need a fresh /api/sessions export.
 - Self-delivery follow-ups (task 1, same `SELF_DELIVERY_RECOVERY`): with it on, negated sentences ("We do not deliver to FRA ourselves", "liefern nicht selbst") give no airport and count as a pickup request, German order ("liefern selbst nach Frankfurt") is read, codes count in capitals only. Off keeps today's rule, which still reads the negated sentence as FRA. Round 28 test: portal UV 390.45 € beats sheet 416.16 €. Not verified live.
 - Round 38: preserve collection lead versus explicit road transit in carrier timing evidence; composer rejects road-duration claims for collection/unknown lead, and fallback uses neutral carrier lead wording. 473 tests passed, 4 skipped; replay changes only 8 quote texts, with identical prices/options/schedules. Deployment unverified.
 

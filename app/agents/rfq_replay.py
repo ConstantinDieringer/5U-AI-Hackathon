@@ -120,9 +120,14 @@ def corpus_case(
     points = board.get(round_no or -1, {})
     extraction = _extraction(detail)
     source = "stored"
-    if extraction is None and str(sid) in reconstructed:
-        extraction = reconstructed[str(sid)]["extraction"]
-        source = "reconstructed: " + reconstructed[str(sid)]["note"]
+    manual = reconstructed.get(str(sid), {})
+    if extraction is None and manual.get("extraction"):
+        extraction = manual["extraction"]
+        source = "reconstructed: " + manual["note"]
+    portal = _portal(detail)
+    if manual.get("portal") and not (portal or {}).get("options"):
+        # production never read the portal (round 28): a later manual read, labelled
+        portal = {**manual["portal"], "source": "manual: " + manual["portal_note"]}
     return {
         "session_id": sid,
         "round_no": round_no,
@@ -133,7 +138,7 @@ def corpus_case(
         },
         "llm_extraction": extraction,
         "llm_extraction_source": source if extraction is not None else None,
-        "portal": _portal(detail),
+        "portal": portal,
         "mails": keep,
         "production_quote": (
             {
@@ -385,7 +390,12 @@ def replay_case(
             row = db.validation_get(sid)
             if not row or row["state"] not in ("awaiting_clarification", "resolving"):
                 break
-            reply = _mail(answer, run.delta, references=[sid])
+            # a fresh id after our latest send: live, an answer always has a higher id than
+            # the question it answers, and the reply ledger drops anything older
+            run.next_id += 1
+            reply = dataclasses.replace(
+                _mail(answer, run.delta, references=[sid]), id=run.next_id
+            )
             db.ingest_mail(
                 mail_id=reply.id,
                 sender=reply.sender,
