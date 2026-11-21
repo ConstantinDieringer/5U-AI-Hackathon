@@ -11,8 +11,16 @@ from typing import Any
 import pytest
 
 from app import db
-from app.mail import parse, poller, store
+from app.mail import parse, poller, store, webhook
 from app.models import Category
+
+
+def poll(since_id: int) -> tuple[int, int]:
+    """One poll plus a full drain by the queue consumer (in production `webhook.run`)."""
+    result = poller.poll_once(since_id)
+    while webhook.process_once():
+        pass
+    return result
 
 FIX = Path(__file__).parent / "fixtures"
 REAL = json.loads((FIX / "poll_ratedesk_reply.json").read_text())
@@ -93,14 +101,14 @@ def test_each_mail_processed_once_across_restart(box: FakeMailbox, monkeypatch) 
         ),
     )
     box.mails = [real_mail(301), real_mail(302, sender="anna@acme.hackloop.mail")]
-    since, n = poller.poll_once(store.get_since_id())
+    since, n = poll(store.get_since_id())
     assert (since, n) == (302, 2) and handled.count("routed") == 2
     assert box.dispatched == [(301, Category.PORTAL_REPLY), (302, Category.RFQ)]
 
     # "restart": since_id is read back from the DB, and even a replay from 0 does nothing
     assert store.get_since_id() == 302
-    assert poller.poll_once(store.get_since_id()) == (302, 0)
-    poller.poll_once(0)
+    assert poll(store.get_since_id()) == (302, 0)
+    poll(0)
     assert handled.count("routed") == 2
 
 
@@ -108,7 +116,7 @@ def test_failing_mail_does_not_stop_the_batch(box: FakeMailbox) -> None:
     broken = real_mail(401)
     broken["references"] = "not a list"
     box.mails = [broken, real_mail(402, sender="anna@acme.hackloop.mail")]
-    since, _ = poller.poll_once(0)
+    since, _ = poll(0)
     assert since == 402
     kinds = [e["kind"] for e in db.events_after(0)]
     assert "error" in kinds and kinds.count("routed") == 1
@@ -123,7 +131,7 @@ def test_attachments_saved_under_mail_id(box: FakeMailbox, tmp_path: Path) -> No
     box.mails = [
         real_mail(501, sender="kestrel-airways@hackloop.mail", attachments=att)
     ]
-    poller.poll_once(0)
+    poll(0)
     # Tariff downloads now belong to the durable background worker.
     assert db.pending_tariffs()[0]["mail_id"] == 501
     poller.download_attachments(poller.parse.mail_from_api(box.mails[0]))
@@ -133,6 +141,57 @@ def test_attachments_saved_under_mail_id(box: FakeMailbox, tmp_path: Path) -> No
 
 def test_router_category_stored(box: FakeMailbox) -> None:
     box.mails = [real_mail(601)]
-    poller.poll_once(0)
+    poll(0)
     ev = [e for e in db.events_after(0) if e["kind"] == "mail_in"]
     assert ev[0]["payload"]["category"] == Category.PORTAL_REPLY.value
+
+
+def _session_of(mail_id: int) -> int | None:
+    row = db.conn().execute("SELECT session_id FROM mails WHERE id=?", (mail_id,)).fetchone()
+    return row[0] if row else None
+
+
+def test_poll_only_enqueues_and_a_reply_never_precedes_its_root(box: FakeMailbox) -> None:
+    """Orphan sessions came from two queue consumers: the poller drained the queue while
+    `webhook.run` did too, so a reply could be handled before its root was stored."""
+    customer = "anna@acme.hackloop.mail"
+    box.mails = [
+        real_mail(801, sender=customer),
+        real_mail(802, sender=customer, in_reply_to=801, references=[801]),
+    ]
+    assert poller.poll_once(0) == (802, 2)
+    assert box.dispatched == []  # enqueued only
+    assert {db.delivery_get(m)["status"] for m in (801, 802)} == {"pending"}
+
+    while webhook.process_once():
+        pass
+    assert [mid for mid, _ in box.dispatched] == [801, 802]
+    assert _session_of(802) == _session_of(801) is not None
+
+
+def test_bid_runs_in_pool_and_a_failure_is_reported(tmp_path: Path, monkeypatch) -> None:
+    import threading
+
+    from app.agents import bids, booking
+
+    db.init_db(str(tmp_path / "t.db"))
+    started, release = threading.Event(), threading.Event()
+
+    def slow_bid(mail, sid):
+        started.set()
+        release.wait(5)
+        raise ValueError("unreadable offer")
+
+    monkeypatch.setattr(booking, "on_airline_mail", lambda mail: False)
+    monkeypatch.setattr(bids, "on_bid_mail", slow_bid)
+    mail = parse.mail_from_api(real_mail(901, sender="kestrel-airways@hackloop.mail"))
+
+    poller.dispatch(mail, Category.CARRIER_BID, None)  # returns while the bid still runs
+    assert started.wait(2) and not release.is_set()
+    release.set()
+    for _ in range(100):
+        errors = [e for e in db.events_after(0) if e["kind"] == "error"]
+        if errors:
+            break
+        threading.Event().wait(0.02)
+    assert errors and "901" in errors[0]["message"]
