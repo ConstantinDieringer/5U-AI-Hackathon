@@ -33,27 +33,27 @@ def text_for(draft, lang):
         return f"{'Guten Tag' if lang == 'de' else 'Hello'},\n\n{question}\n\n{SIGNATURE}\n"
     fields = sorted({i["field"] for i in draft.issues})
     en = {
-        "pickup_zip": "the pickup site's postal code (Pickup ZIP)",
-        "origin": "the departure airport code (Origin)",
-        "destination": "the destination airport code (Destination)",
-        "weight_kg": "the total gross weight in kg (Gross weight)",
-        "volume_cbm": "the total volume in cbm (Volume)",
-        "pieces": "the total number of pieces (Total pieces)",
+        "pickup_zip": "the postal code of the collection address",
+        "origin": "the departure airport code",
+        "destination": "the destination airport code",
+        "weight_kg": "the total gross weight in kg",
+        "volume_cbm": "the total volume in cbm",
+        "pieces": "the total number of pieces",
         "lots": "complete gross weights and dimensions for each lot",
         "attachments": "a readable, corrected packing specification",
-        "dangerous_goods": "the dangerous goods documents (shipper's declaration/DGD and safety data sheet/SDS, where applicable), the UN number/class, and clarification of any conflicting declarations",
+        "dangerous_goods": "the applicable dangerous goods declaration and safety data sheet, the UN number and class, and clarification of any conflicting declarations",
         "shipment": "the missing or corrected shipment details",
     }
     de = {
-        "pickup_zip": "die Postleitzahl der Abholadresse (Pickup ZIP)",
-        "origin": "den Abflughafen-Code (Origin)",
-        "destination": "den Zielflughafen-Code (Destination)",
-        "weight_kg": "das gesamte Bruttogewicht in kg (Gross weight)",
-        "volume_cbm": "das gesamte Volumen in cbm (Volume)",
-        "pieces": "die gesamte Stückzahl (Total pieces)",
+        "pickup_zip": "die Postleitzahl der Abholadresse",
+        "origin": "den Abflughafen",
+        "destination": "den Zielflughafen",
+        "weight_kg": "das gesamte Bruttogewicht in kg",
+        "volume_cbm": "das gesamte Volumen in cbm",
+        "pieces": "die gesamte Stückzahl",
         "lots": "vollständige Bruttogewichte und Maße für jede Position",
         "attachments": "eine lesbare, korrigierte Packliste",
-        "dangerous_goods": "die Gefahrgutunterlagen (Versendererklärung/DGD und Sicherheitsdatenblatt/SDS, soweit zutreffend), UN-Nummer/Klasse und eine Klärung widersprüchlicher Angaben",
+        "dangerous_goods": "die zutreffende Gefahrguterklärung und das Sicherheitsdatenblatt, UN-Nummer und Klasse und eine Klärung widersprüchlicher Angaben",
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
     }
     labels = de if lang == "de" else en
@@ -65,43 +65,42 @@ def text_for(draft, lang):
         rest = [labels[f] for f in fields if f != "dangerous_goods"]
         if lang == "de":
             found = (
-                f"Laut Ihren Unterlagen ist die Sendung Gefahrgut ({what}). "
+                f"Laut Ihren Unterlagen ist die Sendung Gefahrgut. Angegeben ist {what}. "
                 if what
                 else "Ihre Sendung enthält möglicherweise Gefahrgut, bitte nennen Sie uns UN-Nummer und Klasse. "
             )
             more = f" Außerdem brauchen wir noch {' und '.join(rest)}." if rest else ""
             return (
-                f"Guten Tag,\n\ndanke für Ihre Anfrage. {found}Bitte schicken Sie uns die "
-                "Gefahrgutunterlagen: die Versendererklärung (DGD) und das Sicherheitsdatenblatt "
-                "(SDS). Wir prüfen sie und die Eignung des Transports, bevor wir ein Angebot "
+                f"Guten Tag,\n\nvielen Dank für Ihre Anfrage. {found}\n\nBitte schicken Sie uns die "
+                "Versendererklärung für Gefahrgut, kurz DGD, und das Sicherheitsdatenblatt, "
+                "kurz SDS.\n\nWir prüfen die Unterlagen und die Eignung des Transports, bevor wir ein Angebot "
                 f"abgeben oder buchen.{more}\n\n{SIGNATURE}\n"
             )
         found = (
-            f"Your documents show the shipment is dangerous goods ({what}). "
+            f"Your documents show the shipment is dangerous goods. The declared entry is {what}. "
             if what
             else "Your shipment may contain dangerous goods, so please also confirm the UN number and class. "
         )
         more = f" We also need {' and '.join(rest)}." if rest else ""
         return (
-            f"Hello,\n\nthanks for your request. {found}Please send us the dangerous goods "
-            "documents: the shipper's declaration (DGD) and the safety data sheet (SDS). We "
+            f"Hello,\n\nthank you for your request. {found}\n\nCould you send us the shipper's "
+            "declaration for dangerous goods, known as DGD, and the safety data sheet, known as SDS?\n\nWe "
             "need to review them and the transport suitability before we can quote or book "
             f"this shipment.{more}\n\n{SIGNATURE}\n"
         )
     items = [labels[f] for f in fields]
     joiner = " und " if lang == "de" else " and "
     wanted = items[0] if len(items) == 1 else ", ".join(items[:-1]) + joiner + items[-1]
-    # one short human paragraph, no bullet list; the labels in brackets stay so the reply
-    # can be matched to the field
+    # Ask in normal prose; reply extraction does not depend on exposing field labels.
     if lang == "de":
         return (
             "Guten Tag,\n\ndanke für Ihre Anfrage. Damit wir Ihnen einen genauen Preis "
-            f"nennen können, brauchen wir noch {wanted}. Schicken Sie uns das kurz hier im "
+            f"nennen können, brauchen wir noch {wanted}.\n\nSchicken Sie uns das gern hier im "
             f"Thread, dann melden wir uns gleich mit dem Angebot.\n\n{SIGNATURE}\n"
         )
     return (
         "Hello,\n\nthanks for your request. To give you an exact price we just need "
-        f"{wanted}. Could you send that over in this thread? We'll come back with the "
+        f"{wanted}.\n\nCould you send that over in this thread? We'll come back with the "
         f"quote right away.\n\n{SIGNATURE}\n"
     )
 
@@ -109,9 +108,7 @@ def text_for(draft, lang):
 def recover_history(mail, sid, draft):
     """Only fill missing fields from this customer's same shipment thread, never conflicts."""
     history = db.customer_mail_history(sid, mail.sender, mail.id)
-    db.emit(
-        "history_checked", f"{len(history)} frühere Kundenmails im Thread geprüft", sid
-    )
+    db.emit("history_checked", f"{len(history)} frühere Kundenmails im Thread geprüft", sid)
     missing = {
         i["field"]
         for i in draft.issues
@@ -125,9 +122,7 @@ def recover_history(mail, sid, draft):
             ("origin", "origin|departure|abflug"),
             ("destination", "destination|ziel"),
         ):
-            match = re.search(
-                rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", text, re.IGNORECASE
-            )
+            match = re.search(rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", text, re.IGNORECASE)
             if match:
                 facts[field] = match[1].upper()
         if match := re.search(
@@ -254,11 +249,15 @@ def request(mail, sid, draft):
 
 
 def _questions_sent(sid):
-    return db.conn().execute(
-        "SELECT COUNT(*) FROM mails WHERE session_id = ? AND direction = 'out'"
-        " AND category = 'clarification'",
-        (sid,),
-    ).fetchone()[0]
+    return (
+        db.conn()
+        .execute(
+            "SELECT COUNT(*) FROM mails WHERE session_id = ? AND direction = 'out'"
+            " AND category = 'clarification'",
+            (sid,),
+        )
+        .fetchone()[0]
+    )
 
 
 def ask(mail, sid, workflow, en, de):
@@ -325,9 +324,7 @@ def handle_reply(mail, sid, *, resume=False):
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
-    corrections.update(
-        {k: float(v) for k, v in numeric_facts(own).items() if k in asked}
-    )
+    corrections.update({k: float(v) for k, v in numeric_facts(own).items() if k in asked})
     if "lots" in asked:
         from app.mail.lots import parse_lots
 
@@ -432,9 +429,7 @@ def catch_up():
                 sid,
                 level="error",
             )
-        elif row["draft"].get("evidence", {}).get(
-            "workflow", "rfq"
-        ) != "rfq" or not expired(sid):
+        elif row["draft"].get("evidence", {}).get("workflow", "rfq") != "rfq" or not expired(sid):
             request(Mail(**row["root"]), sid, RfqDraft.model_validate(row["draft"]))
 
 

@@ -14,6 +14,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - Round 48 expired after two origin questions despite explicit DUS answers. Origin clarification now reuses the existing negation/ambiguity-aware free-text parser independently of optional recovery/one-question flags. No question-cap, pricing or deployment setting changes; initial extraction/runtime state remain unverified.
+- Customer presentation: €, full EN/DE months, sentence-based copy without parentheses/field names, short paragraphs across quotes/clarifications/bookings/tracking. Composer repairs leaks and safely formats dates/currency/paragraphs. 575 tests pass/4 skipped; 31 replay records unchanged except 18 quote bodies. No live mail sent; deployment unverified.
 
 - Round 45 accepted/booked but customer quote leaked `road_transit`. Shared voice profile now translates timing labels into ordinary language; composer validation rejects internal timing enums/field names and uses its existing repair/fallback. No timing, selection or price changes; production SHA unverified.
 
@@ -159,6 +160,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 20:55: Rounds 47 and 48 unanswered: the mailbox allows one poll per 5 s per team key, extra reads with our key (an analysis session bulk-read the mailbox) gave the live poller 429s, and its backoff doubled to minutes. Fix: a 429 keeps the server's wait and never doubles. Rule: nobody polls the mailbox with the team key except the live system. No webhook subscription exists (GET /v1/mailbox/webhook -> 404), so polling is the only intake.
 
 - 21.11 20:35: Carrier exclusions hardened (`carrier_prefs.parse`): two-letter codes ("ZS") and short names ("Zephyr Steppe") count, a negation only reaches its own clause ("we do not mind ..., but we prefer X" no longer bans X), "no objection to X" refuses nothing, country codes in brackets are ignored. Offline tests only; no live round with an exclusion since.
 

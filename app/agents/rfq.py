@@ -32,7 +32,15 @@ from app.mail.conversation import quote_conversation
 from app.mail.rfq_sources import extraction_content, read_sources
 from app.mail.rfq_validation import _SIGNATURE
 from app.mail.router import address
-from app.mail.style import SIGNATURE, TEAM_LINE, amount, has_template_artifacts
+from app.mail.style import (
+    SIGNATURE,
+    TEAM_LINE,
+    amount,
+    customer_presentation,
+    has_customer_presentation_issue,
+    has_template_artifacts,
+    written_date,
+)
 from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
 from app.pricing import served_lanes
@@ -437,22 +445,6 @@ def _valid(option: RateOption) -> str | None:
         return None
 
 
-_MONTHS_EN = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-]
-
-
 def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[date, date] | None:
     """Earliest departure and arrival: departure on the ready date (one day later when we
     truck it to the airport first, never before today), arrival = departure + transit."""
@@ -469,7 +461,7 @@ def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[da
 
 
 def _date(d: date, lang: str) -> str:
-    return d.strftime("%d.%m.%Y") if lang == "de" else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
+    return written_date(d, lang)
 
 
 def _schedule_line(rfq: Rfq, option: RateOption, lang: str, today: date | None) -> str | None:
@@ -551,7 +543,7 @@ def quote_text(
             if variant % 2 == 0
             else "danke für Ihre Anfrage, hier ist unser Angebot."
         )
-        what = f"Luftfracht {option.origin} nach {option.destination}"
+        what = f"Wir bieten Ihnen Luftfracht von {option.origin} nach {option.destination}"
         if truck is not None and rfq.door_to_port:
             what += f", inklusive Abholung in {rfq.pickup_label} und Lkw-Transport zum Flughafen {option.origin}"
         lines = [
@@ -559,13 +551,13 @@ def quote_text(
             "",
             intro,
             "",
-            f"{what}: {price} all-in.",
+            f"{what} zum All-in-Gesamtpreis von {price}.",
             f"Wir fliegen mit {option.airline}, die Laufzeit beträgt {days} {'Tag' if days == 1 else 'Tage'} ab Abflug.",
         ]
         if when:
-            lines.append(when)
+            lines.extend(["", when])
         if pickup_note:
-            lines.append(pickup_note)
+            lines.extend(["", pickup_note])
         if valid:
             lines.append(f"Der Preis ist bis {valid} buchbar.")
         lines += [
@@ -581,7 +573,7 @@ def quote_text(
             if variant % 2 == 0
             else "thank you for reaching out, here is our offer."
         )
-        what = f"Air freight {option.origin} to {option.destination}"
+        what = f"We can offer air freight from {option.origin} to {option.destination}"
         if truck is not None and rfq.door_to_port:
             what += (
                 f", including pickup at {rfq.pickup_label} and trucking to {option.origin} airport"
@@ -591,13 +583,13 @@ def quote_text(
             "",
             intro,
             "",
-            f"{what}: {price} all-in.",
+            f"{what} for an all-in total of {price}.",
             f"It flies with {option.airline}, transit time {days} {'day' if days == 1 else 'days'} from departure.",
         ]
         if when:
-            lines.append(when)
+            lines.extend(["", when])
         if pickup_note:
-            lines.append(pickup_note)
+            lines.extend(["", pickup_note])
         if valid:
             lines.append(f"The rate can be booked until {valid}.")
         lines += [
@@ -744,6 +736,11 @@ def _validate_composed(
         raise ValueError("empty body")
     if has_template_artifacts(body):
         raise ValueError("answer contains an unfilled template field or mail header")
+    if has_customer_presentation_issue(body):
+        raise ValueError(
+            "Use full sentences without parentheses or internal field names, "
+            "full month names in dates and short paragraphs of at most 70 words."
+        )
     if re.search(
         r"\b(?:road_transit|collection_lead|carrier_timing_kind|road_transit_hours|"
         r"carrier_reported_lead_hours|confirmed_collection_slot)\b",
@@ -862,9 +859,11 @@ def compose_quote_text(
             else None
         ),
         "confirmed_collection_slot": None,
-        "earliest_departure": when[0].isoformat() if when else None,
-        "earliest_arrival": when[1].isoformat() if when else None,
-        "bookable_until": option.valid_until,
+        "earliest_departure": written_date(when[0], lang) if when else None,
+        "earliest_arrival": written_date(when[1], lang) if when else None,
+        "bookable_until": customer_presentation(option.valid_until, lang)
+        if option.valid_until
+        else None,
         "confirmed_cargo_acceptance_cutoff": None,
         "cutoff_notice": _CUTOFF_NOTICES[lang],
         "customer_questions": [
@@ -915,7 +914,7 @@ def compose_quote_text(
                     rf"\1 {route_word} \2",
                     result["body"],
                 )
-                result["body"] = re.sub(r"\s*[–—]\s*", ", ", text)
+                result["body"] = customer_presentation(re.sub(r"\s*[–—]\s*", ", ", text), lang)
                 raw = json.dumps(result, ensure_ascii=False)
             body = _validate_composed(
                 raw,

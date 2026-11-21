@@ -120,9 +120,7 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
     return str(best["rate_id"]) if best else None
 
 
-def _book_portal(
-    sid: int, quote: dict[str, Any], request: dict[str, Any]
-) -> dict[str, Any]:
+def _book_portal(sid: int, quote: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     """Book the quoted rate; on expired/unknown fetch a fresh one once. Raises HackloopError."""
     ref = db.team_reference(sid)
     try:
@@ -137,9 +135,7 @@ def _book_portal(
         return hackloop.book(fresh, ref)
 
 
-def _book_by_email(
-    sid: int, quote: dict[str, Any], request: dict[str, Any], to: str
-) -> None:
+def _book_by_email(sid: int, quote: dict[str, Any], request: dict[str, Any], to: str) -> None:
     ref = db.team_reference(sid)
     subject = f"[{ref}] Booking request {quote['origin']} to {quote['destination']}"
     # The customer total includes trucking and may include a commercial adjustment.
@@ -172,9 +168,7 @@ def _book_by_email(
     )
 
 
-def _confirmation(
-    lang: str, name: str | None, quote: dict[str, Any], booking_ref: str
-) -> str:
+def _confirmation(lang: str, name: str | None, quote: dict[str, Any], booking_ref: str) -> str:
     if name and has_template_artifacts(name):
         name = None
     price = amount(quote["total_minor"], quote["currency"])
@@ -184,9 +178,9 @@ def _confirmation(
         return (
             f"{'Hallo ' + name if name else 'Guten Tag'},\n\n"
             f"vielen Dank, Ihre Sendung ist gebucht.\n\n"
-            f"Buchungsnummer: {booking_ref}\n"
-            f"Strecke: {route} mit {quote['airline']}\n"
-            f"Preis: {price} all-in\n\n"
+            f"Ihre Buchungsnummer lautet {booking_ref}. Die Sendung fliegt mit "
+            f"{quote['airline']} von {route}.\n\n"
+            f"Der Gesamtpreis beträgt {price}, inklusive aller vereinbarten Leistungen.\n\n"
             f"{booked_joke('de', booking_ref)}\n\n"
             "Wir melden uns, sobald es Neuigkeiten gibt. Bei Fragen zum Status "
             "antworten Sie einfach auf diese Mail.\n\n"
@@ -195,9 +189,9 @@ def _confirmation(
     return (
         f"{'Hi ' + name if name else 'Hello'},\n\n"
         "thanks, your shipment is booked.\n\n"
-        f"Booking reference: {booking_ref}\n"
-        f"Route: {route} with {quote['airline']}\n"
-        f"Price: {price} all-in\n\n"
+        f"Your booking reference is {booking_ref}. Your shipment will fly with "
+        f"{quote['airline']} from {route}.\n\n"
+        f"The total is {price}, including all agreed services.\n\n"
         f"{booked_joke('en', booking_ref)}\n\n"
         "We'll keep you posted. If you have any questions about the status, just reply "
         "to this mail.\n\n"
@@ -210,11 +204,7 @@ def _confirm_to_customer(sid: int, mail: Mail, text: str) -> None:
         db.emit(db.Ev.WARN, "Bestätigung nicht gesendet: Session pausiert/manuell", sid)
         return
     to = address(mail.sender)
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(to, subject, text, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -335,9 +325,7 @@ def _handle(mail: Mail, sid: int) -> None:
             currency=quote["currency"],
         )
 
-    text = _confirmation(
-        language(mail.body), request.get("customer_name"), quote, booking_ref
-    )
+    text = _confirmation(language(mail.body), request.get("customer_name"), quote, booking_ref)
     _confirm_to_customer(sid, mail, text)
     log.info("session %s booked %s", sid, booking_ref)
 
@@ -375,8 +363,7 @@ def catch_up() -> None:
             for m in full["mails"]
             if m["direction"] == "in"
             and m["id"] > quote_mail
-            and address(str(m["sender"] or ""))
-            == address(str(full.get("customer") or ""))
+            and address(str(m["sender"] or "")) == address(str(full.get("customer") or ""))
         ]
         if not replies:
             continue
