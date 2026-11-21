@@ -13,6 +13,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- RFQ watchdog (`RFQ_WATCHDOG`, default off, PR open): unanswered RFQ at 200 s gets one quote from real prices via the one-quote claim; skips paused/manual/phishing/open DG, no price = `watchdog_alert`. Replay: off unchanged, on changes no stored round; killed after bid requests, 25/25 rounds recover the identical quote. Not verified on a live round.
+- Unanswered board rounds keep their cause (`board_results.cause_json`, "Zu tun", `python -m app.agents.watchdog report`); `process_start` events + `/api/health.process_started_at`; deploy light `/api/deploy-gate` and DEPLOY.md rule: one person pushes, only on green.
+
 - Round 56 customer will check whether booking can proceed: current keyword rule still returned acceptance. The shared consent guard now also recognizes pending EN/DE internal approval checks; positive past checks followed by an explicit booking order remain valid. Existing booking/price-change flows reuse it; no live booking triggered.
 
 - Strict customer prose v4 closes the unchecked all-excluded notice and subject paths, including followups without an LLM review. Independent final assertions reject punctuation, including Unicode/HTML variants, and unresolved EUR/numeric dates/zero fractions; transmitted subject/body are stored, reply IDs retain threading. Reviewer acceptance instructions tightened. Integrated Python 3.11 suite: 742 passed/4 skipped; wire tests include a misbehaving reviewer and failed renderer. Existing v3 deployment verified active; v4 rollout pending.
