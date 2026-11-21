@@ -23,7 +23,9 @@ def test_current_shipment_excludes_old_data_and_subject(header, monkeypatch):
         "Please quote to SGN with pickup from our warehouse. 11 pieces, 572 kg, 2.29 cbm.\n"
         f"{header}\nLot 1: 128 pieces, 165 kg gross, 11.8 cbm\nAMS to HKG"
     )
-    mail = Mail(1, 1, "x", "y", "RE: FW: AMS-HKG / 165 KGS", body, "2026-11-21T16:26:00Z")
+    mail = Mail(
+        1, 1, "x", "y", "RE: FW: AMS-HKG / 165 KGS", body, "2026-11-21T16:26:00Z"
+    )
     calls = []
 
     def complete(purpose, messages, *args, **kwargs):

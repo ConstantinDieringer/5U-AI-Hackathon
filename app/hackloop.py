@@ -45,7 +45,8 @@ def _retry_wait(resp: httpx.Response | None) -> float:
                 return max(
                     0.0,
                     (
-                        parsedate_to_datetime(resp.headers["Retry-After"]) - datetime.now(UTC)
+                        parsedate_to_datetime(resp.headers["Retry-After"])
+                        - datetime.now(UTC)
                     ).total_seconds(),
                 )
             except (KeyError, ValueError, TypeError):
@@ -54,7 +55,12 @@ def _retry_wait(resp: httpx.Response | None) -> float:
 
 
 def _request(
-    method: str, path: str, *, safe: bool = True, deadline: float | None = None, **kw: Any
+    method: str,
+    path: str,
+    *,
+    safe: bool = True,
+    deadline: float | None = None,
+    **kw: Any,
 ) -> httpx.Response:
     """Send with retries. `safe=False` (sending mail) retries only when the request surely did
     not arrive (connect error) or was rejected by the rate limit (429), never on 5xx/timeouts,
@@ -68,7 +74,9 @@ def _request(
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise HackloopError(method, path, 429, "RFQ portal budget exhausted")
+                    raise HackloopError(
+                        method, path, 429, "RFQ portal budget exhausted"
+                    )
                 request_kw["timeout"] = min(10.0, remaining)
             resp = _client.request(method, path, **request_kw)
         except httpx.ConnectError as e:
@@ -107,7 +115,10 @@ def _json_obj(resp: httpx.Response) -> dict[str, Any]:
     data = resp.json()
     if not isinstance(data, dict):
         raise HackloopError(
-            resp.request.method, resp.request.url.path, resp.status_code, "expected a JSON object"
+            resp.request.method,
+            resp.request.url.path,
+            resp.status_code,
+            "expected a JSON object",
         )
     return data
 
@@ -126,7 +137,9 @@ def poll(since_id: int = 0, limit: int = 200) -> dict[str, Any]:
     """Mail sent to us with id > since_id, oldest first. Returns the raw poll object
     (`messages`, `next_since_id`, see mail-format.md)."""
     return _json_obj(
-        _request("GET", "/v1/mailbox/messages", params={"since_id": since_id, "limit": limit})
+        _request(
+            "GET", "/v1/mailbox/messages", params={"since_id": since_id, "limit": limit}
+        )
     )
 
 
@@ -135,7 +148,9 @@ def get_message(message_id: int) -> dict[str, Any]:
 
 
 def get_attachment(message_id: int, attachment_id: int) -> bytes:
-    return _request("GET", f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}").content
+    return _request(
+        "GET", f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}"
+    ).content
 
 
 def send(
@@ -157,7 +172,9 @@ def send(
     sent = _json_obj(_request("POST", "/v1/mailbox/messages", safe=False, json=payload))
     if references and sent.get("references") != [*references]:
         log.warning(
-            "server references %s differ from expected %s", sent.get("references"), references
+            "server references %s differ from expected %s",
+            sent.get("references"),
+            references,
         )
     log.info("sent mail %s to %s: %s", sent.get("id"), to, subject[:80])
     return sent
@@ -178,9 +195,13 @@ def _wait_rate_gate(deadline: float | None) -> None:
     now = time.monotonic()
     if now - _rate_window_start >= 60:
         _rate_window_start, _rate_used = now, 0
-    until = max(_rate_blocked_until, _rate_window_start + 60 if _rate_used >= _rate_cap else now)
+    until = max(
+        _rate_blocked_until, _rate_window_start + 60 if _rate_used >= _rate_cap else now
+    )
     if deadline is not None and until >= deadline:
-        raise HackloopError("GET", "/v1/portal/rates", 429, "Rate limit exceeds RFQ budget")
+        raise HackloopError(
+            "GET", "/v1/portal/rates", 429, "Rate limit exceeds RFQ budget"
+        )
     if until > now:
         time.sleep(until - now)
     if time.monotonic() - _rate_window_start >= 60:
@@ -200,7 +221,9 @@ def _update_rate_gate(resp: httpx.Response) -> None:
     except ValueError:
         pass
     if resp.status_code == 429:
-        _rate_blocked_until = max(_rate_blocked_until, time.monotonic() + _retry_wait(resp))
+        _rate_blocked_until = max(
+            _rate_blocked_until, time.monotonic() + _retry_wait(resp)
+        )
 
 
 def get_ports() -> dict[str, Any]:
@@ -210,7 +233,9 @@ def get_ports() -> dict[str, Any]:
 
 def get_brackets(airline: str) -> dict[str, Any]:
     """`{airline, airline_code, breaks_kg}`. 404 (HackloopError.detail) names the email."""
-    return _json_obj(_request("GET", "/v1/portal/brackets", params={"airline": airline}))
+    return _json_obj(
+        _request("GET", "/v1/portal/brackets", params={"airline": airline})
+    )
 
 
 def get_rate(
@@ -236,7 +261,9 @@ def get_rate(
         else _rate_lock.acquire()
     )
     if not acquired:
-        raise HackloopError("GET", "/v1/portal/rates", 429, "Portal queue exceeded RFQ budget")
+        raise HackloopError(
+            "GET", "/v1/portal/rates", 429, "Portal queue exceeded RFQ budget"
+        )
     try:
         resp = _request("GET", "/v1/portal/rates", params=params, deadline=deadline)
     finally:

@@ -21,8 +21,12 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-_REFUSED = re.compile(r"do not serve this lane(?:/zone)?:\s*([A-Z]{3})-([A-Z]{3})", re.IGNORECASE)
-_WE_FLY = re.compile(r"We fly\s+([A-Z]{3}-[A-Z]{3}(?:\s*,\s*[A-Z]{3}-[A-Z]{3})*)", re.IGNORECASE)
+_REFUSED = re.compile(
+    r"do not serve this lane(?:/zone)?:\s*([A-Z]{3})-([A-Z]{3})", re.IGNORECASE
+)
+_WE_FLY = re.compile(
+    r"We fly\s+([A-Z]{3}-[A-Z]{3}(?:\s*,\s*[A-Z]{3}-[A-Z]{3})*)", re.IGNORECASE
+)
 _KEY = "served_lanes:"
 
 
@@ -40,7 +44,9 @@ def parse_refusal(body: str) -> Refusal | None:
     lane = f"{m.group(1)}-{m.group(2)}".upper()
     fly = _WE_FLY.search(body)
     served = (
-        frozenset(x.strip().upper() for x in fly.group(1).split(",")) if fly else frozenset()
+        frozenset(x.strip().upper() for x in fly.group(1).split(","))
+        if fly
+        else frozenset()
     )
     return Refusal(lane, served - {lane})
 
@@ -52,10 +58,17 @@ def remember(email: str, refusal: Refusal, at: str | None = None) -> None:
     old = _load(key)
     if old is not None and old[1] >= _ts(at):
         return
-    db.kv_set(key, json.dumps({"lanes": sorted(refusal.served), "refused": refusal.lane, "at": at}))
+    db.kv_set(
+        key,
+        json.dumps(
+            {"lanes": sorted(refusal.served), "refused": refusal.lane, "at": at}
+        ),
+    )
 
 
-def serves(email: str, origin: str, destination: str, now: datetime | None = None) -> bool | None:
+def serves(
+    email: str, origin: str, destination: str, now: datetime | None = None
+) -> bool | None:
     """True/False from a fresh refusal list, None when we do not know (never asked, or stale)."""
     entry = _load(_KEY + email.strip().lower())
     if entry is None:

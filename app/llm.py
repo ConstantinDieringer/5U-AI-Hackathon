@@ -20,7 +20,9 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gpt-5-nano"  # cheapest allowed model by list price; override with LLM_MODEL
+DEFAULT_MODEL = (
+    "gpt-5-nano"  # cheapest allowed model by list price; override with LLM_MODEL
+)
 MAX_CALLS_PER_SESSION = settings.llm_max_calls_per_session
 PRICES_FILE = Path(__file__).with_name("llm_prices.json")
 
@@ -53,7 +55,11 @@ def cost_micro_usd(name: str, prompt_tokens: int, completion_tokens: int) -> int
     """List-price cost in micro-USD (1 USD = 1 000 000), rounded once, here."""
     prices = _prices()
     price = prices.get(name) or next(  # dated names like gpt-5-nano-2025-08-07
-        (v for k, v in sorted(prices.items(), key=lambda kv: -len(kv[0])) if name.startswith(k)),
+        (
+            v
+            for k, v in sorted(prices.items(), key=lambda kv: -len(kv[0]))
+            if name.startswith(k)
+        ),
         None,
     )
     if price is None:
@@ -88,9 +94,15 @@ def complete(
     `model_name` overrides LLM_MODEL for this call (the extraction retry uses LLM_RETRY_MODEL)."""
     _reserve(session_id)
     name = model_name or model()
-    kw: dict[str, Any] = {"model": name, "messages": messages, "max_completion_tokens": max_tokens}
+    kw: dict[str, Any] = {
+        "model": name,
+        "messages": messages,
+        "max_completion_tokens": max_tokens,
+    }
     if _is_reasoning(name):
-        kw["reasoning_effort"] = "minimal"  # no hidden reasoning tokens: cheaper and faster
+        kw["reasoning_effort"] = (
+            "minimal"  # no hidden reasoning tokens: cheaper and faster
+        )
     else:
         kw["temperature"] = 0
     if response_format is not None:

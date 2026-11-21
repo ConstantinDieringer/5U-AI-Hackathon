@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -37,7 +38,62 @@ def carriers(kit_dir: Path = KIT_DIR) -> tuple[Carrier, ...]:
 def pickup_zones(kit_dir: Path = KIT_DIR) -> dict[str, str]:
     """2-digit zone -> origin airport (IATA)."""
     with open(kit_dir / "pickup_zones.csv", encoding="utf-8", newline="") as f:
-        return {row["zone"].strip(): row["airport"].strip() for row in csv.DictReader(f)}
+        return {
+            row["zone"].strip(): row["airport"].strip() for row in csv.DictReader(f)
+        }
+
+
+# German/English spellings customers use for the pickup_zones.csv areas
+_AREA_ALIASES = {
+    "münchen": "munich",
+    "muenchen": "munich",
+    "köln": "cologne",
+    "koeln": "cologne",
+    "düsseldorf": "duesseldorf",
+    "mönchengladbach": "moenchengladbach",
+    "gießen": "giessen",
+    "lüneburg": "lueneburg",
+    "tübingen": "tuebingen",
+    "böblingen": "boeblingen",
+    "frankfurt": "frankfurt am main",
+}
+
+
+@lru_cache(maxsize=1)
+def pickup_areas(kit_dir: Path = KIT_DIR) -> dict[str, str]:
+    """Area name (lower case) -> 2-digit zone, e.g. 'regensburg' -> '93'."""
+    with open(kit_dir / "pickup_zones.csv", encoding="utf-8", newline="") as f:
+        return {
+            row["area"].strip().lower(): row["zone"].strip()
+            for row in csv.DictReader(f)
+        }
+
+
+def zone_for_area(name: str) -> str | None:
+    key = " ".join(name.lower().split())
+    return pickup_areas().get(_AREA_ALIASES.get(key, key))
+
+
+def find_area(text: str) -> str | None:
+    """First pickup-zone area named in the text (longest names first: 'Munich South' before
+    'Munich'). Returns the area as written in pickup_zones.csv."""
+    names = {**{a: a for a in pickup_areas()}, **_AREA_ALIASES}
+    low = (text or "").lower()
+    hits = []
+    for spelled, area in names.items():
+        m = re.search(rf"(?<![\w-]){re.escape(spelled)}(?![\w-])", low)
+        if m:
+            hits.append((m.start(), -len(spelled), area))
+    if not hits:
+        return None
+    area = min(hits)[2]
+    return next(a for a in _areas_as_written() if a.lower() == area)
+
+
+@lru_cache(maxsize=1)
+def _areas_as_written(kit_dir: Path = KIT_DIR) -> tuple[str, ...]:
+    with open(kit_dir / "pickup_zones.csv", encoding="utf-8", newline="") as f:
+        return tuple(row["area"].strip() for row in csv.DictReader(f))
 
 
 def zone_for_zip(zip_code: str) -> str:

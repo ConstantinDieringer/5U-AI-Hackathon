@@ -130,7 +130,11 @@ def test_composer_falls_back_when_style_is_wrong(monkeypatch, bad_copy: str) -> 
 @pytest.mark.parametrize("lang", ["de", "en"])
 def test_placeholder_customer_name_uses_generic_greeting(lang: str) -> None:
     request = Rfq(
-        origin="FRA", destination="JFK", weight_kg=100, customer_name="[Your Name]", language=lang
+        origin="FRA",
+        destination="JFK",
+        weight_kg=100,
+        customer_name="[Your Name]",
+        language=lang,
     )
     option = RateOption("Test Air", "FRA", "JFK", 2, 147500, "EUR", 147500, "sheet")
     quote = {

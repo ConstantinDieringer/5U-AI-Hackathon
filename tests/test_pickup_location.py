@@ -1,0 +1,122 @@
+"""Door-to-port requests without a ZIP (rounds 3627, 3930) and quoted old mails."""
+
+import pytest
+
+from app import db
+from app.agents import rfq as agent
+from app.models import Mail, Rfq
+from app.pricing.pricing import resolve_origin
+from app.pricing.reference import find_area, zone_for_area
+
+BODY_3627 = (
+    "Hello,\n\nCould you please quote your cheapest air freight option to SGN (Ho Chi Minh City,"
+    " VN)? The goods will be ready for pickup from our warehouse on 2026-11-30. Please arrange"
+    " the truck from our warehouse to the departure airport and include this in your all-in"
+    " price in EUR.\n\nThe shipment consists of 11 pieces of precision instruments, with a gross"
+    " weight of 572 kg and a total volume of 2.29 cbm.\n\nThank you in advance.\n\nBest greetings"
+    " from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH\n\n\n"
+    "-----Original Message-----\nSent: 2026-10-25\nSubject: AMSTERDAM SCHIPHOL - HKG / 128 PCS"
+    " 165 KGS\n\nDear team,\n\npls quote air freight ex AMSTERDAM SCHIPHOL to HKG:\n128 PCS /"
+    " 165 KGS / 11.8 CBM, furniture samples\nFCA, cargo ready next week.\n\nThanks"
+)
+BODY_3930 = (
+    "Hi,\n\nCould you quote the fastest air freight option to PVG (Shanghai, CN), including"
+    " truck pickup from our warehouse to the airport?\n\nThe sports equipment will be ready for"
+    " pickup on 2026-12-02: 11 pieces, 349 kg gross, 2.40 cbm.\n\nPlease send your all-in price"
+    " in EUR.\n\nMira Petersen\nNordlicht Audio"
+)
+
+
+@pytest.fixture(autouse=True)
+def fresh_db(tmp_path):
+    db.init_db(str(tmp_path / "t.db"))
+
+
+def mail(mid, sender, subject, body):
+    return Mail(
+        id=mid,
+        thread_root=mid,
+        sender=sender,
+        to="austrian-power@hackloop.mail",
+        subject=subject,
+        body=body,
+        received_at=db.now(),
+    )
+
+
+def test_quoted_old_mail_is_cut_before_pickup_lookup():
+    assert "AMSTERDAM" not in agent._clean(BODY_3627) and "Regensburg" in agent._clean(
+        BODY_3627
+    )
+
+
+def test_area_lookup():
+    assert find_area("Best greetings from Regensburg") == "Regensburg"
+    assert (
+        find_area("Lager in München") == "Munich"
+        and zone_for_area("Munich South") == "81"
+    )
+    assert find_area("Kind regards, Ulm") is None
+
+
+def test_3627_pickup_from_signature_city_gives_muc_and_truck_plus_air():
+    db.ingest_mail(
+        mail_id=3627,
+        sender="auer-maschinenbau@hackloop.mail",
+        recipient="austrian-power@hackloop.mail",
+        subject="x",
+        body=BODY_3627,
+        category="rfq",
+    )
+    m = mail(3627, "auer-maschinenbau@hackloop.mail", "RE: FW: AMSTERDAM", BODY_3627)
+    # what the LLM returned live: origin AMS from the quoted mail, no ZIP
+    r = Rfq(origin="AMS", destination="SGN", weight_kg=572, volume_cbm=2.29, pieces=11)
+    r = agent.locate_pickup(r, m, 3627)
+    assert r.pickup_city == "Regensburg" and r.pickup_zone == "93" and r.door_to_port
+    assert resolve_origin(r) == "MUC"
+    truckers, _ = agent._bid_carriers(r, "MUC")
+    assert truckers and all("93" in t.serves for t in truckers)
+    # never email airlines for an origin outside our network
+    assert (
+        agent._bid_carriers(r.model_copy(update={"pickup_city": None}), "AMS")[1] == []
+    )
+
+
+def test_3930_pickup_from_customers_last_request():
+    old = db.ingest_mail(
+        mail_id=1967,
+        sender="nordlicht-audio@hackloop.mail",
+        recipient="austrian-power@hackloop.mail",
+        subject="RFQ LOS",
+        body="b",
+        category="rfq",
+    )
+    db.set_request(old, {"destination": "LOS", "weight_kg": 900, "pickup_zip": "36627"})
+    db.ingest_mail(
+        mail_id=3930,
+        sender="nordlicht-audio@hackloop.mail",
+        recipient="austrian-power@hackloop.mail",
+        subject="x",
+        body=BODY_3930,
+        category="rfq",
+    )
+    m = mail(
+        3930, "nordlicht-audio@hackloop.mail", "Air freight quote to PVG", BODY_3930
+    )
+    r = agent.locate_pickup(
+        Rfq(destination="PVG", weight_kg=349, volume_cbm=2.4), m, 3930
+    )
+    assert r.pickup_zip == "36627" and resolve_origin(r) == "FRA"
+
+
+def test_self_delivery_stays_airport_to_airport():
+    body = (
+        "Please quote MUC to LAX. The cargo will be ready for pickup on 2026-11-29, and we"
+        " will deliver it to Munich airport (MUC) ourselves. Greetings from Regensburg"
+    )
+    r = agent.locate_pickup(
+        Rfq(origin="MUC", destination="LAX", weight_kg=10),
+        mail(5, "x@y.example", "RFQ", body),
+        5,
+    )
+    assert not r.door_to_port

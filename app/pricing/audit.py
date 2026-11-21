@@ -10,7 +10,10 @@ def report() -> list[dict]:
     for row in db.pricing_evidence():
         payload = json.loads(row["payload_json"] or "{}")
         selected = payload.get("selected", {})
-        plain, best = selected.get("plain_total_minor"), selected.get("breakpoint_total_minor")
+        plain, best = (
+            selected.get("plain_total_minor"),
+            selected.get("breakpoint_total_minor"),
+        )
         results.append(
             {
                 "session_id": row["session_id"],
@@ -20,7 +23,9 @@ def report() -> list[dict]:
                 "plain_total_minor": plain,
                 "breakpoint_total_minor": best,
                 "tariff_version": selected.get("tariff_version"),
-                "breakpoint_relevant": plain is not None and best is not None and plain != best,
+                "breakpoint_relevant": plain is not None
+                and best is not None
+                and plain != best,
                 "conclusion": "requires scorer best-price evidence; verdict alone is inconclusive",
             }
         )
