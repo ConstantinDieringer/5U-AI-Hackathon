@@ -2520,11 +2520,37 @@ def _ts(v: str | None) -> datetime | None:
     return t if t.tzinfo else t.replace(tzinfo=UTC)
 
 
+def clarification_cap_open(limit: int = 20) -> list[dict[str, Any]]:
+    """CLARIFY_CAP_RESOLVE: sessions whose two questions are spent with items still open and
+    no reply to the customer yet; the latest `clarification_cap_open` message names them."""
+    return _rows(
+        conn().execute(
+            "SELECT e.session_id, e.message, s.subject, s.customer, s.status, s.deadline_at"
+            " FROM events e JOIN sessions s ON s.id = e.session_id"
+            " WHERE e.kind = 'clarification_cap_open' AND s.first_reply_at IS NULL"
+            " AND e.id = (SELECT MAX(x.id) FROM events x WHERE x.session_id = e.session_id"
+            " AND x.kind = 'clarification_cap_open') ORDER BY e.id DESC LIMIT ?",
+            (limit,),
+        )
+    )
+
+
 def attention_items(limit: int = 20) -> list[dict[str, Any]]:
-    """What needs a human: errors, expired, board rejections, paused/manual, close deadlines and
-    customer acceptances that are not booked yet."""
+    """What needs a human: question cap reached without a quote (first), errors, expired, board
+    rejections, paused/manual, close deadlines and acceptances that are not booked yet."""
     c = conn()
     items: list[dict[str, Any]] = [
+        {
+            "session_id": r["session_id"],
+            "kind": "clarification_cap_open",
+            "reason": r["message"],
+            "subject": r["subject"],
+            "customer": r["customer"],
+            "status": r["status"],
+        }
+        for r in clarification_cap_open(limit)
+    ]
+    items += [
         {
             "session_id": q["session_id"],
             "mail_id": q["mail_id"],
@@ -3072,7 +3098,19 @@ def status_overview() -> dict[str, Any]:
     for r in all_rated:
         verdicts[r["verdict"]] = verdicts.get(r["verdict"], 0) + 1
 
-    todo = []
+    # question cap reached, nothing sent: first, while the round can still be answered
+    todo = [
+        {
+            "session_id": r["session_id"],
+            "subject": r["subject"],
+            "customer": r["customer"],
+            "lane": None,
+            "reason": r["message"],
+            "tone": "red",
+        }
+        for r in clarification_cap_open()
+        if r["deadline_at"] and _ts(r["deadline_at"]) > now_dt
+    ]
     for r in every:
         st = r["steps"]
         if r["paused"] or r["mode"] == "manual":

@@ -43,6 +43,7 @@ from app.mail.style import (
     has_template_artifacts,
     written_date,
 )
+from app.mail.subjects import shipment_subject
 from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
 from app.pricing import served_lanes
@@ -353,7 +354,7 @@ def ask_pickup_zip(mail: Mail, sid: int, rfq: Rfq) -> None:
 def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
     """One gateway call; retry once with LLM_RETRY_MODEL when its output is unusable."""
     body = _clean(mail.body)
-    texts, media, problems = read_sources(mail)
+    texts, media, problems = read_sources(mail, session_id=session_id)
     db.kv_set(
         f"rfq.sources.{session_id}",
         json.dumps({"texts": texts, "problems": problems, "media": bool(media)}),
@@ -1196,7 +1197,7 @@ def _handle(mail: Mail, sid: int) -> None:
     prior = db.validation_get(sid)
     cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}"))
     if not cached:
-        texts, media, problems = read_sources(mail)
+        texts, media, problems = read_sources(mail, session_id=sid)
         cached = {"texts": texts, "problems": problems, "media": bool(media)}
     problems = list(cached.get("problems", []))
     if cached.get("media"):
@@ -1309,12 +1310,14 @@ def _sheets(rfq: Rfq) -> list[RateOption]:
 _FALLBACK_BLOCKERS = {"dangerous_goods", "pickup_zip", "weight_kg", "volume_cbm", "lots"}
 
 
-def quote_without_answer(sid: int, reason: str) -> bool:
+def quote_without_answer(sid: int, reason: str, dg_asked: bool = False) -> bool:
     """CLARIFY_ONCE: the answer to our one question is unusable or has not come. Send the best
     quote that real prices allow before the full-score deadline and flag the session for a
     person. Nothing is guessed: the departure must be stated in the request (self-delivery
     wording, or the one network airport the current text names) or follow from a pickup ZIP.
-    A pickup without a site, unproven weight/volume or open dangerous goods get no quote."""
+    A pickup without a site, unproven weight/volume or open dangerous goods get no quote.
+    `dg_asked` (CLARIFY_CAP_RESOLVE): our question already asked for the DG documents, which
+    is what the scorer requires before a quote (round 41), so open DG no longer blocks."""
     if not db.kv_claim(f"clarify.fallback.{sid}"):
         return False
     row = db.validation_get(sid)
@@ -1326,7 +1329,8 @@ def quote_without_answer(sid: int, reason: str) -> bool:
     why = ""
     request: Rfq | None = None
     origin: str | None = None
-    if blockers := _FALLBACK_BLOCKERS & set(open_fields):
+    blocking = _FALLBACK_BLOCKERS - ({"dangerous_goods"} if dg_asked else set())
+    if blockers := blocking & set(open_fields):
         why = "offen: " + ", ".join(sorted(blockers))
     else:
         try:
@@ -1643,6 +1647,7 @@ def _price_and_quote(
         )
         return
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    subject = shipment_subject(choice.origin, choice.destination, rfq.language, subject)
     try:
         sent = hackloop.send_customer(
             mail.sender,

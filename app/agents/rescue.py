@@ -202,7 +202,7 @@ def _decision(
 ) -> tuple[Plan | None, str, str]:
     from app.mail.rfq_sources import read_sources
 
-    if mail.attachments:
+    if mail.attachments and mail.id != root.id:
         texts, _, problems = read_sources(mail, local_only=True)
         draft.evidence["attachment_texts"] = {**draft.evidence.get("attachment_texts", {}), **texts}
         for issue in problems:
@@ -300,7 +300,7 @@ def _decision(
         return None, key, evidence
 
 
-def _corrected(draft: RfqDraft, plan: Plan, evidence: str) -> dict:
+def _corrected(draft: RfqDraft, plan: Plan, evidence: str, known: tuple = ()) -> dict:
     from app.agents.clarification import _rescue_value
 
     corrections = {}
@@ -310,7 +310,7 @@ def _corrected(draft: RfqDraft, plan: Plan, evidence: str) -> dict:
         field, raw = item.field, item.value
         if field in {"origin", "destination", "pickup_zip", "weight_kg", "volume_cbm", "pieces"}:
             try:
-                value = _rescue_value(field, raw)
+                value = _rescue_value(field, raw, known, draft.facts)
             except (ValueError, InvalidOperation, OverflowError):
                 continue
         elif field == "ready_date":
@@ -343,16 +343,21 @@ def _corrected(draft: RfqDraft, plan: Plan, evidence: str) -> dict:
 def _apply(
     mail: Mail, sid: int, root: Mail, draft: RfqDraft, plan: Plan, evidence: str
 ) -> tuple[Rfq | None, RfqDraft]:
+    from app.agents.clarification import known_weights
     from app.mail.rfq_validation import free_text_answer, numeric_facts, validate
 
     asked = {issue["field"] for issue in draft.issues}
     own = current_message(mail.body, mail.subject).facts
-    direct = {k: float(v) for k, v in numeric_facts(own).items() if k in asked}
-    direct.update(free_text_answer(own, asked, draft.facts.get("destination")))
+    known = known_weights(draft, sid, mail)
+    direct = {k: float(v) for k, v in numeric_facts(own, known=known).items() if k in asked}
+    direct.update(
+        free_text_answer(own, asked, draft.facts.get("destination"), known=known, facts=draft.facts)
+    )
+    direct = {k: v for k, v in direct.items() if k not in {c.field for c in plan.corrections}}
     corrections = {
         **draft.evidence.get("corrections", {}),
         **direct,
-        **_corrected(draft, plan, evidence),
+        **_corrected(draft, plan, evidence, known),
     }
     texts = draft.evidence.get("attachment_texts", {})
     _, checked = validate(
@@ -459,6 +464,10 @@ def take_over(mail: Mail, sid: int) -> bool:
         if row.get("draft")
         else RfqDraft(facts=session["request"] or {})
     )
+    if not session["quotes"] and mail.id != root.id:
+        _, checked = clarification.answer_draft(mail, sid, root, draft)
+        checked.evidence = {**draft.evidence, **checked.evidence}
+        draft = checked
     plan, key, evidence = _decision(mail, sid, root, draft, "owner")
     if plan is None:
         return True

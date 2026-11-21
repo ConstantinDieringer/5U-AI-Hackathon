@@ -10,6 +10,7 @@ AGENTS = (
     "clarification",
     "email_review",
     "followup",
+    "prebook",
     "rfq",
     "tariff",
     "tracking",
