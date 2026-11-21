@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
 from app import config, db, hackloop
+from app.mail.rfq_sources import read_sources
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RateOption, Rfq
@@ -41,9 +42,7 @@ _DAYS = re.compile(
     re.IGNORECASE,
 )
 _HOURS = re.compile(r"(\d+)\s*(?:h|hours?|stunden)\b", re.IGNORECASE)
-_TOTAL_HINT = re.compile(
-    r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE
-)
+_TOTAL_HINT = re.compile(r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -65,9 +64,7 @@ class Offer:
 class _Request:
     asked: dict[str, Carrier] = field(default_factory=dict)  # email -> carrier
     offers: list[Offer] = field(default_factory=list)
-    declined: set[str] = field(
-        default_factory=set
-    )  # emails that said "we do not serve"
+    declined: set[str] = field(default_factory=set)  # emails that said "we do not serve"
 
 
 _open: dict[int, _Request] = {}
@@ -87,11 +84,7 @@ def _number(raw: str) -> Decimal | None:
         )
     elif "," in s:
         head, _, tail = s.rpartition(",")
-        s = (
-            f"{head.replace(',', '')}.{tail}"
-            if len(tail) in (1, 2)
-            else s.replace(",", "")
-        )
+        s = f"{head.replace(',', '')}.{tail}" if len(tail) in (1, 2) else s.replace(",", "")
     elif s.count(".") > 1 or (s.count(".") == 1 and len(s.rpartition(".")[2]) == 3):
         s = s.replace(".", "")  # 1.234 / 1.234.567 = thousands
     try:
@@ -126,33 +119,88 @@ def parse_transit_days(text: str) -> float | None:
     return int(h.group(1)) / 24 if h else None
 
 
+def document_price(text: str) -> tuple[Decimal, str] | None:
+    """An explicit total, not the largest component or an incidental surcharge."""
+    currencies = {
+        {"€": "EUR", "$": "USD"}.get(m.upper(), m.upper())
+        for m in re.findall(r"\bEUR\b|\bUSD\b|€|\$", text, re.IGNORECASE)
+    }
+    found: set[tuple[Decimal, str]] = set()
+    for line in text.splitlines():
+        label = re.match(
+            r"\s*(?:(?:grand\s+)?total|gesamt(?:preis|betrag|summe)?)\b\s*[:|=]?\s*",
+            line,
+            re.IGNORECASE,
+        )
+        if not label:
+            label = re.match(
+                r"\s*(?:(?:our|unser)\s+)?(?:all[- ]?in\s+)?(?:price|preis)\b"
+                r".{0,60}?(?:\bis\b|\bist\b|\bbeträgt\b|:)\s*",
+                line,
+                re.IGNORECASE,
+            )
+        if not label:
+            continue
+        tail = line[label.end() :].strip()
+        amount = _AMOUNT.match(tail)
+        if amount:
+            raw = amount.group("num1") or amount.group("num2") or ""
+            cur = (amount.group("cur1") or amount.group("cur2") or "").upper()
+            cur = {"€": "EUR", "$": "USD"}.get(cur, cur)
+        elif re.fullmatch(_MONEY, tail) and len(currencies) == 1:
+            raw, cur = tail, next(iter(currencies))
+        else:
+            continue
+        num = _number(raw)
+        if num is not None and num > 0:
+            found.add((money(num), cur))
+    return next(iter(found)) if len(found) == 1 else None
+
+
+def _bid_evidence(mail: Mail) -> tuple[str, tuple[Decimal, str] | None, str | None]:
+    body = mail.body or ""
+    if not mail.attachments:
+        return body, parse_price(body), None
+    texts, media, problems = read_sources(mail)
+    if problems or media or not texts:
+        return body, None, "attachment unreadable or requires transcription"
+    evidence = []
+    for text in texts.values():
+        price = document_price(text)
+        if price is None:
+            return body, None, "attachment has no unambiguous explicit total"
+        evidence.append((text, price))
+    prices = {price for _, price in evidence}
+    body_price = parse_price(body)
+    if len(prices) != 1 or (body_price is not None and body_price not in prices):
+        return body, None, "conflicting body or attachment totals"
+    timings = {(parse_transit_days(text), timing_kind(text)) for text, _ in evidence}
+    if len(timings) != 1:
+        return body, None, "conflicting attachment durations"
+    return evidence[0][0], evidence[0][1], None
+
+
 def timing_kind(text: str) -> str:
     """Interpret only the clause containing the same duration used by the bid parser."""
     match = _DAYS.search(text) or _HOURS.search(text)
     if not match:
         return "unspecified"
-    start = (
-        max(text.rfind(mark, 0, match.start()) for mark in ("\n", ".", "!", "?")) + 1
-    )
-    clause = text[start : match.end()].lower()
+    start = max(text.rfind(mark, 0, match.start()) for mark in ("\n", ".", "!", "?")) + 1
+    end = re.search(r"[\n.!?]", text[match.end() :])
+    stop = match.end() + end.start() if end else len(text)
+    clause = text[start:stop].lower()
     road = bool(re.search(r"transit time|driving|fahrzeit|transportdauer", clause))
     collection = bool(re.search(r"pickup|pick up|collect|abhol", clause)) and not road
-    return (
-        "road_transit" if road else "collection_lead" if collection else "unspecified"
-    )
+    return "road_transit" if road else "collection_lead" if collection else "unspecified"
 
 
 # ---------------------------------------------------------------- requests
 
 
-def _subject(
-    session_id: int, rfq: Rfq, origin: str, kind: str, billed: float | None = None
-) -> str:
+def _subject(session_id: int, rfq: Rfq, origin: str, kind: str, billed: float | None = None) -> str:
     load = f"{rfq.weight_kg:g} kg / {rfq.volume_cbm:g} cbm"
     if kind == "trucker":
-        return (
-            f"[AP-{session_id}] Pickup {rfq.pickup_label} to {origin} airport, {load}"
-        )
+        return f"[AP-{session_id}] Pickup {rfq.pickup_label} to {origin} airport, {load}"
     extra = f", billed at {billed:g} kg" if billed else ""
     return f"[AP-{session_id}] Air freight {origin} to {rfq.destination}, {load}{extra}"
 
@@ -175,11 +223,7 @@ def _body(rfq: Rfq, origin: str, kind: str, billed: float | None = None) -> str:
     pieces = f"{rfq.pieces} pieces, " if rfq.pieces else ""
     ready = f"Ready for pickup: {rfq.ready_date}.\n" if rfq.ready_date else ""
     if kind == "trucker":
-        site = (
-            f"postal code {rfq.pickup_zip}"
-            if rfq.pickup_zip
-            else f"the {rfq.pickup_city} area"
-        )
+        site = f"postal code {rfq.pickup_zip}" if rfq.pickup_zip else f"the {rfq.pickup_city} area"
         what = f"Please quote road transport from {site} (Germany) to {origin} airport."
     else:
         what = f"Please quote air freight from {origin} to {rfq.destination}."
@@ -293,11 +337,11 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
             sid,
         )
         return
-    price = parse_price(mail.body or "")
+    evidence, price, issue = _bid_evidence(mail)
     if price is None:
         db.emit(
             "bid_unreadable",
-            f"Gebot von {carrier.name}: kein Preis erkannt",
+            f"Gebot von {carrier.name}: {issue or 'kein Preis erkannt'}",
             sid,
             level="warn",
         )
@@ -318,14 +362,14 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
     offer = Offer(
         carrier,
         money(amount * fx),
-        parse_transit_days(mail.body or ""),
+        parse_transit_days(evidence),
         mail.id,
         amount,
         currency,
         str(fx),
         fx_source,
         fx_expiry,
-        timing_kind(mail.body or ""),
+        timing_kind(evidence),
         float(billed[1]) if (billed := _BILLED.search(mail.subject or "")) else None,
     )
     with _cond:
@@ -341,6 +385,7 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
         fx_rate=str(fx),
         fx_source=fx_source,
         fx_valid_until=fx_expiry,
+        evidence_sources=[str(a.get("filename", "")) for a in mail.attachments] or ["mail_body"],
     )
 
 
@@ -353,9 +398,7 @@ def offers(session_id: int) -> list[Offer]:
         return list(req.offers) if req else []
 
 
-def wait(
-    session_id: int, timeout_s: float, until_kinds: set[str] | None = None
-) -> list[Offer]:
+def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None) -> list[Offer]:
     """Block until every asked carrier answered (or, with `until_kinds`, until each kind has
     an offer or nobody of that kind is left to answer), or the timeout passes. Returns the
     offers so far."""
@@ -391,9 +434,7 @@ def close(session_id: int) -> None:
 # ---------------------------------------------------------------- conversion
 
 
-def airline_option(
-    offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float
-) -> RateOption:
+def airline_option(offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float) -> RateOption:
     total = to_minor(offer.total_eur)
     days = offer.transit_days if offer.transit_days is not None else 99
     return RateOption(
@@ -401,9 +442,7 @@ def airline_option(
         origin=origin,
         destination=rfq.destination,
         transit_days=round(days),
-        total_minor=to_minor(offer.original_amount)
-        if offer.original_amount is not None
-        else total,
+        total_minor=to_minor(offer.original_amount) if offer.original_amount is not None else total,
         currency=offer.currency,
         total_eur_minor=total,
         source="bid",

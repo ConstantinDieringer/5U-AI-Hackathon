@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 63 expired without a quote after carrier prices moved into attachments. Carrier bids now reuse bounded document reading and require an explicit unique total/currency, keeping timing from the same evidence. Unsupported audio, unreadable sources and conflicting totals remain visible and unpriced; actual production failure attribution is not verified without logs.
+
 - Round 62 customer explicitly questioned an obsolete forwarded subject despite correct shipment facts in the offer. Quotes, booking confirmations and offer follow-ups now name the verified current airport route; missing route facts preserve the existing subject, and reply identifiers stay unchanged. No price, booking-consent or carrier-selection changes.
 
 - Mail guard (`app/mail/guard.py`): empty/automatic customer mail and RFQ floods are stored but never processed (no LLM, no reply); outgoing loops to one customer are cut by burst/thread/repeat caps in `hackloop.send` with one #sos error. Screening blocks loop instructions (0 hits on the 175 genuine mails). Seven edge-case flags now default on (SELF_DELIVERY_RECOVERY, CONFLICT_SOURCE_ANSWER, CUTOFF_QUESTION_NOTICE, TARIFF_ON_READY_DATE, UNIT_EVIDENCE, REVISION_NOT_ACCEPTANCE, ALL_EXCLUDED_NOTICE); replay changes only round 28 (quote without question). 826 passed/4 skipped; not verified live.
