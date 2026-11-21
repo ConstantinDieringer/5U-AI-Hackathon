@@ -337,3 +337,9 @@ def test_reply_without_references_maps_by_re_subject():
         category="carrier_bid",
     )
     assert got == sid
+
+
+def test_session_by_created_at_matches_board_sent_at():
+    sid = rfq(received_at="2026-11-21T15:00:59.986067+00:00")
+    assert db.session_by_created_at("2026-11-21T15:00:59.986067+00:00") == sid
+    assert db.session_by_created_at("2026-11-21T15:01:00+00:00") is None

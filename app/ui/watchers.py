@@ -51,13 +51,16 @@ def board_loop() -> None:
 
             data = hackloop.get_board_me()
             for r in _board_rows(data):
-                round_id = str(r.get("round") or r.get("round_id") or r.get("id") or "")
+                round_id = str(
+                    r.get("round_no") or r.get("round") or r.get("round_id") or r.get("id") or ""
+                )
                 if not round_id:
                     continue
                 db.save_board_result(
                     round_id=round_id,
                     verdict=r.get("verdict"),
-                    reason=r.get("reason") or r.get("reason_code"),
+                    reason=r.get("reason") or r.get("reason_code"),  # fields: round_no, sent_at,
+                    # answered_at, verdict (open|pending|accepted|rejected|...), reason, booked
                     points=r.get("points") if isinstance(r.get("points"), dict) else None,
                     raw=r,
                     session_id=_match_session(r),
@@ -70,7 +73,13 @@ def board_loop() -> None:
 
 
 def _match_session(r: dict[str, Any]) -> int | None:
-    """Best effort: the board may carry the customer mail id. Verify on real data."""
+    """Board rows carry `sent_at` = received_at of the customer's RFQ (verified 21.11 16:01),
+    which is our session's created_at. Fall back to id-like fields if 5U adds them."""
+    sent_at = r.get("sent_at")
+    if isinstance(sent_at, str):
+        sid = db.session_by_created_at(sent_at)
+        if sid is not None:
+            return sid
     for key in ("mail_id", "message_id", "request_mail_id", "thread_id"):
         v = r.get(key)
         if isinstance(v, int) and db.get_session(v):

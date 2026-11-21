@@ -931,13 +931,21 @@ def save_board_result(
                 Ev.BOARD_VERDICT,
                 f"Board: {verdict}" + (f" ({reason})" if reason else ""),
                 session_id,
-                level="info" if verdict == "accepted" else "warn",
+                level="warn"
+                if verdict in ("rejected", "no_answer", "no answer", "voided")
+                else "info",
                 payload={"round_id": round_id, "points": points},
             )
         return changed
 
 
 # ---------------------------------------------------------------- watchers & stats
+
+
+def session_by_created_at(ts: str) -> int | None:
+    """Find the RFQ session whose first mail arrived at `ts` (board rows carry sent_at)."""
+    r = _one(conn().execute("SELECT id FROM sessions WHERE created_at = ?", (ts,)))
+    return int(r["id"]) if r else None
 
 
 def expire_overdue() -> list[int]:
