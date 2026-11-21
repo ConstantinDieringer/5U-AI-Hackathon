@@ -14,6 +14,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - Quote pickup timing: deterministic door quotes show reported truck lead time and explicitly unconfirmed collection slot; composer receives separate truck-lead/slot facts. Round 22 accepted but its fallback omitted the requested earliest pickup; no schedule or price policy changed.
+- Mailbox webhooks: HMAC receiver, durable shared queue, exact-ID deduplication, restart handling, safe subscription CLI and polling backoff. 283 tests pass, 1 skipped; changed files pass Ruff and Python 3.11 syntax parsing (tests ran on local Python 3.12). Provider GET returned no subscription; deployment and live push verification remain outstanding.
+
 - History-first follow-up policy implemented on the existing validation lifecycle: unique same-thread facts can resolve gaps without another mail; incomplete replies trigger targeted follow-ups with cumulative corrections. Durable reply ledger/restart replay, sender checks, booking/tracking questions and default enforce mode added. Original deadlines and human controls retained.
 - Pricing review (round 20 too_high): 5 trucker requests had used every bid slot, so no airline was asked. Truckers now have their own cap (MAX_TRUCKER_BIDS). CRM tab "Preise" lists all options, truck, bids and verdict per RFQ. PRICE_ADJUST_PCT (default 0) is an untested lever.
 - RFQ validation: current-message evidence and attachment checks, additive durable clarification state, one outstanding question at a time, reply routing before booking, deadline/pause/restart protections; `RFQ_VALIDATION_MODE=enforce` is the default, with explicit `shadow` available for diagnostics/rollback.
@@ -100,7 +102,7 @@ Goal: the first accepted quote end to end before any polish.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
 13. ~~What one UI session is~~ → one customer-started thread (see design C).
 14. 4 airlines (Zephyr, Himalaya Bridge, Lagoon Isles, Pampero) serve only ASU/KTM/PPT/TNR/ULN, on neither sheet nor portal: email bids only.
-15. For C (A): `db.ingest_mail` doesn't say if the mail was new. Please return `(session_id, is_new)` or add `save_mail(...) -> bool`; until then `mail/store.py` uses a kv high-water mark.
+15. Resolved: `db.ingest_mail(report_new=True)` atomically returns `(session_id, is_new)`. Mail ingress deduplicates exact IDs, including out-of-order webhook deliveries.
 16. (A) Send has no `references` field; the server presumably threads by `in_reply_to`. Not yet seen on a threaded reply.
 17. For C/B (A): **rate desk replies are not threaded** (`in_reply_to` null, `references` []), so they land unassigned. Map them by the quoted subject in the body (see mail-format.md)?
 
@@ -113,6 +115,10 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11: Webhook merge integrated main's history-first clarification, tracking reply routing, enforce default and trucker pricing changes; conflicts resolved without reverting them. Combined verification: 292 tests passed, 1 skipped; targeted Ruff checks pass.
+
+- 21.11: Mailbox webhook receiver, persistent shared inbox, exact-ID deduplication, restart recovery and polling backoff implemented. Subscription activation requires deployment plus the server-side admin command in `DEPLOY.md`; no live subscription has been changed during development. Signature/queue tests use isolated SQLite and mocked API calls.
 
 - 21.11 17:12: Price check (task 5, partial): `scores_revealed` still false, so no per-request points yet. Rounds 2–8 + 12: chosen option matches the preference every time; the only too_high (round 7, MUC-LAX 998 kg) was the missed 1000 kg break, fixed in 1e53564. Rounds 5 (1228 kg) and 6 (1549 kg) also sit just under likely breaks: re-check them once points are visible. Pricing unchanged.
 - 21.11 17:08: Round 11 (2530) lost: nano gave origin YYZ (= destination) for pickup 21663; `resolve_origin` now prefers the ZIP airport unless the LLM origin is a zone airport (57f660d). Round 10 (2256) lost: crash from mixed code versions in the live process (lazy import after a pull) → resumed at 190 s, but the portal deadline had passed (fixed c1916fc: ≥ 20 s). Lesson: restart right after every pull.
