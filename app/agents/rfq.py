@@ -1350,9 +1350,11 @@ def _tell_all_excluded(mail: Mail, sid: int, rfq: Rfq) -> None:
     )
     if db.is_paused(sid) or db.is_manual(sid):
         return
-    name = rfq.customer_name if rfq.customer_name and not has_template_artifacts(
+    name = (
         rfq.customer_name
-    ) else None
+        if rfq.customer_name and not has_template_artifacts(rfq.customer_name)
+        else None
+    )
     if (rfq.language or "").lower().startswith("de"):
         body = (
             f"{'Hallo ' + name if name else 'Guten Tag'},\n\n"
@@ -1376,7 +1378,15 @@ def _tell_all_excluded(mail: Mail, sid: int, rfq: Rfq) -> None:
             f"{SIGNATURE}\n"
         )
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
-    sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
+    sent = hackloop.send_customer(
+        mail.sender,
+        subject,
+        body,
+        in_reply_to=mail.id,
+        session_id=sid,
+        protected_terms=(resolve_origin(rfq), rfq.destination),
+    )
+    subject, body = sent["subject"], sent["body"]
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=mail.sender,
@@ -1577,6 +1587,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
             db.emit("not_sent", "Nach Stilprüfung nicht gesendet: pausiert oder manuell", sid)
         return
     body = sent["body"]
+    subject = sent["subject"]
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=mail.sender,

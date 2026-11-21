@@ -240,7 +240,7 @@ def send_customer(
     from app import db
     from app.agents.email_review import review_customer_mail
     from app.mail.language import detect
-    from app.mail.outgoing import customer_body
+    from app.mail.outgoing import customer_body, customer_subject, validate_customer_text
 
     def allowed() -> None:
         if session_id is not None and (
@@ -252,10 +252,13 @@ def send_customer(
 
     allowed()
     lang = detect(body)
+    subject = customer_subject(subject, lang)
     rendered = customer_body(body, lang)
     rendered = customer_body(
         review_customer_mail(rendered, lang, session_id, protected_terms), lang
     )
+    validate_customer_text(rendered)
+    validate_customer_text(subject)
     allowed()
     options: dict[str, Any] = {}
     if in_reply_to is not None:
@@ -264,6 +267,7 @@ def send_customer(
         options["references"] = references
     sent = dict(send(to=to, subject=subject, body=rendered, **options))
     sent["body"] = rendered
+    sent["subject"] = subject
     return sent
 
 

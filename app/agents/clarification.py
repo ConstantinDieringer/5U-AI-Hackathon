@@ -450,7 +450,7 @@ def request(mail, sid, draft):
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=mail.sender,
-        subject=mail.subject,
+        subject=sent["subject"],
         body=body,
         category="clarification",
         session_id=sid,

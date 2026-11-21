@@ -48,7 +48,7 @@ def test_default_reply_targets_customer_after_carrier_mail(case):
     assert result.status_code == 200
     assert sent[0]["to"] == f"Tobias Auer <{CUSTOMER}>"
     assert sent[0]["in_reply_to"] == sid
-    assert sent[0]["subject"] == "Re: Air freight quote to EZE"
+    assert sent[0]["subject"] == "Air freight quote to EZE"
     assert db.get_session(sid)["first_reply_at"] is not None
 
 

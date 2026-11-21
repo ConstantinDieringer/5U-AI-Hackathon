@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Strict customer wire contract v4:** customer body AND subject are rendered and independently asserted immediately before sending. Unicode punctuation and HTML entities cannot bypass the character rules; Re/Fw label prefixes are removed without changing `in_reply_to` threading. All-excluded notices use the same reviewer. Persist the actually submitted body and subject. Carrier/trucker machine messages are unchanged.
+
 - **Final email reviewer:** every customer send uses `hackloop.send_customer`, deterministic prose validation, one dedicated `email_review` pass with `LLM_REVIEW_MODEL=gpt-5`, and final validation before transport. The reviewer only edits style; numeric/currency/date/reference values, carrier names, signature and qualified statements are checked. Failures keep the checked draft. Costs are logged per RFQ; pause/manual/deadline controls are checked again after review. Machine carrier/trucker protocols retain `send`. Health exposes the active style, model and build.
 
 - **Customer presentation:** `mail/style.py` provides written EN/DE month dates, safe standalone currency/date formatting and paragraph breaks at sentence boundaries. RFQ validation rejects parentheses, internal labels and unresolved display defects; deterministic customer templates use prose and the same date vocabulary. Technical IDs, filenames, contacts and stored API/CRM values remain intact.

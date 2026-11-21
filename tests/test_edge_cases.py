@@ -444,6 +444,8 @@ def test_every_carrier_excluded_with_notice(tmp_path, monkeypatch) -> None:
     text = mails[0]["body"]
     assert "Your austrian Power Team" in text and "€" not in text
     assert not has_customer_presentation_issue(text)
+    assert not any(c in text for c in ":;_()")
+    assert ":" not in mails[0]["subject"] and ";" not in mails[0]["subject"]
     for name in ("Zephyr", "Lagoon", "Himalaya", "Pampero"):
         assert name not in text  # exclusions acknowledged generically, as in quotes
     events = {e["kind"]: e for e in db.get_session(7004)["events"]}
