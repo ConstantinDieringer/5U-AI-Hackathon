@@ -81,6 +81,7 @@ class Settings:
     tariff_on_ready_date: bool
     unit_evidence: bool
     totals_same_line: bool
+    thousands_evidence: bool
     revision_not_acceptance: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
@@ -159,6 +160,7 @@ settings = Settings(
     tariff_on_ready_date=_flag("TARIFF_ON_READY_DATE"),
     unit_evidence=_flag("UNIT_EVIDENCE"),
     totals_same_line=_flag("TOTALS_SAME_LINE"),
+    thousands_evidence=_flag("THOUSANDS_EVIDENCE"),
     revision_not_acceptance=_flag("REVISION_NOT_ACCEPTANCE"),
     all_excluded_notice=_flag("ALL_EXCLUDED_NOTICE"),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)

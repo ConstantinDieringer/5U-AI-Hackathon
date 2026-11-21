@@ -185,6 +185,22 @@ def _thread_transcript(mail: Mail, sid: int, root: Mail) -> str:
     return "\n\n".join(pieces)
 
 
+def known_weights(draft: RfqDraft, sid: int, mail: Mail) -> tuple[Decimal, ...]:
+    """Weights this shipment already states (THOUSANDS_EVIDENCE): the draft and its accepted
+    corrections, every mail/attachment observation, and the current words of the customer's
+    earlier mails in this thread. The mail being read is not its own evidence."""
+    observations = (draft.evidence.get("weight_kg") or {}).get("observations") or []
+    found: list[object] = [
+        draft.facts.get("weight_kg"),
+        draft.evidence.get("corrections", {}).get("weight_kg"),
+        *(value for _, value in observations),
+    ]
+    for row in db.customer_mail_history(sid, mail.sender, mail.id):
+        facts = numeric_facts(current_message(str(row.get("body") or "")).facts)
+        found.append(facts.get("weight_kg"))
+    return tuple(Decimal(str(v)) for v in found if v not in (None, ""))
+
+
 def _rescue_value(field: str, raw: object) -> str | float | int | None:
     value = str(raw or "").strip()
     if field in ("origin", "destination"):
@@ -536,7 +552,10 @@ def handle_reply(mail, sid, *, resume=False):
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
-    corrections.update({k: float(v) for k, v in numeric_facts(own).items() if k in asked})
+    known = known_weights(draft, sid, mail) if settings.thousands_evidence else ()
+    corrections.update(
+        {k: float(v) for k, v in numeric_facts(own, known=known).items() if k in asked}
+    )
     if "lots" in asked:
         from app.mail.lots import parse_lots
 
@@ -567,8 +586,18 @@ def handle_reply(mail, sid, *, resume=False):
         corrections.update(confirmed_source(own, draft, conflicts))
     if settings.clarify_once:
         # free text: "CGN", "Cologne", a ZIP, "gross weight is 85 kg" (round 28's four answers)
-        found = free_text_answer(own, asked, draft.facts.get("destination"))
+        found = free_text_answer(
+            own, asked, draft.facts.get("destination"), known=known, facts=draft.facts
+        )
         corrections.update({k: v for k, v in found.items() if k not in corrections})
+    if settings.thousands_evidence and "weight_kg" in asked and "weight_kg" not in corrections:
+        # A direct answer to our weight question counts without CLARIFY_ONCE, as origin
+        # answers do: "The total gross weight for our shipment to BOM is 1,674 kg." (Kessler)
+        corrections.update(
+            free_text_answer(
+                own, {"weight_kg"}, draft.facts.get("destination"), known=known, facts=draft.facts
+            )
+        )
     if "origin" in asked and "origin" not in corrections:
         # Direct answers work independently of optional recovery/one-question modes.
         found = free_text_answer(own, {"origin"}, draft.facts.get("destination"))

@@ -111,11 +111,12 @@ def self_delivers(text):
 _KG = re.compile(rf"({_NUM})\s*(?:kgs?|kilograms?|kilogramm)\b", re.IGNORECASE)
 
 
-def free_text_answer(text, asked, destination):
+def free_text_answer(text, asked, destination, known=(), facts=None):
     """CLARIFY_ONCE: what a customer's free-text answer states for the fields we asked about.
     A bare airport code ("CGN", capitals only) or airport city ("Cologne"), a 5-digit ZIP in a
     supported zone, an area name for a pickup, a single "N kg" for the weight. Negated clauses
-    never count, the destination is never a departure, and two candidates are no answer."""
+    never count, the destination is never a departure, and two candidates are no answer.
+    THOUSANDS_EVIDENCE: "1,674 kg" is read by weight_reading against `known` and `facts`."""
     body = _SIGNATURE.split(text, 1)[0]
     supported = set(pickup_zones().values())
     codes, cities = set(), set()
@@ -154,7 +155,11 @@ def free_text_answer(text, asked, destination):
         elif not zips and (area := find_area(body)):
             found["pickup_city"] = area
     if "weight_kg" in asked and len(weights := set(_KG.findall(body))) == 1:
-        found["weight_kg"] = float(next(iter(weights)).replace(",", "."))
+        raw = next(iter(weights))
+        if not config.settings.thousands_evidence:
+            found["weight_kg"] = float(raw.replace(",", "."))  # today: "1,674 kg" is 1.674
+        elif (value := weight_reading(raw, known=known, context=body, facts=facts)) is not None:
+            found["weight_kg"] = float(value)
     return found
 
 
@@ -246,18 +251,61 @@ _EACH = re.compile(
 _TO_KG = {"l": Decimal("0.45359237"), "t": Decimal(1000)}
 
 
-def _readings(raw):
-    """1,228 / 1.228 can be thousands (1228) or a decimal (1.228); only the thousands reading
-    may be confirmed by the extraction (a 1.2 kg air shipment would price at the minimum)."""
-    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", raw):
-        return {Decimal(re.sub(r"[.,]", "", raw)), None}
-    return {Decimal(raw.replace(",", "."))}
+_GROUPED = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
+_ONE_GROUP = re.compile(r"\d{1,3}[.,]\d{3}")
+_PALLETS = re.compile(r"\b(?:pallets?|paletten?|skids?)\b", re.IGNORECASE)
+# THOUSANDS_EVIDENCE plausibility: an air shipment of pallets, several pieces or more than
+# a tenth of a cbm per kg does not weigh under 10 kg
+MIN_PLAUSIBLE_KG = Decimal(10)
+MIN_DENSITY_KG_PER_CBM = Decimal(10)
 
 
-def _unit_facts(text, expect):
+def _implausibly_light(kg, context, facts):
+    if kg >= MIN_PLAUSIBLE_KG:
+        return False
+    if _PALLETS.search(context):
+        return True
+    counts = [int(c) for c in _COUNT.findall(context)]
+    pieces = facts.get("pieces") or (max(counts) if counts else 0)
+    if pieces and int(pieces) >= 2:
+        return True
+    volume = facts.get("volume_cbm")
+    if not volume and (match := re.search(rf"({_NUM})\s*(?:cbm|m3|m³)\b", context, re.IGNORECASE)):
+        volume = match[1].replace(",", ".")
+    return bool(volume) and kg / Decimal(str(volume)) < MIN_DENSITY_KG_PER_CBM
+
+
+def weight_reading(raw, factor=Decimal(1), known=(), context="", facts=None):
+    """The kg value of a stated weight figure, or None while it stays ambiguous.
+
+    "1,674" / "1.674" can be thousands (1674) or a decimal (1.674); a 1.674 kg air shipment
+    would price at the minimum. The thousands reading counts when it equals a figure already
+    known for this shipment (`known`: the extraction, an earlier mail in the thread, an
+    attachment). THOUSANDS_EVIDENCE adds: with no known figure at all, a one-group figure whose
+    decimal reading is under 10 kg while `context`/`facts` describe pallets, several pieces or
+    a volume no such weight fills. Otherwise None. With the setting off this is exactly the
+    agreement rule UNIT_EVIDENCE always had (its only known figure was the extraction)."""
+    raw = raw.replace(" ", "")
+    if not _GROUPED.fullmatch(raw):
+        return Decimal(raw.replace(",", ".")) * factor
+    thousands = Decimal(re.sub(r"[.,]", "", raw)) * factor
+    figures = [Decimal(str(k)) for k in known if k is not None]
+    if any(abs(thousands - k) <= Decimal("0.1") for k in figures):
+        return thousands
+    if (
+        config.settings.thousands_evidence
+        and not figures
+        and factor == 1
+        and _ONE_GROUP.fullmatch(raw)
+        and _implausibly_light(Decimal(raw.replace(",", ".")), context, facts or {})
+    ):
+        return thousands
+    return None
+
+
+def _unit_facts(text, expect, known=()):
     """UNIT_EVIDENCE: weight in kg, lbs or tonnes with thousands separators, and volume from
-    'N pieces, each L x W x H cm'. A number readable two ways counts only when the extraction
-    (`expect`) agrees with exactly one reading; the mail always supplies the figure."""
+    'N pieces, each L x W x H cm'. A number readable two ways is resolved by weight_reading."""
     found = {}
     for pattern in _UNIT_WEIGHT:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -265,17 +313,12 @@ def _unit_facts(text, expect):
             continue
         unit = match[2].lower()
         factor = _TO_KG.get(unit[0], Decimal(1))
-        readings = _readings(match[1])
-        want = (expect or {}).get("weight_kg")
-        if None in readings:  # ambiguous: the extraction must agree with the thousands reading
-            readings = {
-                v
-                for v in readings - {None}
-                if want is not None and abs(v * factor - Decimal(str(want))) <= Decimal("0.1")
-            }
-        values = {v * factor for v in readings}
-        if len(values) == 1:
-            found["weight_kg"] = next(iter(values))
+        figures = [(expect or {}).get("weight_kg")]
+        if config.settings.thousands_evidence:
+            figures += list(known)
+        value = weight_reading(match[1], factor, figures, text, expect)
+        if value is not None:
+            found["weight_kg"] = value
         break
     if match := re.search(_UNIT_VOLUME, text, re.IGNORECASE):
         found["volume_cbm"] = Decimal(match[1].replace(",", "."))
@@ -313,17 +356,36 @@ def _total_patterns():
     }
 
 
-def numeric_facts(text, expect=None):
+def numeric_facts(text, expect=None, known=()):
+    """Totals the text states. `known`: weights already known for this shipment (other mails
+    of the thread, attachments) that THOUSANDS_EVIDENCE may use to read "1,674 kg"."""
     result = {}
     patterns = _total_patterns()
     for field, patterns_ in patterns.items():
         for pattern in patterns_:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                if re.fullmatch(r"\d{1,3}[.,]\d{3}", match[1]):
-                    continue  # ambiguous thousands/decimal notation needs confirmation
-                amount = Decimal(match[1].replace(",", "."))
                 suffix = text[match.end() :].lstrip()
+                if _ONE_GROUP.fullmatch(match[1]):
+                    # "1,674 kg" or "Gross weight (kg): 1,674": thousands or decimal
+                    in_kg = re.match(r"(?:kgs?|kilos?|kilograms?)\b", suffix, re.IGNORECASE) or (
+                        "(kg)" in match[0].lower()
+                    )
+                    value = (
+                        weight_reading(
+                            match[1],
+                            known=[(expect or {}).get("weight_kg"), *known],
+                            context=text,
+                            facts=expect,
+                        )
+                        if config.settings.thousands_evidence and field == "weight_kg" and in_kg
+                        else None
+                    )
+                    if value is None:
+                        continue  # ambiguous thousands/decimal notation needs confirmation
+                    result[field] = value
+                    break
+                amount = Decimal(match[1].replace(",", "."))
                 if field == "weight_kg":
                     if re.match(r"(?:t|tonnes?|tons?)\b", suffix, re.IGNORECASE):
                         amount *= Decimal(1000)
@@ -336,7 +398,7 @@ def numeric_facts(text, expect=None):
                 result[field] = amount
                 break
     if config.settings.unit_evidence:
-        for field, value in _unit_facts(text, expect).items():
+        for field, value in _unit_facts(text, expect, known).items():
             result.setdefault(field, value)
     return result
 
@@ -519,10 +581,11 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         values = {"weight_kg": totals.weight_kg, "volume_cbm": totals.volume_cbm}
     for field in ("weight_kg", "volume_cbm", "pieces"):
         observations = [("body", values[field])] if field in values else []
+        known = (values.get("weight_kg"), data.get("weight_kg"))  # for THOUSANDS_EVIDENCE
         observations += [
             (name, facts[field])
             for name, text in (attachments or {}).items()
-            if field in (facts := numeric_facts(text))
+            if field in (facts := numeric_facts(text, known=known))
         ]
         if field in corrections:
             observations = [("customer_correction", Decimal(str(corrections[field])))]
