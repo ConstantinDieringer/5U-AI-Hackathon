@@ -558,17 +558,6 @@ def clarification_reply_claim(sid: int, mid: int) -> bool:
         )
 
 
-def clarification_wait(sid: int) -> None:
-    """A reply that only announces the answer: release the claim so the next mail of the
-    customer is consumed, without sending another question."""
-    with tx() as c:
-        c.execute(
-            "UPDATE rfq_validation SET state='awaiting_clarification', reply_mail_id=NULL,"
-            " updated_at=? WHERE session_id=? AND state='resolving'",
-            (now(), sid),
-        )
-
-
 def clarification_reopen(sid: int, draft: dict, root: dict | None = None) -> None:
     """Only called after consuming a new reply, or opening a different post-quote workflow."""
     with tx() as c:

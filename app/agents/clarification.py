@@ -319,29 +319,17 @@ def handle_reply(mail, sid, *, resume=False):
         stated = explicit_delivery_origin(mail, draft.facts.get("destination"))
         if stated:
             corrections["origin"] = stated
-    # the DG documents arrived: a real attachment, or text saying they are attached. A
-    # promise ("we will send the declaration shortly", round 10580) is not a document.
+    # the customer sends (or says they attached) the DG documents
     if "dangerous_goods" in asked and (
         mail.attachments
-        or (
-            re.search(
-                r"\battached\b|\benclosed\b|please find|here (?:are|is)|anbei|im anhang|beigefügt",
-                own,
-                re.IGNORECASE,
-            )
-            and not re.search(r"\bwill send\b|\bshortly\b|\bsoon\b|\bschicken (?:wir|Ihnen) (?:noch|gleich|in Kürze)", own, re.IGNORECASE)
+        or re.search(
+            r"declaration|\bDGD\b|\bM?SDS\b|safety data sheet|dangerous goods (?:documents|docs)"
+            r"|attached|anbei|im anhang|sicherheitsdatenblatt|gefahrgutdokument",
+            own,
+            re.IGNORECASE,
         )
     ):
         corrections["dangerous_goods"] = "dg_documents_received"
-    if (
-        "dangerous_goods" in asked
-        and corrections.get("dangerous_goods") != "dg_documents_received"
-        and re.search(r"\bwill send\b|\bshortly\b|\bschicken (?:wir|Ihnen)", own, re.IGNORECASE)
-    ):
-        # documents announced: wait for the mail that carries them, do not ask again
-        db.emit("dg_documents_pending", "Kunde schickt die Gefahrgutunterlagen nach", sid)
-        db.clarification_wait(sid)
-        return True
     if (
         "dangerous_goods" in asked
         and re.search(r"non-dangerous|not dangerous|kein gefahrgut", own, re.IGNORECASE)
