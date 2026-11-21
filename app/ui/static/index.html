@@ -287,10 +287,12 @@ function renderList() {
   }
   loadUnassigned(box);
 }
+let unassignedToken = 0;
 async function loadUnassigned(box) {
   if (state.filter !== "all" || state.q) return;
+  const token = ++unassignedToken;
   const un = await api("/api/unassigned").catch(() => []);
-  if (!un.length) return;
+  if (token !== unassignedToken || !un.length) return; // a newer render took over
   box.append(el("div", { class: "section-title" }, `Unzugeordnet (${un.length})`));
   for (const m of un.slice(0, 20)) box.append(el("div", { class: "row", style: "cursor:default" },
     el("div", { class: "title" }, m.subject || "(ohne Betreff)"), el("div", { class: "cd" }, time(m.received_at)),

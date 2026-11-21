@@ -81,6 +81,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 16:01: First real RFQ (mail 265, lindqvist-medtech, fastest to ORD, door pickup 51447, 676 kg / 5.79 cbm) received, routed as customer, session + UI live. `/v1/board/me` rows: `round_no, sent_at, answered_at, verdict, reason, booked`; matched to sessions via `sent_at` = session created_at.
+
 - 21.11 15:45: Real mail fields: `id, from, to, subject, body, in_reply_to, references, received_at, attachments`. Ratedesk replies carry NO in_reply_to/references (only `your mail "<subject>"` in the body) → `db.ingest_mail` falls back to subject matching.
 - 21.11 15:45: Mail to our own address → 422. Gateway OpenAI key not set yet (`set: false`).
 
