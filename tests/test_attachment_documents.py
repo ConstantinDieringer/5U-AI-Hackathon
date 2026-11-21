@@ -7,6 +7,7 @@ import email.message
 import io
 import wave
 import zipfile
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -14,11 +15,24 @@ import pytest
 
 from app import db, llm
 from app.agents import bids
-from app.mail import documents
+from app.mail import audio, documents
 from app.mail.router import route
 from app.models import Category, Mail
 
 OFFER = "All-in price: EUR 1.234,50, transit time 3 days"
+
+
+@pytest.fixture(autouse=True)
+def allowed_audio_model(monkeypatch):
+    monkeypatch.setattr(
+        audio,
+        "settings",
+        replace(
+            audio.settings,
+            llm_audio_model="gpt-4o-mini-audio-preview",
+        ),
+    )
+    monkeypatch.setattr(llm, "available_models", lambda **kw: {"gpt-4o-mini-audio-preview"})
 
 
 def text_pdf(text: str) -> bytes:

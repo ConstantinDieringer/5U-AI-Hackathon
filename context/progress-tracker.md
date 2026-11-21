@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Voice recovery: Groq Whisper first, allowed gateway audio second, bundled offline Whisper last; bounded retries/cooldowns, atomic caching, replay provenance and EN/DE spoken money/time normalization. Real session-18673 MP3 recovered offline in 12 s as EUR 358.64 / collection 4 h; primary Groq test is HTTP 401 until a real GROQ_API_KEY is configured. Docker image build not verified (local Docker daemon unavailable).
+
 - Writer tone: the composer's shared profile now asks for a close, cheerful best-friend voice throughout each mail, including first contact without invented history. German defaults to du unless formal address is explicitly requested. Latest main's subject rules, separate reviewer and factual/send controls preserved. Integrated full suite passes on Python 3.11 and 3.12: 1104 passed, 5 skipped; no manual live sends.
 - Round 64 carrier documents additionally use `Total, all-in` and adjacent label/value rows. Explicit totals now support those ordinary table layouts without scanning past an unrelated row; all four observed document totals replay correctly. Production no-answer cause remains unverified beyond the already reproduced body-only bid gap.
 - Pre-booking answers (`PREBOOK_ANSWER`, default off, PR open): a reply to our quote that only asks about the quoted option (round 54 style) is answered from the stored quote with a go-ahead question and never booked; rules only, no LLM review, shares `FOLLOWUP_MAX` with the nudges; "book the faster one instead" after it never books. Reply replay: stored replies identical off/on, 19/19 injected round-54 questions answered and booked on the next yes, 0 worse. Not verified live.

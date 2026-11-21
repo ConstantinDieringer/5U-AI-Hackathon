@@ -122,6 +122,11 @@ class Settings:
     llm_audio_model: str
     llm_vision_model: str
     attachment_transcription: bool
+    groq_api_key: str
+    groq_audio_model: str
+    audio_timeout_s: float
+    local_audio_enabled: bool
+    local_audio_model: str
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -244,12 +249,17 @@ settings = Settings(
     outbound_burst_s=float(_env("OUTBOUND_BURST_S", "120")),
     outbound_session_max=max(1, int(_env("OUTBOUND_SESSION_MAX", "15"))),  # per thread
     outbound_duplicate_s=float(_env("OUTBOUND_DUPLICATE_S", "1800")),  # same text again
-    # voice messages (mp3/wav) are read by an audio model via chat completions (input_audio);
-    # scanned pages and photos by a vision model (empty = LLM_MODEL)
-    llm_audio_model=_env("LLM_AUDIO_MODEL", "gpt-4o-mini-audio-preview"),
+    # Groq first, gateway only if a compatible model is allowed, local Whisper last.
+    # Empty audio model auto-selects a gateway audio model; never guess access.
+    llm_audio_model=_env("LLM_AUDIO_MODEL"),
     llm_vision_model=_env("LLM_VISION_MODEL"),
-    # false = never spend gateway calls on audio/scan attachments (text files still read)
+    # false = no recognition of audio/scans (deterministic text readers stay enabled)
     attachment_transcription=_env("ATTACHMENT_TRANSCRIPTION", "true").lower() != "false",
+    groq_api_key=_env("GROQ_API_KEY"),
+    groq_audio_model=_env("GROQ_AUDIO_MODEL", "whisper-large-v3"),
+    audio_timeout_s=max(1.0, float(_env("AUDIO_TIMEOUT_S", "60"))),
+    local_audio_enabled=_flag("LOCAL_AUDIO_ENABLED", True),
+    local_audio_model=_env("LOCAL_AUDIO_MODEL", "base"),
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):

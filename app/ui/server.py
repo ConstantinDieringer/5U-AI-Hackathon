@@ -404,6 +404,12 @@ def api_health() -> dict[str, Any]:
         "build_revision": settings.build_revision,
         "email_reviewer_model": settings.llm_review_model,
         "email_review_enabled": settings.email_review_enabled,
+        "audio_transcription": {
+            "groq_configured": bool(settings.groq_api_key),
+            "groq_model": settings.groq_audio_model,
+            "local_enabled": settings.local_audio_enabled,
+            "local_model": settings.local_audio_model,
+        },
         "llm_max_calls_per_session": settings.llm_max_calls_per_session,
         "phishing_gate_mode": settings.phishing_gate_mode,
         "phishing_gate_llm_mode": settings.phishing_gate_llm_mode,

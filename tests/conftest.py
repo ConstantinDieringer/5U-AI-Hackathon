@@ -14,7 +14,7 @@ from openai import OpenAI
 
 from app import hackloop, llm
 from app.agents import booking, email_review
-from app.mail import guard
+from app.mail import audio, guard
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +47,20 @@ def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
             api_key="test",
             max_retries=0,
             http_client=httpx.Client(transport=transport),
+        ),
+    )
+    monkeypatch.setattr(audio, "_client", httpx.Client(transport=transport))
+    monkeypatch.setattr(audio, "_cooldowns", {})
+    monkeypatch.setattr(audio, "_models", (0.0, set()))
+    monkeypatch.setattr(llm, "available_models", lambda **kw: set())
+    # Audio tests explicitly supply a key/offline worker; other suites never run ASR.
+    monkeypatch.setattr(
+        audio,
+        "settings",
+        dataclasses.replace(
+            audio.settings,
+            groq_api_key="",
+            local_audio_enabled=False,
         ),
     )
     yield

@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Audio transcription:** by user request, speech recognition is an exception to gateway-only inference: Groq Whisper first (`GROQ_API_KEY`), the existing input-audio gateway path only for a currently allowed audio model, then bundled local Whisper on CPU. Bounded attempts/timeouts, provider cooldowns and per-file atomic transcript caching prevent unsupported-model loops and duplicate calls. Prices remain deterministic and conflicting evidence stays unpriced. External recognition needs a separately configured key; no automatic paid-plan upgrade.
+
 - **Strict customer wire contract v4:** customer body AND subject are rendered and independently asserted immediately before sending. Unicode punctuation and HTML entities cannot bypass the character rules; Re/Fw label prefixes are removed without changing `in_reply_to` threading. All-excluded notices use the same reviewer. Persist the actually submitted body and subject. Carrier/trucker machine messages are unchanged.
 
 - **Final email reviewer disabled:** `EMAIL_REVIEW_ENABLED=false` is the default by user request. Customer sends retain deterministic rendering and final validation, with no extra style-review LLM call. The optional reviewer remains available only through explicit opt-in. Composer, extraction, reply controls and carrier/trucker protocols are unchanged. Health exposes the active review flag and build.

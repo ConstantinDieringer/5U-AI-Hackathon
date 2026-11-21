@@ -349,6 +349,10 @@ def _unreadable(carrier: Carrier, sid: int, issue: str) -> None:
     db.emit("bid_unreadable", f"Gebot von {carrier.name}: {issue}"[:300], sid, level="warn")
 
 
+def _usable_voice(text: str) -> bool:
+    return parse_price(text) is not None or served_lanes.parse_refusal(text) is not None
+
+
 def on_bid_mail(mail: Mail, session_id: int | None) -> None:
     """Called by the poller for every CARRIER_BID mail. The offer may be in the mail text or
     in attachments: documents are read in code (app/mail/documents.py), voice messages and
@@ -369,43 +373,63 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
         _unreadable(carrier, sid, "Anhang nicht geladen")
         return
     files: list[tuple[str, str]] = []
+    spoken: list[tuple[str, str]] = []
     pending: list[tuple[Path, documents.Document]] = []
     for path in paths:
         try:
             doc = documents.read(path)
+            if doc.voice and not doc.audio and not _usable_voice(doc.text):
+                # An old empty/unusable cached transcript must not prevent recovery.
+                doc = documents.read_bytes(path.name, path.read_bytes())
         except Exception as exc:  # noqa: BLE001 - a broken file must not price the bid
             _unreadable(carrier, sid, f"Anhang {path.name} nicht lesbar ({str(exc)[:80]})")
             return
         if doc.needs_model:
             pending.append((path, doc))
+        elif doc.voice:
+            spoken.append((path.name, doc.text))
         else:
             files.append((path.name, doc.text))
     if pending:
         if not config.settings.attachment_transcription:
             _unreadable(carrier, sid, "nur Audio/Scan, Transkription aus")
             return
-        _spawn(_transcribe_then_evaluate, mail, sid, carrier, body, files, pending)
+        _spawn(_transcribe_then_evaluate, mail, sid, carrier, body, files, pending, spoken)
         return
-    _evaluate(mail, sid, carrier, body, files, [])
+    _evaluate(mail, sid, carrier, body, files, spoken)
 
 
 def _transcribe_then_evaluate(
-    mail: Mail, sid: int, carrier: Carrier, body: str, files: list, pending: list
+    mail: Mail,
+    sid: int,
+    carrier: Carrier,
+    body: str,
+    files: list,
+    pending: list,
+    spoken: list[tuple[str, str]] | None = None,
 ) -> None:
     """Runs in its own thread: a gateway call must not hold up the mail loop. The calls do
     not use the session's LLM budget (5 voice bids would leave none for extraction and the
     quote mail); MAX_BID_TRANSCRIPTIONS per session bounds their cost instead."""
     try:
-        spoken: list[tuple[str, str]] = []
+        spoken = list(spoken or [])
         files = list(files)
         for path, doc in pending:
-            if documents.cached_transcript(path) is None:
+            cached = documents.cached_transcript(path)
+            if cached is None or (doc.voice and not _usable_voice(cached)):
                 with _cond:
                     used = _transcriptions.get(sid, 0)
                     if used >= MAX_BID_TRANSCRIPTIONS:
                         raise RuntimeError(f"{used} bid attachments already transcribed")
                     _transcriptions[sid] = used + 1
-            text = documents.transcribe(doc, None, f"bid_attachment s{sid}", path)
+            text = documents.transcribe(
+                doc,
+                None,
+                f"bid_attachment s{sid}",
+                path,
+                audit_session_id=sid,
+                accept_text=_usable_voice if doc.voice else None,
+            )
             db.emit(
                 "bid_transcribed",
                 f"Gebot von {carrier.name}: {path.name} gelesen ({doc.kind.lstrip('.')})",

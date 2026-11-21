@@ -1,5 +1,29 @@
 # Deploy (Railway)
 
+## Voice-message recognition
+
+Set `GROQ_API_KEY` in the production service's Variables, using a key created at
+https://console.groq.com/keys. `https://api.groq.com/openai/v1/audio/transcriptions` is
+the endpoint, not the key. Use a Groq Free account; the application never creates an
+account, upgrades a plan or submits a payment. Account billing must remain Free to
+guarantee no Groq usage charges.
+
+Recognition tries Groq `whisper-large-v3`, then the existing gateway path if its model
+list permits a compatible audio model, then offline CPU Whisper `base`. A configured
+`LLM_AUDIO_MODEL` must be in that allowlist; rejected models are cooled down. Missing
+keys, 429s, provider outages, empty results and rejected input_audio use the next path.
+`audio_fallback` and `audio_transcribed` events record the provider on the bid's session
+without provider response bodies or credentials. Conflicting prices are still rejected.
+
+The image preloads `base` into `/opt/whisper-cache` and includes ffmpeg. Local CPU
+recognition is serialized and killed at its deadline, with no runtime downloads. On a
+local checkout first run `python -m app.mail.audio_local base --download`; for a custom
+`LOCAL_AUDIO_MODEL`, preload that model at build time too. This has no inference API fee,
+but adds image size and CPU/RAM usage. `AUDIO_TIMEOUT_S=60` bounds the provider chain;
+`LOCAL_AUDIO_ENABLED=false` disables the offline safety net. `ATTACHMENT_TRANSCRIPTION=false`
+disables all speech/scan recognition. Do not redeploy during an active RFQ; use the gate
+below. Verify a saved MP3 before rollout, without resending mail or booking again.
+
 ## RFQ input validation rollout
 
 1. Use an isolated checkout for development; do not pull new modules underneath a running agent.
