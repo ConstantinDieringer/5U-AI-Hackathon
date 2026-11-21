@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Personal replies:** standard RFQs again use full extraction and the composer. Bounded current-thread and earlier same-customer correspondence informs tone and grounded references; older monetary amounts are removed from this context. Only verified current facts support price/service promises. Default gateway budget is four calls to allow both extraction and composition repairs; templates are a failure fallback.
+
 - **Mailbox ingress:** signed `/hooks/mailbox` persists into `mail_delivery` before acknowledging; workers and fallback polling share atomic claims and exact-ID deduplication. Pending/stored work resumes after restart; ambiguous dispatches become `unknown` with a warning for manual inspection. Only polling advances its cursor. Subscription and its private, persistent signing-secret file are managed explicitly with `python -m app.mail.webhook_admin`; never rotate on startup. See `DEPLOY.md`.
 
 - **RFQ validation:** `app/mail/rfq_validation.py` checks the current request and attachment evidence before pricing. Drafts and clarification state live in `rfq_validation`; no session-table rebuild. Enforce is the default; explicit shadow mode remains available. Enforce uses same-thread customer evidence and handles clarification replies before booking.

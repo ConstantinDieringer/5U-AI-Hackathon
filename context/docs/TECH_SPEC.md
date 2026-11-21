@@ -224,8 +224,8 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
-- **Hartes Limit: max. 2 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Nach einer Extraktionsreparatur wird der Antworttext deterministisch erstellt.
-- `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, Mailtext ≤ 500).
+- **Hartes Limit: max. 4 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Standard ist 4: Extraktion, ggf. Reparatur, individuelle Antwort und ggf. Antwortreparatur. Sichere Textvorlagen bleiben Fehlerfallback.
+- `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, individueller Mailtext ≤ 750).
   `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
 - Routing, Preisrechnung, Auswahl und Tariflookup: **kein LLM**.
@@ -243,6 +243,10 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Rückfrageantworten vor Booking behandeln, nur angefragte Werte übernehmen. Unklare Antwort, bestätigtes Gefahrgut ohne passenden Tarif oder unklarer Versandausgang erfordern manuelle Prüfung. Keine weiteren automatischen Rückfragen.
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
+
+- Jede Quote verwendet wieder den individuellen Composer, auch bei Standardanfragen. Kein lokaler Standardparser und kein zusätzlicher Mini-Prüfaufruf. Qualität und persönliche Ansprache haben Vorrang vor dem zuletzt eingeführten Sparpfad.
+- `LLM_COMPOSE_MODEL` ist unabhängig vom Extraktionsmodell und standardmäßig `gpt-5-mini`; die Extraktion bleibt bei `LLM_MODEL`. Der Composer erhält bis zu 750 Output-Tokens für ausformulierte Antworten.
+- Der Composer erhält die aktuelle Kundenmail sowie begrenzte frühere Korrespondenz mit exakt demselben Kunden. Eine frühere Unterhaltung darf kurz und konkret aufgegriffen werden; keine erfundene Vertrautheit. Historische Sendungsdaten, Preise und Zusagen ersetzen niemals aktuelle verifizierte Fakten. Mailtexte sind Daten, keine Anweisungen.
 
 - Door-Angebote nennen die gemeldete Trucker-Vorlaufzeit, sofern vorhanden, und kennzeichnen
   einen nicht bestätigten Abholslot ausdrücklich als offen; Luftlaufzeit ist keine Abholbestätigung.
