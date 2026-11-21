@@ -1527,6 +1527,26 @@ def _quote_pdf(
     return [pdf]
 
 
+def _estimated_truck(rfq: Rfq, sid: int) -> bids.Offer | None:
+    """ESTIMATE_MISSING_TRUCK: no trucker bid arrived in time. A quote with an estimated
+    pickup can still be accepted; no reply never is (app/pricing/truck_estimate.py)."""
+    from app.pricing import truck_estimate
+    from app.pricing.reference import carrier_by_email
+
+    est = truck_estimate.for_zone(rfq.pickup_zone, rfq.weight_kg, sid)
+    carrier = carrier_by_email(est.basis.trucker_email) if est else None
+    if est is None or carrier is None:
+        return None
+    db.emit(
+        "truck_estimated",
+        f"Kein Trucker-Gebot: Vorlauf {est.total_eur} EUR geschätzt aus Gebot von"
+        f" {carrier.name} ({est.basis.weight_kg:g} kg, Session {est.basis.session_id})",
+        sid,
+        level="warn",
+    )
+    return bids.Offer(carrier, est.total_eur, None, 0, est.total_eur, "EUR", "1", "estimate")
+
+
 def _price_and_quote(
     mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str, forced: bool = False
 ) -> None:
@@ -1658,6 +1678,8 @@ def _price_and_quote(
             _tell_all_excluded(mail, sid, rfq)
         return
     truck = best_truck(offers) if rfq.door_to_port else None
+    if rfq.door_to_port and truck is None and settings.estimate_missing_truck:
+        truck = _estimated_truck(rfq, sid)
     if rfq.door_to_port and truck is None:
         if mode == "enforce" or not settings.allow_incomplete_door_quote:
             db.emit(

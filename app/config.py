@@ -102,6 +102,9 @@ class Settings:
     thousands_evidence: bool
     clarify_cap_resolve: bool
     revision_not_acceptance: bool
+    bid_llm_fallback: bool
+    estimate_missing_truck: bool
+    consent_llm_check: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
     rfq_watchdog: bool
@@ -231,6 +234,13 @@ settings = Settings(
     thousands_evidence=_flag("THOUSANDS_EVIDENCE"),
     clarify_cap_resolve=_flag("CLARIFY_CAP_RESOLVE"),
     revision_not_acceptance=_flag("REVISION_NOT_ACCEPTANCE", True),
+    # round 63-65: a bid the rules cannot read gets one cheap checked extraction call
+    bid_llm_fallback=_flag("BID_LLM_FALLBACK", True),
+    # no trucker bid: estimate from earlier bids for the same pickup zone instead of silence
+    estimate_missing_truck=_flag("ESTIMATE_MISSING_TRUCK", True),
+    # round 60/70: a reply the consent rules cannot decide (or a yes next to a doubt word)
+    # is checked by one cheap gateway call; the rules' explicit decline always wins
+    consent_llm_check=_flag("CONSENT_LLM_CHECK", True),
     all_excluded_notice=_flag("ALL_EXCLUDED_NOTICE", True),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)
     clarify_fallback_after_s=float(_env("CLARIFY_FALLBACK_AFTER_S", "45")),

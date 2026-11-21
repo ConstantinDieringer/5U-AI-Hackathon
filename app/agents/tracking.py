@@ -406,7 +406,7 @@ def handle(mail: Mail, session_id: int | None, booked_session: int | None = None
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:
         text = f"{mail.subject}\n{mail.body}"
-        lang = "de" if detect(text) == "de" else "en"  # other languages get English
+        lang = "de" if detect(text) == "de" else "en"  # fr/es/it: send_customer translates
         name = first_name(mail.body)
         variant = session_id if session_id is not None else mail.id
         # a question in the customer's own booked thread keeps that session's status

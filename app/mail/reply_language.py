@@ -55,7 +55,9 @@ def _customer_text(session_id: int, in_reply_to: int | None, recipient: str) -> 
     from app.mail.content import current_message
     from app.mail.language import detect
 
-    # newest first; includes in_reply_to itself when it is the customer's mail
+    # newest first; includes in_reply_to itself when it is the customer's mail. A short reply
+    # ("Oui, allez-y", "Sí, gracias", "OK") names no language: the newest mail that does
+    # decides, so a French customer's booking confirmation stays French.
     mails = db.customer_mail_history(session_id, recipient, (in_reply_to or 2**62) + 1)
     texts = [current_message(m["body"] or "").text for m in mails]
     texts = [t for t in texts if re.search(r"\w{2,}", t)]

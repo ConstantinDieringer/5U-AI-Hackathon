@@ -180,8 +180,17 @@ def classify_reply(body: str) -> str:
     return "unclear"
 
 
-def language(body: str) -> str:
-    return "de" if detect(own_text(body)) == "de" else "en"
+def language(body: str, sid: int | None = None) -> str:
+    """de or en for our own text (send_customer translates fr/es/it). A short reply with no
+    language of its own ("OK", "Passt") keeps the language of the customer's request."""
+    lang = detect(own_text(body), default="")
+    if lang in ("de", "en"):
+        return lang
+    if not lang and sid is not None:
+        request = (db.get_session(sid) or {}).get("request") or {}
+        if request.get("language") == "de":
+            return "de"
+    return "en"
 
 
 # ---------------------------------------------------------------- booking
@@ -318,7 +327,7 @@ def _confirm_to_customer(
     if quotes:
         quote = quotes[0]
         subject = shipment_subject(
-            quote.get("origin"), quote.get("destination"), language(mail.body), subject
+            quote.get("origin"), quote.get("destination"), language(mail.body, sid), subject
         )
     sent = hackloop.send_customer(
         to,
@@ -364,6 +373,50 @@ def handle_reply(
         )
 
 
+def _guarded(text: str) -> bool:
+    """A question, a condition, a pending check or a change request: the rules hold these
+    back on purpose, and no second opinion may turn them into a booking."""
+    pending = any(
+        _PENDING_APPROVAL.search(sentence) and _YES.search(sentence)
+        for sentence in re.split(r"[.!?\n]", text)
+    )
+    return bool(
+        pending
+        or _PREBOOK_QUESTION.search(text)
+        or _REVISION.search(text)
+        or _OTHER_OPTION.search(text)
+    )
+
+
+def _consent(body: str, evidence: str | None, sid: int) -> bool | None:
+    """Rules first. CONSENT_LLM_CHECK: a reply the rules leave undecided (no signal, or yes
+    and no words together), or a yes next to a doubt word, gets one checked gateway call.
+    The rules' explicit decline always stands; a question/condition/change never books."""
+    verdict = _rescue_acceptance(body, evidence)
+    if not settings.consent_llm_check or verdict is False:
+        return verdict
+    from app.agents import consent_check
+
+    text = own_text(body).replace("’", "'").replace("‘", "'")
+    if verdict is True and not consent_check.DOUBT.search(text):
+        return True
+    if _guarded(text):
+        return None
+    label = consent_check.classify(text, sid)
+    db.emit(
+        "consent_check",
+        f"Zusage-Prüfung per Modell: {label} (Regeln: {verdict})",
+        sid,
+        level="info" if label == "book" or verdict is None else "warn",
+    )
+    if label == "book":
+        return True
+    if verdict is True:
+        # the rules' yes stands unless the model actively objects (an outage changes nothing)
+        return True if label == "unclear" else None
+    return False if label == "decline" else None
+
+
 def _rescue_acceptance(body: str, evidence: str | None) -> bool | None:
     verdict = is_acceptance(body)
     if verdict is not None or not evidence:
@@ -395,7 +448,7 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
         else:
             log.info("session %s already booked, reply %s ignored", sid, mail.id)
         return
-    verdict = _rescue_acceptance(mail.body, consent_evidence)
+    verdict = _consent(mail.body, consent_evidence, sid)
     if settings.prebook_answer:
         from app.agents import prebook
 
@@ -571,7 +624,7 @@ def _settle(sid: int, mail: Mail) -> None:
         return
     booking_ref = str(b.get("booking_reference") or b["team_reference"])
     name = (s.get("request") or {}).get("customer_name")
-    text = _confirmation(language(mail.body), name, quote, booking_ref)
+    text = _confirmation(language(mail.body, sid), name, quote, booking_ref)
     if _confirm_to_customer(sid, mail, text, _terms(quote, booking_ref)):
         db.set_booking_customer_state(sid, CONFIRMED_SENT, quote["total_minor"])
 
@@ -703,7 +756,7 @@ def _ask_price_change(sid: int, mail: Mail, actual: tuple[int, str]) -> None:
     new_total = int(quote["total_minor"]) + actual[0] - quoted[0]
     booking_ref = str(b.get("booking_reference") or b["team_reference"])
     name = (s.get("request") or {}).get("customer_name")
-    lang = language(mail.body)
+    lang = language(mail.body, sid)
     if new_total < int(quote["total_minor"]):  # cheaper: nothing to agree, confirm the truth
         text = _confirmation(lang, name, quote, booking_ref, new_total)
         if _confirm_to_customer(sid, mail, text, _terms(quote, booking_ref)):
@@ -744,12 +797,12 @@ def _on_price_change_answer(
     wants_other = bool(_WANTS_OTHER.search(text)) or bool(
         alt and alt["airline"].lower() in text.lower()
     )
-    verdict = _rescue_acceptance(mail.body, consent_evidence)
+    verdict = _consent(mail.body, consent_evidence, sid)
     if verdict is True and not wants_other and b.get("customer_total_minor") is not None:
         booking_ref = str(b.get("booking_reference") or b["team_reference"])
         name = (s.get("request") or {}).get("customer_name")
         body = _confirmation(
-            language(mail.body), name, quote, booking_ref, int(b["customer_total_minor"])
+            language(mail.body, sid), name, quote, booking_ref, int(b["customer_total_minor"])
         )
         if _confirm_to_customer(sid, mail, body, _terms(quote, booking_ref)):
             db.set_booking_customer_state(sid, PRICE_ACCEPTED)
