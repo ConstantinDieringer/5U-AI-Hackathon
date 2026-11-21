@@ -175,6 +175,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 21:35: Rounds 54/55 accepted but not booked (customer stalled, no follow-up). New `app/agents/followup.py`: template nudge in the thread 30 s after our last mail (`FOLLOWUP_AFTER_S`), max 3, within 900 s of the quote, no LLM, price never restated; stops on yes/explicit no/booking/pause/manual. Offline tests only.
+
 - 21.11 21:45: Price changes at booking are now live in the setup (rounds 49/50, airline confirms +10 % over the portal rate). Whether the scorer wants the question before or after booking is not published; we book on yes, then ask before confirming. Tracking still reports `bookings.price_minor` (air only on portal door quotes), not `customer_total_minor`.
 
 - 21.11 21:20: `tests/conftest.py` refuses every 5U and gateway call from tests and fails the test that tries. `test_reply_without_mail_client_is_503` posted to the real mailbox on every pytest run (a real mail with the key from `.env`); it now stubs the send.
