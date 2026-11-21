@@ -50,6 +50,10 @@ COMPOSE_RESERVE_S = 15
 
 EXTRACT_PROMPT = (
     "Extract the air freight request from the email as JSON.\n"
+    "Current message facts override the subject and older quoted/forwarded requests. "
+    "If the current request has shipment details, do not fill missing fields from old mail "
+    "subjects or history. A pickup request without a named location has null origin and "
+    "null pickup_zip; never guess an airport from the signature or an old subject.\n"
     "origin: IATA code of the departure airport if the customer names one, else null.\n"
     "pickup_zip: postal code of the pickup site if they want trucking/pickup from a site, else null.\n"
     "destination: IATA code of the destination airport (a city -> its main cargo airport).\n"
@@ -113,20 +117,39 @@ RFQ_SCHEMA: dict[str, Any] = {
 }
 
 _QUOTED = re.compile(r"^\s*>.*$", re.MULTILINE)
+_HISTORY = re.compile(
+    r"^\s*(?:-{2,}\s*(?:original message|urspr.ngliche nachricht|forwarded message)\s*-*"
+    r"|begin forwarded message:|on .+ wrote:|am .+ schrieb.*:)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_SHIPMENT_DATA = re.compile(
+    r"\b\d+(?:[.,]\d+)?\s*(?:kgs?|kilograms?|lbs?|cbm|m3|pieces?|pcs|cartons?|pallets?)\b",
+    re.IGNORECASE,
+)
 
 
 # ---------------------------------------------------------------- 1. extract
 
 
 def _clean(body: str) -> str:
-    return _QUOTED.sub("", body or "").strip()[:2500]
+    text = body or ""
+    boundary = _HISTORY.search(text)
+    if boundary and _SHIPMENT_DATA.search(text[: boundary.start()]):
+        # A fresh shipment block makes the rest historical. For a pure forwarding cover
+        # note retain the forwarded specification, which can be the only usable request.
+        text = text[: boundary.start()]
+    return _QUOTED.sub("", text).strip()[:2500]
 
 
 def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
     """One gateway call; retry once with LLM_RETRY_MODEL when its output is unusable."""
+    body = _clean(mail.body)
+    boundary = _HISTORY.search(mail.body or "")
+    has_current_shipment = boundary and _SHIPMENT_DATA.search(mail.body[: boundary.start()])
+    subject = "(historical thread subject omitted)" if has_current_shipment else mail.subject
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": EXTRACT_PROMPT},
-        {"role": "user", "content": f"Subject: {mail.subject}\n\n{_clean(mail.body)}"},
+        {"role": "user", "content": f"Subject: {subject}\n\n{body}"},
     ]
     try:
         text = llm.complete(

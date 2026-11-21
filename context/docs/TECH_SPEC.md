@@ -231,6 +231,9 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Aktuelle Sendungsangaben haben Vorrang vor Betreff und zitierter Mailhistorie. Bei einem
+  neuen Sendungsblock werden alte weitergeleitete Angaben aus der Extraktion/Lot-Summe entfernt;
+  reine Weiterleitungen bleiben lesbar. Fehlende Abholorte dürfen nicht aus alten Betreffs geraten werden.
 - Die Extraktion bewahrt neben den Preisfeldern alle expliziten Kundenfragen und
   Servicebedingungen. Schlägt die Pydantic-Validierung fehl, ist genau ein Reparatur-Call
   mit demselben Schema erlaubt.
