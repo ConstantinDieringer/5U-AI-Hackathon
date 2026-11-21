@@ -1,6 +1,6 @@
 """Read RFQ evidence. Files are read in code (app/mail/documents.py); page images go to the
-existing extraction call. Only a voice message costs an extra gateway call (transcription,
-cached next to the file). Files behind safety-checked links count as attachments
+existing extraction call. Voice messages use the audio recognizer chain; transcripts are
+cached next to the file. Files behind safety-checked links count as attachments
 (app/mail/links.py)."""
 
 import base64

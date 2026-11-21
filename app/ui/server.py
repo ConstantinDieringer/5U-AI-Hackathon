@@ -54,7 +54,14 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
     if settings.ui_password and not public:
         header = request.headers.get("authorization", "")
         authenticated = False
-        if header.lower().startswith("basic "):
+        read_only = False
+        if header.lower().startswith("bearer ") and len(settings.review_token) >= 24:
+            # review agents read sessions, mails and events here instead of polling the
+            # 5U mailbox with the team key (one poll per 5 s per key, see DEPLOY.md)
+            authenticated = read_only = secrets.compare_digest(
+                header[7:].strip(), settings.review_token
+            )
+        elif header.lower().startswith("basic "):
             try:
                 user, _, pw = base64.b64decode(header[6:], validate=True).decode().partition(":")
             except (ValueError, UnicodeDecodeError):
@@ -67,6 +74,8 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
                 status_code=401,
                 headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'},
             )
+        elif read_only and request.method not in {"GET", "HEAD"}:
+            response = Response(status_code=403, content="Review token is read-only")
         elif (
             request.method not in {"GET", "HEAD", "OPTIONS"}
             and request.headers.get("x-requested-with") != "XMLHttpRequest"
@@ -140,6 +149,21 @@ def api_session_context(session_id: int) -> dict[str, str]:
     if text is None:
         raise HTTPException(404, "session not found")
     return {"text": text}
+
+
+@app.get("/api/sessions/{session_id}/context.zip")
+def api_session_context_zip(session_id: int) -> Response:
+    """The session context plus the original attachment files (images, scans, voice)."""
+    from app.ui import ai_context
+
+    data = ai_context.session_zip(session_id)
+    if data is None:
+        raise HTTPException(404, "session not found")
+    return Response(
+        data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="session-{session_id}-context.zip"'},
+    )
 
 
 @app.get("/api/attention")
@@ -417,6 +441,7 @@ def api_unanswered() -> list[dict[str, Any]]:
 
 @app.get("/api/health")
 def api_health() -> dict[str, Any]:
+    from app.mail import rate_limit_watch
     from app.mail.outgoing import EMAIL_STYLE_VERSION
     from app.process import STARTED_AT
 
@@ -426,8 +451,15 @@ def api_health() -> dict[str, Any]:
         "rfq_watchdog": settings.rfq_watchdog,
         "email_style_version": EMAIL_STYLE_VERSION,
         "build_revision": settings.build_revision,
+        "mailbox_429_last_10min": rate_limit_watch.recent(),
         "email_reviewer_model": settings.llm_review_model,
         "email_review_enabled": settings.email_review_enabled,
+        "audio_transcription": {
+            "groq_configured": bool(settings.groq_api_key),
+            "groq_model": settings.groq_audio_model,
+            "local_enabled": settings.local_audio_enabled,
+            "local_model": settings.local_audio_model,
+        },
         "tracking_notice_version": "required-v1",
         "tracking_notice_recovery_enabled": settings.agents_enabled,
         "thread_rescue_enabled": settings.thread_rescue_enabled,

@@ -20,6 +20,9 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s [%(threadName)s] %(message)s",
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll is noise
+    from app.ui import logbuffer
+
+    logbuffer.install()  # recent log lines for the manual context export
     log = logging.getLogger("run")
 
     if not settings.ui_password:
@@ -58,9 +61,8 @@ def main() -> None:
             target=clarification.run, args=(stop,), name="clarifications", daemon=True
         ).start()
 
-    from app.mail import speech
-
-    speech.preload()  # voice offers must not wait for the model load
+    # Audio fallback runs in bounded child processes. Its model is baked into the image;
+    # do not also retain an unused model in the mail process while Groq is primary.
     rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
     if settings.thread_rescue_enabled:
         from app.agents import rescue
