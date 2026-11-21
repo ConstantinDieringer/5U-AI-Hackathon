@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Required tracking paragraph in every RFQ customer send, before and after optional rewriting, with a final gate. Conditional before booking, direct afterwards; no extra LLM. A 30-second worker repairs one missing invitation per active session with durable receipt/unknown states, pause/manual/decline controls and orphan-message evidence. Verification on integrated main: 1261 passed/5 skipped; all 31 replay facts unchanged, only 19 quote texts updated. Offline audit recognizes all 45 actual confirmations, preventing mass reminders. Rollout pending.
+
 - Carrier document totals hardened (PR, `bids.document_price` / `document_timing`): 18 offer layouts x 5 formats (txt, pipe table, PDF, DOCX paragraphs, DOCX table) replay exact. Tier 1 total labels with qualifiers (Total amount, Total (EUR), Gesamtpreis (netto), Summe, Total due, incl. fuel), value in the next row, column-header currency, empty/merged table cells, NBSP thousands. Tier 2 price labels only without a total line and only with the currency at the amount. Never: per-unit rates, waiting/optional/excluded charges, sub-totals, offer/reference numbers, two different totals. Duration from the transit/collection line, never validity/payment/storage; number words. Before: 32/90 layouts and three silent wrong values (0.07 EUR per-kg rate as total, 1.00 EUR from NBSP thousands, 7-day validity as transit).
 - Round 64 carrier documents additionally use `Total, all-in` and adjacent label/value rows. Explicit totals now support those ordinary table layouts without scanning past an unrelated row; all four observed document totals replay correctly. Production no-answer cause remains unverified beyond the already reproduced body-only bid gap.
 - Pre-booking answers (`PREBOOK_ANSWER`, default off, PR open): a reply to our quote that only asks about the quoted option (round 54 style) is answered from the stored quote with a go-ahead question and never booked; rules only, no LLM review, shares `FOLLOWUP_MAX` with the nudges; "book the faster one instead" after it never books. Reply replay: stored replies identical off/on, 19/19 injected round-54 questions answered and booked on the next yes, 0 worse. Not verified live.
@@ -199,6 +201,12 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 23:25: Übersicht v0.3: status strip (verdict, check pills, score), "Fehler & Warnungen" (warn/error events of 3 h grouped, `GET /api/problems`), ERROR log lines stored as `log_error` events (`app/ui/log_events.py`, session from thread name, 30 s dedupe). "Lagebild kopieren" / "Kontext kopieren" put markdown for a manual AI session on the clipboard (`/api/context`, `/api/sessions/{id}/context`). Punkte card removed. Checked in Chrome with the demo DB.
+
+- 21.11 23:15: Thread rescue woke ~40 hours-old threads on every restart (no age limit, unbounded parallel gpt-5 calls): gateway 429 bursts, mails into stale threads, a Kessler loop stopped by the mail guard. Now only input younger than `THREAD_RESCUE_MAX_AGE_S` (600 s), max `THREAD_RESCUE_MAX_PARALLEL` (2) owners at once. Offline tests only.
+
+- 21.11 23:05: "Weitere Rückfrage unterdrückt" fired far too often: the two-question cap counted RFQ, booking and tracking questions together (all `category='clarification'`), so one RFQ question plus one "shall we book?" question capped the thread. Now counted per workflow (`clarify.sent.<sid>` in kv); booking/tracking at the cap is a warning, not an error/#sos. Offline tests only.
 
 - 21.11 21:40: Rounds 54/55 accepted but not booked (customer stalled, no follow-up). New `app/agents/followup.py`: template nudge in the thread 30 s after our last unanswered mail (`FOLLOWUP_AFTER_S`), for the offer (max 3, within 900 s) and for clarification questions before the quote (max 3, before the RFQ deadline). No LLM, price never restated; stops on yes/explicit no/booking/pause/manual. Offline tests only.
 

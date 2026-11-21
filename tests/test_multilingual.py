@@ -12,6 +12,7 @@ from app.mail import language, multilingual
 from app.mail.content import current_message
 from app.mail.rfq_validation import validate
 from app.mail.style import SIGNATURE, written_date
+from app.mail.tracking_notice import NOTICES, has_notice
 from app.models import Mail, RateOption, Rfq
 
 SAMPLES = [
@@ -238,7 +239,15 @@ def french_translation(purpose, messages, sid, **kwargs):
     data = json.loads(messages[1]["content"])
     assert data["language"] == "fr"
     assert "best friend" in messages[0]["content"]
-    body = data["body"].replace("Hello", "Bonjour").replace("Your shipment", "Votre envoi")
+    body = data["body"].replace(
+        NOTICES[("en", False)],
+        "Une fois ton envoi réservé, tu peux répondre à cet email pour demander des nouvelles de son acheminement.",
+    )
+    body = body.replace(
+        NOTICES[("en", True)],
+        "Tu peux répondre à cet email pour demander des nouvelles de ton envoi.",
+    )
+    body = body.replace("Hello", "Bonjour").replace("Your shipment", "Votre envoi")
     body = body.replace("is booked", "est réservé").replace("The total is", "Le montant total est")
     body = body.replace("Your booking reference is", "Votre référence de réservation est")
     body = body.replace("from", "de").replace(" to ", " vers ").replace(" with ", " avec ")
@@ -656,7 +665,12 @@ def test_regional_language_tags_keep_german_templates():
 
 def test_manual_native_reply_does_not_get_automatically_rewritten(monkeypatch):
     original = mail(SAMPLES[0][1])
-    monkeypatch.setattr(llm, "complete", lambda *a, **k: pytest.fail("manual mail rewritten"))
+
+    def complete(*args, **kwargs):
+        assert "Merci beaucoup" not in json.loads(args[1][1]["content"])["body"]
+        return french_translation(*args, **kwargs)
+
+    monkeypatch.setattr(llm, "complete", complete)
     wire = []
     monkeypatch.setattr(hackloop, "send", lambda **kw: wire.append(kw) or {"id": 900})
     body = f"Bonjour Anna,\n\nMerci beaucoup pour votre message.\n\n{SIGNATURE}\n"
@@ -669,7 +683,8 @@ def test_manual_native_reply_does_not_get_automatically_rewritten(monkeypatch):
         allow_manual=True,
         review=False,
     )
-    assert sent["body"] == body and len(wire) == 1
+    assert "Merci beaucoup pour votre message." in sent["body"] and len(wire) == 1
+    assert has_notice(sent["body"])
 
 
 def test_long_quoted_history_does_not_block_a_short_current_reply(monkeypatch):

@@ -337,6 +337,38 @@ def test_supervisor_reclaims_stalled_thread_but_not_live_rfq(case, monkeypatch):
     assert called[0][0].id == answer.id
 
 
+def test_supervisor_ignores_old_threads(case, monkeypatch):
+    """Live 21.11 22:58: every restart woke ~40 hours-old threads at once (gateway 429s,
+    mails into stale threads). Input older than THREAD_RESCUE_MAX_AGE_S is history."""
+    old = datetime.now(UTC) - timedelta(seconds=rescue.settings.thread_rescue_max_age_s + 60)
+    with db.tx() as c:
+        c.execute("UPDATE mails SET received_at=? WHERE session_id=?", (old.isoformat(), SID))
+    monkeypatch.setattr(rescue, "take_over", lambda *a: pytest.fail("old thread rescued"))
+    assert rescue.check_once(background=False) == []
+
+
+def test_supervisor_caps_parallel_owners(case, monkeypatch):
+    _, answer, _ = case
+    before = datetime.now(UTC) - timedelta(seconds=60)
+    with db.tx() as c:
+        c.execute("UPDATE mails SET received_at=? WHERE session_id=?", (before.isoformat(), SID))
+    monkeypatch.setattr(
+        rescue, "settings", dataclasses.replace(rescue.settings, thread_rescue_max_parallel=1)
+    )
+    started = []
+    monkeypatch.setattr(rescue.threading, "Thread", lambda **k: started.append(k) or _NoThread())
+    monkeypatch.setattr(rescue, "_running", {99999})  # one owner already running
+    assert rescue.check_once() == [] and started == []
+    monkeypatch.setattr(rescue, "_running", set())
+    assert rescue.check_once() == [SID] and len(started) == 1
+    assert rescue.check_once() == []  # same session still running: not started twice
+
+
+class _NoThread:
+    def start(self) -> None:
+        pass
+
+
 def test_plan_lease_and_saved_decision_survive_restart(case, monkeypatch):
     root, answer, draft = case
     calls = model(monkeypatch, plan())

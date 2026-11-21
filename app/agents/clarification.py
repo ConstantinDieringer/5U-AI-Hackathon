@@ -431,14 +431,10 @@ def request(mail, sid, draft):
         return
     if db.is_paused(sid) or db.is_manual(sid):
         return
-    asked = _questions_sent(sid)
+    workflow = draft.evidence.get("workflow", "rfq")
+    asked = _questions_sent(sid, workflow)
     rescue_question = draft.evidence.get("rescue_question_mail_id") == mail.id
-    if (
-        settings.clarify_once
-        and asked
-        and draft.evidence.get("workflow", "rfq") == "rfq"
-        and not rescue_question
-    ):
+    if settings.clarify_once and asked and workflow == "rfq" and not rescue_question:
         # CLARIFY_ONCE: never a second question (round 28 asked four times). The answer did not
         # resolve it: quote from real prices if they allow, else stop for a person.
         from app.agents import rfq
@@ -452,16 +448,27 @@ def request(mail, sid, draft):
         if not rfq.quote_without_answer(sid, "Antwort unbrauchbar"):
             db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
         return
-    # hard cap: at most two clarifications per thread (one follow-up for a partial answer).
-    # More is a loop (round 7237 sent four identical ones); alert a human instead.
+    # hard cap: at most two clarifications per workflow in a thread (one follow-up for a partial
+    # answer). More is a loop (round 7237 sent four identical ones); alert a human instead.
+    # Counted per workflow: an RFQ question must not use up the booking agent's questions.
     if asked >= 2 and not rescue_question:
-        db.emit(
-            "clarification_loop",
-            "Weitere Rückfrage unterdrückt: Session braucht einen Menschen",
-            sid,
-            level="error",
-        )
-        if settings.clarify_cap_resolve and draft.evidence.get("workflow", "rfq") == "rfq":
+        if workflow == "rfq":
+            db.emit(
+                "clarification_loop",
+                "Weitere Rückfrage unterdrückt: Session braucht einen Menschen",
+                sid,
+                level="error",
+            )
+        else:
+            # booking/tracking: the customer is still deciding, no round is lost; the
+            # follow-up agent and the attention list cover it, no #sos alarm
+            db.emit(
+                "clarification_loop",
+                f"Weitere Rückfrage ({workflow}) unterdrückt: bitte manuell prüfen",
+                sid,
+                level="warn",
+            )
+        if settings.clarify_cap_resolve and workflow == "rfq":
             db.clarification_sent(sid, "capped")  # no send follows; not an unknown outcome
             resolve_at_cap(mail, sid, draft)
         return
@@ -504,7 +511,12 @@ def request(mail, sid, draft):
         references=[*mail.references, mail.id],
         raw=sent,
     )
-    if draft.evidence.get("workflow", "rfq") == "rfq":
+    if workflow != "rfq":
+        try:
+            _count_other_workflow(sid, workflow)
+        except Exception:  # bookkeeping after a completed send must not fail it
+            log.exception("session %s: could not count the %s question", sid, workflow)
+    if workflow == "rfq":
         try:  # which items our questions covered (CLARIFY_CAP_RESOLVE: was DG asked?)
             db.kv_set(
                 f"clarify.asked.{sid}",
@@ -630,8 +642,34 @@ def resolve_at_cap(mail: Mail, sid: int, draft: RfqDraft) -> None:
     db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
 
 
-def _questions_sent(sid):
-    return (
+def _other_workflow_counts(sid: int) -> dict[str, int]:
+    """Questions sent per non-RFQ workflow (booking, tracking) in this thread."""
+    try:
+        raw = json.loads(db.kv_get(f"clarify.sent.{sid}") or "{}")
+    except ValueError:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): int(v) for k, v in raw.items() if isinstance(v, int) and v > 0}
+
+
+def _count_other_workflow(sid: int, workflow: str) -> None:
+    counts = _other_workflow_counts(sid)
+    counts[workflow] = counts.get(workflow, 0) + 1
+    db.kv_set(f"clarify.sent.{sid}", json.dumps(counts, sort_keys=True))
+
+
+def _questions_sent(sid: int, workflow: str = "rfq") -> int:
+    """Clarification questions this workflow already sent in the thread.
+
+    All workflows store their questions as category 'clarification'. Booking and tracking
+    questions are counted separately, so the RFQ count is the rest. Without this split one
+    RFQ question plus one booking question hit the cap of two and every further hesitant
+    customer reply raised `clarification_loop`."""
+    others = _other_workflow_counts(sid)
+    if workflow != "rfq":
+        return others.get(workflow, 0)
+    total = (
         db.conn()
         .execute(
             "SELECT COUNT(*) FROM mails WHERE session_id = ? AND direction = 'out'"
@@ -640,6 +678,7 @@ def _questions_sent(sid):
         )
         .fetchone()[0]
     )
+    return max(0, total - sum(others.values()))
 
 
 def ask(mail, sid, workflow, en, de):

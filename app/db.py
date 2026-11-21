@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS events (
   created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_events_session ON events(session_id, id);
+CREATE INDEX IF NOT EXISTS ix_events_level ON events(level, id);
 
 CREATE TABLE IF NOT EXISTS board_results (
   round_id    TEXT PRIMARY KEY,
@@ -500,6 +501,16 @@ def kv_get(key: str, default: str | None = None) -> str | None:
     return r["value"] if r else default
 
 
+def kv_values(prefix: str) -> list[str]:
+    """Read cached values in a literal key namespace, without treating wildcards as SQL."""
+    return [
+        r["value"]
+        for r in conn().execute(
+            "SELECT value FROM kv WHERE substr(key, 1, ?) = ?", (len(prefix), prefix)
+        )
+    ]
+
+
 def delivery_enqueue(mail_id: int, raw: dict, source: str) -> bool:
     """Ack only after commit. A short lock timeout fits the webhook's 5s window."""
     c = conn()
@@ -765,6 +776,41 @@ def kv_claim(key: str) -> bool:
         return (
             c.execute("INSERT OR IGNORE INTO kv(key, value) VALUES (?, ?)", (key, now())).rowcount
             == 1
+        )
+
+
+def tracking_notice_candidates() -> list[int]:
+    """Active customer workflows whose already-sent mail may need a missing notice."""
+    return [
+        int(r["id"])
+        for r in _rows(
+            conn().execute(
+                "SELECT s.id FROM sessions s WHERE s.kind='rfq' AND s.paused=0 AND s.mode='auto'"
+                " AND s.status IN ('quoted','booked','confirmed')"
+                " AND (EXISTS(SELECT 1 FROM quotes q WHERE q.session_id=s.id)"
+                " OR EXISTS(SELECT 1 FROM bookings b WHERE b.session_id=s.id)) ORDER BY s.id DESC"
+            )
+        )
+    ]
+
+
+def claim_tracking_notice(session_id: int) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "INSERT OR IGNORE INTO kv(key,value) VALUES (?, 'reserved')",
+                (f"tracking.notice.recovery.{session_id}",),
+            ).rowcount
+            == 1
+        )
+
+
+def release_tracking_notice(session_id: int) -> None:
+    """Only a known pre-transport refusal may release this claim for another attempt."""
+    with tx() as c:
+        c.execute(
+            "DELETE FROM kv WHERE key=? AND value='reserved'",
+            (f"tracking.notice.recovery.{session_id}",),
         )
 
 
@@ -1609,21 +1655,23 @@ def rescue_run(sid: int, key: str) -> dict[str, Any] | None:
     return row
 
 
-def rescue_candidates(before: str) -> list[dict[str, Any]]:
-    """Latest unanswered customer input or unquoted RFQ, after the supervisor grace time."""
+def rescue_candidates(before: str, after: str | None = None) -> list[dict[str, Any]]:
+    """Latest unanswered customer input or unquoted RFQ, after the supervisor grace time.
+
+    `after`: ignore input received before it (old threads are not a live workflow)."""
     return _rows(
         conn().execute(
             "SELECT m.*,s.id AS session_id FROM sessions s JOIN mails m ON m.id=("
             "SELECT MAX(i.id) FROM mails i WHERE i.session_id=s.id AND i.direction='in' "
             "AND i.category IN ('rfq','customer','tracking') AND i.sender=s.customer) "
             "JOIN mails root ON root.id=s.id WHERE root.category='rfq' "
-            "AND s.mode='auto' AND s.paused=0 AND m.received_at<=? "
+            "AND s.mode='auto' AND s.paused=0 AND m.received_at<=? AND m.received_at>=? "
             "AND (NOT EXISTS(SELECT 1 FROM quotes q WHERE q.session_id=s.id) "
             "OR (NOT EXISTS(SELECT 1 FROM mails o WHERE o.session_id=s.id AND o.direction='out' "
             "AND o.in_reply_to=m.id) AND m.id<>s.id)) "
             "AND NOT EXISTS(SELECT 1 FROM mails o WHERE o.session_id=s.id AND o.direction='out' "
             "AND o.category IN ('manual_reply','notice')) ORDER BY m.received_at LIMIT 100",
-            (before,),
+            (before, after or ""),
         )
     )
 
@@ -2921,6 +2969,57 @@ def secs_label(s: float | None) -> str:
     if s is None:
         return "–"
     return f"{round(s)} s" if s < 60 else f"{int(s // 60)}:{round(s % 60):02d} min"
+
+
+_PROBLEM_NUMBER = re.compile(r"\d[\d.,:]*")
+
+
+def problems(hours: float = 3, limit: int = 400) -> dict[str, Any]:
+    """Übersicht: every error and warning event of the last `hours`, grouped by kind and
+    message with the numbers taken out (same failure, different session = one group).
+
+    Each group: level, kind, latest message, count, first/last time, affected sessions."""
+    since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
+    rows = _rows(
+        conn().execute(
+            "SELECT e.id, e.session_id, e.kind, e.level, e.message, e.created_at, s.subject, "
+            "s.customer FROM events e LEFT JOIN sessions s ON s.id = e.session_id "
+            "WHERE e.level IN ('warn','error') AND e.created_at >= ? ORDER BY e.id DESC LIMIT ?",
+            (since, limit),
+        )
+    )
+    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for r in rows:  # newest first
+        message = r["message"] or ""
+        key = (r["level"], r["kind"], _PROBLEM_NUMBER.sub("#", message))
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {
+                "level": r["level"],
+                "kind": r["kind"],
+                "message": message,
+                "count": 0,
+                "last_at": r["created_at"],
+                "first_at": r["created_at"],
+                "last_event_id": r["id"],
+                "sessions": [],
+            }
+        g["count"] += 1
+        g["first_at"] = r["created_at"]
+        sid = r["session_id"]
+        if sid is not None and all(x["id"] != sid for x in g["sessions"]):
+            if len(g["sessions"]) < 6:
+                g["sessions"].append(
+                    {"id": sid, "subject": r["subject"], "customer": r["customer"]}
+                )
+    ordered = sorted(groups.values(), key=lambda g: (g["level"] != "error", -g["last_event_id"]))
+    return {
+        "hours": hours,
+        "errors": sum(g["count"] for g in ordered if g["level"] == "error"),
+        "warnings": sum(g["count"] for g in ordered if g["level"] == "warn"),
+        "truncated": len(rows) >= limit,
+        "groups": ordered,
+    }
 
 
 def status_overview() -> dict[str, Any]:

@@ -118,6 +118,30 @@ def api_status() -> dict[str, Any]:
     return db.status_overview()
 
 
+@app.get("/api/problems")
+def api_problems(hours: float = 3) -> dict[str, Any]:
+    """Errors and warnings of the last hours, grouped (Übersicht)."""
+    return db.problems(hours=max(0.25, min(hours, 24)))
+
+
+@app.get("/api/context")
+def api_context() -> dict[str, str]:
+    """Lagebild as markdown for the clipboard (manual help from any AI model)."""
+    from app.ui import ai_context
+
+    return {"text": ai_context.system_context()}
+
+
+@app.get("/api/sessions/{session_id}/context")
+def api_session_context(session_id: int) -> dict[str, str]:
+    from app.ui import ai_context
+
+    text = ai_context.session_context(session_id)
+    if text is None:
+        raise HTTPException(404, "session not found")
+    return {"text": text}
+
+
 @app.get("/api/attention")
 def api_attention() -> list[dict[str, Any]]:
     return db.attention_items()
@@ -404,6 +428,8 @@ def api_health() -> dict[str, Any]:
         "build_revision": settings.build_revision,
         "email_reviewer_model": settings.llm_review_model,
         "email_review_enabled": settings.email_review_enabled,
+        "tracking_notice_version": "required-v1",
+        "tracking_notice_recovery_enabled": settings.agents_enabled,
         "thread_rescue_enabled": settings.thread_rescue_enabled,
         "thread_rescue_model": settings.llm_rescue_model,
         "llm_max_calls_per_session": settings.llm_max_calls_per_session,

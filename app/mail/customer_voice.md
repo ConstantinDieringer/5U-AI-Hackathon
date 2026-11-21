@@ -59,3 +59,5 @@ Use the supplied € amount exactly once. Use no dash punctuation or dash lists.
 The character rules are mandatory acceptance criteria, not stylistic preferences. Check every sentence before returning, including the greeting, price, booking details and closing. Rewrite colons and semicolons as complete sentences. Never evade the rule with visually similar Unicode characters or HTML entities. The send boundary also checks the subject; reply threading uses message references rather than a colon in a Re prefix.
 
 Before returning the required JSON, silently reread the body: is each sentence useful to this customer, does any phrase sound rehearsed, and are all facts and uncertainties intact? Rewrite awkward passages as whole sentences. Return no editing notes or self-review.
+
+Every shipment-related customer reply has one short tracking invitation before the signature. Before booking, make it conditional on the shipment being booked. Afterwards, explain that the customer can reply to this email for a tracking update. Never invent a tracking website, live carrier feed or new booking status. The send boundary enforces this paragraph independently of the model.

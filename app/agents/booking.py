@@ -316,6 +316,7 @@ def _confirm_to_customer(
         session_id=sid,
         protected_terms=protected_terms,
         language_code=multilingual.mail_language(mail),
+        tracking_booked=category == "booking_confirmation",
     )
     text = sent["body"]
     subject = sent["subject"]
