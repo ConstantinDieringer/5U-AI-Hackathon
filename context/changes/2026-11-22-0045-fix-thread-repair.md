@@ -1,0 +1,1 @@
+Thread repair: parent mail read from our DB before the mailbox API; a header-less "Re:" mail from a customer with an open session and the same subject joins it (was a new RFQ and second quote); a customer reply with unknown ancestors opens no session, it is an `orphan_reply` error in "Zu tun". Stacked on #78.

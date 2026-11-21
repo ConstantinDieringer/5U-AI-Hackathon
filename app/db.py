@@ -26,6 +26,7 @@ import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from email.utils import parseaddr
 from typing import Any
 
 from app.config import settings
@@ -890,6 +891,49 @@ def _session_by_subject(c: sqlite3.Connection, subject: str, body: str) -> int |
     return None
 
 
+REPLY_SESSION_STATUSES = ("new", "pricing", "quoted", "accepted", "booked", "confirmed")
+ORPHAN_REPLY = "orphan_reply"  # customer reply whose thread we do not know: a person decides
+
+
+def mail_header(mail_id: int) -> dict[str, Any] | None:
+    """A stored mail (either direction) for routing: sender, recipient, subject, raw copy.
+    Lets the poller read a parent from our own DB before asking the mailbox API."""
+    return _one(
+        conn().execute(
+            "SELECT id, direction, sender, recipient, subject, received_at, raw_json FROM mails"
+            " WHERE id = ?",
+            (mail_id,),
+        )
+    )
+
+
+def session_for_headerless_reply(sender: str, subject: str) -> int | None:
+    """A customer mail without in_reply_to/references that is clearly a reply ("Re:" etc.)
+    to an open session of the same sender with the same subject, sent in the last two hours.
+    Newest session wins. A mail without a reply prefix stays a new request."""
+    if not _RE_PREFIX.match(subject or ""):
+        return None
+    wanted = _RE_PREFIX.sub("", subject).strip().lower()
+    addr = parseaddr(sender or "")[1].strip().lower()
+    if not wanted or not addr:
+        return None
+    since = (datetime.now(UTC) - SUBJECT_MATCH_WINDOW).isoformat(timespec="seconds")
+    marks = ",".join("?" * len(REPLY_SESSION_STATUSES))
+    for r in _rows(
+        conn().execute(
+            f"SELECT id, customer, subject FROM sessions WHERE kind = 'rfq'"
+            f" AND status IN ({marks}) AND created_at >= ? ORDER BY id DESC",
+            (*REPLY_SESSION_STATUSES, since),
+        )
+    ):
+        if (
+            parseaddr(r["customer"] or "")[1].strip().lower() == addr
+            and _RE_PREFIX.sub("", r["subject"] or "").strip().lower() == wanted
+        ):
+            return int(r["id"])
+    return None
+
+
 _AP_TAG = re.compile(r"\bAP-(\d+)\b")
 _BK_REF = re.compile(r"\bBK-[A-Z0-9]{4,}\b")
 
@@ -1024,10 +1068,14 @@ def ingest_mail(
     in_reply_to: int | None = None,
     raw: dict[str, Any] | None = None,
     report_new: bool = False,
+    session_hint: int | None = None,
 ) -> int | None | tuple[int | None, bool]:
     """Store an incoming mail and return its session id (None = unassigned).
 
     Idempotent: a mail id seen before changes nothing and returns its stored session.
+    `session_hint` is the session the poller matched a header-less reply to. A customer
+    reply whose thread we do not know never opens a session: it is stored unassigned and
+    raised as an `orphan_reply` error so a person decides.
     """
     received_at = received_at or now()
     refs = [int(x) for x in references]
@@ -1036,7 +1084,7 @@ def ingest_mail(
         known = _one(c.execute("SELECT session_id FROM mails WHERE id = ?", (mail_id,)))
         if known:
             return (known["session_id"], False) if report_new else known["session_id"]
-        session_id = _resolve_session(c, in_reply_to, refs)
+        session_id = _resolve_session(c, in_reply_to, refs) or session_hint
         if (
             session_id is None
             and not refs
@@ -1044,10 +1092,11 @@ def ingest_mail(
             and category not in SESSION_CATEGORIES
         ):
             session_id = _session_by_subject(c, subject, body)
-        if session_id is None and category not in SESSION_CATEGORIES:
+        if session_id is None and (category not in SESSION_CATEGORIES or category == "customer"):
             session_id = _session_by_reference(c, subject, body)
+        orphan = session_id is None and category == "customer"
         created = False
-        if session_id is None and category in SESSION_CATEGORIES:
+        if session_id is None and category in SESSION_CATEGORIES and not orphan:
             session_id = mail_id
             created = True
             _create_session(c, session_id, category, sender, subject, received_at)
@@ -1080,7 +1129,30 @@ def ingest_mail(
             session_id,
             payload={"mail_id": mail_id, "category": category},
         )
+        if orphan:
+            _emit(
+                c,
+                ORPHAN_REPLY,
+                f"Kundenantwort ohne bekannten Thread, keine Session eröffnet: {sender}"
+                f" – {subject[:80]}",
+                None,
+                "error",
+                payload={"mail_id": mail_id, "in_reply_to": in_reply_to, "references": refs},
+            )
     return (session_id, True) if report_new else session_id
+
+
+def orphan_replies(limit: int = 20) -> list[dict[str, Any]]:
+    """Customer replies we could not place in a thread and nobody has assigned yet."""
+    rows = _rows(
+        conn().execute(
+            "SELECT m.id AS mail_id, m.sender, m.subject, m.received_at FROM events e"
+            " JOIN mails m ON m.id = json_extract(e.payload_json, '$.mail_id')"
+            " WHERE e.kind = ? AND m.session_id IS NULL ORDER BY e.id DESC LIMIT ?",
+            (ORPHAN_REPLY, limit),
+        )
+    )
+    return rows
 
 
 def record_outgoing(
@@ -2661,6 +2733,18 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
         }
         for q in quarantined(limit)
     ]
+    items += [
+        {
+            "session_id": None,
+            "mail_id": o["mail_id"],
+            "kind": ORPHAN_REPLY,
+            "reason": "Kundenantwort ohne bekannten Thread: Session zuordnen",
+            "subject": o["subject"],
+            "customer": o["sender"],
+            "status": "unassigned",
+        }
+        for o in orphan_replies(limit)
+    ]
     for s in list_sessions(attention=True, limit=limit):
         reason = (
             "Fehler" if s["status"] == "error" else "pausiert" if s["paused"] else "Deadline < 90 s"
@@ -3291,6 +3375,18 @@ def status_overview() -> dict[str, Any]:
                 }
             )
 
+    todo += [
+        {
+            "session_id": None,
+            "subject": o["subject"],
+            "customer": o["sender"],
+            "lane": None,
+            "mail_id": o["mail_id"],
+            "reason": f"Mail {o['mail_id']}: Kundenantwort ohne bekannten Thread",
+            "tone": "red",
+        }
+        for o in orphan_replies()
+    ]
     for r in unanswered_rounds(limit=50):
         if not r["sent_at"] or r["sent_at"] < since:
             continue
