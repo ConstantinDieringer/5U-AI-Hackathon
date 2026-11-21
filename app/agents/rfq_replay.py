@@ -55,7 +55,12 @@ def _extraction(detail: dict[str, Any]) -> dict[str, Any] | None:
     """The first `extracted` event is the parsed LLM answer (before code post-processing)."""
     for event in detail["events"]:
         if event["kind"] == "extracted" and event.get("payload"):
-            return dict(event["payload"])
+            payload = dict(event["payload"])
+            if payload.get("pickup_assumed"):
+                # written after locate_pickup: the assumed site (round 20: 61391 from an older
+                # shipment) was code, not the LLM's answer, and replay must decide it anew
+                payload.update(pickup_zip=None, pickup_city=None, pickup_assumed=False)
+            return payload
     return None
 
 

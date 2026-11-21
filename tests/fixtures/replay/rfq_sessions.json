@@ -2048,9 +2048,9 @@
    },
    "llm_extraction": {
     "origin": null,
-    "pickup_zip": "61391",
+    "pickup_zip": null,
     "pickup_city": null,
-    "pickup_assumed": true,
+    "pickup_assumed": false,
     "destination": "RUH",
     "weight_kg": 970.0,
     "volume_cbm": 9.06,
