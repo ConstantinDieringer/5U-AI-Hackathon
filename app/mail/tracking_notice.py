@@ -26,6 +26,24 @@ NOTICES = {
         True,
     ): "Puoi chiedere aggiornamenti sul tracciamento della tua spedizione rispondendo a questa email.",
     (
+        "nl",
+        False,
+    ): "Zodra je zending is geboekt, kun je ons om een update over de tracking vragen door op deze mail te antwoorden.",
+    (
+        "nl",
+        True,
+    ): "Je kunt ons om een update over de tracking van je zending vragen door op deze mail te antwoorden.",
+    (
+        "pl",
+        False,
+    ): "Gdy Twoja przesyłka zostanie zarezerwowana, możesz zapytać o jej status, odpowiadając na tę wiadomość.",
+    ("pl", True): "Możesz zapytać o status swojej przesyłki, odpowiadając na tę wiadomość.",
+    (
+        "tr",
+        False,
+    ): "Gönderin rezerve edildiğinde bu mesajı yanıtlayarak takip bilgisi isteyebilirsin.",
+    ("tr", True): "Bu mesajı yanıtlayarak gönderin için takip bilgisi isteyebilirsin.",
+    (
         "en",
         False,
     ): "Once your shipment is booked, you can ask us for a tracking update by replying to this email.",
