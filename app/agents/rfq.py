@@ -844,6 +844,11 @@ def compose_quote_text(
             "Customer exclusions have already been applied to this selection. If useful, "
             "acknowledge that generically; never repeat excluded carrier names in the offer."
         ),
+        "selection_explanation": (
+            "Selected for the shortest air transit among the compared air options."
+            if rfq.preference == "fastest"
+            else "Selected for the lowest air price among the compared air options."
+        ),
         "origin": option.origin,
         "destination": option.destination,
         "airline": option.airline,
@@ -856,16 +861,12 @@ def compose_quote_text(
         "pickup_zip": rfq.pickup_label if truck else None,
         "pickup_included": truck is not None,
         "carrier_reported_lead_hours": (
-            truck.transit_days * 24
-            if truck and truck.transit_days is not None
-            else None
+            truck.transit_days * 24 if truck and truck.transit_days is not None else None
         ),
         "carrier_timing_kind": truck.timing_kind if truck else None,
         "road_transit_hours": (
             truck.transit_days * 24
-            if truck
-            and truck.transit_days is not None
-            and truck.timing_kind == "road_transit"
+            if truck and truck.transit_days is not None and truck.timing_kind == "road_transit"
             else None
         ),
         "confirmed_collection_slot": None,
