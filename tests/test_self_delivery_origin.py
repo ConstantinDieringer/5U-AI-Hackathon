@@ -205,15 +205,20 @@ def test_origin_answer_parser_does_not_guess(text):
 
 
 def test_setting_parses_true_false(monkeypatch) -> None:
+    """Default on since the Task 1 replay; an explicit "false" (or any non-"true") is the off
+    switch, unset or empty keeps the default."""
     for raw, value in (
         ("true", True),
         ("TRUE", True),
         ("false", False),
-        ("", False),
+        ("", True),
         ("yes", False),
     ):
         monkeypatch.setenv("SELF_DELIVERY_RECOVERY", raw)
-        assert config._flag("SELF_DELIVERY_RECOVERY") is value
+        assert config._flag("SELF_DELIVERY_RECOVERY", default=True) is value
+    monkeypatch.delenv("SELF_DELIVERY_RECOVERY")
+    assert config._flag("SELF_DELIVERY_RECOVERY", default=True) is True
+    assert config._flag("SELF_DELIVERY_RECOVERY") is False  # switches without a default
 
 
 def test_validation_module_reads_the_live_setting() -> None:

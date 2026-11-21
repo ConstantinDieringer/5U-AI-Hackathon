@@ -93,12 +93,33 @@ def test_replay_cleanup_also_releases_database_on_failure(tmp_path, monkeypatch)
     assert list(tmp_path.iterdir()) == []
 
 
-def test_replayed_answers_reach_the_clarification(results) -> None:
-    """Round 28's first explicit airport answer now resolves without optional flags."""
-    got = results[28]
+def test_replayed_answers_reach_the_clarification(corpus, tmp_path, monkeypatch) -> None:
+    """Round 28 with SELF_DELIVERY_RECOVERY and CLARIFY_ONCE off: one question, and the first
+    explicit airport answer resolves it without optional flags (round 48 fix)."""
+    import dataclasses
+
+    from app import config
+    from app.agents import clarification, rfq
+
+    off = dataclasses.replace(config.settings, self_delivery_recovery=False, clarify_once=False)
+    for module in (config, rfq, clarification):
+        monkeypatch.setattr(module, "settings", off)
+    case = next(c for c in corpus["cases"] if c["round_no"] == 28)
+    got = rfq_replay.replay_case(case, tmp_path, corpus["lane_observations"])
     assert got["outcome"] == "quoted" and got["open_issues"] == []
     assert got["clarifications_sent"] == 1
     assert got["airline"] == "Ultraviolet Air Freight" and got["total_minor"] == 39045
+
+
+def test_round_28_with_todays_defaults_quotes_without_a_question(results) -> None:
+    """SELF_DELIVERY_RECOVERY and CLARIFY_ONCE default to on: round 28 (lost, asked four times)
+    reads CGN from the request and quotes the portal price without asking."""
+    got = results[28]
+    assert (got["airline"], got["total_minor"], got["clarifications_sent"]) == (
+        "Ultraviolet Air Freight",
+        39045,
+        0,
+    )
 
 
 def test_round_28_with_self_delivery_recovery_quotes_the_portal_price(

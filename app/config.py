@@ -17,9 +17,10 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, "").strip() or default
 
 
-def _flag(name: str) -> bool:
-    """An on/off switch; only "true" switches on, anything else keeps today's behaviour."""
-    return _env(name, "false").lower() == "true"
+def _flag(name: str, default: bool = False) -> bool:
+    """An on/off switch; only "true" switches on. Unset or empty takes the default, so a switch
+    that defaults to on is turned off with an explicit "false"."""
+    return _env(name, "true" if default else "false").lower() == "true"
 
 
 TRUCKER_BALANCES = ("minmax", "ratio")
@@ -126,9 +127,9 @@ settings = Settings(
     carrier_observation_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", "3600")),
     allow_incomplete_door_quote=(_env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"),
     trucker_balance=_trucker_balance(),
-    self_delivery_recovery=_flag("SELF_DELIVERY_RECOVERY"),
+    self_delivery_recovery=_flag("SELF_DELIVERY_RECOVERY", default=True),
     ask_pickup_zip=_flag("ASK_PICKUP_ZIP"),
-    clarify_once=_flag("CLARIFY_ONCE"),
+    clarify_once=_flag("CLARIFY_ONCE", default=True),
     bid_next_break=_flag("BID_NEXT_BREAK"),
     conflict_source_answer=_flag("CONFLICT_SOURCE_ANSWER"),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)

@@ -249,7 +249,14 @@ def test_reply_completes_only_requested_fields_and_resumes(monkeypatch):
     assert not db.get_session(m.id)["quotes"] and len(sent) == 1
 
 
+def _clarify_once(monkeypatch, on):
+    new = dataclasses.replace(rfq.settings, clarify_once=on)
+    for module in (clarification, rfq):
+        monkeypatch.setattr(module, "settings", new)
+
+
 def test_yes_is_not_an_acceptance_of_clarification(monkeypatch):
+    _clarify_once(monkeypatch, False)  # the two-question cap; CLARIFY_ONCE below
     m, _d, sent = pending(monkeypatch)
     answer = Mail(
         9999,
@@ -265,6 +272,15 @@ def test_yes_is_not_an_acceptance_of_clarification(monkeypatch):
     assert not db.get_session(m.id)["bookings"] and len(sent) == 2
     clarification.handle_reply(answer, m.id)
     assert len(sent) == 2  # duplicate delivery cannot ask again
+
+
+def test_yes_under_clarify_once_asks_nothing_more_and_does_not_quote(monkeypatch):
+    _clarify_once(monkeypatch, True)
+    m, _d, sent = pending(monkeypatch)
+    yes = Mail(9999, m.id, m.sender, m.to, "Re", "Yes, go ahead", datetime.now(UTC).isoformat())
+    assert clarification.handle_reply(yes, m.id)
+    assert len(sent) == 1 and not db.get_session(m.id)["quotes"]
+    assert db.validation_get(m.id)["state"] == "manual_review"  # pickup site still unknown
 
 
 def test_replay_and_restart_do_not_resend(monkeypatch):
@@ -413,6 +429,7 @@ def test_labelled_weight_of_and_decimal_units():
 
 
 def test_unreadable_document_cannot_be_cleared_by_yes(monkeypatch):
+    _clarify_once(monkeypatch, False)  # the two-question cap; CLARIFY_ONCE below
     m = mail("FRA to JFK, 100 kg gross, total volume 1 cbm")
     _, d = validate(
         m,
@@ -425,6 +442,43 @@ def test_unreadable_document_cannot_be_cleared_by_yes(monkeypatch):
     answer = Mail(9999, m.id, m.sender, m.to, "Re", "yes", datetime.now(UTC).isoformat())
     clarification.handle_reply(answer, m.id)
     assert db.validation_get(m.id)["state"] == "awaiting_clarification"
+
+
+def test_unreadable_document_under_clarify_once_quotes_the_mail_values(monkeypatch):
+    """CLARIFY_ONCE trade-off: "yes" does not make an unreadable document readable. Today's cap
+    asks again; CLARIFY_ONCE quotes from the mail's own values and real prices (an unreadable
+    attachment is not a fallback blocker) and flags the session for a person."""
+    from app.agents import bids
+    from app.pricing.portal_sync import PortalResult
+
+    _clarify_once(monkeypatch, True)
+    sent = []
+    monkeypatch.setattr(
+        clarification.hackloop,
+        "send",
+        lambda to, subject, body, **kw: sent.append(body) or {"id": 9001 + len(sent)},
+    )
+    monkeypatch.setattr(rfq, "portal_result", lambda *a, **k: PortalResult())
+    monkeypatch.setattr(rfq, "_bid_carriers", lambda *a: ([], []))
+    monkeypatch.setattr(bids, "wait", lambda *a, **k: [])
+
+    def no_composer(*_a, **_k):
+        raise ValueError("no gateway in this test")
+
+    monkeypatch.setattr(rfq.llm, "complete", no_composer)
+    m = mail("FRA to JFK, 100 kg gross, total volume 1 cbm")
+    _, d = validate(
+        m,
+        candidate(origin="FRA", destination="JFK", weight_kg=100, volume_cbm=1),
+        attachment_issues=[{"field": "attachments", "code": "unreadable"}],
+    )
+    d.evidence["attachment_texts"] = {}
+    clarification.request(m, m.id, d)
+    yes = Mail(9999, m.id, m.sender, m.to, "Re", "yes", datetime.now(UTC).isoformat())
+    clarification.handle_reply(yes, m.id)
+    quotes = db.get_session(m.id)["quotes"]
+    assert len(sent) == 2 and len(quotes) == 1 and quotes[0]["origin"] == "FRA"
+    assert "needs_human" in {e["kind"] for e in db.get_session(m.id)["events"]}
 
 
 def test_shadow_rollback_does_not_continue_pending_quote(monkeypatch):

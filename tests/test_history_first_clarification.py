@@ -72,7 +72,14 @@ def test_history_excludes_other_customers_and_shipments():
     assert [r["id"] for r in db.customer_mail_history(1, OWNER, 4)] == [1]
 
 
+def _clarify_once(monkeypatch, on):
+    new = dataclasses.replace(clarification.settings, clarify_once=on)
+    for module in (clarification, rfq):
+        monkeypatch.setattr(module, "settings", new)
+
+
 def test_partial_answers_accumulate_and_repeat_only_for_new_mail(sent, monkeypatch):
+    _clarify_once(monkeypatch, False)  # the two-question cap; CLARIFY_ONCE below
     root = mail(1, "Origin: FRA\nDestination: JFK")
     _, draft = validate(root, RfqDraft(facts={"origin": "FRA", "destination": "JFK"}))
     clarification.request(root, 1, draft)
@@ -90,6 +97,21 @@ def test_partial_answers_accumulate_and_repeat_only_for_new_mail(sent, monkeypat
     request = db.get_session(1)["request"]
     assert request["weight_kg"] == 100 and request["volume_cbm"] == 2
     assert db.get_session(1)["first_reply_at"] is None
+
+
+def test_partial_answer_under_clarify_once_stops_for_a_person(sent, monkeypatch):
+    """CLARIFY_ONCE trade-off: the answer gives the weight but not the volume. Today's cap asks
+    a second time; CLARIFY_ONCE asks nothing more and, with the volume unproven, sends no
+    quote and flags the session for a person."""
+    _clarify_once(monkeypatch, True)
+    root = mail(1, "Origin: FRA\nDestination: JFK")
+    _, draft = validate(root, RfqDraft(facts={"origin": "FRA", "destination": "JFK"}))
+    clarification.request(root, 1, draft)
+    assert clarification.handle_reply(mail(3, "Gross weight: 100 kg", sid=1), 1)
+    assert len(sent) == 1
+    assert db.validation_get(1)["state"] == "manual_review"
+    assert not db.get_session(1)["quotes"]
+    assert "needs_human" in {e["kind"] for e in db.get_session(1)["events"]}
 
 
 def test_conflicting_history_is_not_a_guess(sent):
