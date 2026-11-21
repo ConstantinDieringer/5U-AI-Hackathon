@@ -244,6 +244,20 @@ def _fetch_cached(fetch: RateFetcher, key: CacheKey) -> dict[str, Any]:
     return raw
 
 
+def fresh_rate(key: CacheKey, *, stale_rate_id: str, deadline: float) -> dict[str, Any]:
+    """A bookable rate for `key` within `deadline`: a cached read is reused unless it is the
+    rate the portal just refused, which is dropped and read again."""
+    from app import hackloop
+
+    fetch = lambda *args: hackloop.get_rate(*args, deadline=deadline)
+    raw = _fetch_cached(fetch, key)
+    if str(raw.get("rate_id")) == stale_rate_id:
+        with _lock:
+            _cache.pop(key, None)
+        raw = _fetch_cached(fetch, key)
+    return raw
+
+
 def _one_rate(
     fetch: RateFetcher, key: CacheKey, result: PortalResult | None = None
 ) -> RateOption | None:

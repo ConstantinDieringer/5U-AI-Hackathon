@@ -75,7 +75,7 @@ class Api:
         return {"booking_reference": "BK-PRE00054", "rate_id": rate_id, "price": "4930",
                 "currency": "EUR"}  # fmt: skip
 
-    def get_rate(self, origin, destination, airline, weight_kg, volume_cbm=0.0):
+    def get_rate(self, origin, destination, airline, weight_kg, volume_cbm=0.0, **_kw):
         return {"rate_id": "R-freshfreshfresh", "total": "4800.00", "currency": "EUR"}
 
 
