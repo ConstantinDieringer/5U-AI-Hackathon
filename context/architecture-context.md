@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **LLM savings:** `mail/standard_rfq.py` conservatively parses complete current standard formats without attachments. One short schema-checked gateway verification retains scoring eligibility; unsupported formats use the full extractor. Standard quotes without extra questions/constraints use existing copy directly. `llm.py` uses stable static-prefix/schema cache routing keys with explicit unsupported-parameter fallback; never caches whole shipment answers.
+
 - **Mailbox ingress:** signed `/hooks/mailbox` persists into `mail_delivery` before acknowledging; workers and fallback polling share atomic claims and exact-ID deduplication. Pending/stored work resumes after restart; ambiguous dispatches become `unknown` with a warning for manual inspection. Only polling advances its cursor. Subscription and its private, persistent signing-secret file are managed explicitly with `python -m app.mail.webhook_admin`; never rotate on startup. See `DEPLOY.md`.
 
 - **RFQ validation:** `app/mail/rfq_validation.py` checks the current request and attachment evidence before pricing. Drafts and clarification state live in `rfq_validation`; no session-table rebuild. Enforce is the default; explicit shadow mode remains available. Enforce uses same-thread customer evidence and handles clarification replies before booking.

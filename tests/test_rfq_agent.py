@@ -545,9 +545,7 @@ def test_catch_up_resumes_open_rfq_without_new_llm_call_or_bid_mail(
     for t in started:
         t.join(10)
 
-    assert llm_calls == [
-        "compose_quote"
-    ]  # stored extraction reused; only response composition
+    assert llm_calls == []  # stored extraction reused; standard copy needs no composer
     assert [m["to"] for m in stub.sent] == [
         CUSTOMER
     ]  # no second bid mail, just the quote

@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- LLM savings: complete supported standard RFQs parsed locally with short scoring verification; standard quotes skip the writing call, special questions retain the composer. Prompt-cache routing accepted by a tiny live gateway probe (5 micro-USD estimated); cache hits/production savings not yet demonstrated. Regression tests cover unsafe-format fallback, special questions, verification and cache compatibility.
+
 - Numeric evidence accepts labelled sentence totals with `is` as well as `of`/colon forms. Round 24 was accepted but redundantly asked for 1754 kg already stated in the current mail; regression covers gate evidence, alternate labels and negative/non-gross statements.
 - RFQ 5844 regression: explicit self-delivery to FRA is recovered deterministically from the current body even if LLM origin is null. The final missing-origin guard now asks a durable clarification instead of setting error, including in shadow mode; its answers can continue without enabling the full strict gate.
 - Quote pickup timing: deterministic door quotes show reported truck lead time and explicitly unconfirmed collection slot; composer receives separate truck-lead/slot facts. Round 22 accepted but its fallback omitted the requested earliest pickup; no schedule or price policy changed.
