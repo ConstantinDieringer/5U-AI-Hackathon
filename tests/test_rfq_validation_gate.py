@@ -158,7 +158,9 @@ def test_2256_xlsx_dg_wins_over_body_nondg():
     assert [i["field"] for i in d.issues] == ["dangerous_goods"]
 
 
-def test_attachment_shipper_conflicting_with_named_pickup_blocks():
+def test_attachment_shipper_city_does_not_override_mail_pickup_zip():
+    """The document's shipper line is the company address; a ZIP in the mail names the
+    pickup site (rounds 10132, 10404: asking for a ZIP the customer gave lost the round)."""
     m = mail(
         "Please arrange pickup from 21663 Lueneburg to YYZ. "
         "855 kg gross, total volume 3.74 cbm."
@@ -175,7 +177,22 @@ def test_attachment_shipper_conflicting_with_named_pickup_blocks():
             )
         },
     )
-    assert any(i["field"] == "pickup_zip" and i["code"] == "conflict" for i in d.issues)
+    assert not any(i["field"] == "pickup_zip" for i in d.issues)
+
+
+def test_dangerous_goods_ask_for_documents_and_clear_on_documents():
+    from app.agents import clarification
+
+    m = mail("Please arrange pickup from 71184 Boeblingen to MIA. 378 kg gross, 1.86 cbm.")
+    sli = {"spec.pdf": "Total gross weight (kg): 378\nTotal volume (cbm): 1.86\n"
+           "Dangerous goods: UN3481, Class 9, Lithium ion batteries packed with equipment"}
+    cand = candidate(pickup_zip="71184", destination="MIA", weight_kg=378, volume_cbm=1.86)
+    _, d = validate(m, cand, sli)
+    assert [i["field"] for i in d.issues] == ["dangerous_goods"]
+    text = clarification.text_for(d, "en")
+    assert "UN3481, Class 9" in text and "Shipper's Declaration" in text and "postal" not in text
+    rfq, d2 = validate(m, cand, sli, corrections={"dangerous_goods": "dg_documents_received"})
+    assert rfq is not None and not d2.issues
 
 
 def test_correct_lot_totals_and_unreadable_lot_block():

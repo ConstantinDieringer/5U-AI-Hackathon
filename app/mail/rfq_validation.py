@@ -165,7 +165,10 @@ def validate(
         parts = [part.strip() for part in match[1].lstrip("|").split(",")]
         if len(parts) >= 3:
             attachment_shipper_cities.add(parts[-2])
-    if current_area and any(
+    # the shipper line in a document is the company's address; a pickup ZIP written in the
+    # mail itself names the collection site and wins (rounds 10132 Bremen vs 71184
+    # Boeblingen, 10404 Erlangen vs 81862 Munich South asked for a ZIP they had given)
+    if current_area and not zip_match and any(
         city.casefold() != current_area.casefold() for city in attachment_shipper_cities
     ):
         issues.append(
@@ -354,20 +357,27 @@ def validate(
             re.IGNORECASE,
         )
     )
-    if (
-        dangerous
-        and corrections.get("dangerous_goods") != "not_dangerous_document_corrected"
+    declared = re.search(
+        r"(?:dangerous goods|gefahrgut)\s*[:|]\s*([^\n|]*\bUN\s*\d{4}[^\n|]*)", combined, re.IGNORECASE
+    )
+    # Dangerous goods (round 10132, reason dg_docs_missing): before quoting we must ask for
+    # the DG documents (Shipper's Declaration, safety data sheet). Cleared by the customer's
+    # documents, or by an explicit statement that the goods are not dangerous.
+    if dangerous and corrections.get("dangerous_goods") not in (
+        "not_dangerous_document_corrected",
+        "dg_documents_received",
     ):
         issues.append(
             {
                 "field": "dangerous_goods",
-                "code": "conflict_or_unsupported",
-                "detail": "Confirm UN/class and whether the non-dangerous declaration or attachment is incorrect",
+                "code": "documents_required",
+                "detail": "Dangerous goods: request the Shipper's Declaration and safety data sheet",
             }
         )
     evidence["dangerous_goods"] = {
         "source": "all_documents",
         "un_numbers": re.findall(r"\bUN\s*\d{4}\b", combined, re.IGNORECASE),
+        "declared": declared[1].strip()[:120] if declared else None,
     }
     try:
         rfq = Rfq.model_validate(data)

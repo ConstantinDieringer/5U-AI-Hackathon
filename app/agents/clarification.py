@@ -51,6 +51,36 @@ def text_for(draft, lang):
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
     }
     labels = de if lang == "de" else en
+    if "dangerous_goods" in fields:
+        dg = draft.evidence.get("dangerous_goods") or {}
+        what = dg.get("declared") or ", ".join(dg.get("un_numbers") or []) or None
+        rest = [labels[f] for f in fields if f != "dangerous_goods"]
+        if lang == "de":
+            line = (
+                f"Laut Ihren Unterlagen ist die Sendung Gefahrgut ({what}). " if what else
+                "Laut Ihren Unterlagen ist die Sendung Gefahrgut. "
+            ) + (
+                "Bevor wir ein Angebot machen können, brauchen wir dafür die Gefahrgutdokumente: "
+                "die Shipper's Declaration for Dangerous Goods und das Sicherheitsdatenblatt (SDS)."
+            )
+            more = f" Außerdem brauchen wir noch {' und '.join(rest)}." if rest else ""
+            return (
+                f"Guten Tag,\n\ndanke für Ihre Anfrage. {line}{more} Schicken Sie uns die "
+                f"Unterlagen einfach hier im Thread, dann melden wir uns gleich mit dem "
+                f"Angebot.\n\n{SIGNATURE}\n"
+            )
+        line = (
+            f"Your documents show the shipment is dangerous goods ({what}). " if what else
+            "Your documents show the shipment is dangerous goods. "
+        ) + (
+            "Before we can quote we need the dangerous goods documents: the Shipper's "
+            "Declaration for Dangerous Goods and the safety data sheet (SDS)."
+        )
+        more = f" We also need {' and '.join(rest)}." if rest else ""
+        return (
+            f"Hello,\n\nthanks for your request. {line}{more} Just send them over in this "
+            f"thread and we'll come back with the quote right away.\n\n{SIGNATURE}\n"
+        )
     items = [labels[f] for f in fields]
     joiner = " und " if lang == "de" else " and "
     wanted = items[0] if len(items) == 1 else ", ".join(items[:-1]) + joiner + items[-1]
@@ -301,6 +331,17 @@ def handle_reply(mail, sid, *, resume=False):
         stated = explicit_delivery_origin(mail, draft.facts.get("destination"))
         if stated:
             corrections["origin"] = stated
+    # the customer sends (or says they attached) the DG documents
+    if "dangerous_goods" in asked and (
+        mail.attachments
+        or re.search(
+            r"declaration|\bDGD\b|\bM?SDS\b|safety data sheet|dangerous goods (?:documents|docs)"
+            r"|attached|anbei|im anhang|sicherheitsdatenblatt|gefahrgutdokument",
+            own,
+            re.IGNORECASE,
+        )
+    ):
+        corrections["dangerous_goods"] = "dg_documents_received"
     if (
         "dangerous_goods" in asked
         and re.search(r"non-dangerous|not dangerous|kein gefahrgut", own, re.IGNORECASE)

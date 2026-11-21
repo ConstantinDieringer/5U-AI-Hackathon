@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Setup change ~18:50: RFQs with SLI/packing-spec attachments declaring dangerous goods (UN3481 class 9). 5U rejects quotes without asking for DG documents (reason dg_docs_missing). Clarification now names the UN entry and asks for the Shipper's Declaration + SDS; documents or "attached" in the reply clear it. A ZIP in the mail beats the shipper city in the document.
 - Round 39 rejected `dg_docs_missing`: gate identified DG, but its questions omitted an explicit document request. EN/DE DG clarification now asks for applicable DG documents and review before quoting/booking; generic packing-list confirmation does not release the existing gate. 481 tests passed, 4 skipped; later non-template quote source and production deployment unverified.
 
 - Combined customer-email voice skill from Humanize Writing/Humanizer, pinned sources/MIT notices and shared runtime profile. Composer and repairs load it directly, retaining factual/style guards. Skill validation, 477 integrated tests and synthetic EN/DE gateway probes pass; no customer mail sent or production rollout verified.
