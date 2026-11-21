@@ -15,7 +15,7 @@ from pathlib import Path
 
 from app import db, hackloop
 from app.config import settings
-from app.mail import guard, parse, router, screening, store
+from app.mail import guard, parse, rate_limit_watch, router, screening, store
 from app.models import Category, Mail
 
 log = logging.getLogger(__name__)
@@ -278,6 +278,7 @@ def run(stop: threading.Event | None = None) -> None:
                 # and a doubling backoff slept through rounds 47 and 48.
                 backoff = 0
                 delay = max(delay, getattr(exc, "retry_after", RATE_LIMIT_RETRY_S))
+                rate_limit_watch.record()
             else:
                 backoff = min(300, max(30, backoff * 2))
                 delay = max(delay, backoff, getattr(exc, "retry_after", 0))
