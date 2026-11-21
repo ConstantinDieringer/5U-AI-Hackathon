@@ -1,5 +1,26 @@
 # Deploy (Railway)
 
+## RFQ input validation rollout
+
+1. Use an isolated checkout for development; do not pull new modules underneath a running agent.
+2. Run the full test suite with a test-only API key. With the intended CRM configured,
+   `python -m app.mail.validation_replay` reads stored extractions and local attachments only:
+   no mailbox polling, model calls, writes or sends. Rows without a stored extraction are
+   explicitly marked and cannot establish live extraction accuracy.
+3. Deploy the sole production instance with `RFQ_VALIDATION_MODE=shadow`. Inspect
+   `validation_result` events for blocked inputs and unexpected false positives.
+4. After replay acceptance, set `RFQ_VALIDATION_MODE=enforce` and restart that instance.
+   Missing information triggers at most one automatic clarification. The original six-minute
+   deadline and two-call model budget remain unchanged. A clarification can cost the scoring
+   opportunity for the round; this is the selected product policy.
+5. Check the session's validation panel and attention list. `unknown` means the send outcome
+   is ambiguous; investigate manually, never retry blindly. `manual_review` means the reply
+   did not resolve all required facts. Supported replies use labelled postal code, airport
+   code, gross kg, cbm or complete lot lines; other wording is left to a human.
+6. Roll back to `shadow` if required. Pending clarification replies are retained for manual
+   review and no additional automated clarification is sent. Do not delete the workflow table.
+
+
 The whole forwarder runs as **one** container: poller, agents and UI. Only one instance may
 poll the mailbox, otherwise mails are processed twice. Once it runs online, nobody runs
 `python run.py` against the real mailbox on a laptop any more.

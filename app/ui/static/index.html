@@ -435,6 +435,12 @@ function laneOf(s) { const r = s.request || {}, q = (s.quotes || [])[0] || {}; c
   if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(r.preference || r.mode); return parts.join(" · "); }
 function renderDetail() {
   const s = S.detail, notices = [];
+  if (s.validation) {
+    const v = s.validation, d = v.draft || {};
+    notices.push(el("div", { class: "notice" }, "Eingangsprüfung: " + v.state + " · Rückfrage: " + v.send_state,
+      ...(d.issues || []).map((i) => el("div", {}, i.field + ": " + (i.detail || i.code))),
+      el("details", {}, el("summary", {}, "Geprüfte Angaben und Quellen"), el("pre", { style: "white-space:pre-wrap" }, JSON.stringify({facts:d.facts,evidence:d.evidence},null,2)))));
+  }
   if (s.mode === "manual") notices.push(el("div", { class: "notice" }, icon("hand"), "Ein Mensch hat diese Session übernommen. Der Agent antwortet hier nicht mehr."));
   if (S.globalPause) notices.push(el("div", { class: "notice" }, icon("stop"), "Globaler Stopp aktiv: es werden keine Mails gesendet."));
   const head = el("div", { class: "card" },

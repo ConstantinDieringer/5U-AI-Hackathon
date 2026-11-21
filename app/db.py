@@ -175,6 +175,16 @@ CREATE TABLE IF NOT EXISTS board_results (
 );
 
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS rfq_validation (
+ session_id INTEGER PRIMARY KEY REFERENCES sessions(id),
+ state TEXT NOT NULL,
+ draft_json TEXT NOT NULL,
+ root_json TEXT NOT NULL,
+ send_state TEXT NOT NULL DEFAULT 'pending',
+ sent_mail_id INTEGER,
+ reply_mail_id INTEGER,
+ updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tariff_jobs (
   mail_id INTEGER PRIMARY KEY,
   raw_json TEXT NOT NULL,
@@ -187,9 +197,7 @@ CREATE TABLE IF NOT EXISTS tariff_jobs (
 # ---------------------------------------------------------------- connection
 
 _local = threading.local()
-_db_path: str = (
-    settings.db_path
-)  # from .env via app/config.py (default data/forwarder.db)
+_db_path: str = settings.db_path  # from .env via app/config.py (default data/forwarder.db)
 _generation = 0  # bumped by init_db so threads reopen after a path change (tests)
 
 
@@ -206,9 +214,7 @@ def conn() -> sqlite3.Connection:
     if c is None or getattr(_local, "gen", -1) != _generation:
         if c is not None:
             c.close()
-        c = sqlite3.connect(
-            _db_path, timeout=5, isolation_level=None, check_same_thread=True
-        )
+        c = sqlite3.connect(_db_path, timeout=5, isolation_level=None, check_same_thread=True)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA busy_timeout=5000")
         c.execute("PRAGMA synchronous=NORMAL")
@@ -260,10 +266,7 @@ def import_database(data: bytes) -> dict[str, Any]:
         f.write(data)
     check = sqlite3.connect(tmp)
     try:
-        tables = {
-            r[0]
-            for r in check.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
+        tables = {r[0] for r in check.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {"sessions", "mails", "events"} <= tables:
             raise ValueError("uploaded DB has no forwarder schema")
         counts = {
@@ -387,6 +390,68 @@ def kv_get(key: str, default: str | None = None) -> str | None:
     return r["value"] if r else default
 
 
+def validation_get(sid: int) -> dict[str, Any] | None:
+    r = _one(conn().execute("SELECT * FROM rfq_validation WHERE session_id=?", (sid,)))
+    if r:
+        r["draft"] = json.loads(r.pop("draft_json"))
+        r["root"] = json.loads(r.pop("root_json"))
+    return r
+
+
+def validation_save(sid: int, state: str, draft: dict, root: dict) -> None:
+    with tx() as c:
+        c.execute(
+            "INSERT INTO rfq_validation(session_id,state,draft_json,root_json,updated_at) "
+            "VALUES(?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET state=excluded.state,"
+            "draft_json=excluded.draft_json,updated_at=excluded.updated_at",
+            (sid, state, _json(draft), _json(root), now()),
+        )
+
+
+def clarification_claim(sid: int) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE rfq_validation SET send_state='sending',updated_at=? "
+                "WHERE session_id=? AND send_state='pending' AND EXISTS "
+                "(SELECT 1 FROM sessions WHERE id=? AND paused=0 AND mode='auto') "
+                "AND NOT EXISTS(SELECT 1 FROM kv WHERE key='global_pause' AND value='1')",
+                (now(), sid, sid),
+            ).rowcount
+            == 1
+        )
+
+
+def clarification_sent(sid: int, state: str, mail_id: int | None = None) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE rfq_validation SET send_state=?,sent_mail_id=?,updated_at=? WHERE session_id=?",
+            (state, mail_id, now(), sid),
+        )
+
+
+def clarification_reply_claim(sid: int, mid: int) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE rfq_validation SET reply_mail_id=?,state='resolving',updated_at=? "
+                "WHERE session_id=? AND state='awaiting_clarification' AND send_state='sent' "
+                "AND reply_mail_id IS NULL",
+                (mid, now(), sid),
+            ).rowcount
+            == 1
+        )
+
+
+def validation_pending() -> list[dict[str, Any]]:
+    return _rows(
+        conn().execute(
+            "SELECT session_id FROM rfq_validation WHERE "
+            "(send_state IN ('pending','sending') AND state='awaiting_clarification') OR state='resolving'"
+        )
+    )
+
+
 def kv_set(key: str, value: str) -> None:
     with tx() as c:
         c.execute(
@@ -394,6 +459,25 @@ def kv_set(key: str, value: str) -> None:
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
+
+def validation_reply(sid: int) -> dict[str, Any] | None:
+    return _one(
+        conn().execute(
+            "SELECT m.* FROM mails m JOIN rfq_validation v ON m.id=v.reply_mail_id "
+            "WHERE v.session_id=?",
+            (sid,),
+        )
+    )
+
+
+def validation_replay_inputs() -> list[dict[str, Any]]:
+    return _rows(
+        conn().execute(
+            "SELECT s.id,s.request_json,m.raw_json,m.body,m.subject,m.sender,m.recipient,m.received_at "
+            "FROM sessions s JOIN mails m ON m.id=s.id WHERE s.kind='rfq' ORDER BY s.id"
+        )
+    )
 
 
 # ---------------------------------------------------------------- mails & sessions
@@ -449,9 +533,7 @@ def _session_by_reference(c: sqlite3.Connection, subject: str, body: str) -> int
     "Your reference: AP-<session>" in the body, or a known BK booking reference."""
     for text in (subject or "", body or ""):
         for m in _AP_TAG.finditer(text):
-            if _one(
-                c.execute("SELECT 1 FROM sessions WHERE id = ?", (int(m.group(1)),))
-            ):
+            if _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (int(m.group(1)),))):
                 return int(m.group(1))
     for m in _BK_REF.finditer(f"{subject or ''} {body or ''}"):
         r = _one(
@@ -478,9 +560,7 @@ def remap_unassigned() -> int:
         for r in rows:
             sid = _session_by_reference(c, r["subject"], r["body"])
             if sid is not None:
-                c.execute(
-                    "UPDATE mails SET session_id = ? WHERE id = ?", (sid, r["id"])
-                )
+                c.execute("UPDATE mails SET session_id = ? WHERE id = ?", (sid, r["id"]))
                 n += 1
         return n
 
@@ -611,14 +691,8 @@ def ingest_mail(
             ),
         )
         if session_id is not None and not created:
-            c.execute(
-                "UPDATE sessions SET updated_at = ? WHERE id = ?", (now(), session_id)
-            )
-        label = (
-            "Neue Session"
-            if created
-            else ("Mail" if session_id else "Unzugeordnete Mail")
-        )
+            c.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now(), session_id))
+        label = "Neue Session" if created else ("Mail" if session_id else "Unzugeordnete Mail")
         _emit(
             c,
             Ev.MAIL_IN,
@@ -669,9 +743,7 @@ def record_outgoing(
             ),
         )
         if session_id is not None:
-            c.execute(
-                "UPDATE sessions SET updated_at = ? WHERE id = ?", (now(), session_id)
-            )
+            c.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now(), session_id))
         _emit(
             c,
             Ev.MAIL_OUT,
@@ -688,6 +760,7 @@ def get_session(session_id: int) -> dict[str, Any] | None:
     if not s:
         return None
     s["request"] = json.loads(s.pop("request_json")) if s.get("request_json") else None
+    s["validation"] = validation_get(session_id)
     s["mails"] = _rows(
         c.execute(
             "SELECT id, direction, sender, recipient, subject, body, category, received_at,"
@@ -696,23 +769,17 @@ def get_session(session_id: int) -> dict[str, Any] | None:
         )
     )
     quotes = _rows(
-        c.execute(
-            "SELECT * FROM quotes WHERE session_id = ? ORDER BY id", (session_id,)
-        )
+        c.execute("SELECT * FROM quotes WHERE session_id = ? ORDER BY id", (session_id,))
     )
     for q in quotes:
         a = q.pop("alternatives_json")
         q["alternatives"] = json.loads(a) if a else []
     s["quotes"] = quotes
-    s["bookings"] = _rows(
-        c.execute("SELECT * FROM bookings WHERE session_id = ?", (session_id,))
-    )
+    s["bookings"] = _rows(c.execute("SELECT * FROM bookings WHERE session_id = ?", (session_id,)))
     s["events"] = [
         _event_row(r)
         for r in _rows(
-            c.execute(
-                "SELECT * FROM events WHERE session_id = ? ORDER BY id", (session_id,)
-            )
+            c.execute("SELECT * FROM events WHERE session_id = ? ORDER BY id", (session_id,))
         )
     ]
     s["llm_cost_micro_usd"] = _one(
@@ -721,9 +788,7 @@ def get_session(session_id: int) -> dict[str, Any] | None:
             (session_id,),
         )
     )["v"]  # type: ignore[index]
-    s["board"] = _rows(
-        c.execute("SELECT * FROM board_results WHERE session_id = ?", (session_id,))
-    )
+    s["board"] = _rows(c.execute("SELECT * FROM board_results WHERE session_id = ?", (session_id,)))
     return s
 
 
@@ -742,6 +807,8 @@ def list_sessions(
       (SELECT total_minor FROM quotes qq WHERE qq.session_id = s.id ORDER BY qq.id LIMIT 1) AS quote_total_minor,
       (SELECT currency FROM quotes qq WHERE qq.session_id = s.id ORDER BY qq.id LIMIT 1) AS quote_currency,
       CASE WHEN s.status = 'error' OR s.paused = 1
+             OR EXISTS (SELECT 1 FROM rfq_validation v WHERE v.session_id=s.id
+                        AND v.state IN ('awaiting_clarification','manual_review','resolving'))
              OR (s.status IN ('new','pricing') AND s.deadline_at IS NOT NULL
                  AND (julianday(s.deadline_at) - julianday('now')) * 86400 < ?)
            THEN 1 ELSE 0 END AS needs_attention
@@ -810,9 +877,7 @@ def bid_request_recipients(session_id: int) -> set[str]:
         " AND category = 'bid_request'",
         (session_id,),
     )
-    return {
-        str(row["recipient"] or "").strip().lower() for row in rows if row["recipient"]
-    }
+    return {str(row["recipient"] or "").strip().lower() for row in rows if row["recipient"]}
 
 
 def last_pickup(customer: str, before_session: int | None = None) -> str | None:
@@ -1115,9 +1180,7 @@ def tracking_records() -> list[dict[str, Any]]:
         )
     )
     for r in rows:
-        r["request"] = (
-            json.loads(r.pop("request_json")) if r.get("request_json") else {}
-        )
+        r["request"] = json.loads(r.pop("request_json")) if r.get("request_json") else {}
     return rows
 
 
@@ -1135,9 +1198,7 @@ def find_booking(
             )
         )
     if session_id is not None:
-        return _one(
-            c.execute("SELECT * FROM bookings WHERE session_id = ?", (session_id,))
-        )
+        return _one(c.execute("SELECT * FROM bookings WHERE session_id = ?", (session_id,)))
     return None
 
 
@@ -1214,11 +1275,7 @@ def save_board_result(
     """Upsert one board round. Returns True if the verdict is new or changed. A changed
     `failed` round is emitted as an error (shows in the UI attention list)."""
     with tx() as c:
-        old = _one(
-            c.execute(
-                "SELECT verdict FROM board_results WHERE round_id = ?", (round_id,)
-            )
-        )
+        old = _one(c.execute("SELECT verdict FROM board_results WHERE round_id = ?", (round_id,)))
         c.execute(
             "INSERT INTO board_results(round_id, session_id, verdict, reason, points_json, raw_json,"
             " fetched_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(round_id) DO UPDATE SET"
@@ -1235,9 +1292,7 @@ def save_board_result(
                 Ev.BOARD_VERDICT,
                 f"Board: {verdict}" + (f" ({reason})" if reason else ""),
                 session_id,
-                level="error"
-                if failed
-                else ("warn" if verdict != "accepted" else "info"),
+                level="error" if failed else ("warn" if verdict != "accepted" else "info"),
                 payload={"round_id": round_id, "points": points},
             )
         return changed
@@ -1322,6 +1377,12 @@ def expire_overdue() -> list[int]:
     """Mark open RFQ sessions past their deadline as expired. Returns their ids."""
     t = now()
     with tx() as c:
+        c.execute(
+            "UPDATE rfq_validation SET state='expired',updated_at=? WHERE "
+            "state IN ('awaiting_clarification','resolving') AND session_id IN "
+            "(SELECT id FROM sessions WHERE deadline_at <= ?)",
+            (t, t),
+        )
         ids = [
             r["id"]
             for r in _rows(
@@ -1345,9 +1406,7 @@ def stats() -> dict[str, Any]:
     c = conn()
     by_status = {
         r["status"]: r["n"]
-        for r in _rows(
-            c.execute("SELECT status, COUNT(*) AS n FROM sessions GROUP BY status")
-        )
+        for r in _rows(c.execute("SELECT status, COUNT(*) AS n FROM sessions GROUP BY status"))
     }
     resp = _one(
         c.execute(
@@ -1361,15 +1420,11 @@ def stats() -> dict[str, Any]:
             " LEFT JOIN llm_calls l ON l.session_id = q.session_id GROUP BY q.session_id)"
         )
     )
-    board = _rows(
-        c.execute("SELECT verdict, COUNT(*) AS n FROM board_results GROUP BY verdict")
-    )
+    board = _rows(c.execute("SELECT verdict, COUNT(*) AS n FROM board_results GROUP BY verdict"))
     return {
         "sessions_total": sum(by_status.values()),
         "by_status": by_status,
-        "avg_response_s": round(resp["v"], 1)
-        if resp and resp["v"] is not None
-        else None,
+        "avg_response_s": round(resp["v"], 1) if resp and resp["v"] is not None else None,
         "avg_llm_cost_micro_usd_per_quote": int(cost["v"])
         if cost and cost["v"] is not None
         else None,
@@ -1412,9 +1467,7 @@ def dashboard(limit: int = 50) -> dict[str, Any]:
             " FROM sessions WHERE kind = 'rfq' GROUP BY hour ORDER BY hour DESC LIMIT 24"
         )
     )
-    llm_total = _one(
-        c.execute("SELECT COALESCE(SUM(cost_micro_usd),0) AS v FROM llm_calls")
-    )
+    llm_total = _one(c.execute("SELECT COALESCE(SUM(cost_micro_usd),0) AS v FROM llm_calls"))
     return {
         "stats": stats(),
         "quotes": quotes,
@@ -1492,9 +1545,7 @@ def crm(limit: int = 200) -> dict[str, Any]:
         or {}
     )
     booked = _one(
-        c.execute(
-            "SELECT COALESCE(SUM(price_minor),0) AS v FROM bookings WHERE status != 'failed'"
-        )
+        c.execute("SELECT COALESCE(SUM(price_minor),0) AS v FROM bookings WHERE status != 'failed'")
     )
     return {
         "totals": {k: (v or 0) for k, v in totals.items()},
@@ -1548,12 +1599,19 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for s in list_sessions(attention=True, limit=limit):
         reason = (
-            "Fehler"
-            if s["status"] == "error"
-            else "pausiert"
-            if s["paused"]
-            else "Deadline < 90 s"
+            "Fehler" if s["status"] == "error" else "pausiert" if s["paused"] else "Deadline < 90 s"
         )
+        validation = validation_get(s["id"])
+        if validation and validation["state"] in (
+            "awaiting_clarification",
+            "manual_review",
+            "resolving",
+        ):
+            reason = (
+                "Rückfrage offen"
+                if validation["state"] == "awaiting_clarification"
+                else "Eingangsdaten prüfen"
+            )
         items.append(
             {
                 "session_id": s["id"],
@@ -1593,8 +1651,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             {
                 "session_id": r["session_id"],
                 "kind": "board",
-                "reason": f"5U: {r['verdict']}"
-                + (f" ({r['reason']})" if r["reason"] else ""),
+                "reason": f"5U: {r['verdict']}" + (f" ({r['reason']})" if r["reason"] else ""),
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],
@@ -1659,9 +1716,7 @@ def overview(hours: int = 6) -> dict[str, Any]:
     board = {
         r["session_id"]: r["verdict"]
         for r in _rows(
-            c.execute(
-                "SELECT session_id, verdict FROM board_results WHERE session_id IS NOT NULL"
-            )
+            c.execute("SELECT session_id, verdict FROM board_results WHERE session_id IS NOT NULL")
         )
     }
 
@@ -1675,9 +1730,7 @@ def overview(hours: int = 6) -> dict[str, Any]:
         start = now_dt - span
     prev_start = start - span
     n_buckets = (
-        12
-        if span <= timedelta(hours=6)
-        else min(48, max(6, int(span.total_seconds() // 3600)))
+        12 if span <= timedelta(hours=6) else min(48, max(6, int(span.total_seconds() // 3600)))
     )
     width = span / n_buckets
 
@@ -1744,9 +1797,7 @@ def overview(hours: int = 6) -> dict[str, Any]:
 # ---------------------------------------------------------------- status board (Übersicht)
 
 CHECK_WINDOW = timedelta(hours=2)
-DECLINE_MARK = (
-    "Kundenantwort (Absage)"  # emitted by agents/booking.py on a customer "no"
-)
+DECLINE_MARK = "Kundenantwort (Absage)"  # emitted by agents/booking.py on a customer "no"
 
 
 def _level(ok: bool, warn: bool) -> str:
@@ -1770,9 +1821,7 @@ def _board_by_session(c: sqlite3.Connection) -> dict[int, dict[str, Any]]:
     return out
 
 
-def _rfq_rows(
-    c: sqlite3.Connection, since: str | None, limit: int | None
-) -> list[dict[str, Any]]:
+def _rfq_rows(c: sqlite3.Connection, since: str | None, limit: int | None) -> list[dict[str, Any]]:
     """One row per customer request with the outcome of every step (Quote → 5U → Buchung)."""
     q = (
         "SELECT s.id, s.customer, s.subject, s.status, s.paused, s.mode, s.request_json,"
@@ -1892,14 +1941,8 @@ def status_overview() -> dict[str, Any]:
     every = _rfq_rows(c, None, None)
     checks: list[dict[str, Any]] = []
 
-    last_in = _one(
-        c.execute("SELECT MAX(received_at) AS t FROM mails WHERE direction = 'in'")
-    )
-    age = (
-        (now_dt - _ts(last_in["t"])).total_seconds() / 60
-        if last_in and last_in["t"]
-        else None
-    )
+    last_in = _one(c.execute("SELECT MAX(received_at) AS t FROM mails WHERE direction = 'in'"))
+    age = (now_dt - _ts(last_in["t"])).total_seconds() / 60 if last_in and last_in["t"] else None
     checks.append(
         {
             "key": "mail",
@@ -1929,9 +1972,7 @@ def status_overview() -> dict[str, Any]:
         {
             "key": "speed",
             "name": "Antwortzeit",
-            "level": "ok"
-            if avg_resp is None
-            else _level(avg_resp <= 120, avg_resp <= 240),
+            "level": "ok" if avg_resp is None else _level(avg_resp <= 120, avg_resp <= 240),
             "value": secs_label(avg_resp),
             "hint": "Ø bis zur Quote. ≤ 2 min volle 15 Zeitpunkte, ab 6 min null.",
         }
@@ -1943,25 +1984,19 @@ def status_overview() -> dict[str, Any]:
         {
             "key": "price",
             "name": "5U akzeptiert",
-            "level": "ok"
-            if not rated
-            else _level(acc == len(rated), acc / len(rated) >= 0.6),
+            "level": "ok" if not rated else _level(acc == len(rated), acc / len(rated) >= 0.6),
             "value": f"{acc} / {len(rated)}" if rated else "–",
             "hint": "Urteil vom Leaderboard. too_high = Preis > 5 % über Bestpreis, no answer = nichts gesendet.",
         }
     )
 
-    costs = [
-        r["cost"] for r in recent if r["steps"]["quote"]["state"] in ("ok", "warn")
-    ]
+    costs = [r["cost"] for r in recent if r["steps"]["quote"]["state"] in ("ok", "warn")]
     avg_cost = sum(costs) / len(costs) if costs else None
     checks.append(
         {
             "key": "cost",
             "name": "LLM-Kosten je Quote",
-            "level": "ok"
-            if avg_cost is None
-            else _level(avg_cost <= 2000, avg_cost <= 10000),
+            "level": "ok" if avg_cost is None else _level(avg_cost <= 2000, avg_cost <= 10000),
             "value": "–" if avg_cost is None else f"${avg_cost / 1e6:.4f}",
             "hint": "0 $ = 40 Punkte, 0,10 $ = 0. Mindestens ein Gateway-Call pro Quote nötig.",
         }
@@ -1974,8 +2009,7 @@ def status_overview() -> dict[str, Any]:
             "key": "booking",
             "name": "Buchungen",
             "level": _level(not pending_book, False),
-            "value": f"{booked} gebucht"
-            + (f", {len(pending_book)} offen" if pending_book else ""),
+            "value": f"{booked} gebucht" + (f", {len(pending_book)} offen" if pending_book else ""),
             "hint": "Kunde hat zugesagt → Buchung per Rate-ID. Offen = Zusage ohne Buchung.",
         }
     )
@@ -2021,9 +2055,7 @@ def status_overview() -> dict[str, Any]:
         {
             "key": "bids",
             "name": "Carrier-Gebote gelesen",
-            "level": "ok"
-            if not (got + bad_bids)
-            else _level(bad_bids == 0, got >= bad_bids),
+            "level": "ok" if not (got + bad_bids) else _level(bad_bids == 0, got >= bad_bids),
             "value": f"{got} / {got + bad_bids}" if got + bad_bids else "–",
             "hint": "Gebote mit erkanntem Preis. Nicht gelesen sind oft Absagen „lane not served“.",
         }
@@ -2078,9 +2110,7 @@ def status_overview() -> dict[str, Any]:
     for r in every:
         st = r["steps"]
         if r["paused"] or r["mode"] == "manual":
-            if st["quote"]["state"] == "run" or (
-                r["mode"] == "manual" and not r["response_s"]
-            ):
+            if st["quote"]["state"] == "run" or (r["mode"] == "manual" and not r["response_s"]):
                 todo.append(
                     {
                         **_todo(r),
@@ -2119,9 +2149,7 @@ def status_overview() -> dict[str, Any]:
             "cost_pts": cost_pts,
             "avg_response_s": t_avg,
             "avg_cost_micro_usd": c_avg,
-            "per_quote": None
-            if time_pts is None or cost_pts is None
-            else 45 + time_pts + cost_pts,
+            "per_quote": None if time_pts is None or cost_pts is None else 45 + time_pts + cost_pts,
             "booked": sum(1 for r in every if r["booked"]),
         },
         "requests": every[:12],

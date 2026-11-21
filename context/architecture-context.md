@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **RFQ validation:** `app/mail/rfq_validation.py` checks the current request and attachment evidence before pricing. Drafts and a single clarification's durable state live in `rfq_validation`; no session-table rebuild. Shadow is the rollout default. Enforce excludes signature/history-based pickup guesses and handles clarification replies before booking.
+
 Decided 21.11.2026. Details live in the linked docs; this file only points to them.
 
 - **Stack and conventions (binding):** [docs/TECH_SPEC.md](docs/TECH_SPEC.md): Python 3.11, FastAPI (built-in SSE), SQLite via `sqlite3` without ORM, threads instead of asyncio, one static HTML page with vanilla JS.

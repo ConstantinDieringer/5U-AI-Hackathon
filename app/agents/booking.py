@@ -66,17 +66,9 @@ def _lock(session_id: int) -> threading.Lock:
 
 def own_text(body: str) -> str:
     """The customer's own words: quoted lines and everything after a quote header dropped."""
-    out: list[str] = []
-    for line in (body or "").splitlines():
-        s = line.strip()
-        if s.startswith(">"):
-            continue
-        if re.match(
-            r"^(on .+ wrote:|am .+ schrieb|-----\s*original|from:\s)", s, re.IGNORECASE
-        ):
-            break
-        out.append(line)
-    return "\n".join(out)
+    from app.mail.content import current_message
+
+    return current_message(body).text
 
 
 def is_acceptance(body: str) -> bool | None:
@@ -128,9 +120,7 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
     return str(best["rate_id"]) if best else None
 
 
-def _book_portal(
-    sid: int, quote: dict[str, Any], request: dict[str, Any]
-) -> dict[str, Any]:
+def _book_portal(sid: int, quote: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     """Book the quoted rate; on expired/unknown fetch a fresh one once. Raises HackloopError."""
     ref = db.team_reference(sid)
     try:
@@ -145,9 +135,7 @@ def _book_portal(
         return hackloop.book(fresh, ref)
 
 
-def _book_by_email(
-    sid: int, quote: dict[str, Any], request: dict[str, Any], to: str
-) -> None:
+def _book_by_email(sid: int, quote: dict[str, Any], request: dict[str, Any], to: str) -> None:
     ref = db.team_reference(sid)
     subject = f"[{ref}] Booking request {quote['origin']} to {quote['destination']}"
     body = (
@@ -171,9 +159,7 @@ def _book_by_email(
     )
 
 
-def _confirmation(
-    lang: str, name: str | None, quote: dict[str, Any], booking_ref: str
-) -> str:
+def _confirmation(lang: str, name: str | None, quote: dict[str, Any], booking_ref: str) -> str:
     if name and has_template_artifacts(name):
         name = None
     price = amount(quote["total_minor"], quote["currency"])
@@ -207,11 +193,7 @@ def _confirm_to_customer(sid: int, mail: Mail, text: str) -> None:
         db.emit(db.Ev.WARN, "Bestätigung nicht gesendet: Session pausiert/manuell", sid)
         return
     to = address(mail.sender)
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(to, subject, text, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -316,9 +298,7 @@ def _handle(mail: Mail, sid: int) -> None:
             currency=quote["currency"],
         )
 
-    text = _confirmation(
-        language(mail.body), request.get("customer_name"), quote, booking_ref
-    )
+    text = _confirmation(language(mail.body), request.get("customer_name"), quote, booking_ref)
     _confirm_to_customer(sid, mail, text)
     log.info("session %s booked %s", sid, booking_ref)
 
@@ -356,8 +336,7 @@ def catch_up() -> None:
             for m in full["mails"]
             if m["direction"] == "in"
             and m["id"] > quote_mail
-            and address(str(m["sender"] or ""))
-            == address(str(full.get("customer") or ""))
+            and address(str(m["sender"] or "")) == address(str(full.get("customer") or ""))
         ]
         if not replies:
             continue

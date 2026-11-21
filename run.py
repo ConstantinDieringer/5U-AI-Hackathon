@@ -34,7 +34,13 @@ def main() -> None:
     from app.pricing import served_lanes
 
     served_lanes.backfill()  # "We fly ..." lists from refusals already in the mailbox
-    from app.agents import rfq
+    from app.agents import clarification, rfq
+
+    if settings.rfq_validation_mode == "enforce":
+        clarification.catch_up()
+        threading.Thread(
+            target=clarification.run, args=(stop,), name="clarifications", daemon=True
+        ).start()
 
     rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
     booking.catch_up()  # acceptances that arrived while the app was down or had no booking
