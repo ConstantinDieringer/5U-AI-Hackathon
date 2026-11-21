@@ -1,0 +1,33 @@
+# Tests on every pull request and on main. Never talks to 5U: tests/conftest.py refuses all
+# mailbox, portal and gateway calls, and the keys below are dummies.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TEAM_API_KEY: hk_ci_dummy
+      OPENAI_API_KEY: sk-ci-dummy
+      AGENTS_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"  # same as the Dockerfile
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Tests (incl. secrets scan in tests/test_ops_guardrails.py)
+        run: python -m pytest -q
+      - name: Ruff (informational until main is clean)
+        continue-on-error: true
+        run: pip install ruff && ruff check app tests
