@@ -3057,11 +3057,12 @@ def problems(hours: float = 3, limit: int = 400) -> dict[str, Any]:
         g["count"] += 1
         g["first_at"] = r["created_at"]
         sid = r["session_id"]
-        if sid is not None and all(x["id"] != sid for x in g["sessions"]):
-            if len(g["sessions"]) < 6:
-                g["sessions"].append(
-                    {"id": sid, "subject": r["subject"], "customer": r["customer"]}
-                )
+        if (
+            sid is not None
+            and all(x["id"] != sid for x in g["sessions"])
+            and len(g["sessions"]) < 6
+        ):
+            g["sessions"].append({"id": sid, "subject": r["subject"], "customer": r["customer"]})
     ordered = sorted(groups.values(), key=lambda g: (g["level"] != "error", -g["last_event_id"]))
     return {
         "hours": hours,

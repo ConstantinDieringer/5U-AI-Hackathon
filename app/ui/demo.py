@@ -14,7 +14,7 @@ import os
 import random
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app import db
 
@@ -37,7 +37,7 @@ AIRLINES = [
 
 
 def ts(minutes_ago: float) -> str:
-    t = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    t = datetime.now(UTC) - timedelta(minutes=minutes_ago)
     return t.isoformat(timespec="seconds")
 
 

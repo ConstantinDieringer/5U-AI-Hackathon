@@ -1,0 +1,1 @@
+Ruff is now blocking in CI (pinned to 0.16.9); main is lint-clean. `requirements.txt` pins exact versions (tested on Python 3.11). Bump a dependency or ruff in its own PR. No behavior change; replay: no changes.
