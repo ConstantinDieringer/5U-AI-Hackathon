@@ -1173,6 +1173,66 @@ def get_session(session_id: int) -> dict[str, Any] | None:
     return s
 
 
+def session_export_extras(session_id: int) -> dict[str, Any]:
+    """Raw rows for the manual context export (app/ui/context_export.py): everything a human
+    or an outside model needs to continue a thread when the pipeline fails. Read only."""
+    c = conn()
+    mails = _rows(
+        c.execute(
+            "SELECT id, thread_root, raw_json FROM mails WHERE session_id = ? ORDER BY received_at, id",
+            (session_id,),
+        )
+    )
+    for m in mails:
+        raw = m.pop("raw_json")
+        m["raw"] = json.loads(raw) if raw else None
+    ids = [int(m["id"]) for m in mails]
+    marks = ",".join("?" * len(ids))
+    screening = (
+        _rows(c.execute(f"SELECT * FROM mail_screening WHERE mail_id IN ({marks})", ids))
+        if ids
+        else []
+    )
+    delivery = (
+        _rows(
+            c.execute(
+                f"SELECT mail_id, source, status, attempts, error, updated_at FROM mail_delivery"
+                f" WHERE mail_id IN ({marks})",
+                ids,
+            )
+        )
+        if ids
+        else []
+    )
+    llm = _rows(
+        c.execute(
+            "SELECT id, purpose, model, prompt_tokens, completion_tokens, cost_micro_usd,"
+            " latency_ms, created_at FROM llm_calls WHERE session_id = ? ORDER BY id",
+            (session_id,),
+        )
+    )
+    rescue = _rows(
+        c.execute(
+            "SELECT input_key, state, decision_json, updated_at FROM thread_rescue_runs"
+            " WHERE session_id = ? ORDER BY updated_at",
+            (session_id,),
+        )
+    )
+    for r in rescue:
+        r["decision"] = json.loads(r.pop("decision_json") or "null")
+    answers = _rows(
+        c.execute("SELECT mail_id FROM clarification_answers WHERE session_id = ?", (session_id,))
+    )
+    return {
+        "mails": mails,
+        "screening": screening,
+        "delivery": delivery,
+        "llm_calls": llm,
+        "rescue_runs": rescue,
+        "clarification_answers": [int(a["mail_id"]) for a in answers],
+    }
+
+
 def list_sessions(
     status: str | None = None,
     q: str | None = None,
@@ -2999,7 +3059,9 @@ def problems(hours: float = 3, limit: int = 400) -> dict[str, Any]:
         sid = r["session_id"]
         if sid is not None and all(x["id"] != sid for x in g["sessions"]):
             if len(g["sessions"]) < 6:
-                g["sessions"].append({"id": sid, "subject": r["subject"], "customer": r["customer"]})
+                g["sessions"].append(
+                    {"id": sid, "subject": r["subject"], "customer": r["customer"]}
+                )
     ordered = sorted(groups.values(), key=lambda g: (g["level"] != "error", -g["last_event_id"]))
     return {
         "hours": hours,
