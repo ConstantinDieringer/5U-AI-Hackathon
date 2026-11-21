@@ -250,6 +250,14 @@ def tx() -> Iterator[sqlite3.Connection]:
         raise
 
 
+def close_thread_connection() -> None:
+    """Release this thread's SQLite handle before removing a temporary database."""
+    connection = getattr(_local, "c", None)
+    if connection is not None:
+        connection.close()
+        _local.c = None
+
+
 def init_db(path: str | None = None) -> None:
     """Create the database file and schema. Call once at startup (and per test)."""
     global _db_path, _generation

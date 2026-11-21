@@ -68,3 +68,24 @@ def test_lost_rounds_now_resolve_the_request(
 @pytest.mark.parametrize("round_no", [15, 16, 17])
 def test_rounds_without_pickup_ask_instead_of_failing(results, round_no) -> None:
     assert results[round_no]["outcome"] == "clarification"
+
+
+def test_replay_cleanup_also_releases_database_on_failure(tmp_path, monkeypatch):
+    from app import db
+
+    temporary_directory = rfq_replay.tempfile.TemporaryDirectory
+    monkeypatch.setattr(
+        rfq_replay.tempfile,
+        "TemporaryDirectory",
+        lambda **kwargs: temporary_directory(dir=tmp_path, **kwargs),
+    )
+
+    def fail(case, workdir, seen):
+        db.init_db(str(workdir / "failure.db"))
+        db.kv_set("opened", "true")
+        raise ValueError("synthetic replay failure")
+
+    monkeypatch.setattr(rfq_replay, "replay_case", fail)
+    with pytest.raises(ValueError, match="synthetic replay failure"):
+        rfq_replay.replay_all({"cases": [{"llm_extraction": {}}]})
+    assert list(tmp_path.iterdir()) == []

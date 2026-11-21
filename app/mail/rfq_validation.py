@@ -95,14 +95,14 @@ def numeric_facts(text):
     result = {}
     patterns = {
         "weight_kg": [
-            rf"(?:total\s+)?gross weight\s*(?:\(kg\))?\s*(?:(?:of|is)\s+)?[:|]?\s*({_NUM})",
+            rf"(?:total\s+)?gross weight\s*(?:\(kg\))?\s*(?:(?:of|is)\s+)?(?:[:|]\s*)*({_NUM})",
             rf"({_NUM})\s*kg\s+gross",
         ],
         "volume_cbm": [
-            rf"(?:total\s+)?volume\s*(?:\(cbm\))?\s*(?:(?:of|is)\s+)?[:|]?\s*({_NUM})",
+            rf"(?:total\s+)?volume\s*(?:\(cbm\))?\s*(?:(?:of|is)\s+)?(?:[:|]\s*)*({_NUM})",
             rf"({_NUM})\s*(?:cbm|m3|m³)\b",
         ],
-        "pieces": [r"(?:total\s+)?pieces\s*[:|]\s*(\d+)", r"\b(\d+)\s+pieces\b"],
+        "pieces": [r"(?:total\s+)?pieces\s*(?:[:|]\s*)+(\d+)", r"\b(\d+)\s+pieces\b"],
     }
     for field, patterns_ in patterns.items():
         for pattern in patterns_:

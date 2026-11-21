@@ -462,11 +462,15 @@ def _result(sid: int, run: _Run) -> dict[str, Any]:
 def replay_all(corpus: dict[str, Any]) -> list[dict[str, Any]]:
     with tempfile.TemporaryDirectory(prefix="rfq-replay-") as tmp:
         seen = corpus.get("lane_observations", [])
-        return [
-            replay_case(c, Path(tmp), seen)
-            for c in corpus["cases"]
-            if c.get("llm_extraction") is not None
-        ]
+        try:
+            return [
+                replay_case(c, Path(tmp), seen)
+                for c in corpus["cases"]
+                if c.get("llm_extraction") is not None
+            ]
+        finally:
+            # Windows cannot unlink the final replay DB while SQLite still owns it.
+            db.close_thread_connection()
 
 
 # ---------------------------------------------------------------- diff
