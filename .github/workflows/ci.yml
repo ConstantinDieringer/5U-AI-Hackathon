@@ -27,6 +27,5 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Tests (incl. secrets scan in tests/test_ops_guardrails.py)
         run: python -m pytest -q
-      - name: Ruff (informational until main is clean)
-        continue-on-error: true
-        run: pip install ruff && ruff check app tests
+      - name: Ruff (blocking; pinned so a new ruff release cannot turn main red)
+        run: pip install ruff==0.16.9 && ruff check app tests

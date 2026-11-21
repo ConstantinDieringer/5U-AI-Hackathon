@@ -22,21 +22,27 @@ BODY = (
 ANSWERS = {
     "fr": (
         "Votre offre de fret aérien FRA à JFK",
-        "Madame Dupont,\n\nMerci pour votre demande. Nous pouvons transporter votre envoi de "
-        "500 kg de FRA à JFK le 25 novembre 2026. Le total est de 1240 € et votre référence "
-        "est R-4821.\n\nCordialement\nAustrian Power",
+        (
+            "Madame Dupont,\n\nMerci pour votre demande. Nous pouvons transporter votre envoi de "
+            "500 kg de FRA à JFK le 25 novembre 2026. Le total est de 1240 € et votre référence "
+            "est R-4821.\n\nCordialement\nAustrian Power"
+        ),
     ),
     "pt": (
         "A sua cotação de frete aéreo FRA para JFK",
-        "Cara Sra. Dupont,\n\nObrigado pelo seu pedido. Podemos transportar a sua remessa de "
-        "500 kg de FRA para JFK em 25 de novembro de 2026. O total é 1240 € e a sua referência "
-        "é R-4821.\n\nCom os melhores cumprimentos\nAustrian Power",
+        (
+            "Cara Sra. Dupont,\n\nObrigado pelo seu pedido. Podemos transportar a sua remessa de "
+            "500 kg de FRA para JFK em 25 de novembro de 2026. O total é 1240 € e a sua referência "
+            "é R-4821.\n\nCom os melhores cumprimentos\nAustrian Power"
+        ),
     ),
     "nl": (
         "Uw luchtvrachtofferte FRA naar JFK",
-        "Beste mevrouw Dupont,\n\nBedankt voor uw aanvraag. Wij kunnen uw zending van 500 kg "
-        "op 25 november 2026 van FRA naar JFK vliegen. Het totaal bedraagt 1240 € en uw "
-        "referentie is R-4821.\n\nMet vriendelijke groet\nAustrian Power",
+        (
+            "Beste mevrouw Dupont,\n\nBedankt voor uw aanvraag. Wij kunnen uw zending van 500 kg "
+            "op 25 november 2026 van FRA naar JFK vliegen. Het totaal bedraagt 1240 € en uw "
+            "referentie is R-4821.\n\nMet vriendelijke groet\nAustrian Power"
+        ),
     ),
 }
 CUSTOMER = {
