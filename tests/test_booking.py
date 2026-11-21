@@ -62,28 +62,60 @@ PREBOOK_QUESTIONS = [
     "Ich prüfe, ob wir die Buchung freigeben können.",
 ]
 
+EXPLICIT_DECLINES = [
+    (
+        "Thank you for your reply. It wasn't in the language I wrote to you in, and I couldn't "
+        "follow it, so we won't go ahead."
+    ),
+    "We won’t go ahead.",
+    "We won't proceed.",
+    "I cannot accept the offer.",
+    "We can't book this.",
+    "We would not approve the booking.",
+    "Please don't reserve it.",
+    "We will not go ahead.",
+]
+
+
+@pytest.mark.parametrize("body", EXPLICIT_DECLINES)
+def test_explicit_negative_booking_intent_overrides_approval_words(body):
+    assert booking.is_acceptance(body) is False
+
 
 @pytest.mark.parametrize("body", PREBOOK_QUESTIONS)
 def test_prebooking_question_or_condition_is_not_consent(body):
     assert booking.is_acceptance(body) is None
 
 
-@pytest.mark.parametrize("body", [
-    "Please book it. Can you send the reference afterwards?",
-    "Could you book the shipment for us?",
-    "Yes, go ahead. Please confirm the pickup time.",
-    "Bitte buchen. Wann erhalten wir die Referenz?",
-    "We checked internally and accept your offer. Please book.",
-    "Wir haben die Buchung geprüft. Bitte buchen.",
-    "Please book it. I'll check whether our invoice details are current.",
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Please book it. Can you send the reference afterwards?",
+        "Could you book the shipment for us?",
+        "Yes, go ahead. Please confirm the pickup time.",
+        "Bitte buchen. Wann erhalten wir die Referenz?",
+        "We checked internally and accept your offer. Please book.",
+        "Wir haben die Buchung geprüft. Bitte buchen.",
+        "Please book it. I'll check whether our invoice details are current.",
+    ],
+)
 def test_explicit_booking_request_can_include_a_followup_question(body):
     assert booking.is_acceptance(body) is True
 
 
-@pytest.mark.parametrize("approval", [
-    "book", "go ahead", "proceed", "accept", "approve", "reserve", "buchen", "passt",
-])
+@pytest.mark.parametrize(
+    "approval",
+    [
+        "book",
+        "go ahead",
+        "proceed",
+        "accept",
+        "approve",
+        "reserve",
+        "buchen",
+        "passt",
+    ],
+)
 def test_pending_check_scopes_all_existing_approval_words(approval):
     assert booking.is_acceptance(f"We are checking whether we can {approval}.") is None
 
@@ -208,6 +240,17 @@ def test_prebooking_question_does_not_call_booking_or_send_confirmation(monkeypa
     assert api.booked == [] and api.sent == []
     assert db.get_session(1223)["bookings"] == []
     assert len(questions) == 1 and questions[0][2] == "booking"
+
+
+@pytest.mark.parametrize("body", EXPLICIT_DECLINES)
+def test_explicit_decline_never_calls_booking(monkeypatch, body):
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    _quoted_session()
+    booking.handle_reply(replace(_accept(), body=body), 1223)
+    assert api.booked == [] and api.sent == []
+    assert db.get_session(1223)["bookings"] == []
 
 
 def test_expired_rate_is_refetched(monkeypatch) -> None:
@@ -444,7 +487,12 @@ def test_same_price_in_airline_mail_confirms_quoted_total(monkeypatch) -> None:
     api = _round49(monkeypatch, wait_s=30)
     booking.handle_reply(_yes(13403), 13096)
     _airline_confirms("3,699.20")
-    _wait_for(lambda: len(api.sent) == 1)
+    _wait_for(
+        lambda: (
+            len(api.sent) == 1
+            and db.get_session(13096)["bookings"][0]["customer_state"] == "confirmed_sent"
+        )
+    )
     assert "4.128,50 €" in api.sent[0]["body"] and "BK-WQW57T0G" in api.sent[0]["body"]
     assert db.get_session(13096)["bookings"][0]["customer_state"] == "confirmed_sent"
 

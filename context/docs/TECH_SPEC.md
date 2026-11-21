@@ -284,6 +284,8 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Explizit verneinte Buchungsabsichten (`won't go ahead`, `cannot accept`, `don't reserve`, einschließlich typografischer Apostrophe) haben Vorrang vor positiven Schlüsselwörtern. Der gemeinsame Freigabeparser darf daraus weder Buchung noch Preisänderungsfreigabe ableiten.
+
 - Carrier-Angebote mit Anhängen verwenden denselben begrenzten lokalen TXT/PDF/DOCX/XLSX-Leser wie RFQs. Nur explizite Gesamtpreise mit eindeutiger Währung werden übernommen; `Total, all-in` und unmittelbar folgende Wertzeilen werden unterstützt, aber nicht über fremde Zeilen hinweg gesucht. Komponenten, Wartezeit-Zuschläge und Referenznummern ersetzen keinen Gesamtpreis. Widersprüche zwischen Mail und Dokumenten sowie unlesbare/Audio-Anhänge bleiben als `bid_unreadable` sichtbar und werden nicht geraten. Der bisherige reine Mailtextpfad bleibt erhalten.
 
 - Stilversion v4 prüft Kundenbetreff UND Text unmittelbar vor dem Transport mit einer unabhängigen finalen Assertion. Unicode-Satzzeichen und HTML-Entities werden normalisiert; Re/Fw-Präfixe entfallen, Threading bleibt über `in_reply_to` erhalten. Auch All-Excluded-Hinweise durchlaufen `send_customer`. Gespeichert werden tatsächlich übergebener Betreff und Text. Direkte Carrier-/Truckerprotokolle bleiben unverändert.

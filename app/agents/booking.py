@@ -54,7 +54,8 @@ _NO = re.compile(
 )
 _DECLINE = re.compile(  # wins over any "yes" word ("we will not proceed")
     r"too expensive|decline|not (?:go ahead|proceed|book)|no thanks|zu teuer|absagen|"
-    r"nicht buchen",
+    r"nicht buchen|\b(?:will\s+not|won't|would\s+not|wouldn't|cannot|can't|"
+    r"do\s+not|don't)\s+(?:go\s+ahead|proceed|book|accept|approve|reserve)\b",
     re.IGNORECASE,
 )
 _CONFIRMED = re.compile(r"\bBooking\s+(BK-[A-Za-z0-9]+)\s+confirmed\b", re.IGNORECASE)
@@ -109,7 +110,7 @@ _PENDING_APPROVAL = re.compile(
 
 def is_acceptance(body: str) -> bool | None:
     """True = accepts, False = declines, None = unclear (left to a human)."""
-    text = own_text(body)
+    text = own_text(body).replace("’", "'").replace("‘", "'")
     if _DECLINE.search(text):
         return False
     pending = any(
