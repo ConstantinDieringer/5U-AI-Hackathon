@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 from app import db
@@ -24,10 +25,20 @@ def deadline_loop() -> None:
         try:
             for sid in db.expire_overdue():
                 log.warning("session %s expired without quote", sid)
+            now = datetime.now(UTC)
             for s in db.list_sessions(attention=True):
+                deadline = s.get("deadline_at")
+                left = (
+                    (datetime.fromisoformat(deadline) - now).total_seconds()
+                    if deadline
+                    else None
+                )
+                # attention also means paused/error/manual: warn only for a real close deadline
                 if (
                     s["status"] in db.OPEN_STATUSES
                     and not s["paused"]
+                    and left is not None
+                    and 0 < left < 90
                     and s["id"] not in warned
                 ):
                     db.emit(
@@ -128,3 +139,6 @@ def _match_session(r: dict[str, Any]) -> int | None:
 def start() -> None:
     for target in (deadline_loop, board_loop):
         threading.Thread(target=target, name=target.__name__, daemon=True).start()
+    from app.ui import alerts
+
+    alerts.start()  # Slack #sos, only with SLACK_SOS_WEBHOOK

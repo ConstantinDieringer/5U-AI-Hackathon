@@ -6,13 +6,21 @@ import re
 import pytest
 
 from app.agents import bids, booking, rfq, tracking
-from app.mail.style import amount, has_template_artifacts
+from app.mail.style import (
+    SIGNATURE,
+    TEAM_LINE,
+    amount,
+    booked_joke,
+    has_template_artifacts,
+)
 from app.models import RateOption, Rfq
 
 
 def assert_style(text: str) -> None:
-    assert text.rstrip().endswith("\n\nYour austrian Power Team")
-    assert text.count("Your austrian Power Team") == 1
+    assert text.rstrip().endswith("\n\n" + SIGNATURE) and SIGNATURE.startswith(
+        "Moritz\n"
+    )
+    assert text.count(TEAM_LINE) == 1
     assert "EUR" not in text
     assert not re.search(r"[–—]|\s-\s|(?m:^- )", text)
     assert not any(x in text for x in ("Best regards", "Viele Grüße", "Thank you,"))
@@ -124,7 +132,7 @@ def test_composer_falls_back_when_style_is_wrong(monkeypatch, bad_copy: str) -> 
     )
     text = rfq.compose_quote_text(request, option, 147500, None, 1)
     assert_style(text)
-    assert "Verified information is not yet available" in text
+    assert "Verified information" not in text and "all-in" in text
 
 
 @pytest.mark.parametrize("lang", ["de", "en"])
@@ -154,3 +162,29 @@ def test_placeholder_customer_name_uses_generic_greeting(lang: str) -> None:
 
 def test_reference_and_date_hyphens_are_not_template_fields() -> None:
     assert not has_template_artifacts("Booking BK-ABC123 for AP-421, ready 2026-11-25")
+
+
+def test_booking_confirmation_has_a_joke_and_the_signer():
+    quote = {
+        "origin": "FRA",
+        "destination": "JFK",
+        "airline": "A",
+        "total_minor": 100,
+        "currency": "EUR",
+    }
+    for lang in ("de", "en"):
+        text = booking._confirmation(lang, "Sara", quote, "BK-ABC123")
+        assert booked_joke(lang, "BK-ABC123") in text
+        assert_style(text)
+
+
+def test_no_generic_unverified_line_in_fallback():
+    request = Rfq(
+        origin="FRA",
+        destination="JFK",
+        weight_kg=100,
+        customer_questions=["Can you insure the cargo?"],
+    )
+    option = RateOption("Test Air", "FRA", "JFK", 2, 147500, "EUR", 147500, "sheet")
+    text = rfq._fallback_with_coverage(request, option, 147500, None, 1, None)
+    assert "Verified information" not in text

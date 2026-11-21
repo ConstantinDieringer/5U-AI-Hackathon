@@ -98,6 +98,8 @@ Screens
 
 ## 4. Components
 
+RFQ detail includes an API-cost card: total USD estimate, input/output totals, and expandable calls by purpose/model with token counts, per-million rates and cost components. Cached input and reasoning are labelled as subsets; missing usage/prices and legacy records are explicit.
+
 | Component | Spec |
 |---|---|
 | KPI card | label (caption, ink-2) · value (t-kpi) · trend pill · sparkline (40 px high, series color, gradient fill) |

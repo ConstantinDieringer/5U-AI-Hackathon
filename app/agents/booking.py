@@ -25,7 +25,7 @@ from app import db, hackloop
 from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
-from app.mail.style import SIGNATURE, amount, has_template_artifacts
+from app.mail.style import SIGNATURE, amount, booked_joke, has_template_artifacts
 from app.models import Mail
 from app.pricing.pricing import to_minor
 from app.pricing.reference import airline_email
@@ -66,17 +66,9 @@ def _lock(session_id: int) -> threading.Lock:
 
 def own_text(body: str) -> str:
     """The customer's own words: quoted lines and everything after a quote header dropped."""
-    out: list[str] = []
-    for line in (body or "").splitlines():
-        s = line.strip()
-        if s.startswith(">"):
-            continue
-        if re.match(
-            r"^(on .+ wrote:|am .+ schrieb|-----\s*original|from:\s)", s, re.IGNORECASE
-        ):
-            break
-        out.append(line)
-    return "\n".join(out)
+    from app.mail.content import current_message
+
+    return current_message(body).text
 
 
 def is_acceptance(body: str) -> bool | None:
@@ -186,6 +178,7 @@ def _confirmation(
             f"Buchungsnummer: {booking_ref}\n"
             f"Strecke: {route} mit {quote['airline']}\n"
             f"Preis: {price} all-in\n\n"
+            f"{booked_joke('de', booking_ref)}\n\n"
             "Wir melden uns, sobald es Neuigkeiten gibt. Bei Fragen zum Status "
             "antworten Sie einfach auf diese Mail.\n\n"
             f"{SIGNATURE}\n"
@@ -196,6 +189,7 @@ def _confirmation(
         f"Booking reference: {booking_ref}\n"
         f"Route: {route} with {quote['airline']}\n"
         f"Price: {price} all-in\n\n"
+        f"{booked_joke('en', booking_ref)}\n\n"
         "We'll keep you posted. If you have any questions about the status, just reply "
         "to this mail.\n\n"
         f"{SIGNATURE}\n"
@@ -257,6 +251,16 @@ def _handle(mail: Mail, sid: int) -> None:
         return
     verdict = is_acceptance(mail.body)
     if verdict is not True:
+        if verdict is None:
+            from app.agents import clarification
+
+            clarification.ask(
+                mail,
+                sid,
+                "booking",
+                "Could you confirm whether you would like us to book the offer in this thread, or tell us which detail needs clarifying first? We have not booked based on your last message.",
+                "Könnten Sie bestätigen, ob wir das Angebot in diesem Thread buchen sollen, oder uns sagen, welche Angabe Sie vorher klären möchten? Aufgrund Ihrer letzten Nachricht haben wir noch nicht gebucht.",
+            )
         what = "Absage" if verdict is False else "unklare Antwort"
         db.emit(
             db.Ev.WARN,

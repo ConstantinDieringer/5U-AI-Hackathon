@@ -416,7 +416,7 @@ function renderList() {
   if (!rows.length) box.append(S.filter === "attention" && S.sessions.length ? el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts braucht dich gerade.") : emptyState("inbox", S.sessions.length ? "Keine Session für diesen Filter." : "Noch keine Anfragen."));
   for (const s of rows) box.append(el("div", { class: "row" + (s.id === S.selected ? " sel" : "") + (s.needs_attention ? " attn" : ""), onclick: () => select(s.id) },
     el("div", { class: "t" }, (s.kind === "tracking" ? "Tracking · " : "") + (s.subject || "(ohne Betreff)")), countdown(s),
-    el("div", { class: "m" }, badge(s.status), s.needs_clarification ? el("span", { class: "badge-s orange" }, "Klärung offen") : null, s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Mensch") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", ""))),
+    el("div", { class: "m" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Mensch") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", ""))),
     el("div", { class: "m num" }, s.quote_total_minor != null ? money(s.quote_total_minor, s.quote_currency) : ""),
     el("div", { class: "e" }, s.last_event || "")));
 }
@@ -433,10 +433,44 @@ async function loadDetail() { if (S.selected == null) return;
 const act = (path, confirmText) => async () => { if (confirmText && !confirm(confirmText)) return; try { await post(`/api/sessions/${S.selected}/${path}`); } catch (e) { alert("Fehler: " + e.message); } await Promise.all([loadDetail(), loadSessions()]); };
 function laneOf(s) { const r = s.request || {}, q = (s.quotes || [])[0] || {}; const o = r.origin || q.origin, d = r.destination || q.destination, parts = [];
   if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(r.preference || r.mode); return parts.join(" · "); }
+function costCard(s) {
+  const u = s.llm_usage || { calls: [], call_count: 0, total_micro_usd: 0, input_tokens: 0, output_tokens: 0 };
+  const dollars = (v) => v == null ? "Unbekannt" : Number(v / 1e6).toLocaleString("de-DE", { minimumFractionDigits: 6, maximumFractionDigits: 6 }) + " USD";
+  const count = (v) => v == null ? "Nicht gemeldet" : Number(v).toLocaleString("de-DE");
+  const c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "API-Kosten dieser RFQ")),
+    el("div", { class: "why-total" }, el("b", {}, dollars(u.total_micro_usd)), el("span", { class: "muted" }, `${u.call_count} Aufrufe · Input ${count(u.input_tokens)} · Output ${count(u.output_tokens)}`)),
+    el("p", { class: "caption" }, "Schätzung nach OpenAI-Modellpreisen in USD. Cached Input ist Teil des Inputs; Reasoning ist bereits im Output enthalten. Keine doppelte Berechnung."));
+  if (u.incomplete_calls) c.append(el("p", { class: "notice" }, `${u.incomplete_calls} Aufrufe ohne Preis oder Verbrauchsdaten. Bekannte Teilsumme: ${dollars(u.known_cost_micro_usd)}.`));
+  if (u.legacy_calls) c.append(el("p", { class: "caption" }, "Historische Aufrufe: ursprüngliche Kostenschätzung erhalten; Cache-, Reasoning- und Preisdetails wurden damals nicht gespeichert."));
+  if (!u.calls.length) c.append(el("p", { class: "muted" }, "Noch keine LLM-Aufrufe für diese RFQ erfasst."));
+  for (const call of u.calls) {
+    const a = call.accounting, t = a && a.tokens, rates = a && a.rates, costs = a && a.components_micro_usd;
+    const wrap = el("details", {}, el("summary", {}, `${call.purpose || "Aufruf"} · ${call.model || "Modell unbekannt"} · ${dollars(a && a.status !== "estimated" ? null : call.cost_micro_usd)}`));
+    const rows = t ? [
+      [t.cached_input == null ? "Input (Cache unbekannt)" : "Input ohne Cache", t.input - (t.cached_input || 0), rates && rates.input, costs && costs.input],
+      ["Cached Input", t.cached_input, rates && rates.cached_input, costs && costs.cached_input],
+      ["Output inkl. Reasoning", t.output, rates && rates.output, costs && costs.output],
+      ["Davon Reasoning", t.reasoning, null, null]
+    ] : [["Input", call.prompt_tokens, null, null], ["Output", call.completion_tokens, null, null]];
+    const table = el("table", { class: "list" }, el("thead", {}, el("tr", {}, ...["Tokenart", "Tokens", "USD / 1 Mio.", "Kosten"].map(x => el("th", {}, x)))),
+      el("tbody", {}, ...rows.map(([label, tokens, rate, cost]) => el("tr", {}, el("td", {}, label), el("td", { class: "num" }, count(tokens)), el("td", { class: "num" }, rate == null ? "" : String(rate)), el("td", { class: "num" }, cost == null ? "" : dollars(Number(cost)))))));
+    wrap.append(el("div", { style: "overflow-x:auto" }, table));
+    if (t && t.cached_input == null) wrap.append(el("p", { class: "caption" }, "Gateway meldet keinen Cache-Anteil. Input zum regulären Tarif geschätzt."));
+    if (a && (a.prompt_details || a.completion_details)) wrap.append(el("details", {}, el("summary", {}, "Weitere gemeldete Tokenarten"), el("pre", {}, JSON.stringify({ input: a.prompt_details, output: a.completion_details }, null, 2))));
+    c.append(wrap);
+  }
+  return c;
+}
 function renderDetail() {
   const s = S.detail, notices = [];
-  const pendingClarification = (s.clarifications || []).find((c) => c.state === "pending");
-  if (pendingClarification) notices.push(el("div", { class: "notice" }, icon("alert"), "Kundenklärung offen. Der Agent wartet auf eine eindeutige Antwort und sendet bis dahin keine Quote."));
+  if (s.validation) {
+    const v = s.validation, d = v.draft || {};
+    const states = {awaiting_clarification: "Warte auf ergänzende Angaben", resolving: "Antwort wird geprüft", ready: "Angaben geklärt", manual_review: "Manuelle Prüfung erforderlich", expired: "Ursprüngliche Anfragefrist abgelaufen"};
+    const delivery = v.send_state === "unknown" ? " · Versand der Rückfrage unbestätigt" : v.send_state === "pending" && v.state === "awaiting_clarification" ? " · Rückfrage wartet auf Versand" : "";
+    notices.push(el("div", { class: "notice" }, (states[v.state] || v.state) + delivery,
+      ...(d.issues || []).map((i) => el("div", {}, i.field + ": " + (i.detail || i.code))),
+      el("details", {}, el("summary", {}, "Geprüfte Angaben und Quellen"), el("pre", { style: "white-space:pre-wrap" }, JSON.stringify({facts:d.facts,evidence:d.evidence},null,2)))));
+  }
   if (s.mode === "manual") notices.push(el("div", { class: "notice" }, icon("hand"), "Ein Mensch hat diese Session übernommen. Der Agent antwortet hier nicht mehr."));
   if (S.globalPause) notices.push(el("div", { class: "notice" }, icon("stop"), "Globaler Stopp aktiv: es werden keine Mails gesendet."));
   const head = el("div", { class: "card" },
@@ -454,7 +488,7 @@ function renderDetail() {
     el("div", { class: "h" }, el("span", {}, m.direction === "in" ? "von " + (m.sender || "?") : "an " + (m.recipient || "?")), el("span", {}, time(m.received_at))),
     el("div", { class: "s" }, m.subject || ""), el("details", { open: s.mails.length === 1 ? true : null }, el("summary", {}, "Text"), el("pre", {}, m.body || ""))));
   $("#detail").replaceChildren(head, el("div", { class: "dgrid" },
-    el("div", { class: "stack" }, whyCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Timeline"), el("span", { class: "aside caption" }, "live")), tl)),
+    el("div", { class: "stack" }, costCard(s), whyCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Timeline"), el("span", { class: "aside caption" }, "live")), tl)),
     el("div", { class: "stack" }, s.bookings.length ? bookingCard(s) : null, boardCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Mails"), el("span", { class: "aside caption" }, String(s.mails.length))), s.mails.length ? mails : emptyState("mail", "Keine Mails.")))));
 }
 function eventItem(e, fresh) { const li = el("li", { class: (e.level || "") + (fresh ? " fresh" : "") }, el("span", { class: "time" }, time(e.created_at)), el("span", { class: "msg" }, e.message || e.kind),
@@ -489,7 +523,7 @@ async function loadCrm() { S.crm = await api("/api/crm").catch(() => S.crm); ren
 function renderCrm() {
   const d = S.crm; if (!d) return; const t = d.totals;
   const kpi = (label, value, sub, cls = "s3") => el("div", { class: "card kpi " + cls }, el("div", { class: "label" }, label), el("div", { class: "value" }, value), el("div", { class: "meta" }, sub));
-  const tabs = el("div", { class: "seg" }, ...[["customers", "Kunden"], ["quotes", "Quotes"], ["bookings", "Buchungen"]].map(([k, l]) => el("button", { class: S.crmTab === k ? "active" : "", onclick: () => { S.crmTab = k; renderCrm(); } }, l)));
+  const tabs = el("div", { class: "seg" }, ...[["customers", "Kunden"], ["quotes", "Quotes"], ["pricing", "Preise"], ["bookings", "Buchungen"]].map(([k, l]) => el("button", { class: S.crmTab === k ? "active" : "", onclick: () => { S.crmTab = k; renderCrm(); } }, l)));
   const search = el("label", { class: "search aside", style: "width:240px" }, icon("search"), el("input", { placeholder: "Suchen", value: S.crmQ, oninput: (e) => { S.crmQ = e.target.value.trim(); renderCrmTable(); } }));
   const tableBox = el("div", { id: "crm-table" });
   $("#crm").replaceChildren(
@@ -513,6 +547,19 @@ function renderCrmTable() {
     table = rows.length ? el("table", { class: "list" }, head([["Zeit"], ["Kunde"], ["Strecke"], ["Airline"], ["Preis", 1], ["Ergebnis"], ["5U"]]),
       el("tbody", {}, ...rows.map((r) => el("tr", { onclick: () => select(r.session_id) }, el("td", { class: "muted" }, dateTime(r.sent_at)), el("td", {}, who(r.customer)), el("td", {}, `${r.origin || "?"} → ${r.destination || "?"}`),
         el("td", {}, r.airline || ""), el("td", { class: "r num" }, money(r.total_minor, r.currency)), el("td", {}, out(r.outcome)), el("td", {}, r.verdict ? verdictBadge(r.verdict) : el("span", { class: "faint" }, "–")))))) : emptyState("send", "Noch keine Quotes gesendet.");
+  } else if (S.crmTab === "pricing") { const rows = (d.pricing || []).filter((r) => hit(r.customer, r.origin, r.destination, r.selected.airline));
+    const day = (n) => n == null ? "" : `${n} ${n === 1 ? "Tag" : "Tage"}`;
+    const alt = (o, sel) => el("span", { class: "step " + (o.airline === sel.airline && o.eur_minor === sel.eur_minor ? "blue" : ""), title: o.source }, `${o.airline.split(" ")[0]} · ${day(o.transit_days)} · ${euro(o.eur_minor)}`);
+    table = rows.length ? el("div", {}, el("div", { class: "caption", style: "margin:0 0 12px" }, "Alle Optionen je RFQ. Blau = gewählt. Lkw = gewählter Trucker-Preis, dahinter die Zahl der Trucker- und Airline-Gebote. Rot im 5U-Feld heißt: Preis prüfen."),
+      el("table", { class: "list" }, head([["Zeit"], ["Strecke · Wunsch"], ["Unser Preis", 1], ["Luftfracht-Optionen"], ["Lkw"], ["Gebote"], ["5U"]]),
+      el("tbody", {}, ...rows.map((r) => el("tr", { onclick: () => select(r.session_id) },
+        el("td", { class: "muted" }, dateTime(r.created_at)),
+        el("td", {}, el("div", { class: "req" }, el("b", {}, `${r.origin || "?"} → ${r.destination || "?"}`), el("span", { class: "muted" }, [r.preference === "fastest" ? "schnellste" : "günstigste", r.chargeable_kg ? Math.round(r.chargeable_kg) + " kg fr." : null, r.pickup ? "ab " + r.pickup + (r.pickup_assumed ? " (angenommen)" : "") : null].filter(Boolean).join(" · ")))),
+        el("td", { class: "r num", style: "font-weight:600" }, money(r.quote_minor)),
+        el("td", { class: "wrap" }, el("div", { style: "display:flex;flex-wrap:wrap;gap:4px" }, ...r.options.map((o) => alt(o, r.selected)))),
+        el("td", { class: "num" }, r.truck ? `${r.truck.name.split(" ")[0]} · ${euro(r.truck.eur_minor)}` : el("span", { class: "faint" }, "–")),
+        el("td", { class: "num muted" }, `${r.truck_bids} Lkw · ${r.airline_bids} Air`),
+        el("td", {}, r.verdict ? verdictBadge(r.verdict + (r.reason ? ` (${r.reason})` : "")) : el("span", { class: "faint" }, "–"))))))) : emptyState("coin", "Noch keine bepreisten Anfragen.");
   } else { const rows = d.bookings.filter((b) => hit(b.customer, b.booking_reference, b.airline));
     table = rows.length ? el("table", { class: "list" }, head([["Referenz"], ["Kunde"], ["Airline"], ["Preis", 1], ["Status"], ["Gebucht am"]]),
       el("tbody", {}, ...rows.map((b) => el("tr", { onclick: () => select(b.session_id) }, el("td", { style: "font-weight:600" }, b.booking_reference || b.team_reference), el("td", {}, who(b.customer)), el("td", {}, b.airline || ""),
@@ -543,7 +590,7 @@ let refreshT = null;
 function refreshSoon() { clearTimeout(refreshT); refreshT = setTimeout(() => { loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "live") loadSessions(); if (S.page === "crm") loadCrm(); }, 500); }
 function onEvent(e) { if (S.seen.has(e.id)) return; S.seen.add(e.id); S.lastId = Math.max(S.lastId, e.id);
   if (S.detail && e.session_id === S.selected) { const tl = $("#timeline"); if (tl) tl.append(eventItem(e, true));
-    if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted"].includes(e.kind)) loadDetail(); }
+    if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted", "llm_call"].includes(e.kind)) loadDetail(); }
   refreshSoon(); }
 function connect() { const es = new EventSource("/api/stream?since=" + S.lastId);
   es.onopen = () => { $("#live-dot").className = "dot on"; $("#live-text").textContent = "Live verbunden"; };

@@ -259,8 +259,21 @@ def test_bid_carriers_are_capped_and_observed_lanes_rank_first(monkeypatch) -> N
     request = Rfq(pickup_zip="51447", destination="ORD", weight_kg=100)
     trucks, airlines = rfq._bid_carriers(request, "CGN")
     assert trucks == [truck]
-    assert 2 <= len(trucks + airlines) <= 3
+    # airlines have their own cap: a trucker no longer takes an airline slot (round 20)
+    assert len(airlines) == 3
     assert airlines[0].name == "Air 2"
+    monkeypatch.setattr(
+        rfq,
+        "settings",
+        dataclasses.replace(rfq.settings, max_trucker_bids=5, max_bid_carriers=5),
+    )
+    many = [
+        bids.Carrier(f"T{i}", "trucker", f"t{i}@hackloop.mail", ("51",))
+        for i in range(5)
+    ]
+    monkeypatch.setattr(rfq, "truckers_for_zone", lambda *args: many)
+    trucks, airlines = rfq._bid_carriers(request, "CGN")
+    assert len(trucks) == 5 and len(airlines) == 4
 
 
 def test_composer_requires_question_coverage_and_one_verified_total(
@@ -291,12 +304,9 @@ def test_composer_requires_question_coverage_and_one_verified_total(
             }
         ),
     )
-    assert (
-        rfq.compose_quote_text(
-            request, option, 320358, None, 7, today=datetime(2026, 11, 21).date()
-        )
-        == body
-    )
+    assert rfq.compose_quote_text(
+        request, option, 320358, None, 7, today=datetime(2026, 11, 21).date()
+    ) == body.replace("Your austrian Power Team", "Moritz\nYour austrian Power Team")
 
     monkeypatch.setattr(
         rfq.llm,
@@ -313,7 +323,7 @@ def test_composer_requires_question_coverage_and_one_verified_total(
     )
     fallback = rfq.compose_quote_text(request, option, 320358, None, 7)
     assert _amounts(fallback) == ["3.203,58 €"]
-    assert "not yet available" in fallback
+    assert "not yet available" not in fallback
 
 
 def test_composer_repairs_mixed_route_phrase_once(monkeypatch) -> None:
@@ -493,7 +503,9 @@ def test_503_fallback_requests_known_carrier_once(stub, monkeypatch):
     monkeypatch.setattr(
         rfq,
         "settings",
-        dataclasses.replace(rfq.settings, allow_incomplete_door_quote=True),
+        dataclasses.replace(
+            rfq.settings, allow_incomplete_door_quote=True, rfq_validation_mode="shadow"
+        ),
     )
     mail = _rfq_mail()
     rfq.handle_rfq(mail, 265)

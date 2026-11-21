@@ -120,3 +120,58 @@ def test_self_delivery_stays_airport_to_airport():
         5,
     )
     assert not r.door_to_port
+
+
+def test_assumed_pickup_is_named_in_the_quote_before_the_signature():
+    from app.mail.style import SIGNATURE
+
+    r = Rfq(destination="SGN", weight_kg=874, pickup_zip="51447", pickup_assumed=True)
+    out = agent.with_pickup_note(
+        f"Hello,\n\nAir freight: 1.234,00 € all-in.\n\n{SIGNATURE}\n", r
+    )
+    assert "postal code 51447" in out and out.rstrip().endswith(SIGNATURE)
+    de = r.model_copy(
+        update={"language": "de", "pickup_zip": None, "pickup_city": "Regensburg"}
+    )
+    assert "Raum Regensburg" in agent.with_pickup_note(f"Hallo,\n\n{SIGNATURE}", de)
+
+
+def test_last_pickup_falls_back_to_zip_in_earlier_mail_text():
+    db.ingest_mail(
+        mail_id=937,
+        sender="rheintal-elektronik@hackloop.mail",
+        recipient="austrian-power@hackloop.mail",
+        subject="RFQ ORD",
+        body="Please arrange trucking from our site in 51896 Bergisch. 1795 kg.",
+        category="rfq",
+    )
+    assert (
+        db.last_pickup("rheintal-elektronik@hackloop.mail", before_session=4639)
+        == "51896"
+    )
+    assert (
+        db.last_pickup("rheintal-elektronik@hackloop.mail", before_session=937) is None
+    )
+
+
+def test_5844_origin_from_text_when_llm_left_it_empty():
+    body = (
+        "Could you quote an all-in price in EUR for the cheapest air freight option to DEL"
+        " (Delhi, IN)?\n\nWe'll deliver the shipment to FRA ourselves. 736 kg gross."
+    )
+    m = mail(
+        5844, "lindqvist-medtech@hackloop.mail", "Air freight quote: FRA–DEL", body
+    )
+    r = agent.locate_origin(Rfq(destination="DEL", weight_kg=736), m, 5844)
+    assert r.origin == "FRA"
+    two = mail(1, "x@y.example", "FRA or MUC to DEL", "either works")
+    assert (
+        agent.locate_origin(Rfq(destination="DEL", weight_kg=1), two, 1).origin is None
+    )
+
+
+def test_origin_ignores_subject_of_quoted_old_request():
+    body = ("Please quote cheapest to DEL, 300 kg, we deliver to the airport ourselves.\n\n"
+            "-----Original Message-----\nSubject: HAM - HKG\n\nold request 120 kg")
+    m = mail(7, "x@y.example", "RE: FW: HAM - HKG / 120 KGS", body)
+    assert agent.locate_origin(Rfq(destination="DEL", weight_kg=300), m, 7).origin is None

@@ -1,10 +1,16 @@
 # Architecture Context
 
+- **Mailbox ingress:** signed `/hooks/mailbox` persists into `mail_delivery` before acknowledging; workers and fallback polling share atomic claims and exact-ID deduplication. Pending/stored work resumes after restart; ambiguous dispatches become `unknown` with a warning for manual inspection. Only polling advances its cursor. Subscription and its private, persistent signing-secret file are managed explicitly with `python -m app.mail.webhook_admin`; never rotate on startup. See `DEPLOY.md`.
+
+- **RFQ validation:** `app/mail/rfq_validation.py` checks the current request and attachment evidence before pricing. Drafts and clarification state live in `rfq_validation`; no session-table rebuild. Enforce is the default; explicit shadow mode remains available. Enforce uses same-thread customer evidence and handles clarification replies before booking.
+
 Decided 21.11.2026. Details live in the linked docs; this file only points to them.
 
 - **Stack and conventions (binding):** [docs/TECH_SPEC.md](docs/TECH_SPEC.md): Python 3.11, FastAPI (built-in SSE), SQLite via `sqlite3` without ORM, threads instead of asyncio, one static HTML page with vanilla JS.
 - **CRM, session model and sessions UI:** [docs/design/aufgabe-c.md](docs/design/aufgabe-c.md).
 - **Session = one customer-started thread.** Mails are mapped to sessions via known mail IDs in `references`; every outgoing mail is stored with `db.record_outgoing()`.
+- **History-first clarification:** the unified `rfq_validation` lifecycle searches same-thread customer evidence before asking, accumulates partial corrections and asks again for remaining gaps. A durable reply ledger prevents duplicates; saved answers resume after restart. Booking/tracking questions share the lifecycle without treating questions as quotes or consent.
+- **RFQ API costs:** `llm_calls.accounting_json` retains usage subtypes, frozen model rates and component estimates. Session detail exposes `llm_usage`; missing prices/usage are incomplete, legacy totals stay unchanged. Reasoning is included in output; cached input is discounted separately.
 - **Boundaries:** only `app/hackloop.py` talks to the 5U API, only `app/llm.py` to the gateway, only `app/db.py` writes SQL. UI and agents are coupled only through the database (`events` table, `paused`/`mode` flags).
 - **Pricing:** deterministic `app/pricing/`; Decimal amounts and integer cents. Tracked JSON files are seed data; runtime tariffs/portal snapshots live in `settings.runtime_dir` on the persistent volume. `portal_result()` adds structured 503 email fallbacks without changing `portal_options()`.
 - **Tariffs:** one durable SQLite queue and worker; text/table formats parsed locally, images/scanned PDFs transcribed through `llm.complete` with no pricing decisions. Sender and values validated before atomic publication and cache reload. Pending jobs resume on restart; failed jobs remain recorded with a warning.

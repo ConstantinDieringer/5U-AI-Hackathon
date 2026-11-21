@@ -75,6 +75,9 @@ class Rfq(BaseModel):
     # door-to-port without a ZIP: area from pickup_zones.csv found by code (body, signature or
     # the customer's earlier requests). Never filled by the LLM.
     pickup_city: str | None = None
+    pickup_assumed: bool = (
+        False  # pickup site inferred by code: the quote asks to confirm it
+    )
     destination: str  # IATA
     weight_kg: float = Field(gt=0, le=100_000)  # total gross weight
     volume_cbm: float = Field(default=0.0, ge=0, le=1_000)  # total volume
@@ -146,6 +149,15 @@ class Rfq(BaseModel):
 
 
 Source = Literal["sheet", "portal", "bid"]
+
+
+class RfqDraft(BaseModel):
+    """Incomplete extraction; never an input to pricing."""
+
+    facts: dict = Field(default_factory=dict)
+    evidence: dict = Field(default_factory=dict)
+    issues: list[dict] = Field(default_factory=list)
+    version: int = 1
 
 
 @dataclass

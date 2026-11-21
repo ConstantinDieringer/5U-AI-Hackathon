@@ -41,9 +41,9 @@ def test_current_shipment_excludes_old_data_and_subject(header, monkeypatch):
     assert "AMS" not in source and "165" not in source and "Lot 1" not in source
 
 
-def test_forward_only_request_keeps_its_specification():
+def test_forward_only_request_requires_confirmation():
     body = "Please quote the request below.\n-----Original Message-----\nFRA to NRT, 500 kg."
-    assert "FRA to NRT, 500 kg" in rfq._clean(body)
+    assert "FRA to NRT, 500 kg" not in rfq._clean(body)
 
 
 def test_unquoted_request_and_inline_quotes_remain_readable():

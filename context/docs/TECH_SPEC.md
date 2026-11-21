@@ -35,7 +35,7 @@ pytest>=8            # Tests
 ```
 
 - **Datenbank:** SQLite über die Standardbibliothek `sqlite3`. **Kein ORM.**
-- **Nebenläufigkeit:** synchron + Threads (`threading`). **Kein asyncio** im eigenen Code (FastAPI-Endpunkte als normale `def`).
+- **Nebenläufigkeit:** synchron + Threads (`threading`). FastAPI-Endpunkte als normale `def`; Ausnahme: vorhandenes SSE/Auth und der Mailbox-Webhook lesen HTTP asynchron. Der Webhook begrenzt den Rohbody und übergibt nur das SQLite-Enqueue an den Threadpool; Verarbeitung bleibt synchron in Threads.
 - **Formatierung:** `ruff format` und `ruff check` vor jedem Commit (Zeilenlänge 100).
 
 ## 3. Ordnerstruktur (fix)
@@ -81,7 +81,7 @@ requirements.txt
 
 ## 4. Konfiguration & Secrets
 
-`.env` (nie committen, das Repo ist öffentlich). **Maßgeblich ist `.env.example` im Repo-Root**: alle Variablen mit Standardwert und Kommentar. Nur `TEAM_API_KEY` ist geheim und wird von jedem selbst eingetragen. Neue Variable = Eintrag in `.env.example` + Standardwert in `app/config.py` im selben Commit.
+`.env` (nie committen, das Repo ist öffentlich). **Maßgeblich ist `.env.example` im Repo-Root**: alle Variablen mit Standardwert und Kommentar. `TEAM_API_KEY`, UI-Passwort und Webhook-Signing-Secret sind geheim. Das Signing-Secret bleibt in einer privaten Datei auf dem persistenten Volume oder in `MAILBOX_WEBHOOK_SECRET`. Neue Variable = Eintrag in `.env.example` + Standardwert in `app/config.py` im selben Commit.
 
 - Zugriff nur über `from app.config import settings` (z. B. `settings.api_key`).
 - Der eigene OpenAI-Key wird **einmalig per curl** im Gateway hinterlegt und steht **nirgends** im Repo oder in `.env`.
@@ -93,7 +93,7 @@ Details: Projekt-Doc `api-referenz.md` und `https://api.start-hack.5u.ai/openapi
 
 - Auth-Header: `X-API-Key: <key>` – in `hackloop.py` zentral gesetzt.
 - Timeouts: **10 s** pro Request, max. **2 Retries** mit 1 s Abstand, nur bei Netzwerkfehler/5xx/429 (bei 429 `Retry-After` beachten).
-- Mailbox: Polling `GET /v1/mailbox/messages?since_id=` alle 1,5 s; Senden `POST /v1/mailbox/messages` mit `to`, `subject`, `body`, `in_reply_to`.
+- Mailbox: signierte Pushes an `POST /hooks/mailbox`, Subscription über `PUT /v1/mailbox/webhook`. HMAC-SHA256 über Timestamp + Punkt + unveränderten Rohbody; Replay-Fenster 5 Minuten. Vor 202-Antwort dauerhaft in `mail_delivery` speichern; Agenten separat starten. Exakte Mail-ID dedupliziert Push/Poll auch bei vertauschter Reihenfolge. Nur Polling verändert `since_id`. Sicherheits-Polling alle 30 s bei konfiguriertem Signing-Secret, sonst mindestens 5 s, bei 429 `Retry-After` bzw. 30 s und Backoff beachten. Subscription niemals automatisch beim Start erneuern, weil PUT das Secret rotiert. Senden weiter über `POST /v1/mailbox/messages` mit `to`, `subject`, `body`, `in_reply_to`.
 - Portal: `ports` und `brackets` frei; `rates` **rate-limited (10/min, Stand 15:00)**, **eine Airline pro Aufruf** (1–4 Airlines je Lane) → nur über `hackloop.get_rate(origin, destination, airline, weight_kg, volume_cbm) -> dict` mit Rate-Limit-Zähler; `bookings` idempotent über `team_reference`. `app/pricing/portal_sync.py` erwartet zusätzlich `hackloop.get_ports() -> dict` und `hackloop.get_brackets(airline) -> dict` (rohe Antwort, Exception bei Nicht-2xx).
 - LLM: OpenAI-SDK mit `base_url=f"{BASE_URL}/v1/gateway"` und `api_key=TEAM_API_KEY`.
 
@@ -161,6 +161,10 @@ Umgesetzt in `app/models.py` (21.11., 15:30).
 
 ## 7. Datenbank (SQLite, `app/db.py`)
 
+`clarification_answers(session_id,mail_id)` ergänzt den bestehenden `rfq_validation`-Ablauf als Antwort-Ledger. Es verhindert Replay-Duplikate über mehrere Rückfragerunden. Fehlende Felder werden zunächst anhand eindeutiger Kundenmails desselben Threads geprüft; Konflikte bleiben rückfragepflichtig. Teilantworten werden kumuliert, bei Restlücken wird die nächste Frage gespeichert und versendet. Neustart/Worker verarbeiten bereits gespeicherte, noch nicht zugeordnete Antworten. Unklare Buchungszusagen und nicht zuordenbares Tracking nutzen denselben Ablauf mit getrenntem Workflow-Typ. Keine Fristverlängerung und kein neues Quote-Claim durch Rückfragen. `RFQ_VALIDATION_MODE` ist standardmäßig `enforce`; explizites `shadow` bleibt als Diagnose-/Rollback-Option erhalten.
+
+`llm_calls.accounting_json` speichert abwärtskompatibel Usage-Details, Modellpreise und Kostenkomponenten pro Call. Migration ergänzt die nullable Spalte beim Start. `/api/sessions/{id}` ergänzt `llm_usage` mit Calls und RFQ-Summen. Cached Input wird abgezogen und separat bepreist; Reasoning bleibt Teil des Outputs. Historische Kosten bleiben erhalten, unbekannte Preise/Usage werden als unvollständig angezeigt. Preise sind USD-Schätzungen, keine bestätigten Gateway-Rechnungsbeträge.
+
 > **Maßgeblich für Schema, Session-Zuordnung und DB-Zugriffsmuster ist `context/docs/design/aufgabe-c.md` (Abschnitte 3–5).** Das Schema unten ist überholt, wo es davon abweicht.
 
 ```sql
@@ -220,17 +224,28 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
-- **Hartes Limit: standardmäßig max. 3 LLM-Calls pro Thread**, über
-  `LLM_MAX_CALLS_PER_SESSION` konfiguriert: Extraktion, optional genau eine strukturierte
-  Reparatur und Antworttext. Weitere Calls werfen eine Exception.
+- **Hartes Limit: max. 2 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Nach einer Extraktionsreparatur wird der Antworttext deterministisch erstellt.
 - `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, Mailtext ≤ 500).
   `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
 - Routing, Preisrechnung, Auswahl und Tariflookup: **kein LLM**.
 - Prompts als Konstanten in der jeweiligen Datei, auf Englisch, kurz.
 
+### RFQ-Eingangsprüfung und Rückfragen
+
+- Belegte numerische Totale unterstützen sowohl Labels (`Gross weight: ...`) als auch klare
+  Satzformen (`gross weight is ...`, `volume of ...`); diese benötigen keine erneute Kundenbestätigung.
+- `RFQ_VALIDATION_MODE=shadow` ist der Standard: Prüfprobleme als Events erfassen, keine neuen automatischen Rückfragen. Erst nach Replay und Abnahme `enforce` aktivieren.
+- `enforce` bepreist nur aktuelle, belegte Angaben. Signaturen und frühere Kundensendungen ersetzen keine Abholadresse; weitergeleitete Betreffe und Historie sind keine aktuellen Streckenangaben.
+- Alle Text-/Tabellen-Anhänge vor dem Pricing abgleichen. Bildseiten werden im vorhandenen Extraktionsaufruf transkribiert (bis 2500 Output-Tokens); kein zusätzlicher Call. Preisberechnung bleibt deterministisch.
+- `rfq_validation` ist eine additive Workflow-Tabelle (keine Änderung des bestehenden sessions-CHECK): Draft, Quellen, offene Punkte, Zustand und Rückfrage-Ausgang. Der API-Sessiondetail liefert `validation`; die UI zeigt den Zustand neben dem bisherigen Sessionstatus.
+- Einmal automatisch im Kundenthread nachfragen; ursprüngliche Deadline beibehalten. Das Scoring-Risiko durch die erste Antwort wurde bewusst akzeptiert. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
+- Rückfrageantworten vor Booking behandeln, nur angefragte Werte übernehmen. Unklare Antwort, bestätigtes Gefahrgut ohne passenden Tarif oder unklarer Versandausgang erfordern manuelle Prüfung. Keine weiteren automatischen Rückfragen.
+
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Door-Angebote nennen die gemeldete Trucker-Vorlaufzeit, sofern vorhanden, und kennzeichnen
+  einen nicht bestätigten Abholslot ausdrücklich als offen; Luftlaufzeit ist keine Abholbestätigung.
 - Aktuelle Sendungsangaben haben Vorrang vor Betreff und zitierter Mailhistorie. Bei einem
   neuen Sendungsblock werden alte weitergeleitete Angaben aus der Extraktion/Lot-Summe entfernt;
   reine Weiterleitungen bleiben lesbar. Fehlende Abholorte dürfen nicht aus alten Betreffs geraten werden.
