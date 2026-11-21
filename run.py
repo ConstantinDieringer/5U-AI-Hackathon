@@ -30,6 +30,9 @@ def main() -> None:
     from app.mail import poller, webhook
 
     db.init_db()
+    from app.ui import log_events
+
+    log_events.install()  # ERROR log lines become events: the Übersicht shows them
     from app import process
 
     try:

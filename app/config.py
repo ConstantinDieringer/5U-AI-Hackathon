@@ -62,6 +62,7 @@ class Settings:
     llm_compose_model: str
     llm_review_model: str
     email_review_enabled: bool
+    reply_in_customer_language: bool
     poll_interval_s: float
     db_path: str
     ui_port: int
@@ -169,6 +170,7 @@ settings = Settings(
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",
+    reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
