@@ -406,3 +406,63 @@ def test_pricing_history_lists_options_truck_and_verdict(client):
         and r["verdict"] == "rejected"
         and r["reason"] == "too_high"
     )
+
+
+def test_emergency_draft_and_send_records_quote(client, monkeypatch):
+    from types import SimpleNamespace
+
+    from app import hackloop
+    from app.ui import drafts
+
+    sid = db.ingest_mail(
+        mail_id=7237,
+        sender="weidner-spielwaren@hackloop.mail",
+        recipient=TEAM,
+        subject="Air freight quote: CGN to DFW",
+        body="Hi, cheapest CGN to DFW, 85 kg, 0.70 cbm, we deliver to CGN ourselves.",
+        category="rfq",
+    )
+    db.set_request(
+        sid,
+        {
+            "origin": "CGN",
+            "destination": "DFW",
+            "weight_kg": 85,
+            "volume_cbm": 0.7,
+            "preference": "cheapest",
+            "customer_name": "Klaus",
+            "language": "de",
+        },
+    )
+    monkeypatch.setattr(
+        drafts,
+        "portal_result",
+        lambda *a, **k: SimpleNamespace(options=[], errors=["timeout"]),
+    )
+    d = client.post(f"/api/sessions/{sid}/draft").json()
+    assert d["choice"]["airline"] == "Quetzal Air Freight" and d["total_minor"] == 41616
+    assert "416,16 €" in d["body"] and d["body"].startswith("Hi Klaus")
+    assert any("Portal" in w for w in d["warnings"])
+
+    monkeypatch.setattr(hackloop, "send", lambda **k: {"id": 9001})
+    r = client.post(f"/api/sessions/{sid}/reply", json={"text": d["body"], "quote": d})
+    assert r.status_code == 200
+    s = db.get_session(sid)
+    assert (
+        s["quotes"][0]["total_minor"] == 41616 and s["quotes"][0]["source"] == "manual"
+    )
+    assert s["mode"] == "auto"  # handed back so the booking agent books on the yes
+
+
+def test_emergency_draft_without_origin_explains(client):
+    sid = db.ingest_mail(
+        mail_id=50,
+        sender="x@y.example",
+        recipient=TEAM,
+        subject="RFQ",
+        body="quote to DEL please",
+        category="rfq",
+    )
+    db.set_request(sid, {"destination": "DEL", "weight_kg": 100})
+    r = client.post(f"/api/sessions/{sid}/draft")
+    assert r.status_code == 422 and "Abflughafen" in r.json()["detail"]
