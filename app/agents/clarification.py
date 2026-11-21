@@ -35,7 +35,7 @@ def text_for(draft, lang):
         "pieces": "the total number of pieces (Total pieces)",
         "lots": "complete gross weights and dimensions for each lot",
         "attachments": "a readable, corrected packing specification",
-        "dangerous_goods": "whether the goods are dangerous, their UN number/class, and which conflicting declaration is incorrect",
+        "dangerous_goods": "the dangerous goods documents (shipper's declaration/DGD and safety data sheet/SDS, where applicable), the UN number/class, and clarification of any conflicting declarations",
         "shipment": "the missing or corrected shipment details",
     }
     de = {
@@ -47,13 +47,26 @@ def text_for(draft, lang):
         "pieces": "die gesamte Stückzahl (Total pieces)",
         "lots": "vollständige Bruttogewichte und Maße für jede Position",
         "attachments": "eine lesbare, korrigierte Packliste",
-        "dangerous_goods": "ob es Gefahrgut ist, UN-Nummer/Klasse und welche widersprüchliche Angabe falsch ist",
+        "dangerous_goods": "die Gefahrgutunterlagen (Versendererklärung/DGD und Sicherheitsdatenblatt/SDS, soweit zutreffend), UN-Nummer/Klasse und eine Klärung widersprüchlicher Angaben",
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
     }
     labels = de if lang == "de" else en
     items = [labels[f] for f in fields]
     joiner = " und " if lang == "de" else " and "
     wanted = items[0] if len(items) == 1 else ", ".join(items[:-1]) + joiner + items[-1]
+    if "dangerous_goods" in fields:
+        if lang == "de":
+            return (
+                "Guten Tag,\n\nbitte schicken Sie uns noch "
+                f"{wanted}. Wir prüfen die Unterlagen und die Eignung des Transports, "
+                "bevor wir ein Angebot abgeben oder buchen.\n\n"
+                f"{SIGNATURE}\n"
+            )
+        return (
+            f"Hello,\n\nPlease send us {wanted}. We need to review the documents and "
+            "transport suitability before we can quote or book this shipment.\n\n"
+            f"{SIGNATURE}\n"
+        )
     # one short human paragraph, no bullet list; the labels in brackets stay so the reply
     # can be matched to the field
     if lang == "de":
