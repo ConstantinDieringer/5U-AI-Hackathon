@@ -15,7 +15,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 - Mailbox webhooks: HMAC receiver, durable shared queue, exact-ID deduplication, restart handling, safe subscription CLI and polling backoff. 283 tests pass, 1 skipped; changed files pass Ruff and Python 3.11 syntax parsing (tests ran on local Python 3.12). Provider GET returned no subscription; deployment and live push verification remain outstanding.
 
-- RFQ validation: current-message evidence and attachment checks, additive durable clarification state, one automatic question, reply routing before booking, deadline/pause/restart protections; `RFQ_VALIDATION_MODE=shadow` remains the default pending production replay acceptance.
+- History-first follow-up policy implemented on the existing validation lifecycle: unique same-thread facts can resolve gaps without another mail; incomplete replies trigger targeted follow-ups with cumulative corrections. Durable reply ledger/restart replay, sender checks, booking/tracking questions and default enforce mode added. Original deadlines and human controls retained.
+- Pricing review (round 20 too_high): 5 trucker requests had used every bid slot, so no airline was asked. Truckers now have their own cap (MAX_TRUCKER_BIDS). CRM tab "Preise" lists all options, truck, bids and verdict per RFQ. PRICE_ADJUST_PCT (default 0) is an untested lever.
+- RFQ validation: current-message evidence and attachment checks, additive durable clarification state, one outstanding question at a time, reply routing before booking, deadline/pause/restart protections; `RFQ_VALIDATION_MODE=enforce` is the default, with explicit `shadow` available for diagnostics/rollback.
 - RFQ validation verification: 257 tests passed, 1 existing test skipped; relevant Ruff checks pass. Read-only local replay covered 18 sessions but no stored extractions, so no live extraction accuracy claim or production activation. Integrated the latest API-cost/pickup-note changes; enforce never prices an assumed pickup.
 
 - RFQ cost card: input/cached input/output/reasoning per model and purpose, frozen price/usage snapshots and USD totals. Legacy estimates retained; missing prices/usage visible. Accounting migration adds one nullable column; no extra API calls.
@@ -112,6 +114,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11: Webhook merge integrated main's history-first clarification, tracking reply routing, enforce default and trucker pricing changes; conflicts resolved without reverting them. Combined verification: 292 tests passed, 1 skipped; targeted Ruff checks pass.
 
 - 21.11: Mailbox webhook receiver, persistent shared inbox, exact-ID deduplication, restart recovery and polling backoff implemented. Subscription activation requires deployment plus the server-side admin command in `DEPLOY.md`; no live subscription has been changed during development. Signature/queue tests use isolated SQLite and mocked API calls.
 

@@ -26,12 +26,15 @@ def current_message(body: str, subject: str = "") -> CurrentMessage:
     boundary = _HISTORY.search(body or "")
     active = (body or "")[: boundary.start()] if boundary else (body or "")
     history = (body or "")[boundary.start() :] if boundary else ""
-    active = "\n".join(line for line in active.splitlines() if not line.lstrip().startswith(">"))
+    active = "\n".join(
+        line for line in active.splitlines() if not line.lstrip().startswith(">")
+    )
     signature = _SIGNATURE.search(active)
     facts = active[: signature.start()] if signature else active
     safe_subject = (
         ""
-        if history or re.match(r"\s*(?:(?:re|fw|fwd|aw|wg):\s*)+", subject, re.IGNORECASE)
+        if history
+        or re.match(r"\s*(?:(?:re|fw|fwd|aw|wg):\s*)+", subject, re.IGNORECASE)
         else subject
     )
     return CurrentMessage(active.strip(), history, facts.strip(), safe_subject)

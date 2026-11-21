@@ -342,3 +342,67 @@ def test_status_overview_steps_checks_and_todo(client):
     )
     d = client.get("/api/status").json()
     assert d["todo"] == [] and {r["id"]: r for r in d["requests"]}[sid]["booked"]
+
+
+def test_pricing_history_lists_options_truck_and_verdict(client):
+    sid = db.ingest_mail(
+        mail_id=40,
+        sender="a@b.example",
+        recipient=TEAM,
+        subject="RFQ",
+        body="b",
+        category="rfq",
+    )
+    db.emit("bid_received", "Gebot Bodenseefracht: 107.52 EUR, 1.25 Tage", sid)
+    db.emit(
+        "pricing_audit",
+        "Pricing inputs and selected option",
+        sid,
+        request={
+            "destination": "RUH",
+            "preference": "fastest",
+            "pickup_zip": "61391",
+            "pickup_assumed": True,
+        },
+        selected={
+            "airline": "Quetzal Air Freight",
+            "source": "sheet",
+            "transit_days": 2,
+            "total_eur_minor": 361612,
+            "origin": "FRA",
+            "destination": "RUH",
+            "chargeable_kg": 1513.02,
+        },
+        options=[
+            {
+                "airline": "Quetzal Air Freight",
+                "source": "sheet",
+                "transit_days": 2,
+                "total_eur_minor": 361612,
+            },
+            {
+                "airline": "Tamarind Airways",
+                "source": "portal",
+                "transit_days": 3,
+                "total_eur_minor": 329838,
+            },
+        ],
+        trucking={"carrier": {"name": "Hansekogge Trucking"}, "total_eur": "219.17"},
+    )
+    db.save_board_result(
+        round_id="20",
+        verdict="rejected",
+        reason="too_high",
+        points=None,
+        raw={},
+        session_id=sid,
+    )
+    rows = client.get("/api/crm").json()["pricing"]
+    r = rows[0]
+    assert r["origin"] == "FRA" and r["cheapest_air_minor"] == 329838
+    assert r["truck"] == {"name": "Hansekogge Trucking", "eur_minor": 21917}
+    assert (
+        r["truck_bids"] == 1
+        and r["verdict"] == "rejected"
+        and r["reason"] == "too_high"
+    )

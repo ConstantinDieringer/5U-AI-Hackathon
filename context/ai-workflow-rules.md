@@ -29,6 +29,8 @@ If a change cannot be verified end to end quickly, the scope is too broad, so sp
 
 ## Handling Missing Requirements
 
+For missing or seriously unclear information that prevents continuing a live mail workflow, first inspect earlier customer mail in the same shipment thread and the CRM. Reuse only unambiguous facts for that shipment; never copy another shipment's cargo or infer booking consent from an old approval. If the gap remains, ask the relevant person a specific question in the existing thread before abandoning the workflow. Persist the question, continue from the reply and ask again if the new answer is still incomplete. Never repeat a question without a new incoming answer. Pause/manual control, explicit rejection, delivery uncertainty and the original challenge deadline remain authoritative.
+
 - Do not invent product behavior that the context files do not define.
 - If a requirement is ambiguous, resolve it in the relevant context file before implementing.
 - If a requirement is missing, add it as an open question in `progress-tracker.md` before continuing.

@@ -465,7 +465,9 @@ function renderDetail() {
   const s = S.detail, notices = [];
   if (s.validation) {
     const v = s.validation, d = v.draft || {};
-    notices.push(el("div", { class: "notice" }, "Eingangsprüfung: " + v.state + " · Rückfrage: " + v.send_state,
+    const states = {awaiting_clarification: "Warte auf ergänzende Angaben", resolving: "Antwort wird geprüft", ready: "Angaben geklärt", manual_review: "Manuelle Prüfung erforderlich", expired: "Ursprüngliche Anfragefrist abgelaufen"};
+    const delivery = v.send_state === "unknown" ? " · Versand der Rückfrage unbestätigt" : v.send_state === "pending" && v.state === "awaiting_clarification" ? " · Rückfrage wartet auf Versand" : "";
+    notices.push(el("div", { class: "notice" }, (states[v.state] || v.state) + delivery,
       ...(d.issues || []).map((i) => el("div", {}, i.field + ": " + (i.detail || i.code))),
       el("details", {}, el("summary", {}, "Geprüfte Angaben und Quellen"), el("pre", { style: "white-space:pre-wrap" }, JSON.stringify({facts:d.facts,evidence:d.evidence},null,2)))));
   }
@@ -521,7 +523,7 @@ async function loadCrm() { S.crm = await api("/api/crm").catch(() => S.crm); ren
 function renderCrm() {
   const d = S.crm; if (!d) return; const t = d.totals;
   const kpi = (label, value, sub, cls = "s3") => el("div", { class: "card kpi " + cls }, el("div", { class: "label" }, label), el("div", { class: "value" }, value), el("div", { class: "meta" }, sub));
-  const tabs = el("div", { class: "seg" }, ...[["customers", "Kunden"], ["quotes", "Quotes"], ["bookings", "Buchungen"]].map(([k, l]) => el("button", { class: S.crmTab === k ? "active" : "", onclick: () => { S.crmTab = k; renderCrm(); } }, l)));
+  const tabs = el("div", { class: "seg" }, ...[["customers", "Kunden"], ["quotes", "Quotes"], ["pricing", "Preise"], ["bookings", "Buchungen"]].map(([k, l]) => el("button", { class: S.crmTab === k ? "active" : "", onclick: () => { S.crmTab = k; renderCrm(); } }, l)));
   const search = el("label", { class: "search aside", style: "width:240px" }, icon("search"), el("input", { placeholder: "Suchen", value: S.crmQ, oninput: (e) => { S.crmQ = e.target.value.trim(); renderCrmTable(); } }));
   const tableBox = el("div", { id: "crm-table" });
   $("#crm").replaceChildren(
@@ -545,6 +547,19 @@ function renderCrmTable() {
     table = rows.length ? el("table", { class: "list" }, head([["Zeit"], ["Kunde"], ["Strecke"], ["Airline"], ["Preis", 1], ["Ergebnis"], ["5U"]]),
       el("tbody", {}, ...rows.map((r) => el("tr", { onclick: () => select(r.session_id) }, el("td", { class: "muted" }, dateTime(r.sent_at)), el("td", {}, who(r.customer)), el("td", {}, `${r.origin || "?"} → ${r.destination || "?"}`),
         el("td", {}, r.airline || ""), el("td", { class: "r num" }, money(r.total_minor, r.currency)), el("td", {}, out(r.outcome)), el("td", {}, r.verdict ? verdictBadge(r.verdict) : el("span", { class: "faint" }, "–")))))) : emptyState("send", "Noch keine Quotes gesendet.");
+  } else if (S.crmTab === "pricing") { const rows = (d.pricing || []).filter((r) => hit(r.customer, r.origin, r.destination, r.selected.airline));
+    const day = (n) => n == null ? "" : `${n} ${n === 1 ? "Tag" : "Tage"}`;
+    const alt = (o, sel) => el("span", { class: "step " + (o.airline === sel.airline && o.eur_minor === sel.eur_minor ? "blue" : ""), title: o.source }, `${o.airline.split(" ")[0]} · ${day(o.transit_days)} · ${euro(o.eur_minor)}`);
+    table = rows.length ? el("div", {}, el("div", { class: "caption", style: "margin:0 0 12px" }, "Alle Optionen je RFQ. Blau = gewählt. Lkw = gewählter Trucker-Preis, dahinter die Zahl der Trucker- und Airline-Gebote. Rot im 5U-Feld heißt: Preis prüfen."),
+      el("table", { class: "list" }, head([["Zeit"], ["Strecke · Wunsch"], ["Unser Preis", 1], ["Luftfracht-Optionen"], ["Lkw"], ["Gebote"], ["5U"]]),
+      el("tbody", {}, ...rows.map((r) => el("tr", { onclick: () => select(r.session_id) },
+        el("td", { class: "muted" }, dateTime(r.created_at)),
+        el("td", {}, el("div", { class: "req" }, el("b", {}, `${r.origin || "?"} → ${r.destination || "?"}`), el("span", { class: "muted" }, [r.preference === "fastest" ? "schnellste" : "günstigste", r.chargeable_kg ? Math.round(r.chargeable_kg) + " kg fr." : null, r.pickup ? "ab " + r.pickup + (r.pickup_assumed ? " (angenommen)" : "") : null].filter(Boolean).join(" · ")))),
+        el("td", { class: "r num", style: "font-weight:600" }, money(r.quote_minor)),
+        el("td", { class: "wrap" }, el("div", { style: "display:flex;flex-wrap:wrap;gap:4px" }, ...r.options.map((o) => alt(o, r.selected)))),
+        el("td", { class: "num" }, r.truck ? `${r.truck.name.split(" ")[0]} · ${euro(r.truck.eur_minor)}` : el("span", { class: "faint" }, "–")),
+        el("td", { class: "num muted" }, `${r.truck_bids} Lkw · ${r.airline_bids} Air`),
+        el("td", {}, r.verdict ? verdictBadge(r.verdict + (r.reason ? ` (${r.reason})` : "")) : el("span", { class: "faint" }, "–"))))))) : emptyState("coin", "Noch keine bepreisten Anfragen.");
   } else { const rows = d.bookings.filter((b) => hit(b.customer, b.booking_reference, b.airline));
     table = rows.length ? el("table", { class: "list" }, head([["Referenz"], ["Kunde"], ["Airline"], ["Preis", 1], ["Status"], ["Gebucht am"]]),
       el("tbody", {}, ...rows.map((b) => el("tr", { onclick: () => select(b.session_id) }, el("td", { style: "font-weight:600" }, b.booking_reference || b.team_reference), el("td", {}, who(b.customer)), el("td", {}, b.airline || ""),

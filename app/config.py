@@ -42,6 +42,8 @@ class Settings:
     quote_final_deadline_s: float
     min_bid_carriers: int
     max_bid_carriers: int
+    max_trucker_bids: int
+    price_adjust_pct: float
     carrier_observation_ttl_s: float
     allow_incomplete_door_quote: bool
     llm_max_calls_per_session: int
@@ -86,7 +88,12 @@ settings = Settings(
     ),
     quote_final_deadline_s=float(_env("QUOTE_FINAL_DEADLINE_S", _env("BID_MAX_WAIT_S", "300"))),
     min_bid_carriers=max(0, int(_env("MIN_BID_CARRIERS", "2"))),
-    max_bid_carriers=max(1, int(_env("MAX_BID_CARRIERS", "5"))),
+    max_bid_carriers=max(1, int(_env("MAX_BID_CARRIERS", "5"))),  # airline bid requests
+    # truckers get their own slots: in round 20 five truckers left no slot for airline bids
+    max_trucker_bids=max(0, int(_env("MAX_TRUCKER_BIDS", "5"))),
+    # % taken off the computed all-in total (0 = quote our cost). Experimental lever against
+    # too_high; whether 5U also rejects prices far below its best price is not documented.
+    price_adjust_pct=min(10.0, max(0.0, float(_env("PRICE_ADJUST_PCT", "0")))),
     carrier_observation_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", "3600")),
     allow_incomplete_door_quote=(_env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"),
     llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "2"))),
@@ -100,7 +107,7 @@ settings = Settings(
     usd_eur_valid_until=_env("USD_EUR_VALID_UNTIL"),
     use_breakpoints=_env("USE_BREAKPOINTS", "true").lower() == "true",
     served_lanes_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))),
-    rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "shadow"),
+    rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "enforce"),
     webhook_secret=_env("MAILBOX_WEBHOOK_SECRET"),
     webhook_secret_file=Path(
         _env(

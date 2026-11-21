@@ -120,7 +120,9 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
     return str(best["rate_id"]) if best else None
 
 
-def _book_portal(sid: int, quote: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+def _book_portal(
+    sid: int, quote: dict[str, Any], request: dict[str, Any]
+) -> dict[str, Any]:
     """Book the quoted rate; on expired/unknown fetch a fresh one once. Raises HackloopError."""
     ref = db.team_reference(sid)
     try:
@@ -135,7 +137,9 @@ def _book_portal(sid: int, quote: dict[str, Any], request: dict[str, Any]) -> di
         return hackloop.book(fresh, ref)
 
 
-def _book_by_email(sid: int, quote: dict[str, Any], request: dict[str, Any], to: str) -> None:
+def _book_by_email(
+    sid: int, quote: dict[str, Any], request: dict[str, Any], to: str
+) -> None:
     ref = db.team_reference(sid)
     subject = f"[{ref}] Booking request {quote['origin']} to {quote['destination']}"
     body = (
@@ -159,7 +163,9 @@ def _book_by_email(sid: int, quote: dict[str, Any], request: dict[str, Any], to:
     )
 
 
-def _confirmation(lang: str, name: str | None, quote: dict[str, Any], booking_ref: str) -> str:
+def _confirmation(
+    lang: str, name: str | None, quote: dict[str, Any], booking_ref: str
+) -> str:
     if name and has_template_artifacts(name):
         name = None
     price = amount(quote["total_minor"], quote["currency"])
@@ -195,7 +201,11 @@ def _confirm_to_customer(sid: int, mail: Mail, text: str) -> None:
         db.emit(db.Ev.WARN, "Bestätigung nicht gesendet: Session pausiert/manuell", sid)
         return
     to = address(mail.sender)
-    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    subject = (
+        mail.subject
+        if mail.subject.lower().startswith("re:")
+        else f"Re: {mail.subject}"
+    )
     sent = hackloop.send(to, subject, text, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -241,6 +251,16 @@ def _handle(mail: Mail, sid: int) -> None:
         return
     verdict = is_acceptance(mail.body)
     if verdict is not True:
+        if verdict is None:
+            from app.agents import clarification
+
+            clarification.ask(
+                mail,
+                sid,
+                "booking",
+                "Could you confirm whether you would like us to book the offer in this thread, or tell us which detail needs clarifying first? We have not booked based on your last message.",
+                "Könnten Sie bestätigen, ob wir das Angebot in diesem Thread buchen sollen, oder uns sagen, welche Angabe Sie vorher klären möchten? Aufgrund Ihrer letzten Nachricht haben wir noch nicht gebucht.",
+            )
         what = "Absage" if verdict is False else "unklare Antwort"
         db.emit(
             db.Ev.WARN,
@@ -300,7 +320,9 @@ def _handle(mail: Mail, sid: int) -> None:
             currency=quote["currency"],
         )
 
-    text = _confirmation(language(mail.body), request.get("customer_name"), quote, booking_ref)
+    text = _confirmation(
+        language(mail.body), request.get("customer_name"), quote, booking_ref
+    )
     _confirm_to_customer(sid, mail, text)
     log.info("session %s booked %s", sid, booking_ref)
 
@@ -338,7 +360,8 @@ def catch_up() -> None:
             for m in full["mails"]
             if m["direction"] == "in"
             and m["id"] > quote_mail
-            and address(str(m["sender"] or "")) == address(str(full.get("customer") or ""))
+            and address(str(m["sender"] or ""))
+            == address(str(full.get("customer") or ""))
         ]
         if not replies:
             continue

@@ -31,7 +31,9 @@ def replay():
         facts = json.loads(r["request_json"] or "{}")
         texts, media, problems = read_sources(m, local_only=True)
         if media:
-            problems.append({"field": "attachments", "code": "image_requires_extraction"})
+            problems.append(
+                {"field": "attachments", "code": "image_requires_extraction"}
+            )
         _, draft = validate(m, RfqDraft(facts=facts), texts, problems)
         results.append(
             {

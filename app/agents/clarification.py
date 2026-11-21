@@ -11,15 +11,21 @@ from app.config import settings
 from app.mail.content import current_message
 from app.mail.language import detect
 from app.mail.rfq_validation import numeric_facts, validate
+from app.mail.router import address
 from app.models import Mail, RfqDraft
 
 
 def expired(sid):
     session = db.get_session(sid)
-    return not session or datetime.fromisoformat(session["deadline_at"]) <= datetime.now(UTC)
+    return not session or datetime.fromisoformat(
+        session["deadline_at"]
+    ) <= datetime.now(UTC)
 
 
 def text_for(draft, lang):
+    if draft.evidence.get("question_en"):
+        question = draft.evidence["question_de" if lang == "de" else "question_en"]
+        return f"{'Guten Tag' if lang == 'de' else 'Hello'},\n\n{question}\n\nYour austrian Power Team\n"
     fields = sorted({i["field"] for i in draft.issues})
     en = {
         "pickup_zip": "the pickup site's postal code (Pickup ZIP)",
@@ -62,17 +68,81 @@ def text_for(draft, lang):
     )
 
 
+def recover_history(mail, sid, draft):
+    """Only fill missing fields from this customer's same shipment thread, never conflicts."""
+    history = db.customer_mail_history(sid, mail.sender, mail.id)
+    db.emit("history_checked", f"{len(history)} frühere Kundenmails im Thread geprüft", sid)
+    missing = {
+        i["field"]
+        for i in draft.issues
+        if i.get("code") in ("missing", "missing_or_unproven", "unproven")
+    }
+    observed = {field: set() for field in missing}
+    for row in history:
+        text = current_message(row["body"]).facts
+        facts = {k: float(v) for k, v in numeric_facts(text).items()}
+        for field, label in (
+            ("origin", "origin|departure|abflug"),
+            ("destination", "destination|ziel"),
+        ):
+            match = re.search(rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", text, re.IGNORECASE)
+            if match:
+                facts[field] = match[1].upper()
+        if match := re.search(
+            r"(?:pickup\s*(?:zip|postal code)|abhol.*?plz)\s*[:=]?\s*(\d{5})", text, re.IGNORECASE
+        ):
+            facts["pickup_zip"] = match[1]
+        for field in missing & facts.keys():
+            observed[field].add(facts[field])
+    corrections = dict(draft.evidence.get("corrections", {}))
+    corrections.update(
+        {f: next(iter(values)) for f, values in observed.items() if len(values) == 1}
+    )
+    if not corrections:
+        return None, draft
+    root = db.validation_get(sid)
+    original = Mail(**root["root"]) if root else mail
+    result, checked = validate(
+        original,
+        draft,
+        draft.evidence.get("attachment_texts", {}),
+        [i for i in draft.issues if i["field"] == "attachments"],
+        corrections=corrections,
+    )
+    checked.evidence.update(
+        {"corrections": corrections, "attachment_texts": draft.evidence.get("attachment_texts", {})}
+    )
+    return result, checked
+
+
 def request(mail, sid, draft):
+    if draft.evidence.get("workflow", "rfq") == "rfq":
+        recovered, draft = recover_history(mail, sid, draft)
+        if recovered is not None and not draft.issues:
+            previous = db.validation_get(sid)
+            root = Mail(**previous["root"]) if previous else mail
+            db.validation_save(
+                sid, "ready", draft.model_dump(mode="json"), dataclasses.asdict(mail)
+            )
+            db.set_request(sid, recovered.model_dump())
+            from app.agents import rfq
+
+            rfq.handle_rfq(root, sid)
+            return
     db.validation_save(
-        sid, "awaiting_clarification", draft.model_dump(mode="json"), dataclasses.asdict(mail)
+        sid,
+        "awaiting_clarification",
+        draft.model_dump(mode="json"),
+        dataclasses.asdict(mail),
     )
     db.emit(
         "validation_blocked",
-        "Rückfrage erforderlich: " + ", ".join(sorted({i["field"] for i in draft.issues})),
+        "Rückfrage erforderlich: "
+        + ", ".join(sorted({i["field"] for i in draft.issues})),
         sid,
         level="warn",
     )
-    if expired(sid):
+    if draft.evidence.get("workflow", "rfq") == "rfq" and expired(sid):
         db.validation_save(sid, "expired", draft.model_dump(mode="json"), {})
         return
     if db.is_paused(sid) or db.is_manual(sid) or not db.clarification_claim(sid):
@@ -104,26 +174,65 @@ def request(mail, sid, draft):
     )
 
 
+def ask(mail, sid, workflow, en, de):
+    history = db.customer_mail_history(sid, mail.sender, mail.id)
+    db.emit("history_checked", f"{len(history)} frühere Kundenmails vor Rückfrage geprüft", sid)
+    if db.is_paused(sid) or db.is_manual(sid):
+        return False
+    draft = RfqDraft(
+        evidence={"workflow": workflow, "question_en": en, "question_de": de},
+        issues=[{"field": "shipment", "code": "needs_confirmation"}],
+    )
+    if not db.clarification_open_workflow(
+        sid, draft.model_dump(mode="json"), dataclasses.asdict(mail)
+    ):
+        return False
+    request(mail, sid, draft)
+    return True
+
+
 def handle_reply(mail, sid, *, resume=False):
     row = db.validation_get(sid)
-    if not row or row["state"] not in ("awaiting_clarification", "resolving", "manual_review"):
+    if not row or row["state"] not in (
+        "awaiting_clarification",
+        "resolving",
+        "manual_review",
+    ):
         return False
-    if settings.rfq_validation_mode != "enforce":
+    session = db.get_session(sid)
+    if not session or address(session.get("customer") or "") != address(mail.sender):
+        return True
+    workflow = row["draft"].get("evidence", {}).get("workflow", "rfq")
+    if workflow == "rfq" and settings.rfq_validation_mode != "enforce":
         db.validation_save(sid, "manual_review", row["draft"], {})
         return True
-    resuming = resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
+    resuming = (
+        resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
+    )
     if not resuming and not db.clarification_reply_claim(sid, mail.id):
         return True
     draft = RfqDraft.model_validate(row["draft"])
-    if expired(sid):
+    if workflow == "rfq" and expired(sid):
         db.validation_save(sid, "expired", draft.model_dump(mode="json"), {})
         return True
     if db.is_paused(sid) or db.is_manual(sid):
         db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
         return True
+    if workflow != "rfq":
+        db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})
+        if workflow == "booking":
+            from app.agents import booking
+
+            booking.handle_reply(mail, sid)
+        else:
+            from app.agents import tracking
+
+            tracking.handle(mail, sid)
+        return True
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
-    corrections = {k: float(v) for k, v in numeric_facts(own).items() if k in asked}
+    corrections = dict(draft.evidence.get("corrections", {}))
+    corrections.update({k: float(v) for k, v in numeric_facts(own).items() if k in asked})
     if "lots" in asked:
         from app.mail.lots import parse_lots
 
@@ -165,16 +274,14 @@ def handle_reply(mail, sid, *, resume=False):
     # Revalidate the original shipment with only explicit answers to the requested fields.
     remaining = [i for i in draft.issues if i["field"] == "attachments"]
     rfq, checked = validate(root, draft, old_texts, remaining, corrections=corrections)
-    checked.evidence["corrections"] = {**draft.evidence.get("corrections", {}), **corrections}
+    checked.evidence["corrections"] = {
+        **draft.evidence.get("corrections", {}),
+        **corrections,
+    }
     checked.evidence["attachment_texts"] = old_texts
     if checked.issues or rfq is None:
-        db.validation_save(sid, "manual_review", checked.model_dump(mode="json"), {})
-        db.emit(
-            "validation_blocked",
-            "Rückfrage nicht vollständig geklärt; manuelle Prüfung nötig",
-            sid,
-            level="warn",
-        )
+        db.clarification_reopen(sid, checked.model_dump(mode="json"))
+        request(mail, sid, checked)
         return True
     db.validation_save(sid, "ready", checked.model_dump(mode="json"), {})
     db.set_request(sid, rfq.model_dump())
@@ -185,30 +292,15 @@ def handle_reply(mail, sid, *, resume=False):
 
 
 def catch_up():
+    for saved in db.clarification_unhandled_replies():
+        handle_reply(_stored_mail(saved), saved["session_id"])
     for pending in db.validation_pending():
         sid = pending["session_id"]
         row = db.validation_get(sid)
         if row["state"] == "resolving":
             saved = db.validation_reply(sid)
             if saved:
-                import json
-
-                from app.mail.parse import mail_from_api
-
-                answer = (
-                    mail_from_api(json.loads(saved["raw_json"]))
-                    if saved.get("raw_json")
-                    else Mail(
-                        saved["id"],
-                        sid,
-                        saved["sender"],
-                        saved["recipient"],
-                        saved["subject"],
-                        saved["body"],
-                        saved["received_at"],
-                    )
-                )
-                handle_reply(answer, sid, resume=True)
+                handle_reply(_stored_mail(saved), sid, resume=True)
             else:
                 db.validation_save(sid, "manual_review", row["draft"], {})
         elif row["send_state"] == "sending":
@@ -219,8 +311,29 @@ def catch_up():
                 sid,
                 level="error",
             )
-        elif not expired(sid):
+        elif row["draft"].get("evidence", {}).get("workflow", "rfq") != "rfq" or not expired(sid):
             request(Mail(**row["root"]), sid, RfqDraft.model_validate(row["draft"]))
+
+
+def _stored_mail(saved):
+    import json
+
+    from app.mail.parse import mail_from_api
+
+    raw = json.loads(saved["raw_json"]) if saved.get("raw_json") else None
+    return (
+        mail_from_api(raw)
+        if isinstance(raw, dict) and raw.get("id")
+        else Mail(
+            saved["id"],
+            saved["session_id"],
+            saved["sender"],
+            saved["recipient"],
+            saved["subject"],
+            saved["body"],
+            saved["received_at"],
+        )
+    )
 
 
 def run(stop):
@@ -229,9 +342,14 @@ def run(stop):
 
     while not stop.wait(1):
         try:
+            for saved in db.clarification_unhandled_replies():
+                handle_reply(_stored_mail(saved), saved["session_id"])
             for item in db.validation_pending():
                 row = db.validation_get(item["session_id"])
-                if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
+                if (
+                    row["state"] == "awaiting_clarification"
+                    and row["send_state"] == "pending"
+                ):
                     request(
                         Mail(**row["root"]),
                         item["session_id"],

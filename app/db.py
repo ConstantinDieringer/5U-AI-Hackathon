@@ -191,6 +191,11 @@ CREATE TABLE IF NOT EXISTS rfq_validation (
  reply_mail_id INTEGER,
  updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS clarification_answers (
+ session_id INTEGER NOT NULL REFERENCES sessions(id),
+ mail_id INTEGER NOT NULL,
+ PRIMARY KEY(session_id, mail_id)
+);
 CREATE TABLE IF NOT EXISTS tariff_jobs (
   mail_id INTEGER PRIMARY KEY,
   raw_json TEXT NOT NULL,
@@ -508,15 +513,86 @@ def clarification_sent(sid: int, state: str, mail_id: int | None = None) -> None
 
 def clarification_reply_claim(sid: int, mid: int) -> bool:
     with tx() as c:
+        if c.execute(
+            "SELECT 1 FROM clarification_answers WHERE session_id=? AND mail_id=?", (sid, mid)
+        ).fetchone():
+            return False
+        row = _one(
+            c.execute(
+                "SELECT state,send_state,sent_mail_id FROM rfq_validation WHERE session_id=?",
+                (sid,),
+            )
+        )
+        if (
+            not row
+            or row["state"] != "awaiting_clarification"
+            or row["send_state"] not in ("sent", "unknown")
+        ):
+            return False
+        if row["sent_mail_id"] is not None and mid <= row["sent_mail_id"]:
+            return False
+        c.execute("INSERT INTO clarification_answers VALUES (?,?)", (sid, mid))
         return (
             c.execute(
                 "UPDATE rfq_validation SET reply_mail_id=?,state='resolving',updated_at=? "
-                "WHERE session_id=? AND state='awaiting_clarification' AND send_state='sent' "
+                "WHERE session_id=? AND state='awaiting_clarification' AND send_state IN ('sent','unknown') "
                 "AND reply_mail_id IS NULL",
                 (mid, now(), sid),
             ).rowcount
             == 1
         )
+
+
+def clarification_reopen(sid: int, draft: dict, root: dict | None = None) -> None:
+    """Only called after consuming a new reply, or opening a different post-quote workflow."""
+    with tx() as c:
+        c.execute(
+            "UPDATE rfq_validation SET state='awaiting_clarification',send_state='pending',"
+            "sent_mail_id=NULL,reply_mail_id=NULL,draft_json=?,root_json=COALESCE(?,root_json),"
+            "updated_at=? WHERE session_id=?",
+            (_json(draft), _json(root) if root else None, now(), sid),
+        )
+
+
+def clarification_open_workflow(sid: int, draft: dict, root: dict) -> bool:
+    with tx() as c:
+        previous = _one(c.execute("SELECT state FROM rfq_validation WHERE session_id=?", (sid,)))
+        if previous and previous["state"] in (
+            "awaiting_clarification",
+            "resolving",
+            "manual_review",
+        ):
+            return False
+        if _one(
+            c.execute(
+                "SELECT 1 FROM mails WHERE session_id=? AND direction='out'"
+                " AND category='clarification' AND in_reply_to=?",
+                (sid, root["id"]),
+            )
+        ):
+            return False
+        c.execute(
+            "INSERT INTO rfq_validation(session_id,state,draft_json,root_json,updated_at)"
+            " VALUES (?,'awaiting_clarification',?,?,?) ON CONFLICT(session_id) DO UPDATE SET"
+            " state='awaiting_clarification',draft_json=excluded.draft_json,root_json=excluded.root_json,"
+            " send_state='pending',sent_mail_id=NULL,reply_mail_id=NULL,updated_at=excluded.updated_at",
+            (sid, _json(draft), _json(root), now()),
+        )
+        return True
+
+
+def customer_mail_history(sid: int, sender: str, before_mail: int) -> list[dict[str, Any]]:
+    from email.utils import parseaddr
+
+    rows = _rows(
+        conn().execute(
+            "SELECT id,sender,subject,body FROM mails WHERE session_id=?"
+            " AND direction='in' AND id<? ORDER BY id DESC LIMIT 20",
+            (sid, before_mail),
+        )
+    )
+    owner = parseaddr(sender)[1].lower()
+    return [r for r in rows if parseaddr(r["sender"] or "")[1].lower() == owner]
 
 
 def validation_pending() -> list[dict[str, Any]]:
@@ -543,6 +619,19 @@ def validation_reply(sid: int) -> dict[str, Any] | None:
             "SELECT m.* FROM mails m JOIN rfq_validation v ON m.id=v.reply_mail_id "
             "WHERE v.session_id=?",
             (sid,),
+        )
+    )
+
+
+def clarification_unhandled_replies() -> list[dict[str, Any]]:
+    return _rows(
+        conn().execute(
+            "SELECT m.* FROM mails m JOIN rfq_validation v ON v.session_id=m.session_id "
+            "WHERE v.state='awaiting_clarification' AND v.send_state IN ('sent','unknown') "
+            "AND m.direction='in' AND m.id>COALESCE(v.sent_mail_id,v.session_id) "
+            "AND m.category IN ('customer','tracking') AND NOT EXISTS "
+            "(SELECT 1 FROM clarification_answers a WHERE a.session_id=m.session_id AND a.mail_id=m.id) "
+            "ORDER BY m.id"
         )
     )
 
@@ -1500,7 +1589,7 @@ def expire_overdue() -> list[int]:
         c.execute(
             "UPDATE rfq_validation SET state='expired',updated_at=? WHERE "
             "state IN ('awaiting_clarification','resolving') AND session_id IN "
-            "(SELECT id FROM sessions WHERE deadline_at <= ?)",
+            "(SELECT id FROM sessions WHERE deadline_at <= ? AND first_reply_at IS NULL)",
             (t, t),
         )
         ids = [
@@ -1668,12 +1757,95 @@ def crm(limit: int = 200) -> dict[str, Any]:
         c.execute("SELECT COALESCE(SUM(price_minor),0) AS v FROM bookings WHERE status != 'failed'")
     )
     return {
+        "pricing": pricing_history(),
         "totals": {k: (v or 0) for k, v in totals.items()},
         "booked_minor": booked["v"] if booked else 0,
         "customers": customers,
         "quotes": quotes,
         "bookings": bookings,
     }
+
+
+def pricing_history(limit: int = 100) -> list[dict[str, Any]]:
+    """Every priced RFQ with what we could have quoted: all air options, the trucker bids,
+    our choice and 5U's verdict. Basis for the CRM 'Preise' tab and pricing reviews."""
+    c = conn()
+    audits = _rows(
+        c.execute(
+            "SELECT e.session_id, e.payload_json, s.customer, s.created_at FROM events e"
+            " JOIN sessions s ON s.id = e.session_id WHERE e.kind = 'pricing_audit'"
+            " AND e.id = (SELECT MAX(id) FROM events WHERE session_id = e.session_id"
+            " AND kind = 'pricing_audit') ORDER BY s.created_at DESC LIMIT ?",
+            (limit,),
+        )
+    )
+    board = _board_by_session(c)
+    out = []
+    for a in audits:
+        p = json.loads(a["payload_json"] or "{}")
+        sid = a["session_id"]
+        req, sel = p.get("request") or {}, p.get("selected") or {}
+        opts = [
+            {
+                "airline": o.get("airline"),
+                "source": o.get("source"),
+                "transit_days": o.get("transit_days"),
+                "eur_minor": o.get("total_eur_minor"),
+            }
+            for o in p.get("options") or []
+            if o.get("total_eur_minor") is not None
+        ]
+        from app.pricing.reference import carrier_by_name
+
+        bids = []
+        for e in _rows(
+            c.execute(
+                "SELECT message FROM events WHERE session_id = ? AND kind = 'bid_received'",
+                (sid,),
+            )
+        ):
+            name = e["message"].removeprefix("Gebot ").split(":")[0]
+            carrier = carrier_by_name(name)
+            bids.append({"name": name, "kind": carrier.kind if carrier else None})
+        tr = p.get("trucking") or None
+        truck_minor = round(float(tr["total_eur"]) * 100) if tr else 0
+        quote = _one(
+            c.execute(
+                "SELECT total_minor FROM quotes WHERE session_id = ? ORDER BY id LIMIT 1",
+                (sid,),
+            )
+        )
+        cheapest = min((o["eur_minor"] for o in opts), default=None)
+        b = board.get(sid, {})
+        out.append(
+            {
+                "session_id": sid,
+                "created_at": a["created_at"],
+                "customer": a["customer"],
+                "origin": sel.get("origin"),
+                "destination": sel.get("destination") or req.get("destination"),
+                "preference": req.get("preference"),
+                "weight_kg": req.get("weight_kg"),
+                "chargeable_kg": sel.get("chargeable_kg"),
+                "pickup": req.get("pickup_zip") or req.get("pickup_city"),
+                "pickup_assumed": bool(req.get("pickup_assumed")),
+                "selected": {
+                    "airline": sel.get("airline"),
+                    "source": sel.get("source"),
+                    "transit_days": sel.get("transit_days"),
+                    "eur_minor": sel.get("total_eur_minor"),
+                },
+                "options": sorted(opts, key=lambda o: o["eur_minor"]),
+                "truck": {"name": tr["carrier"]["name"], "eur_minor": truck_minor} if tr else None,
+                "truck_bids": sum(1 for b in bids if b["kind"] == "trucker"),
+                "airline_bids": sum(1 for b in bids if b["kind"] == "airline"),
+                "quote_minor": quote["total_minor"] if quote else None,
+                "cheapest_air_minor": cheapest,
+                "verdict": b.get("verdict"),
+                "reason": b.get("reason"),
+            }
+        )
+    return out
 
 
 def customer_sessions(customer: str) -> list[dict[str, Any]]:
