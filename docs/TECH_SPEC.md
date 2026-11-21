@@ -2,7 +2,7 @@
 
 **Verbindlich für alle drei Teammitglieder und für jede Claude-/KI-Session, die Code für dieses Repo schreibt.**
 Wer davon abweichen will, ändert zuerst diese Datei (kurz im Team ansagen), dann den Code.
-Repo: `ConstantinDieringer/5U-AI-Hackathon` · Ablage: `docs/TECH_SPEC.md` · Stand: 21.11.2026, 14:50
+Repo: `ConstantinDieringer/5U-AI-Hackathon` · Ablage: `docs/TECH_SPEC.md` · Stand: 21.11.2026, 15:20
 
 ---
 
@@ -23,7 +23,7 @@ In `requirements.txt` mit Mindestversion:
 
 ```
 httpx>=0.27          # alle HTTP-Calls (kein requests, kein aiohttp)
-fastapi>=0.110       # UI-/API-Server
+fastapi>=0.135       # UI-/API-Server, eingebautes SSE (fastapi.sse)
 uvicorn>=0.29
 python-dotenv>=1.0   # .env laden
 openai>=1.30         # NUR für das 5U-Gateway (base_url umgebogen)
@@ -115,7 +115,7 @@ In `app/models.py` als `@dataclass` (oder Pydantic, wenn LLM-Output). Feldnamen 
 @dataclass
 class Mail:
     id: int
-    thread_id: int            # = references[0] falls vorhanden, sonst id
+    thread_root: int          # = references[0] falls vorhanden, sonst id (Session-Zuordnung: db.ingest_mail)
     sender: str               # Feldname der API in docs/mail-format.md prüfen!
     to: str
     subject: str
@@ -140,9 +140,9 @@ class RateOption:             # Ergebnis aus Sheet, Portal oder Bid – immer gl
     origin: str               # IATA
     destination: str          # IATA
     transit_days: int
-    total: float              # all-in
+    total_minor: int          # all-in, in Cent (nie float, siehe context/code-standards.md)
     currency: str             # "EUR" / "USD"
-    total_eur: float          # zum Vergleichen umgerechnet
+    total_eur_minor: int      # zum Vergleichen umgerechnet, Kurs mitloggen
     source: str               # "sheet" | "portal" | "bid"
     rate_id: str | None       # nur Portal
     valid_until: str | None
@@ -150,9 +150,11 @@ class RateOption:             # Ergebnis aus Sheet, Portal oder Bid – immer gl
     billed_kg: float
 ```
 
-**Einheiten:** Gewicht in **kg** (float), Volumen in **cbm** (float), Geld als **float mit 2 Nachkommastellen** gerundet erst bei der Ausgabe, Zeiten in **UTC ISO 8601**, Flughäfen als **IATA-Code in Großbuchstaben**, Währungscodes ISO 4217.
+**Einheiten:** Gewicht in **kg** (float), Volumen in **cbm** (float), Geld als **ganzzahlige Cent** (`*_minor`) bzw. `Decimal`, nie float; gerundet an einer Stelle, Zeiten in **UTC ISO 8601**, Flughäfen als **IATA-Code in Großbuchstaben**, Währungscodes ISO 4217.
 
 ## 7. Datenbank (SQLite, `app/db.py`)
+
+> **Maßgeblich für Schema, Session-Zuordnung und DB-Zugriffsmuster ist `docs/design/aufgabe-c.md` (Abschnitte 3–5).** Das Schema unten ist überholt, wo es davon abweicht.
 
 ```sql
 CREATE TABLE IF NOT EXISTS mails (
@@ -201,7 +203,10 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 ```
 
 - Schemaänderung = diese Datei + `db.py` im selben Commit ändern.
-- Eine Verbindung pro Thread (`check_same_thread=False` vermeiden), WAL-Modus an: `PRAGMA journal_mode=WAL`.
+- Eine Verbindung pro Thread (`threading.local`, `isolation_level=None`), PRAGMAs `busy_timeout`, `synchronous=NORMAL`, `foreign_keys=ON` pro Verbindung, `journal_mode=WAL` einmal in `init_db()`.
+- **Jede Schreiboperation in `db.tx()` (`BEGIN IMMEDIATE`)**, keine Netzwerk-/LLM-Calls in Transaktionen.
+- **Jede ausgehende Mail über `db.record_outgoing(api_mail, session_id, category)` speichern**, sonst finden Carrier-/Portal-Antworten ihre Session nicht.
+- Agents prüfen `db.is_paused(session_id)` und `db.is_manual(session_id)` direkt vor jedem Senden.
 - `team_reference` für Buchungen = `f"AP-{thread_id}"`.
 
 ## 8. LLM-Regeln
@@ -224,7 +229,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 ## 10. UI / interne API
 
 - FastAPI auf Port `UI_PORT` (8000), Bindung `0.0.0.0`.
-- Endpunkte (Präfix `/api`): `GET /mails`, `GET /sessions`, `GET /sessions/{thread_id}`, `POST /sessions/{thread_id}/pause`, `POST /sessions/{thread_id}/resume`, `GET /stream` (Server-Sent Events aus Tabelle `events`), `GET /board` (Proxy auf `/v1/board/me`).
+- Endpunkte: siehe `docs/design/aufgabe-c.md` Abschnitt 6. SSE über `fastapi.sse.EventSourceResponse`, ohne `event:`-Feld; Mailinhalte im Frontend nur per `textContent` rendern.
 - JSON-Felder in **snake_case**.
 
 ## 11. Git-Workflow

@@ -8,11 +8,14 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Current Goal
 
-- Decide the architecture and stack.
+- By 16:00: receive and store every mail, show it live in the UI, portal lanes synced.
 
 ## Completed
 
-- Context adapted from Ghost AI; `architecture-context.md` removed until the architecture is decided.
+- Context adapted from Ghost AI.
+- Stack decided (`docs/TECH_SPEC.md`), `context/architecture-context.md` added.
+- Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`, pricing module in `app/pricing/` (floats still, to fix).
+- Design for task C (CRM + sessions UI) in `docs/design/aufgabe-c.md`.
 
 ## In Progress
 
@@ -20,7 +23,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Next Up
 
-1. Decide the architecture and stack, then create `context/architecture-context.md`.
+1. Phase 1 tasks A/B/C (see team plan): mail poller + router, portal sync, db.py + UI.
 
 Build order (proposed, confirm):
 
@@ -51,11 +54,11 @@ Goal: the first accepted quote end to end before any polish.
 10. The exact "fastest" rule, and the formula for the 50/50 price/speed balance among bids.
 11. How many carriers to ask and how long to wait for bids within the 2-minute target.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
-13. What one UI "session" is (proposed: one customer thread).
+13. ~~What one UI session is~~ → one customer-started thread (see design C).
 
 ## Architecture Decisions
 
-- None yet.
+- See `context/architecture-context.md`.
 
 ## Session Notes
 
