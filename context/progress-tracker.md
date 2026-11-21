@@ -28,6 +28,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - A5 `mail/router.py`: rules only, 10 tests green. A6 `python run.py` = poller + watchers + UI on :8000, checked live.
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
+- RFQ agent (`app/agents/rfq.py`, `bids.py`): 1 LLM extraction, sheet + portal, trucker bids (door-to-port) and email-only airline bids by mail, balanced bid choice, one EUR all-in quote per thread. Router: unknown sender in a new thread = RFQ. Extraction + portal live-checked on mail 265; full send not yet verified live.
+
 ## In Progress
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
@@ -74,6 +76,9 @@ Goal: the first accepted quote end to end before any polish.
 15. For C (A): `db.ingest_mail` doesn't say if the mail was new. Please return `(session_id, is_new)` or add `save_mail(...) -> bool`; until then `mail/store.py` uses a kv high-water mark.
 16. (A) Send has no `references` field; the server presumably threads by `in_reply_to`. Not yet seen on a threaded reply.
 17. For C/B (A): **rate desk replies are not threaded** (`in_reply_to` null, `references` []), so they land unassigned. Map them by the quoted subject in the body (see mail-format.md)?
+
+18. (A) Reply format of trucker and airline bids unknown: parsed by regex (`bids.parse_price`); unreadable bids are logged as `bid_unreadable`. Check the first real ones.
+19. (A) Quotes are always in EUR (portal USD converted with `fx_eur_per_usd`, USD bids ignored). Door-to-port without a trucker bid by `BID_MAX_WAIT_S` is sent without trucking.
 
 ## Architecture Decisions
 

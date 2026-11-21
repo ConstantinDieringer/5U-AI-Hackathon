@@ -32,6 +32,8 @@ class Settings:
     carrier_list: Path
     board_sync_every_s: float
     deadline_check_every_s: float
+    quote_target_s: float
+    bid_max_wait_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -52,4 +54,6 @@ settings = Settings(
     carrier_list=ROOT / "data" / "start-kit" / "carrier-list.csv",
     board_sync_every_s=float(_env("BOARD_SYNC_EVERY_S", "60")),
     deadline_check_every_s=float(_env("DEADLINE_CHECK_EVERY_S", "10")),
+    quote_target_s=float(_env("QUOTE_TARGET_S", "100")),
+    bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "240")),
 )

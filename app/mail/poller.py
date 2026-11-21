@@ -16,7 +16,7 @@ from pathlib import Path
 from app import hackloop
 from app.config import settings
 from app.mail import parse, router, store
-from app.models import Mail
+from app.models import Category, Mail
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,9 @@ def _parent(in_reply_to: int | None) -> Mail | None:
     try:
         return parse.mail_from_api(hackloop.get_message(in_reply_to))
     except (hackloop.HackloopError, parse.MailFormatError) as e:
-        log.warning("parent mail %s not readable (%s); routing by sender only", in_reply_to, e)
+        log.warning(
+            "parent mail %s not readable (%s); routing by sender only", in_reply_to, e
+        )
         return None
 
 
@@ -65,9 +67,29 @@ def handle(raw: dict) -> None:
         return
     files = download_attachments(mail)
     note = f", {len(files)} attachment(s) saved" if files else ""
-    log.info("mail %s from %s -> %s (%s)%s", mail.id, mail.sender, category.value, rule, note)
+    log.info(
+        "mail %s from %s -> %s (%s)%s", mail.id, mail.sender, category.value, rule, note
+    )
     store.emit("routed", f"Routed as {category.value} ({rule}){note}", saved.session_id)
-    # Phase 2: hand the mail to the agent for its category here.
+    dispatch(mail, category, saved.session_id)
+
+
+def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
+    """Hand a new mail to its agent. RFQs run in their own thread so polling goes on (bid
+    replies for a waiting RFQ arrive through this same loop)."""
+    if category == Category.RFQ and session_id is not None:
+        from app.agents import rfq
+
+        threading.Thread(
+            target=rfq.handle_rfq,
+            args=(mail, session_id),
+            name=f"rfq-{session_id}",
+            daemon=True,
+        ).start()
+    elif category == Category.CARRIER_BID:
+        from app.agents import bids
+
+        bids.on_bid_mail(mail, session_id)
 
 
 def poll_once(since_id: int) -> tuple[int, int]:
@@ -99,7 +121,9 @@ def run(stop: threading.Event | None = None) -> None:
     stop = stop or threading.Event()
     store.init()
     since_id = store.get_since_id()
-    log.info("poller started at since_id=%s, every %.1fs", since_id, settings.poll_interval_s)
+    log.info(
+        "poller started at since_id=%s, every %.1fs", since_id, settings.poll_interval_s
+    )
     while not stop.is_set():
         count = 0
         try:

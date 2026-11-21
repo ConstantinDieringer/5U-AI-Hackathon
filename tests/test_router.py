@@ -54,8 +54,16 @@ def test_trucker_with_attachment_is_bid() -> None:
     assert route(mail("taunusfracht@hackloop.mail", attachments=ATT)) == Category.CARRIER_BID
 
 
-def test_unknown_sender_is_customer() -> None:
-    assert route(mail("Anna Weber <anna.weber@acme-industries.hackloop.mail>")) == (
+def test_unknown_sender_new_thread_is_rfq() -> None:
+    assert route(mail("Anna Weber <anna.weber@acme-industries.hackloop.mail>")) == Category.RFQ
+
+
+def test_unknown_sender_reply_is_customer() -> None:
+    m = mail("anna.weber@acme-industries.hackloop.mail", mid=12)
+    m.references = [10, 11]
+    assert route(m) == Category.CUSTOMER
+    parent = mail(US, to="anna.weber@acme-industries.hackloop.mail", mid=11)
+    assert route(mail("anna.weber@acme-industries.hackloop.mail", mid=13), parent) == (
         Category.CUSTOMER
     )
 
