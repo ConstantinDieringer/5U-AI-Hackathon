@@ -205,14 +205,18 @@ def send(
     body: str,
     in_reply_to: int | None = None,
     references: list[int] | None = None,
+    attachments: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Send a mail; returns the stored mail (poll-item shape).
+    `attachments`: the API's shape, each {filename, content_type, content_base64}.
 
     The API takes only `in_reply_to`; the server builds `references` (and the
     In-Reply-To/References threading) from it, verified in A3. `references` is accepted
     for callers' convenience and only checked against what the server stored.
     """
     payload: dict[str, Any] = {"to": to, "subject": subject, "body": body}
+    if attachments:
+        payload["attachments"] = attachments
     from app.mail import guard
 
     guard.check_outbound(to, body, in_reply_to)  # raises OutboundLoopBlocked on a mail loop
@@ -257,6 +261,7 @@ def send_customer(
     before_transport: Callable[[], None] | None = None,
     language_code: str | None = None,
     tracking_booked: bool | None = None,
+    attachments: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """All customer replies pass the final prose renderer before transport. review=False skips
     the LLM style reviewer for fixed templates. Non-English/German templates still use
@@ -354,6 +359,8 @@ def send_customer(
         options["in_reply_to"] = in_reply_to
     if references is not None:
         options["references"] = references
+    if attachments:
+        options["attachments"] = attachments
     sent = dict(send(to=to, subject=subject, body=rendered, **options))
     sent["body"] = rendered
     sent["subject"] = subject

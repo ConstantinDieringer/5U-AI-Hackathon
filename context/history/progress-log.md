@@ -8,6 +8,8 @@
 
 ## Overflow from the lean tracker (newest first)
 
+- Context system: lean always-read core, per-area files in `context/areas/`, history archived in `context/history/`, size budgets tested.
+- Required tracking paragraph in every RFQ customer send, plus a 30 s repair worker. 1261 passed/5 skipped; rollout pending.
 - Thread rescue limited to input younger than 600 s and two parallel owners (was waking 40 h old threads on restart). Offline tests only.
 - Clarification cap counted per workflow instead of per thread. Offline tests only.
 - Carrier document totals hardened: 18 offer layouts x 5 formats replay exact (was 32/90 with three silent wrong values).

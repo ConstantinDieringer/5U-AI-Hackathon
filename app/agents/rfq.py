@@ -1535,6 +1535,31 @@ def _tell_all_excluded(mail: Mail, sid: int, rfq: Rfq) -> None:
     )
 
 
+def _quote_pdf(
+    sid: int, rfq: Rfq, choice: RateOption, total: int, truck: bids.Offer | None
+) -> list[dict[str, str]] | None:
+    """QUOTE_PDF: the quote as a PDF attachment, rendered by code (no LLM call). A failure
+    never blocks the quote: it goes out without the PDF and the session gets an error event."""
+    if not settings.quote_pdf:
+        return None
+    from app.mail import quote_pdf
+
+    try:
+        doc = quote_pdf.quote_doc(sid, rfq, choice, total, truck)
+        pdf = quote_pdf.attachment(doc)
+    except Exception as e:
+        log.exception("session %s: quote PDF failed", sid)
+        db.emit(
+            "quote_pdf_failed",
+            f"Angebots-PDF nicht erstellt, Quote geht ohne Anhang raus: {type(e).__name__}",
+            sid,
+            level="error",
+        )
+        return None
+    db.emit("quote_pdf", f"Angebot als PDF angehängt: {pdf['filename']}", sid)
+    return [pdf]
+
+
 def _price_and_quote(
     mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str, forced: bool = False
 ) -> None:
@@ -1721,6 +1746,7 @@ def _price_and_quote(
         return
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     subject = shipment_subject(choice.origin, choice.destination, rfq.language, subject)
+    attachments = _quote_pdf(sid, rfq, choice, total, truck)
     try:
         sent = hackloop.send_customer(
             mail.sender,
@@ -1734,6 +1760,7 @@ def _price_and_quote(
             review=not template,
             # from here the quote may be out: the watchdog never frees this claim again
             before_transport=lambda: db.kv_set(f"quote.transport.{sid}", db.now()),
+            attachments=attachments,
         )
     except hackloop.CustomerSendBlocked:
         if time.time() >= t0 + RFQ_LIFETIME_S:

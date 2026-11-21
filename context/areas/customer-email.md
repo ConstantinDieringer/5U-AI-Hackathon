@@ -15,6 +15,7 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 | `app/agents/tracking_notice.py` | repairs a missing tracking paragraph |
 | `app/mail/multilingual.py` | cached incoming normalization and native outgoing text with protected facts; unverifiable translations are held |
 | `app/mail/reply_language.py` | compatibility helper for older standalone callers; not part of live transport |
+| `app/mail/quote_pdf.py` | quote PDF attachment (`QUOTE_PDF`), rendered by code from the priced option, no LLM |
 
 ## Hard style rules (customer body and subject)
 
@@ -31,6 +32,12 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 - The actually submitted body and subject are persisted. Carrier/trucker machine messages are unchanged.
 - Quotes, booking confirmations and follow-ups name the verified current airport route in the subject; missing route facts keep the existing subject.
 - Every RFQ customer send inserts a deterministic reply-by-email tracking paragraph before the signature (conditional before booking, direct after). `tracking_notice` checks active quotes/bookings every 30 s and repairs at most one missing notice; ambiguous transport is alerted, never resent.
+
+## Quote PDF
+
+- 5U requires the offer as a PDF. Every RFQ quote (and a Notfall-Quote from the UI) is sent with `Angebot_AP-n.pdf` (title/labels in de/en/fr/es/it, else en) via `attachments[]` on the mailbox API.
+- Only code-priced facts: reference, route, airline, transit, pickup, cargo, billed kg, validity and the same all-in total as the body (`style.amount`). No LLM call, no extra cost; the body keeps the total too.
+- A PDF fault never blocks the quote: it is sent without the attachment and an error event (#sos) is written. Off switch `QUOTE_PDF=false`.
 
 ## Composer
 

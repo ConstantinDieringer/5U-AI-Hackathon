@@ -300,6 +300,34 @@ def api_draft(session_id: int) -> dict[str, Any]:
         raise HTTPException(422, str(e)) from e
 
 
+def _manual_quote_pdf(
+    session_id: int, s: dict[str, Any], q: dict[str, Any]
+) -> list[dict[str, str]] | None:
+    """QUOTE_PDF for a Notfall-Quote: rendered by code, never blocks the human's send."""
+    from app.config import settings
+    from app.mail import quote_pdf
+
+    if not settings.quote_pdf:
+        return None
+    try:
+        doc = quote_pdf.manual_doc(
+            session_id,
+            s.get("request"),
+            q.get("choice") or {},
+            int(q["total_minor"]),
+            str(q.get("currency") or "EUR"),
+        )
+        return [quote_pdf.attachment(doc)]
+    except Exception as e:  # noqa: BLE001 - a PDF fault must never block the human's send
+        db.emit(
+            "quote_pdf_failed",
+            f"Angebots-PDF nicht erstellt, Antwort geht ohne Anhang raus: {type(e).__name__}",
+            session_id,
+            level="error",
+        )
+        return None
+
+
 @app.post("/api/sessions/{session_id}/reply")
 def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     """Human reply in the customer's thread. Takes the session over first."""
@@ -335,9 +363,16 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     subject = parent["subject"] or ""
     if not subject.lower().startswith("re:"):
         subject = f"Re: {subject}"
+    q = body.quote
     try:
         sender = hackloop.send_customer if customer_reply else hackloop.send
-        review_args = {"session_id": session_id, "allow_manual": True} if customer_reply else {}
+        review_args: dict[str, Any] = (
+            {"session_id": session_id, "allow_manual": True} if customer_reply else {}
+        )
+        if customer_reply and q and q.get("total_minor") and not s.get("quotes"):
+            pdf = _manual_quote_pdf(session_id, s, q)
+            if pdf:
+                review_args["attachments"] = pdf
         sent = sender(
             to=parent["sender"],
             subject=subject,
@@ -368,7 +403,6 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     if customer_reply:
         db.mark_manual_reply(session_id)
     db.emit(db.Ev.HUMAN_ACTION, f"Manuelle Antwort an {parent['sender']} gesendet", session_id)
-    q = body.quote
     if q and q.get("total_minor") and not s.get("quotes"):
         c = q.get("choice") or {}
         db.record_quote(
