@@ -55,6 +55,9 @@ def main() -> None:
             target=clarification.run, args=(stop,), name="clarifications", daemon=True
         ).start()
 
+    from app.mail import speech
+
+    speech.preload()  # voice offers must not wait for the model load
     rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
     if settings.thread_rescue_enabled:
         from app.agents import rescue
