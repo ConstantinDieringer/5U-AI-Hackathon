@@ -17,7 +17,9 @@ from app.models import Mail, RfqDraft
 
 def expired(sid):
     session = db.get_session(sid)
-    return not session or datetime.fromisoformat(session["deadline_at"]) <= datetime.now(UTC)
+    return not session or datetime.fromisoformat(
+        session["deadline_at"]
+    ) <= datetime.now(UTC)
 
 
 def text_for(draft, lang):
@@ -128,11 +130,15 @@ def request(mail, sid, draft):
             rfq.handle_rfq(root, sid)
             return
     db.validation_save(
-        sid, "awaiting_clarification", draft.model_dump(mode="json"), dataclasses.asdict(mail)
+        sid,
+        "awaiting_clarification",
+        draft.model_dump(mode="json"),
+        dataclasses.asdict(mail),
     )
     db.emit(
         "validation_blocked",
-        "Rückfrage erforderlich: " + ", ".join(sorted({i["field"] for i in draft.issues})),
+        "Rückfrage erforderlich: "
+        + ", ".join(sorted({i["field"] for i in draft.issues})),
         sid,
         level="warn",
     )
@@ -187,7 +193,11 @@ def ask(mail, sid, workflow, en, de):
 
 def handle_reply(mail, sid, *, resume=False):
     row = db.validation_get(sid)
-    if not row or row["state"] not in ("awaiting_clarification", "resolving", "manual_review"):
+    if not row or row["state"] not in (
+        "awaiting_clarification",
+        "resolving",
+        "manual_review",
+    ):
         return False
     session = db.get_session(sid)
     if not session or address(session.get("customer") or "") != address(mail.sender):
@@ -196,7 +206,9 @@ def handle_reply(mail, sid, *, resume=False):
     if workflow == "rfq" and settings.rfq_validation_mode != "enforce":
         db.validation_save(sid, "manual_review", row["draft"], {})
         return True
-    resuming = resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
+    resuming = (
+        resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
+    )
     if not resuming and not db.clarification_reply_claim(sid, mail.id):
         return True
     draft = RfqDraft.model_validate(row["draft"])
@@ -262,7 +274,10 @@ def handle_reply(mail, sid, *, resume=False):
     # Revalidate the original shipment with only explicit answers to the requested fields.
     remaining = [i for i in draft.issues if i["field"] == "attachments"]
     rfq, checked = validate(root, draft, old_texts, remaining, corrections=corrections)
-    checked.evidence["corrections"] = {**draft.evidence.get("corrections", {}), **corrections}
+    checked.evidence["corrections"] = {
+        **draft.evidence.get("corrections", {}),
+        **corrections,
+    }
     checked.evidence["attachment_texts"] = old_texts
     if checked.issues or rfq is None:
         db.clarification_reopen(sid, checked.model_dump(mode="json"))
@@ -331,7 +346,10 @@ def run(stop):
                 handle_reply(_stored_mail(saved), saved["session_id"])
             for item in db.validation_pending():
                 row = db.validation_get(item["session_id"])
-                if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
+                if (
+                    row["state"] == "awaiting_clarification"
+                    and row["send_state"] == "pending"
+                ):
                     request(
                         Mail(**row["root"]),
                         item["session_id"],

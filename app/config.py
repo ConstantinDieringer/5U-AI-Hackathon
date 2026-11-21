@@ -42,6 +42,8 @@ class Settings:
     quote_final_deadline_s: float
     min_bid_carriers: int
     max_bid_carriers: int
+    max_trucker_bids: int
+    price_adjust_pct: float
     carrier_observation_ttl_s: float
     allow_incomplete_door_quote: bool
     llm_max_calls_per_session: int
@@ -53,7 +55,9 @@ class Settings:
     rfq_validation_mode: str
 
     def __repr__(self) -> str:  # never leak the key into logs
-        return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
+        return (
+            f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
+        )
 
 
 settings = Settings(
@@ -63,7 +67,9 @@ settings = Settings(
     ratedesk_address=_env("RATEDESK_ADDRESS", "ratedesk@hackloop.mail").lower(),
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
     llm_model=_env("LLM_MODEL"),
-    llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5-mini"),  # 2nd try when extraction fails
+    llm_retry_model=_env(
+        "LLM_RETRY_MODEL", "gpt-5-mini"
+    ),  # 2nd try when extraction fails
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
@@ -75,28 +81,42 @@ settings = Settings(
     ui_user=_env("UI_USER", "team"),
     ui_password=_env("UI_PASSWORD"),
     # false = UI only: no polling, no sending, no catch-up (used while moving the DB online)
-    agents_enabled=_env("AGENTS_ENABLED", "true").lower() not in ("0", "false", "no", "off"),
+    agents_enabled=_env("AGENTS_ENABLED", "true").lower()
+    not in ("0", "false", "no", "off"),
     quote_target_s=float(_env("QUOTE_TARGET_S", "110")),
     bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "300")),
     quote_full_score_deadline_s=float(
         _env("QUOTE_FULL_SCORE_DEADLINE_S", _env("QUOTE_TARGET_S", "110"))
     ),
-    quote_final_deadline_s=float(_env("QUOTE_FINAL_DEADLINE_S", _env("BID_MAX_WAIT_S", "300"))),
+    quote_final_deadline_s=float(
+        _env("QUOTE_FINAL_DEADLINE_S", _env("BID_MAX_WAIT_S", "300"))
+    ),
     min_bid_carriers=max(0, int(_env("MIN_BID_CARRIERS", "2"))),
-    max_bid_carriers=max(1, int(_env("MAX_BID_CARRIERS", "5"))),
+    max_bid_carriers=max(1, int(_env("MAX_BID_CARRIERS", "5"))),  # airline bid requests
+    # truckers get their own slots: in round 20 five truckers left no slot for airline bids
+    max_trucker_bids=max(0, int(_env("MAX_TRUCKER_BIDS", "5"))),
+    # % taken off the computed all-in total (0 = quote our cost). Experimental lever against
+    # too_high; whether 5U also rejects prices far below its best price is not documented.
+    price_adjust_pct=min(10.0, max(0.0, float(_env("PRICE_ADJUST_PCT", "0")))),
     carrier_observation_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", "3600")),
-    allow_incomplete_door_quote=(_env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"),
+    allow_incomplete_door_quote=(
+        _env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"
+    ),
     llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "2"))),
     runtime_dir=Path(
         _env(
             "RUNTIME_DIR",
-            str(Path(_env("DB_PATH", "data/forwarder.db")).resolve().parent / "runtime"),
+            str(
+                Path(_env("DB_PATH", "data/forwarder.db")).resolve().parent / "runtime"
+            ),
         )
     ),
     usd_eur_rate=_env("USD_EUR_RATE"),
     usd_eur_valid_until=_env("USD_EUR_VALID_UNTIL"),
     use_breakpoints=_env("USE_BREAKPOINTS", "true").lower() == "true",
-    served_lanes_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))),
+    served_lanes_ttl_s=float(
+        _env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))
+    ),
     rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "enforce"),
 )
 

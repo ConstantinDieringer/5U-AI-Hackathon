@@ -40,7 +40,10 @@ def test_cost_is_integer_micro_usd() -> None:
 
 
 def test_call_is_logged_with_cost(sent: list[dict[str, Any]]) -> None:
-    assert llm.complete("test", [{"role": "user", "content": "hi"}], session_id=None) == "OK"
+    assert (
+        llm.complete("test", [{"role": "user", "content": "hi"}], session_id=None)
+        == "OK"
+    )
     assert sent[0]["reasoning_effort"] == "minimal" and "temperature" not in sent[0]
     ev = [e for e in db.events_after(0) if e["kind"] == "llm_call"]
     assert ev and ev[0]["cost_micro_usd"] == 250
