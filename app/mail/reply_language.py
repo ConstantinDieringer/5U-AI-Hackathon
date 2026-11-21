@@ -15,10 +15,12 @@ import re
 import time
 
 from app.config import settings
+from app.mail.language import NAMES, TEMPLATE_LANGUAGES
 
 log = logging.getLogger(__name__)
 
-LANGUAGE_NAMES = {"fr": "French", "es": "Spanish", "it": "Italian"}
+# every language the detector can name except the two our copy is written in
+LANGUAGE_NAMES = {code: name for code, name in NAMES.items() if code not in TEMPLATE_LANGUAGES}
 PROMPT = (
     "Translate into {name}. Keep every number, date, price, currency, airport code, "
     "reference, name and line break exactly. Output only the translation."
@@ -28,7 +30,10 @@ PROMPT = (
 )
 _MARK = "[[0]]"
 _NUMBER = re.compile(r"\d+")
-_AIRPORT = re.compile(r"\b[A-Z]{3}\b")
+# lookarounds, not \b: CJK letters count as word characters ("发往LIM" has no boundary)
+_AIRPORT = re.compile(r"(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])")
+_REFERENCE = re.compile(r"(?<![A-Za-z0-9-])(?:BK-[A-Za-z0-9]+|AP-\d+|R-[A-Za-z0-9_-]+)")
+_AMOUNT = re.compile(r"\d[\d.,]*\s?€")
 _TIMEOUT_S = 15.0
 _MIN_LEFT_S = 3.0  # never let the translation run into the reply deadline
 
@@ -54,16 +59,19 @@ def _target(session_id: int, in_reply_to: int | None, recipient: str) -> str | N
 def _check(original: str, translated: str, prose: str, target: str) -> None:
     """Every number, airport code and reference survives; `prose` reads as `target`."""
     from app.mail.language import detect
-    from app.mail.outgoing import _REFERENCES
 
     for pattern, what in (
         (_NUMBER, "number"),
         (_AIRPORT, "airport code"),
-        (_REFERENCES, "reference"),
+        (_REFERENCE, "reference"),
     ):
         missing = set(pattern.findall(original)) - set(pattern.findall(translated))
         if missing:
             raise _Rejected(f"{what} lost: {', '.join(sorted(missing))}")
+    # a € amount stays word for word: a locale's "1 475,00 €" or "1,475 €" can be misread
+    amounts = {re.sub(r"\s", "", a) for a in _AMOUNT.findall(original)}
+    if amounts - {re.sub(r"\s", "", a) for a in _AMOUNT.findall(translated)}:
+        raise _Rejected("€ amount changed")
     if detect(prose, default="") != target:
         raise _Rejected(f"translation does not read as {target}")
 

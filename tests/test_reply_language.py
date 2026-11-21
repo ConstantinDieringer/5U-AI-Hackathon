@@ -97,3 +97,25 @@ def test_setting_off_changes_nothing(
     monkeypatch.setattr(reply_language, "settings", off)
     assert _localize() == (SUBJECT, BODY)
     assert mailbox["calls"] == [] and mailbox["events"] == []
+
+
+CHINESE_CUSTOMER = "您好，请报价从 MUC 到 JFK 的空运，500 公斤。谢谢！"
+CHINESE = (
+    "您的空运报价 FRA到JFK\n"
+    "尊敬的 Dupont 女士，\n\n感谢您的询价。我们可以在 2026年11月25日 将您 500 kg 的货物从FRA运往JFK。"
+    "总价为 1240 €，您的参考号是R-4821。\n\n此致\nAustrian Power"
+)
+
+
+def test_chinese_customer_gets_translated_reply(mailbox: dict[str, Any]) -> None:
+    """CJK has no word boundaries: codes and references glued to Chinese text still count."""
+    mailbox["customer"], mailbox["answer"] = CHINESE_CUSTOMER, CHINESE
+    _, body = _localize()
+    assert mailbox["calls"][0][0]["content"].startswith("Translate into Chinese.")
+    assert "感谢您的询价" in body and "R-4821" in body and "1240 €" in body
+
+
+def test_changed_euro_amount_sends_english_original(mailbox: dict[str, Any]) -> None:
+    mailbox["answer"] = FRENCH.replace("1240 €", "1 240 €").replace("Le total", "1240 Le total")
+    assert _localize() == (SUBJECT, BODY)
+    assert [level for level, _ in mailbox["events"]] == ["warn"]

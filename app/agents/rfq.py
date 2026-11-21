@@ -589,7 +589,12 @@ def quote_text(
             _valid(option),
         )
     if requested_language not in {"en", "de"}:
-        raise ValueError(f"No verified quote template for language {requested_language}")
+        from app.mail.reply_language import LANGUAGE_NAMES
+
+        # other languages (zh, nl, pl, ...) get the verified English copy, translated at send
+        # by reply_language; without that translation there is no verified template
+        if not (settings.reply_in_customer_language and requested_language in LANGUAGE_NAMES):
+            raise ValueError(f"No verified quote template for language {requested_language}")
     lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
     name = rfq.customer_name
     if name and has_template_artifacts(name):

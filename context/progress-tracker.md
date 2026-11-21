@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Any customer language: detection adds nl/pt/pl/sv/da/nb/cs/tr/ro/hu/fi words and non-Latin scripts (zh/ja/ko/ru/uk/el/ar/fa/he/th/hi; real RFQ 20150 is Chinese). `reply_language` translates every non-de/en reply; such quotes use the English copy, translated at send. € amounts verbatim, CJK-safe code/reference checks, multilingual booking yes/no. 1341 passed/5 skipped.
+
 - Round 70 language root cause reproduced: detector returns fr, composer reduced every non-de code to en. Full request language now reaches composition/repair, current document prose participates in detection, recognizable mismatched output is rejected. FR/ES/IT quote fallback, months, subjects and mandatory tracking notices preserve language; unsupported fallback languages fail visibly rather than send English. No extra LLM step or pricing change.
 
 - Round 70 rejected the English response to its French RFQ, then said "we won't go ahead"; the intent parser returned True and an actual airline booking followed. Explicit contracted/expanded negative booking intent now overrides positive verbs, including curly apostrophes; public handler regressions assert no booking/send. Language-composer issue tracked separately.
