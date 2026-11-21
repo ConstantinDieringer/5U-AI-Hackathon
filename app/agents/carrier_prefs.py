@@ -30,36 +30,121 @@ _POS = re.compile(
 )
 
 
+# "no objection to X", "we do not mind which airline": a negation that refuses nothing
+_NEUTRAL = re.compile(
+    r"\b(?:no objection|no problem|nothing against|(?:do not|don't|dont) mind|not mind"
+    r"|nichts gegen|kein problem|keine einw\w+)\b",
+    re.IGNORECASE,
+)
+# a negation only reaches the carrier inside its own clause ("we do not mind ..., but we
+# prefer X" must not refuse X)
+_CLAUSE = re.compile(r"[,;:]|\b(?:but|however|though|aber|jedoch|sondern)\b", re.IGNORECASE)
+_GENERIC = {"air", "airways", "airlines", "airline", "cargo", "freight", "lines", "logistics"}
+
+
 @lru_cache(maxsize=1)
 def _names() -> dict[str, str]:
-    """Lower-case spellings (full name, name without 'Airways/Cargo/...', 2-letter code in
-    brackets is handled separately) -> canonical carrier name."""
+    """Lower-case spellings -> canonical carrier name: the full name, and the name without its
+    generic last words ("Zephyr Steppe" for "Zephyr Steppe Cargo") when that is still two
+    words and belongs to one carrier only."""
     out: dict[str, str] = {}
+    short: dict[str, set[str]] = {}
     for c in carriers():
         out[c.name.lower()] = c.name
+        words = c.name.lower().split()
+        while len(words) > 2 and words[-1] in _GENERIC:
+            words = words[:-1]
+            short.setdefault(" ".join(words), set()).add(c.name)
+    for spelled, owners in short.items():
+        if len(owners) == 1 and spelled not in out:
+            out[spelled] = next(iter(owners))
     return out
+
+
+@lru_cache(maxsize=1)
+def _codes() -> dict[str, str]:
+    """Two-letter code -> canonical name: the portal's codes, and for carriers the portal does
+    not list (round 10820: "ZS") the initials of the first two words, when no other carrier
+    shares them."""
+    from app.pricing.portal_sync import load_portal_lanes
+
+    out: dict[str, str] = {}
+    known = {c.name for c in carriers()}
+    try:
+        for lane in load_portal_lanes().get("lanes", []):
+            for a in lane.get("airlines", []):
+                if a.get("name") in known and a.get("code"):
+                    out[str(a["code"]).upper()] = a["name"]
+    except Exception:  # noqa: BLE001 - without a snapshot the names still work
+        out = {}
+    coded = set(out.values())
+    initials: dict[str, set[str]] = {}
+    for c in carriers():
+        words = c.name.split()
+        if c.kind == "airline" and c.name not in coded and len(words) >= 2:
+            initials.setdefault((words[0][0] + words[1][0]).upper(), set()).add(c.name)
+    for code, owners in initials.items():
+        if len(owners) == 1 and code not in out:
+            out[code] = next(iter(owners))
+    return out
+
+
+def _mentions(sentence: str) -> list[tuple[int, int, str]]:
+    """(start, end, canonical name) of every carrier named in the sentence, longest spelling
+    first so "Zephyr Steppe Cargo" is not also counted as "Zephyr Steppe"."""
+    low = sentence.lower()
+    hits: list[tuple[int, int, str]] = []
+    taken: set[str] = set()
+    for spelled, name in sorted(_names().items(), key=lambda kv: -len(kv[0])):
+        i = low.find(spelled)
+        if i >= 0 and name not in taken:
+            hits.append((i, i + len(spelled), name))
+            taken.add(name)
+    for m in re.finditer(r"\b[A-Z]{2}\b", sentence):  # codes in capitals only
+        if re.search(r",\s*$", sentence[: m.start()]) and sentence[m.end() : m.end() + 1] == ")":
+            continue  # "(Miami, US)": a country code, not a carrier
+        name = _codes().get(m.group(0))
+        if name and name not in taken:
+            hits.append((m.start(), m.end(), name))
+            taken.add(name)
+    return hits
 
 
 def parse(text: str) -> list[tuple[str, str]]:
     """[(carrier name, 'exclude'|'prefer')] for carriers named in the text."""
     found: dict[str, str] = {}
     for sentence in re.split(r"(?<=[.!?\n])\s+", text or ""):
-        low = sentence.lower()
-        for spelled, name in _names().items():
-            i = low.find(spelled)
-            if i < 0:
-                continue
-            before = sentence[max(0, i - 80) : i]
-            after = sentence[i + len(spelled) : i + len(spelled) + 40]
-            if _NEG.search(before) or re.search(
+        mentions = _mentions(sentence)
+        for start, end, name in mentions:
+            # the clause the carrier stands in: cut at the last clause break before it, unless
+            # only other carriers stand in between ("do not use A, B or C" stays one clause)
+            base = max(0, start - 80)
+            before = sentence[base:start]
+            cut = 0
+            for brk in _CLAUSE.finditer(before):
+                gap = _strip_carriers(before[brk.end() :], sentence, mentions)
+                if re.search(r"[a-zäöü]{3,}", gap):
+                    cut = brk.end()
+            clause = _NEUTRAL.sub(" ", before[cut:])
+            after = sentence[end : end + 40]
+            if _NEG.search(clause) or re.search(
                 r"\b(?:is not|are not|not acceptable|unacceptable|nicht|ausgeschlossen)\b",
                 after,
                 re.IGNORECASE,
             ):
                 found[name] = "exclude"  # a refusal beats a preference in the same mail
-            elif _POS.search(before) and found.get(name) != "exclude":
+            elif _POS.search(clause) and found.get(name) != "exclude":
                 found[name] = "prefer"
     return sorted(found.items())
+
+
+def _strip_carriers(gap: str, sentence: str, mentions: list[tuple[int, int, str]]) -> str:
+    """The text between a clause break and the carrier, without other carrier names and the
+    words that join a list, so "A, B or C" leaves nothing and ", but we prefer" leaves words."""
+    out = gap.lower()
+    for s, e, _ in mentions:
+        out = out.replace(sentence[s:e].lower(), " ")
+    return re.sub(r"\b(?:or|and|nor|oder|und|noch|the|with|mit)\b|\([A-Z]{2}\)", " ", out)
 
 
 def remember(customer: str, text: str, session_id: int | None = None) -> list[tuple[str, str]]:

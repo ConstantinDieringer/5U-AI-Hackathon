@@ -155,6 +155,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 20:35: Carrier exclusions hardened (`carrier_prefs.parse`): two-letter codes ("ZS") and short names ("Zephyr Steppe") count, a negation only reaches its own clause ("we do not mind ..., but we prefer X" no longer bans X), "no objection to X" refuses nothing, country codes in brackets are ignored. Offline tests only; no live round with an exclusion since.
+
 - 21.11 19:30: Board fit: accuracy = 45 × (1 − |ours − best| / best / 10 %), quoting below best costs too. Rounds 2 and 27 lost on the air leg: the best price billed the next weight break (Solace 2000 kg, Meridian 1000 kg). Round 2 is fixed by the portal next-break check; the 503 → email-bid path (27) has no break check yet.
 
 - 21.11 19:00: Board accuracy (now visible) is the largest leak on answered rounds: rounds 2, 19, 21, 22, 25, 26 scored 28 to 38 of 45 while accepted. Rounds 15 to 17 (no answer) were forwarded-subject origin AMS and two RFQs without pickup; current code asks instead. LLM cost was about 0.2 points per quote, not a leak.

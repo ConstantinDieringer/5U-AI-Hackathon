@@ -53,3 +53,43 @@ def test_backfill_reads_stored_customer_mails():
     assert carrier_prefs.backfill() == 1
     assert carrier_prefs.excluded("meyer-industrie@hackloop.mail") == {"zephyr steppe cargo"}
     assert carrier_prefs.backfill() == 0
+
+
+Z, L, P = "Zephyr Steppe Cargo", "Lagoon Isles Airways", "Pampero Air Cargo"
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        # the carrier by its code or without its generic last word
+        ("Please do not offer ZS for this shipment.", [(Z, "exclude")]),
+        ("Please do not offer Zephyr Steppe for this shipment.", [(Z, "exclude")]),
+        # a negation refuses only inside its own clause
+        (
+            "We do not mind which airline you use, but we prefer Lagoon Isles Airways.",
+            [(L, "prefer")],
+        ),
+        (
+            "We do not want Zephyr Steppe Cargo, but we prefer Lagoon Isles Airways.",
+            [(L, "prefer"), (Z, "exclude")],
+        ),
+        ("Our goods are not dangerous, please quote with Fjordline Air Cargo if possible.", []),
+        # ... but a list of carriers is one clause
+        (
+            "Please do not use Zephyr Steppe Cargo, Pampero Air Cargo or Lagoon Isles Airways.",
+            [(L, "exclude"), (P, "exclude"), (Z, "exclude")],
+        ),
+        # a negation that refuses nothing
+        ("We have no objection to Zephyr Steppe Cargo.", []),
+        # two capitals that are not a carrier in a refusing sentence
+        ("Please do not quote via another airport than MIA (Miami, US).", []),
+        ("Please do not delay, the goods are for our ZS department.", []),
+    ],
+)
+def test_parse_codes_short_names_and_clause_scope(text, want):
+    assert carrier_prefs.parse(text) == want
+
+
+def test_country_code_in_brackets_is_never_a_carrier(monkeypatch):
+    monkeypatch.setattr(carrier_prefs, "_codes", lambda: {"MN": Z})
+    assert carrier_prefs.parse("Please do not ship via Beijing to ULN (Ulaanbaatar, MN).") == []
