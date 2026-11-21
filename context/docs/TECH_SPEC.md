@@ -83,7 +83,7 @@ requirements.txt
 `.env` (nie committen), Vorlage in `.env.example`:
 
 ```
-HACKLOOP_API_KEY=
+TEAM_API_KEY=
 HACKLOOP_BASE_URL=https://api.start-hack.5u.ai
 TEAM_MAILBOX=austrian-power@hackloop.mail
 LLM_MODEL=gpt-4o-mini        # vorläufig, nach GET /v1/gateway/models bestätigen
@@ -105,7 +105,7 @@ Details: Projekt-Doc `api-referenz.md` und `https://api.start-hack.5u.ai/openapi
 - Timeouts: **10 s** pro Request, max. **2 Retries** mit 1 s Abstand, nur bei Netzwerkfehler/5xx/429 (bei 429 `Retry-After` beachten).
 - Mailbox: Polling `GET /v1/mailbox/messages?since_id=` alle 1,5 s; Senden `POST /v1/mailbox/messages` mit `to`, `subject`, `body`, `in_reply_to`.
 - Portal: `ports` und `brackets` frei; `rates` **rate-limited (10/min, Stand 15:00)**, **eine Airline pro Aufruf** (1–4 Airlines je Lane) → nur über `hackloop.get_rate(origin, destination, airline, weight_kg, volume_cbm) -> dict` mit Rate-Limit-Zähler; `bookings` idempotent über `team_reference`. `app/pricing/portal_sync.py` erwartet zusätzlich `hackloop.get_ports() -> dict` und `hackloop.get_brackets(airline) -> dict` (rohe Antwort, Exception bei Nicht-2xx).
-- LLM: OpenAI-SDK mit `base_url=f"{BASE_URL}/v1/gateway"` und `api_key=HACKLOOP_API_KEY`.
+- LLM: OpenAI-SDK mit `base_url=f"{BASE_URL}/v1/gateway"` und `api_key=TEAM_API_KEY`.
 
 ## 6. Gemeinsame Datenmodelle (Verträge zwischen den Modulen)
 
