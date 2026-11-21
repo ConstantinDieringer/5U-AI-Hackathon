@@ -270,8 +270,10 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Buchungsfreigabe: Vorabfragen wie „Before we book...“ und bedingte Zustimmung gelten
   ebenso wie noch laufende interne Prüfungen („check whether we can proceed“) ausdrücklich
   als ungeklärte Freigabe, auch wenn „book“ vorkommt. Eine abgeschlossene Prüfung mit
-  explizitem Auftrag bleibt gültig. Direkte Aufträge dürfen zusätzliche
-  Informationsfragen enthalten. Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
+  explizitem Auftrag bleibt gültig. Direkte Aufträge dürfen zusätzliche Informationsfragen enthalten.
+  Der Test auf laufende interne Prüfung verwendet dieselben Zustimmungsausdrücke wie
+  die Freigabe selbst und gilt pro Satz; separate Sachfragen ersetzen keine Freigabe.
+  Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
   dieselbe Prüfung gilt bei Annahme eines geänderten Buchungspreises.
 
 - Dedizierter Stilagent `app/agents/email_review.py` auf Nutzerwunsch standardmäßig aus: `EMAIL_REVIEW_ENABLED=false`. Kein zusätzlicher Stil-Review-LLM-Aufruf; deterministische Darstellung und finale Versandprüfung bleiben aktiv. Optionaler expliziter Opt-in mit `LLM_REVIEW_MODEL=gpt-5`: genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens, ohne Versand oder Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen bleiben geschützt; Fehler/Budgetende behält den geprüften Entwurf. Pause/Handbetrieb und Quote-Deadline werden unmittelbar vor dem Versand geprüft.
