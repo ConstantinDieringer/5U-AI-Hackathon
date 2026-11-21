@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 45 accepted/booked but customer quote leaked `road_transit`. Shared voice profile now translates timing labels into ordinary language; composer validation rejects internal timing enums/field names and uses its existing repair/fallback. No timing, selection or price changes; production SHA unverified.
+
 - 50/50 balance now `ratio` by default for trucker AND airline bids (`pricing.most_balanced`, `TRUCKER_BALANCE=minmax` restores the old rule). Min-max tied every 2-bid case 0.5/0.5 and the cheaper bid won the tie. Replay moves rounds 21/22/25/26/31 (trucker only, no air choice changes); 21–26 scored 28–38 accuracy and would hit the board's best price (+56.8). Not verified live; Railway variable must not pin minmax.
 - Round 42 `excluded_airline`: actual offer selected Lagoon but echoed excluded Zephyr in acknowledgement; exact board trigger unverified. Reuse parallel carrier preferences; filter before fan-out cap, pass exclusions to composer/fallback, keep emergency draft and booking consistent, and acknowledge exclusions generically. Combined suite: 544 passed, 4 skipped; production SHA unverified.
 - Approved freight voice implemented: specific openings, grounded thanks/history, I/we, contractions, situational warmth, plain uncertainty and one next step; composer gets a short fastest/cheapest rationale. Full suite 540 passed/4 skipped; 35 relevant tests passed after wording refinements. Synthetic EN/DE probes sent no mail; production activation unverified.

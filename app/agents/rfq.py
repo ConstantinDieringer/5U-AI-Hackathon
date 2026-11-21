@@ -744,6 +744,13 @@ def _validate_composed(
         raise ValueError("empty body")
     if has_template_artifacts(body):
         raise ValueError("answer contains an unfilled template field or mail header")
+    if re.search(
+        r"\b(?:road_transit|collection_lead|carrier_timing_kind|road_transit_hours|"
+        r"carrier_reported_lead_hours|confirmed_collection_slot)\b",
+        body,
+        re.IGNORECASE,
+    ):
+        raise ValueError("express carrier timing in plain language, without internal field names")
     if option.airline.lower() in rfq.excluded_airlines:
         raise ValueError("selected carrier is excluded by the customer")
     if carrier_prefs.mentions_excluded(body, rfq.excluded_airlines):

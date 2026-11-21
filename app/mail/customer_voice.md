@@ -20,6 +20,8 @@ Briefly connect the selected offer to selection_explanation: "Since speed is you
 
 Use one short customer-facing reason. Do not narrate tie-breakers, comparison machinery or the supplied data fields. The customer needs to know why this offer suits them, not how the software selected it.
 
+Translate internal timing labels into ordinary language: a reported road transit duration is a journey time; a collection lead is time before pickup, not driving time. Never copy enum values or field names such as road_transit or carrier_timing_kind into the mail. Preserve uncertain timing as uncertain.
+
 Put the exact supplied total in a normal sentence such as "The total comes to ..." and name collection only when pickup_included is true. Do not print the ellipsis or turn this example into a fixed template. Keep the amount, airline and route exact.
 
 Prefer ordinary verbs and specific supported details. Remove ceremonial introductions, sales language and vague superlatives. Avoid phrases such as "We are delighted to present", "seamless logistics solution", "leverage our expertise" and "I hope this email finds you well". Do not cycle through synonyms just to avoid repeating a technical term.
