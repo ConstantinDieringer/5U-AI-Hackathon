@@ -95,6 +95,11 @@ class Settings:
     webhook_poll_interval_s: float
     price_change_tolerance_pct: float
     airline_confirm_wait_s: float
+    followup_enabled: bool
+    followup_after_s: float
+    followup_max: int
+    followup_window_s: float
+    followup_check_every_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -183,6 +188,12 @@ settings = Settings(
     # wait this long for the airline's confirmation mail (with its price) before confirming
     # the booking to the customer anyway; 0 confirms right after booking as before
     airline_confirm_wait_s=max(0.0, float(_env("AIRLINE_CONFIRM_WAIT_S", "180"))),
+    # customer silent after our quote -> nudge in the thread (app/agents/followup.py)
+    followup_enabled=_env("FOLLOWUP_ENABLED", "true").lower() not in ("0", "false", "no", "off"),
+    followup_after_s=float(_env("FOLLOWUP_AFTER_S", "30")),
+    followup_max=max(0, int(_env("FOLLOWUP_MAX", "3"))),
+    followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
+    followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "2"))),
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):
