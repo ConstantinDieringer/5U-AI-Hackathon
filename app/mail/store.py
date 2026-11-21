@@ -30,7 +30,9 @@ def set_since_id(since_id: int) -> None:
     db.kv_set(SINCE_KEY, str(since_id))
 
 
-def save_mail(mail: Mail, category: Category, in_reply_to: int | None) -> Saved:
+def save_mail(
+    mail: Mail, category: Category, in_reply_to: int | None, session_hint: int | None = None
+) -> Saved:
     """Atomically insert by exact ID and report whether this call inserted the mail."""
     session_id, is_new = db.ingest_mail(
         mail_id=mail.id,
@@ -44,6 +46,7 @@ def save_mail(mail: Mail, category: Category, in_reply_to: int | None) -> Saved:
         in_reply_to=in_reply_to,
         raw=mail.raw,
         report_new=True,
+        session_hint=session_hint,
     )
     return Saved(is_new, session_id)
 

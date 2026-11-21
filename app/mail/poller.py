@@ -11,6 +11,7 @@ Guarantees
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -32,9 +33,28 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _parent(in_reply_to: int | None) -> Mail | None:
-    """The mail we answer to (any mail we sent or received), or None if unknown."""
+    """The mail we answer to (any mail we sent or received), or None if unknown. Our own DB
+    first: every mail we sent or received is stored, so most lookups need no API call."""
     if in_reply_to is None:
         return None
+    row = db.mail_header(in_reply_to)
+    if row is not None:
+        try:
+            raw = json.loads(row["raw_json"]) if row.get("raw_json") else None
+            if isinstance(raw, dict) and raw.get("id") == in_reply_to:
+                return parse.mail_from_api(raw)
+        except (ValueError, parse.MailFormatError):
+            pass
+        return Mail(
+            id=row["id"],
+            thread_root=row["id"],
+            # outgoing mails are often stored without a sender: they are ours
+            sender=row["sender"] or (settings.team_mailbox if row["direction"] == "out" else ""),
+            to=row["recipient"] or "",
+            subject=row["subject"] or "",
+            body="",
+            received_at=row["received_at"] or "",
+        )
     try:
         return parse.mail_from_api(hackloop.get_message(in_reply_to))
     except (hackloop.HackloopError, parse.MailFormatError) as e:
@@ -83,6 +103,12 @@ def handle(raw: dict, *, recover: bool = False) -> None:
     mail = parse.mail_from_api(raw)
     in_reply_to = parse.in_reply_to(raw)
     category, rule = router.classify(mail, _parent(in_reply_to))
+    session_hint = None
+    if category == Category.RFQ and in_reply_to is None and not mail.references:
+        # 5U's customer agent sometimes replies without headers: same sender, "Re:" subject
+        session_hint = db.session_for_headerless_reply(mail.sender, mail.subject)
+        if session_hint is not None:
+            category, rule = Category.CUSTOMER, f"header-less reply to session {session_hint}"
     try:  # empty or automatic mail: held below, never worth a phishing-gate LLM call
         early = guard.precheck(mail, category)
     except Exception:
@@ -100,7 +126,7 @@ def handle(raw: dict, *, recover: bool = False) -> None:
         from app.agents import tariff
 
         tariff.enqueue(mail)
-    saved = store.save_mail(mail, category, in_reply_to)
+    saved = store.save_mail(mail, category, in_reply_to, session_hint)
     if not saved.is_new and not recover:
         log.info("mail %s already stored, skipped", mail.id)
         return
