@@ -29,9 +29,7 @@ def deadline_loop() -> None:
             for s in db.list_sessions(attention=True):
                 deadline = s.get("deadline_at")
                 left = (
-                    (datetime.fromisoformat(deadline) - now).total_seconds()
-                    if deadline
-                    else None
+                    (datetime.fromisoformat(deadline) - now).total_seconds() if deadline else None
                 )
                 # attention also means paused/error/manual: warn only for a real close deadline
                 if (
@@ -72,9 +70,7 @@ def is_failure(verdict: object, reason: object) -> bool:
     accepted, or any reason code at all."""
     if reason:
         return True
-    return (
-        isinstance(verdict, str) and verdict not in UNDECIDED and verdict != "accepted"
-    )
+    return isinstance(verdict, str) and verdict not in UNDECIDED and verdict != "accepted"
 
 
 def board_loop() -> None:
@@ -85,11 +81,7 @@ def board_loop() -> None:
             data = hackloop.get_board_me()
             for r in _board_rows(data):
                 round_id = str(
-                    r.get("round_no")
-                    or r.get("round")
-                    or r.get("round_id")
-                    or r.get("id")
-                    or ""
+                    r.get("round_no") or r.get("round") or r.get("round_id") or r.get("id") or ""
                 )
                 if not round_id:
                     continue
@@ -97,17 +89,19 @@ def board_loop() -> None:
                 reason = r.get("reason") or r.get("reason_code")
                 failed = is_failure(verdict, reason)
                 sid = _match_session(r)
+                sent_at = r.get("sent_at") if isinstance(r.get("sent_at"), str) else None
+                # no answer: freeze our own record of why (no session = mail never arrived)
+                cause = db.round_cause(sid, sent_at) if verdict == db.NO_ANSWER else None
                 changed = db.save_board_result(
                     round_id=round_id,
                     verdict=verdict,
                     reason=reason,  # fields: round_no, sent_at,
                     # answered_at, verdict (open|pending|accepted|rejected|...), reason, booked
-                    points=r.get("points")
-                    if isinstance(r.get("points"), dict)
-                    else None,
+                    points=r.get("points") if isinstance(r.get("points"), dict) else None,
                     raw=r,
                     session_id=sid,
                     failed=failed,
+                    cause=cause,
                 )
                 if changed and failed:
                     log.error(
