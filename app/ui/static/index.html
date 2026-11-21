@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Austrian Power · Forwarder</title>
+<link rel="icon" href="data:,">
+<style>
+/* ---------- design tokens (context/ui-context.md: tokens only, dark first) ---------- */
+:root {
+  --bg: #0d1117; --surface: #151b23; --surface-2: #1c2430; --surface-3: #243042;
+  --border: #2a3646; --text: #e6edf3; --text-dim: #8b98a9; --text-faint: #5d6b7e;
+  --accent: #4f8cff; --accent-soft: rgba(79,140,255,.15);
+  --st-new: #8b98a9; --st-pricing: #4f8cff; --st-quoted: #a37bff; --st-booked: #2fbf71;
+  --st-error: #f2555a; --st-paused: #f5b83d; --st-manual: #ff8f3d;
+  --ok: #2fbf71; --warn: #f5b83d; --bad: #f2555a;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); }
+button { font: inherit; color: inherit; cursor: pointer; }
+.icon { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- header ---------- */
+header { display: flex; align-items: center; gap: var(--s4); padding: var(--s3) var(--s5); border-bottom: 1px solid var(--border); background: var(--surface); }
+.brand { font-weight: 700; letter-spacing: .2px; display: flex; gap: var(--s2); align-items: center; }
+.brand small { color: var(--text-dim); font-weight: 500; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+.dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(47,191,113,.2); }
+.dot.retry { background: var(--warn); }
+.tabs { display: flex; gap: var(--s1); margin-left: var(--s4); }
+.tab { background: none; border: 0; padding: 6px 12px; border-radius: var(--r-sm); color: var(--text-dim); display: flex; gap: 6px; align-items: center; }
+.tab.active { background: var(--surface-3); color: var(--text); }
+.kpis { display: flex; gap: var(--s4); margin-left: auto; font-size: 12px; color: var(--text-dim); }
+.kpis b { color: var(--text); font-size: 14px; }
+.btn { border: 1px solid var(--border); background: var(--surface-2); padding: 6px 12px; border-radius: var(--r-sm); display: inline-flex; gap: 6px; align-items: center; }
+.btn:hover { background: var(--surface-3); }
+.btn.danger { border-color: rgba(242,85,90,.5); color: #ffb3b5; }
+.btn.danger.on { background: var(--bad); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.banner { display: none; padding: var(--s2) var(--s5); background: var(--bad); color: #fff; font-weight: 600; }
+.banner.show { display: block; }
+
+/* ---------- layout ---------- */
+main { height: calc(100% - 57px); }
+.view { display: none; height: 100%; }
+.view.active { display: flex; }
+#sessions-view { display: none; }
+#sessions-view.active { display: grid; grid-template-columns: 360px 1fr; }
+aside { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.search { margin: var(--s3); display: flex; align-items: center; gap: var(--s2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 10px; }
+.search input { flex: 1; background: none; border: 0; color: var(--text); outline: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 var(--s3) var(--s3); }
+.chip { border: 1px solid var(--border); background: none; border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--text-dim); }
+.chip.active { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }
+.list { overflow: auto; flex: 1; }
+.row { padding: var(--s3); border-bottom: 1px solid var(--border); cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s2); }
+.row:hover { background: var(--surface-2); }
+.row.sel { background: var(--surface-3); box-shadow: inset 3px 0 0 var(--accent); }
+.row.attn { box-shadow: inset 3px 0 0 var(--warn); }
+.row .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .meta { color: var(--text-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cd { font-family: var(--mono); font-size: 12px; color: var(--text-dim); text-align: right; }
+.cd.amber { color: var(--warn); } .cd.red { color: var(--bad); font-weight: 700; }
+.pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--surface-3); color: var(--text-dim); }
+.pill.new { color: var(--st-new); } .pill.pricing { color: var(--st-pricing); background: rgba(79,140,255,.15); }
+.pill.quoted { color: var(--st-quoted); background: rgba(163,123,255,.15); }
+.pill.accepted, .pill.booked, .pill.confirmed, .pill.answered { color: var(--st-booked); background: rgba(47,191,113,.15); }
+.pill.error, .pill.lost, .pill.expired { color: var(--st-error); background: rgba(242,85,90,.15); }
+.pill.paused { color: var(--st-paused); background: rgba(245,184,61,.15); }
+.pill.manual { color: var(--st-manual); background: rgba(255,143,61,.15); }
+.section-title { padding: var(--s2) var(--s3); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-faint); }
+
+/* ---------- detail ---------- */
+.detail { overflow: auto; padding: var(--s5); min-width: 0; }
+.empty { color: var(--text-dim); margin: auto; text-align: center; }
+.d-head { display: flex; align-items: flex-start; gap: var(--s4); flex-wrap: wrap; }
+.d-head h2 { margin: 0; font-size: 20px; }
+.d-sub { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
+.d-cd { margin-left: auto; font-family: var(--mono); font-size: 22px; }
+.actions { display: flex; gap: var(--s2); margin: var(--s4) 0; flex-wrap: wrap; }
+.notice { padding: var(--s2) var(--s3); border-radius: var(--r-md); background: rgba(255,143,61,.12); border: 1px solid rgba(255,143,61,.4); color: #ffd2b0; margin-bottom: var(--s4); }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--s4); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--s4); min-width: 0; }
+.card h3 { margin: 0 0 var(--s3); font-size: 13px; color: var(--text-dim); font-weight: 600; display: flex; gap: 6px; align-items: center; }
+.tl { list-style: none; margin: 0; padding: 0; }
+.tl li { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--s2); padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.tl li:last-child { border-bottom: 0; }
+.tl .t { color: var(--text-faint); font-family: var(--mono); font-size: 12px; }
+.tl .x { color: var(--text-faint); font-size: 12px; font-family: var(--mono); }
+.tl li.warn .m { color: var(--warn); } .tl li.error .m { color: var(--bad); }
+.tl li.new-ev { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
+.tl details { grid-column: 2 / 4; } .tl summary { color: var(--text-faint); font-size: 12px; cursor: pointer; }
+.tl pre, .mail pre { white-space: pre-wrap; word-break: break-word; margin: var(--s2) 0 0; font: 12px/1.5 var(--mono); color: var(--text-dim); }
+.mail { padding: var(--s3); border-radius: var(--r-md); background: var(--surface-2); margin-bottom: var(--s2); }
+.mail.out { background: var(--accent-soft); }
+.mail .h { display: flex; justify-content: space-between; gap: var(--s2); font-size: 12px; color: var(--text-dim); }
+.why table, .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.why td, .why th, .tbl td, .tbl th { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.tbl th, .why th { color: var(--text-faint); font-weight: 500; font-size: 12px; }
+.num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.chosen { color: var(--ok); font-weight: 600; }
+textarea { width: 100%; min-height: 120px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s3); font: inherit; }
+
+/* ---------- dashboard ---------- */
+#dashboard-view { flex-direction: column; overflow: auto; padding: var(--s5); gap: var(--s4); }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s4); }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--s4); }
+.kpi .l { color: var(--text-dim); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+.kpi .v { font-size: 26px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.kpi .s { color: var(--text-faint); font-size: 12px; }
+.kpi .v.ok { color: var(--ok); } .kpi .v.warn { color: var(--warn); } .kpi .v.bad { color: var(--bad); }
+.stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.stack span { height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: var(--s2); font-size: 12px; color: var(--text-dim); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.bars { display: flex; align-items: flex-end; gap: 6px; height: 140px; position: relative; padding-top: 8px; }
+.bars .b { flex: 1; min-width: 6px; background: var(--accent); border-radius: 4px 4px 0 0; position: relative; }
+.bars .b.ok { background: var(--ok); } .bars .b.warn { background: var(--warn); } .bars .b.bad { background: var(--bad); }
+.bars .b.ghost { background: var(--surface-3); }
+.bars .line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--text-faint); font-size: 10px; color: var(--text-faint); }
+.bars .line span { position: absolute; right: 0; top: -14px; }
+.axis { display: flex; gap: 6px; font-size: 10px; color: var(--text-faint); margin-top: 4px; }
+.axis span { flex: 1; text-align: center; overflow: hidden; white-space: nowrap; }
+.dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
+.ticker { max-height: 260px; overflow: auto; }
+@media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dash-grid { grid-template-columns: 1fr; } #sessions-view.active { grid-template-columns: 1fr; } aside { max-height: 45vh; } .grid2 { grid-template-columns: 1fr; } .kpis { display: none; } }
+</style>
+</head>
+<body>
+<!-- one icon set: inline SVG symbols in the Feather/Lucide style -->
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8a8 8 0 0 0 16 0v-3a2 2 0 0 0-4 0"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9h6v6H9z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-9"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-plane" viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 1.7 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5M12 6v2M12 16v2"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3a3 3 0 0 1-3 4M7 5H4a3 3 0 0 0 3 4"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20z"/><path d="M12 10v4M12 18h.01"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+</svg>
+
+<header>
+  <div class="brand"><svg class="icon"><use href="#i-plane"/></svg>Austrian Power <small>Forwarder</small></div>
+  <span class="live"><span class="dot" id="live-dot"></span><span id="live-text">verbinde…</span></span>
+  <nav class="tabs">
+    <button class="tab active" data-view="sessions-view"><svg class="icon"><use href="#i-list"/></svg>Sessions</button>
+    <button class="tab" data-view="dashboard-view"><svg class="icon"><use href="#i-chart"/></svg>Dashboard</button>
+  </nav>
+  <div class="kpis" id="kpis"></div>
+  <button class="btn danger" id="global-pause"><svg class="icon"><use href="#i-stop"/></svg><span>Ausgehende Mails stoppen</span></button>
+</header>
+<div class="banner" id="global-banner">Alle ausgehenden Mails sind gestoppt. Der Agent sendet nichts, bis du sie wieder freigibst.</div>
+
+<main>
+  <section class="view active" id="sessions-view">
+    <aside>
+      <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="q" placeholder="Kunde, Betreff oder Session-ID" autocomplete="off"></label>
+      <div class="chips" id="chips"></div>
+      <div class="list" id="list"></div>
+    </aside>
+    <div class="detail" id="detail"><div class="empty">Session links auswählen.</div></div>
+  </section>
+
+  <section class="view" id="dashboard-view"></section>
+</main>
+
+<script>
+"use strict";
+// ---------- helpers (all text via textContent: mail bodies are untrusted) ----------
+const $ = (s) => document.querySelector(s);
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "style") n.style.cssText = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return n;
+}
+function icon(name) {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("class", "icon");
+  const u = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  u.setAttribute("href", "#i-" + name); s.append(u); return s;
+}
+const api = async (path, opts) => {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.text()) || r.status);
+  return r.json();
+};
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+const money = (minor, cur) => minor == null ? "–" : (minor / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (cur || "");
+const usd = (micro) => micro == null ? "–" : "$" + (micro / 1e6).toFixed(micro < 10000 ? 4 : 3);
+const time = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+const secs = (s) => s == null ? "–" : (s < 60 ? Math.round(s) + " s" : Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0") + " min");
+const STATUS_DE = { new: "neu", pricing: "bepreisen", quoted: "quotiert", accepted: "angenommen", booked: "gebucht", confirmed: "bestätigt", answered: "beantwortet", lost: "verloren", expired: "abgelaufen", error: "Fehler" };
+const OPEN = ["new", "pricing"];
+
+// scoring helpers (brief: cost 40 pts, 0 at $0.10; time 15 pts, full ≤2 min, 0 at 6 min)
+const costPts = (micro) => micro == null ? null : Math.max(0, 40 * (1 - micro / 100000));
+const timePts = (s) => s == null ? null : s <= 120 ? 15 : s >= 360 ? 0 : 15 * (360 - s) / 240;
+
+// ---------- state ----------
+const state = { filter: "all", q: "", selected: null, sessions: [], detail: null, lastEventId: 0, seen: new Set(), globalPause: false, view: "sessions-view" };
+const FILTERS = [
+  ["all", "Alle"], ["attention", "Achtung"], ["open", "Offen"], ["quoted", "Quotiert"],
+  ["booked", "Gebucht"], ["problem", "Fehler/verloren"], ["tracking", "Tracking"],
+];
+
+// ---------- countdown ----------
+function remaining(deadline) { return deadline ? (new Date(deadline) - Date.now()) / 1000 : null; }
+function cdText(s, status) {
+  if (!OPEN.includes(status) || s == null) return "";
+  if (s <= 0) return "0:00";
+  return Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+}
+function cdClass(s) { return s == null ? "" : s < 60 ? "red" : s < 120 ? "amber" : ""; }
+setInterval(() => {
+  document.querySelectorAll("[data-deadline]").forEach((n) => {
+    const s = remaining(n.dataset.deadline);
+    n.textContent = cdText(s, n.dataset.status);
+    n.classList.remove("red", "amber");
+    const c = cdClass(s); if (c && OPEN.includes(n.dataset.status)) n.classList.add(c);
+  });
+}, 1000);
+
+// ---------- list ----------
+function renderChips() {
+  const box = $("#chips"); box.replaceChildren();
+  for (const [k, label] of FILTERS) box.append(el("button", { class: "chip" + (state.filter === k ? " active" : ""), onclick: () => { state.filter = k; renderChips(); renderList(); } }, label));
+}
+function matches(s) {
+  const f = state.filter;
+  if (f === "attention" && !s.needs_attention) return false;
+  if (f === "open" && !OPEN.includes(s.status)) return false;
+  if (f === "quoted" && s.status !== "quoted") return false;
+  if (f === "booked" && !["accepted", "booked", "confirmed"].includes(s.status)) return false;
+  if (f === "problem" && !["error", "lost", "expired"].includes(s.status)) return false;
+  if (f === "tracking" && s.kind !== "tracking") return false;
+  if (state.q) {
+    const q = state.q.toLowerCase();
+    if (!String(s.id).includes(q) && !(s.customer || "").toLowerCase().includes(q) && !(s.subject || "").toLowerCase().includes(q)) return false;
+  }
+  return true;
+}
+function statusPills(s) {
+  return [
+    el("span", { class: "pill " + s.status }, STATUS_DE[s.status] || s.status),
+    s.paused ? el("span", { class: "pill paused" }, "pausiert") : null,
+    s.mode === "manual" ? el("span", { class: "pill manual" }, "Mensch") : null,
+  ];
+}
+function renderList() {
+  const box = $("#list"); box.replaceChildren();
+  const rows = state.sessions.filter(matches);
+  if (!rows.length) box.append(el("div", { class: "empty", style: "padding:24px" }, state.sessions.length ? "Keine Session für diesen Filter." : "Noch keine Sessions. Sobald Mails ankommen, erscheinen sie hier."));
+  for (const s of rows) {
+    const s_rem = remaining(s.deadline_at);
+    box.append(el("div", {
+      class: "row" + (s.id === state.selected ? " sel" : "") + (s.needs_attention ? " attn" : ""),
+      onclick: () => select(s.id),
+    },
+      el("div", { class: "title" }, (s.kind === "tracking" ? "Tracking · " : "") + (s.subject || "(ohne Betreff)")),
+      el("div", { class: "cd " + cdClass(s_rem), "data-deadline": s.deadline_at || "", "data-status": s.status }, cdText(s_rem, s.status)),
+      el("div", { class: "meta" }, statusPills(s), " ", s.customer || ""),
+      el("div", { class: "meta num" }, s.quote_total_minor != null ? money(s.quote_total_minor, s.quote_currency) : ""),
+      el("div", { class: "meta", style: "grid-column:1/3" }, s.last_event || ""),
+    ));
+  }
+  loadUnassigned(box);
+}
+async function loadUnassigned(box) {
+  if (state.filter !== "all" || state.q) return;
+  const un = await api("/api/unassigned").catch(() => []);
+  if (!un.length) return;
+  box.append(el("div", { class: "section-title" }, `Unzugeordnet (${un.length})`));
+  for (const m of un.slice(0, 20)) box.append(el("div", { class: "row", style: "cursor:default" },
+    el("div", { class: "title" }, m.subject || "(ohne Betreff)"), el("div", { class: "cd" }, time(m.received_at)),
+    el("div", { class: "meta", style: "grid-column:1/3" }, (m.category || "") + " · " + (m.sender || m.recipient || ""))));
+}
+async function loadSessions() {
+  state.sessions = await api("/api/sessions").catch(() => state.sessions);
+  renderList();
+}
+
+// ---------- detail ----------
+async function select(id) {
+  state.selected = id;
+  history.replaceState(null, "", "#session=" + id);
+  renderList();
+  await loadDetail();
+}
+async function loadDetail() {
+  if (state.selected == null) return;
+  try { state.detail = await api("/api/sessions/" + state.selected); }
+  catch { $("#detail").replaceChildren(el("div", { class: "empty" }, "Session nicht gefunden.")); return; }
+  renderDetail();
+}
+function act(path, confirmText) {
+  return async () => {
+    if (confirmText && !confirm(confirmText)) return;
+    try { await post(`/api/sessions/${state.selected}/${path}`); } catch (e) { alert("Fehler: " + e.message); }
+    await Promise.all([loadDetail(), loadSessions()]);
+  };
+}
+function lane(s) {
+  const r = s.request || {};
+  const q = (s.quotes || [])[0] || {};
+  const o = r.origin || q.origin, d = r.destination || q.destination;
+  const parts = [];
+  if (o || d) parts.push(`${o || "?"} → ${d || "?"}`);
+  if (r.weight_kg) parts.push(r.weight_kg + " kg");
+  if (r.volume_cbm) parts.push(r.volume_cbm + " cbm");
+  if (r.mode || r.preference) parts.push(r.mode || r.preference);
+  return parts.join(" · ");
+}
+function renderDetail() {
+  const s = state.detail, box = $("#detail");
+  const rem = remaining(s.deadline_at);
+  const head = el("div", { class: "d-head" },
+    el("div", {},
+      el("h2", {}, lane(s) || s.subject || "Session " + s.id),
+      el("div", { class: "d-sub" }, statusPills(s), "  ", s.customer || "", " · Session ", String(s.id), " · LLM ", usd(s.llm_cost_micro_usd)),
+    ),
+    el("div", { class: "d-cd cd " + cdClass(rem), "data-deadline": s.deadline_at || "", "data-status": s.status }, cdText(rem, s.status)),
+  );
+  const actions = el("div", { class: "actions" },
+    s.paused
+      ? el("button", { class: "btn", onclick: act("resume") }, icon("play"), "Fortsetzen")
+      : el("button", { class: "btn", onclick: act("pause") }, icon("pause"), "Pausieren"),
+    s.mode === "manual"
+      ? el("button", { class: "btn", onclick: act("handback") }, icon("undo"), "An Agent zurückgeben")
+      : el("button", { class: "btn", onclick: act("takeover", "Session übernehmen? Der Agent sendet danach nichts mehr in diesem Thread.") }, icon("hand"), "Übernehmen"),
+    el("button", { class: "btn primary", onclick: () => toggleReply(true) }, icon("send"), "Antworten…"),
+  );
+  const notices = [];
+  if (s.mode === "manual") notices.push(el("div", { class: "notice" }, "Ein Mensch hat diese Session übernommen. Der Agent antwortet hier nicht mehr."));
+  if (state.globalPause) notices.push(el("div", { class: "notice" }, "Globaler Stopp aktiv: es werden keine Mails gesendet."));
+
+  const reply = el("div", { class: "card", id: "reply", style: "display:none;margin-bottom:16px" },
+    el("h3", {}, icon("send"), "Manuelle Antwort im Kunden-Thread"),
+    s.first_reply_at ? null : el("div", { class: "notice" }, "Achtung: Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
+    el("textarea", { id: "reply-text", placeholder: "Hallo …" }),
+    el("div", { class: "actions" },
+      el("button", { class: "btn primary", onclick: sendReply }, icon("send"), "Senden"),
+      el("button", { class: "btn", onclick: () => toggleReply(false) }, "Abbrechen")),
+  );
+
+  const tl = el("ul", { class: "tl", id: "timeline" });
+  for (const e of s.events) tl.append(eventItem(e));
+  const mails = el("div", {});
+  for (const m of s.mails) mails.append(el("div", { class: "mail " + m.direction },
+    el("div", { class: "h" }, el("span", {}, (m.direction === "in" ? "von " + (m.sender || "?") : "an " + (m.recipient || "?")) + (m.category ? " · " + m.category : "")), el("span", {}, time(m.received_at))),
+    el("div", { style: "font-weight:600;margin-top:2px" }, m.subject || ""),
+    el("details", {}, el("summary", {}, "Text"), el("pre", {}, m.body || ""))));
+  if (!s.mails.length) mails.append(el("div", { class: "empty" }, "Keine Mails."));
+
+  box.replaceChildren(head, actions, ...notices, reply, el("div", { class: "grid2" },
+    el("div", {}, whyCard(s), el("div", { class: "card", style: "margin-top:16px" }, el("h3", {}, icon("activity"), "Timeline (live)"), tl)),
+    el("div", {}, s.bookings.length ? bookingCard(s) : null, boardCard(s), el("div", { class: "card", style: "margin-top:16px" }, el("h3", {}, icon("mail"), "Mails im Thread"), mails)),
+  ));
+}
+function eventItem(e, fresh) {
+  const li = el("li", { class: (e.level || "") + (fresh ? " new-ev" : "") },
+    el("span", { class: "t" }, time(e.created_at)),
+    el("span", { class: "m" }, e.message || e.kind),
+    el("span", { class: "x" }, [e.duration_ms != null ? e.duration_ms + " ms" : "", e.cost_micro_usd != null ? usd(e.cost_micro_usd) : ""].filter(Boolean).join(" · ")));
+  if (e.payload) li.append(el("details", {}, el("summary", {}, "Details"), el("pre", {}, JSON.stringify(e.payload, null, 2))));
+  return li;
+}
+function whyCard(s) {
+  const q = (s.quotes || [])[0];
+  const card = el("div", { class: "card why" }, el("h3", {}, icon("coin"), "Warum diese Quote"));
+  if (!q) { card.append(el("div", { class: "empty", style: "text-align:left" }, OPEN.includes(s.status) ? "Noch keine Quote. Der Agent bepreist gerade." : "Keine Quote in dieser Session.")); return card; }
+  card.append(el("div", { style: "margin-bottom:8px" },
+    el("b", {}, money(q.total_minor, q.currency)), " · ", q.airline || "?", " · ", q.transit_days != null ? q.transit_days + " Tage" : "", " · Quelle: ", q.source,
+    s.request && (s.request.mode || s.request.preference) ? " · gewünscht: " + (s.request.mode || s.request.preference) : ""));
+  const alts = q.alternatives || [];
+  if (alts.length) {
+    const t = el("table", {}, el("tr", {}, el("th", {}, "Airline"), el("th", {}, "Quelle"), el("th", { class: "num" }, "Tage"), el("th", { class: "num" }, "Preis")));
+    const sorted = [...alts].sort((a, b) => (a.total_minor ?? 1e18) - (b.total_minor ?? 1e18));
+    for (const a of sorted) {
+      const chosen = a.airline === q.airline && a.total_minor === q.total_minor;
+      t.append(el("tr", { class: chosen ? "chosen" : "" }, el("td", {}, (chosen ? "✓ " : "") + (a.airline || "?")), el("td", {}, a.source || ""), el("td", { class: "num" }, a.transit_days ?? ""), el("td", { class: "num" }, money(a.total_minor, a.currency || q.currency))));
+    }
+    card.append(t);
+  } else card.append(el("div", { class: "d-sub" }, "Keine Alternativen gespeichert."));
+  return card;
+}
+function bookingCard(s) {
+  const b = s.bookings[0];
+  return el("div", { class: "card" }, el("h3", {}, icon("box"), "Buchung"),
+    el("div", {}, el("b", {}, b.booking_reference || b.team_reference), " · ", el("span", { class: "pill " + (b.status === "failed" ? "error" : "booked") }, b.status)),
+    el("div", { class: "d-sub" }, (b.airline || "") + " · " + money(b.price_minor, b.currency) + " · Rate " + (b.rate_id || "–")));
+}
+function boardCard(s) {
+  const card = el("div", { class: "card", style: s.bookings.length ? "margin-top:16px" : "" }, el("h3", {}, icon("trophy"), "Board (5U-Bewertung)"));
+  if (!s.board.length) card.append(el("div", { class: "d-sub" }, "Noch keine Bewertung."));
+  for (const b of s.board) card.append(el("div", {}, el("span", { class: "pill " + (b.verdict === "accepted" ? "booked" : b.verdict === "rejected" ? "error" : "new") }, b.verdict || "?"), " ", b.reason || "", b.points_json ? " · " + b.points_json : ""));
+  return card;
+}
+function toggleReply(show) { const r = $("#reply"); if (r) { r.style.display = show ? "block" : "none"; if (show) $("#reply-text").focus(); } }
+async function sendReply() {
+  const text = $("#reply-text").value.trim();
+  if (!text) return;
+  if (!confirm("Antwort jetzt an den Kunden senden? Die Session wird dabei übernommen.")) return;
+  try { await post(`/api/sessions/${state.selected}/reply`, { text }); toggleReply(false); }
+  catch (e) { alert("Senden fehlgeschlagen: " + e.message); }
+  await Promise.all([loadDetail(), loadSessions()]);
+}
+
+// ---------- header KPIs + global pause ----------
+async function loadStats() {
+  const st = await api("/api/stats").catch(() => null);
+  if (!st) return;
+  state.globalPause = !!st.global_pause;
+  const bs = st.by_status || {};
+  const quoted = ["quoted", "accepted", "booked", "confirmed"].reduce((a, k) => a + (bs[k] || 0), 0);
+  $("#kpis").replaceChildren(
+    el("span", {}, el("b", {}, st.sessions_total), " Sessions"),
+    el("span", {}, el("b", {}, quoted), " quotiert"),
+    el("span", {}, "Ø ", el("b", {}, secs(st.avg_response_s)), " Antwort"),
+    el("span", {}, "Ø ", el("b", {}, usd(st.avg_llm_cost_micro_usd_per_quote)), " LLM/Quote"),
+    el("span", {}, el("b", {}, (st.board || {}).accepted || 0), " accepted"),
+  );
+  const gp = $("#global-pause");
+  gp.classList.toggle("on", state.globalPause);
+  gp.querySelector("span").textContent = state.globalPause ? "Mails wieder freigeben" : "Ausgehende Mails stoppen";
+  $("#global-banner").classList.toggle("show", state.globalPause);
+}
+$("#global-pause").addEventListener("click", async () => {
+  const stop = !state.globalPause;
+  if (stop && !confirm("Alle ausgehenden Mails stoppen? Der Agent sendet dann nichts mehr, auch keine Quotes.")) return;
+  await post(stop ? "/api/pause-all" : "/api/resume-all").catch((e) => alert(e.message));
+  await loadStats(); if (state.detail) renderDetail();
+});
+
+// ---------- dashboard ----------
+function kpi(ic, label, value, sub, cls) {
+  return el("div", { class: "kpi" }, el("div", { class: "l" }, icon(ic), label), el("div", { class: "v " + (cls || "") }, value), el("div", { class: "s" }, sub || ""));
+}
+function barChart(values, { max, lines = [], cls = () => "", labels = [] } = {}) {
+  const top = Math.max(max || 0, ...values.map((v) => v ?? 0), ...lines.map((l) => l.v), 1);
+  const wrap = el("div", {});
+  const bars = el("div", { class: "bars" });
+  for (const l of lines) bars.append(el("div", { class: "line", style: `bottom:${(l.v / top) * 100}%` }, el("span", {}, l.label)));
+  values.forEach((v, i) => bars.append(el("div", { class: "b " + cls(v, i), style: `height:${Math.max(2, ((v ?? 0) / top) * 100)}%`, title: labels[i] ? labels[i] + ": " + v : String(v) })));
+  wrap.append(bars);
+  if (labels.length) wrap.append(el("div", { class: "axis" }, labels.map((l) => el("span", {}, l))));
+  return wrap;
+}
+async function loadDashboard() {
+  const d = await api("/api/dashboard").catch(() => null);
+  if (!d) return;
+  const st = d.stats, bs = st.by_status || {};
+  const quotedN = ["quoted", "accepted", "booked", "confirmed"].reduce((a, k) => a + (bs[k] || 0), 0);
+  const bookedN = (bs.booked || 0) + (bs.confirmed || 0);
+  const missed = (bs.expired || 0) + (bs.error || 0);
+  const acc = (st.board || {}).accepted || 0, rej = (st.board || {}).rejected || 0;
+  const avgCost = st.avg_llm_cost_micro_usd_per_quote, avgResp = st.avg_response_s;
+  const estPts = (costPts(avgCost) ?? 0) + (timePts(avgResp) ?? 0);
+
+  const kpis = el("div", { class: "kpi-grid" },
+    kpi("mail", "Sessions", st.sessions_total, `${missed} verpasst/Fehler · ${d.unassigned} unzugeordnet`, missed ? "warn" : ""),
+    kpi("send", "Quotiert", quotedN, st.sessions_total ? Math.round(100 * quotedN / st.sessions_total) + " % der Sessions" : ""),
+    kpi("box", "Gebucht", bookedN, `${d.bookings.length} Buchungen gesamt`),
+    kpi("clock", "Ø Antwortzeit", secs(avgResp), "Ziel ≤ 2:00 · " + (timePts(avgResp) ?? 0).toFixed(1) + "/15 P", avgResp == null ? "" : avgResp <= 120 ? "ok" : avgResp <= 300 ? "warn" : "bad"),
+    kpi("coin", "Ø LLM-Kosten / Quote", usd(avgCost), "0 P bei $0.10 · " + (costPts(avgCost) ?? 0).toFixed(1) + "/40 P", avgCost == null ? "" : avgCost <= 10000 ? "ok" : avgCost <= 50000 ? "warn" : "bad"),
+    kpi("trophy", "Board", `${acc} / ${acc + rej}`, "accepted / bewertet", acc + rej ? (acc / (acc + rej) >= .8 ? "ok" : "warn") : ""),
+    kpi("activity", "Geschätzt Kosten+Zeit", estPts.toFixed(1) + " P", "von 55 je Quote (ohne Preis)"),
+    kpi("coin", "LLM gesamt", usd(d.llm_total_micro_usd), "alle Gateway-Calls"),
+  );
+
+  // status distribution
+  const order = ["new", "pricing", "quoted", "accepted", "booked", "confirmed", "answered", "lost", "expired", "error"];
+  const color = { new: "--st-new", pricing: "--st-pricing", quoted: "--st-quoted", accepted: "--st-booked", booked: "--st-booked", confirmed: "--ok", answered: "--st-booked", lost: "--st-error", expired: "--warn", error: "--bad" };
+  const total = Math.max(1, st.sessions_total);
+  const stack = el("div", { class: "stack" }), legend = el("div", { class: "legend" });
+  for (const k of order) if (bs[k]) {
+    stack.append(el("span", { style: `width:${100 * bs[k] / total}%;background:var(${color[k]})`, title: STATUS_DE[k] + ": " + bs[k] }));
+    legend.append(el("span", {}, el("i", { style: `background:var(${color[k]})` }), `${STATUS_DE[k]} ${bs[k]}`));
+  }
+  const statusCard = el("div", { class: "card" }, el("h3", {}, icon("list"), "Status aller Sessions"), stack, legend);
+
+  // hourly volume
+  const hours = d.hourly.map((h) => h.hour.slice(11, 13) + "h");
+  const hourly = el("div", { class: "card" }, el("h3", {}, icon("chart"), "RFQs pro Stunde (grau) · beantwortet (grün)"),
+    d.hourly.length ? el("div", { style: "position:relative" },
+      barChart(d.hourly.map((h) => h.sessions), { labels: hours, cls: () => "ghost" }),
+      el("div", { style: "position:absolute;inset:0" }, barChart(d.hourly.map((h) => h.answered), { max: Math.max(...d.hourly.map((h) => h.sessions)), labels: [], cls: () => "ok" }))
+    ) : el("div", { class: "d-sub" }, "Noch keine Daten."));
+
+  // per-quote response time + cost (oldest → newest)
+  const qs = [...d.quotes].reverse();
+  const respCard = el("div", { class: "card" }, el("h3", {}, icon("clock"), "Antwortzeit je Quote (s)"),
+    qs.length ? barChart(qs.map((q) => q.response_s == null ? 0 : Math.round(q.response_s)), { max: 360, lines: [{ v: 120, label: "2 min" }, { v: 360, label: "6 min" }], cls: (v) => v <= 120 ? "ok" : v <= 300 ? "warn" : "bad" }) : el("div", { class: "d-sub" }, "Noch keine Quotes."));
+  const costCard = el("div", { class: "card" }, el("h3", {}, icon("coin"), "LLM-Kosten je Quote (µ$)"),
+    qs.length ? barChart(qs.map((q) => q.llm_cost_micro_usd), { lines: [Math.max(...qs.map((q) => q.llm_cost_micro_usd || 0)) < 5000 ? { v: 1000, label: "$0.001" } : { v: 10000, label: "$0.01" }], cls: (v) => v === 0 ? "bad" : v <= 10000 ? "ok" : v <= 50000 ? "warn" : "bad" }) : el("div", { class: "d-sub" }, "Noch keine Quotes."),
+    qs.some((q) => !q.llm_cost_micro_usd) ? el("div", { class: "d-sub", style: "margin-top:6px;color:var(--bad)" }, "Rot = Quote ohne Gateway-Call → 0 Kostenpunkte!") : null);
+
+  // quotes table
+  const qt = el("table", { class: "tbl" }, el("tr", {}, ...["Zeit", "Lane", "Airline", "Quelle", "Preis", "Antwort", "LLM", "Board", ""].map((h, i) => el("th", { class: i >= 4 && i <= 6 ? "num" : "" }, h))));
+  for (const q of d.quotes) qt.append(el("tr", { style: "cursor:pointer", onclick: () => { showView("sessions-view"); select(q.session_id); } },
+    el("td", {}, time(q.sent_at)), el("td", {}, `${q.origin || "?"} → ${q.destination || "?"}`), el("td", {}, q.airline || ""), el("td", {}, q.source || ""),
+    el("td", { class: "num" }, money(q.total_minor, q.currency)), el("td", { class: "num" }, secs(q.response_s)), el("td", { class: "num" }, usd(q.llm_cost_micro_usd)),
+    el("td", {}, q.verdict ? el("span", { class: "pill " + (q.verdict === "accepted" ? "booked" : q.verdict === "rejected" ? "error" : "new") }, q.verdict) : "–"),
+    el("td", {}, el("span", { class: "pill " + q.status }, STATUS_DE[q.status] || q.status))));
+  const quotesCard = el("div", { class: "card" }, el("h3", {}, icon("send"), "Quotes (neueste zuerst, Klick öffnet Session)"), d.quotes.length ? qt : el("div", { class: "d-sub" }, "Noch keine Quotes."));
+
+  const bt = el("table", { class: "tbl" }, el("tr", {}, ...["Referenz", "Kunde", "Airline", "Preis", "Status"].map((h, i) => el("th", { class: i === 3 ? "num" : "" }, h))));
+  for (const b of d.bookings) bt.append(el("tr", { style: "cursor:pointer", onclick: () => { showView("sessions-view"); select(b.session_id); } },
+    el("td", {}, b.booking_reference || b.team_reference), el("td", {}, b.customer || ""), el("td", {}, b.airline || ""), el("td", { class: "num" }, money(b.price_minor, b.currency)),
+    el("td", {}, el("span", { class: "pill " + (b.status === "failed" ? "error" : "booked") }, b.status))));
+  const bookingsCard = el("div", { class: "card" }, el("h3", {}, icon("box"), "Buchungen"), d.bookings.length ? bt : el("div", { class: "d-sub" }, "Noch keine Buchungen."));
+
+  const ticker = el("ul", { class: "tl ticker", id: "ticker" });
+  const tickerCard = el("div", { class: "card" }, el("h3", {}, icon("activity"), "Live-Ereignisse (alle Sessions)"), ticker);
+
+  $("#dashboard-view").replaceChildren(kpis, el("div", { class: "dash-grid" }, statusCard, hourly, respCard, costCard), quotesCard, el("div", { class: "dash-grid" }, bookingsCard, tickerCard));
+  const recent = await api("/api/events?since=" + Math.max(0, state.lastEventId - 30)).catch(() => []);
+  for (const e of recent.reverse()) ticker.append(eventItem(e));
+}
+
+// ---------- live stream ----------
+let refreshTimer = null;
+function scheduleRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    loadSessions(); loadStats();
+    if (state.view === "dashboard-view") loadDashboard();
+  }, 400);
+}
+function onEvent(e) {
+  if (state.seen.has(e.id)) return;
+  state.seen.add(e.id);
+  state.lastEventId = Math.max(state.lastEventId, e.id);
+  if (state.detail && e.session_id === state.selected) {
+    const tl = $("#timeline"); if (tl) tl.append(eventItem(e, true));
+    if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted"].includes(e.kind)) loadDetail();
+  }
+  const tk = $("#ticker"); if (tk) tk.prepend(eventItem(e, true));
+  scheduleRefresh();
+}
+function connect() {
+  const es = new EventSource("/api/stream?since=" + state.lastEventId);
+  es.onopen = () => { $("#live-dot").className = "dot on"; $("#live-text").textContent = "live"; };
+  es.onmessage = (m) => { try { onEvent(JSON.parse(m.data)); } catch (err) { console.warn(err); } };
+  es.onerror = () => { $("#live-dot").className = "dot retry"; $("#live-text").textContent = "verbinde neu…"; };
+}
+
+// ---------- views & boot ----------
+function showView(id) {
+  state.view = id;
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === id));
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === id));
+  if (id === "dashboard-view") loadDashboard();
+}
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
+$("#q").addEventListener("input", (e) => { state.q = e.target.value.trim(); renderList(); });
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, textarea")) return;
+  const rows = state.sessions.filter(matches); const i = rows.findIndex((s) => s.id === state.selected);
+  if (e.key === "j" && rows[i + 1]) select(rows[i + 1].id);
+  if (e.key === "k" && i > 0) select(rows[i - 1].id);
+  if (e.key === "p" && state.detail) act(state.detail.paused ? "resume" : "pause")();
+  if (e.key === "/") { e.preventDefault(); $("#q").focus(); }
+});
+setInterval(() => { loadSessions(); loadStats(); }, 15000); // safety net if the stream stalls
+
+(async function boot() {
+  renderChips();
+  const last = await api("/api/events?since=0&limit=500").catch(() => []);
+  state.lastEventId = last.length ? last[last.length - 1].id : 0;
+  last.forEach((e) => state.seen.add(e.id));
+  await Promise.all([loadSessions(), loadStats()]);
+  const m = location.hash.match(/session=(\d+)/);
+  if (m) select(Number(m[1]));
+  connect();
+})();
+</script>
+</body>
+</html>

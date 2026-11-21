@@ -8,23 +8,25 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Current Goal
 
-- By 16:00: receive and store every mail, show it live in the UI, portal lanes synced.
+- Part A: repo setup and mail intake (A1–A7).
+- Team goal by 16:00: receive and store every mail, show it live in the UI, portal lanes synced.
 
 ## Completed
 
 - Context adapted from Ghost AI.
 - Stack decided (`context/docs/TECH_SPEC.md`), `context/architecture-context.md` added.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`.
-- Task B, Constantin, pricing: parser fix (first break 0 kg, PDFs via pdfplumber), `RateOption` in cents, `sheet_options`/`pick`, portal rates + lane snapshot (114 lanes, 15 airlines), lane index, reference data; `app/models.py` (Rfq validated); portal airlines fetched in parallel, snapshot auto-refresh; 34 tests green.
+- Task B, Constantin, pricing: parser fix (first break 0 kg, PDFs via pdfplumber), `RateOption` in cents, `sheet_options`/`pick`, portal rates + lane snapshot (114 lanes, 15 airlines), lane index, reference data; `app/models.py` (Rfq validated); portal airlines fetched in parallel, snapshot auto-refresh; 35 pricing tests green.
 - Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
-- C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11. Not yet run under uvicorn.
+- C3+C4 done: `app/ui/server.py` (REST, SSE via `fastapi.sse`, actions), `static/index.html` (sessions + dashboard, dark), `watchers.py` (deadline, board sync), `demo.py` (seed `data/demo.db`); 20 tests green, checked in a real browser.
+- C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11. 
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 ## In Progress
 
-- Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), next: C3 `app/ui/server.py`, C4 `static/index.html`.
-- Task A, Karim (mail poller, router, `hackloop.py`): not in repo yet. `portal_options()` (B) is untested live until `hackloop.get_rate/get_ports/get_brackets` exist.
-- Task B, Constantin: B1–B6 in PR #2; next door-to-port trucking, bid selection, tariff mails.
+- Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
+- Task A, Karim: A1 repo setup (folders per TECH_SPEC §3, requirements, .env.example). `hackloop.py` not in repo yet; `portal_options()` (B) is untested live until `get_rate/get_ports/get_brackets` exist.
+- Task B, Constantin: B1–B7 in PR #2 (pricing, portal, lanes, reference, dataset_version); next door-to-port trucking, bid selection, tariff mails.
 
 ## Next Up
 

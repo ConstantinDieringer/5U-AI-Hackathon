@@ -2,7 +2,12 @@
 .venv/
 __pycache__/
 *.pyc
+*.db
 data/forwarder.db*
 data/inbox/
+data/poller_state.json
 *.log
 .DS_Store
+data/demo.db*
+.pytest_cache/
+.ruff_cache/

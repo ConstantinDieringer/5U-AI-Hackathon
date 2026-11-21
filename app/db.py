@@ -955,6 +955,51 @@ def stats() -> dict[str, Any]:
     }
 
 
+def dashboard(limit: int = 50) -> dict[str, Any]:
+    """Data for the CRM dashboard: KPIs, per-quote rows, bookings, hourly volume."""
+    c = conn()
+    quotes = _rows(
+        c.execute(
+            """
+            SELECT q.session_id, q.airline, q.origin, q.destination, q.total_minor, q.currency,
+                   q.transit_days, q.source, q.sent_at, s.status, s.customer,
+                   (julianday(s.first_reply_at) - julianday(s.created_at)) * 86400 AS response_s,
+                   (SELECT COALESCE(SUM(cost_micro_usd),0) FROM llm_calls l
+                     WHERE l.session_id = q.session_id) AS llm_cost_micro_usd,
+                   (SELECT verdict FROM board_results b WHERE b.session_id = q.session_id
+                     ORDER BY fetched_at DESC LIMIT 1) AS verdict
+            FROM quotes q JOIN sessions s ON s.id = q.session_id
+            WHERE q.id IN (SELECT MIN(id) FROM quotes GROUP BY session_id)
+            ORDER BY q.sent_at DESC LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+    bookings = _rows(
+        c.execute(
+            "SELECT b.*, s.customer FROM bookings b JOIN sessions s ON s.id = b.session_id"
+            " ORDER BY b.created_at DESC LIMIT ?",
+            (limit,),
+        )
+    )
+    hourly = _rows(
+        c.execute(
+            "SELECT substr(created_at, 1, 13) AS hour, COUNT(*) AS sessions,"
+            " SUM(CASE WHEN first_reply_at IS NOT NULL THEN 1 ELSE 0 END) AS answered"
+            " FROM sessions WHERE kind = 'rfq' GROUP BY hour ORDER BY hour DESC LIMIT 24"
+        )
+    )
+    llm_total = _one(c.execute("SELECT COALESCE(SUM(cost_micro_usd),0) AS v FROM llm_calls"))
+    return {
+        "stats": stats(),
+        "quotes": quotes,
+        "bookings": bookings,
+        "hourly": list(reversed(hourly)),
+        "llm_total_micro_usd": llm_total["v"] if llm_total else 0,
+        "unassigned": len(list_unassigned(1000)),
+    }
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     init_db()
