@@ -245,3 +245,14 @@ def test_legacy_email_booking_does_not_assert_customer_total_as_air_price(monkey
     )
     assert "as quoted by you" in api.sent[0]["body"]
     assert "4.408,52 €" not in api.sent[0]["body"]
+
+
+def test_customer_exclusion_blocks_booking_an_existing_quote(monkeypatch):
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    _quoted_session()
+    db.add_carrier_pref(CUSTOMER, "Fjordline Air Cargo", "exclude", 1223)
+    booking.handle_reply(_accept(), 1223)
+    assert api.booked == [] and api.sent == []
+    assert not db.get_session(1223)["bookings"]

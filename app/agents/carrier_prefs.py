@@ -62,16 +62,12 @@ def parse(text: str) -> list[tuple[str, str]]:
     return sorted(found.items())
 
 
-def remember(
-    customer: str, text: str, session_id: int | None = None
-) -> list[tuple[str, str]]:
+def remember(customer: str, text: str, session_id: int | None = None) -> list[tuple[str, str]]:
     prefs = parse(text)
     for name, kind in prefs:
         if db.add_carrier_pref(customer, name, kind, session_id):
             label = "nicht gewünscht" if kind == "exclude" else "bevorzugt"
-            db.emit(
-                "carrier_pref", f"{name}: vom Kunden {label} (gespeichert)", session_id
-            )
+            db.emit("carrier_pref", f"{name}: vom Kunden {label} (gespeichert)", session_id)
     return prefs
 
 
@@ -83,6 +79,11 @@ def preferred(customer: str) -> set[str]:
     return {n.lower() for n, k in db.carrier_prefs(customer) if k == "prefer"}
 
 
+def mentions_excluded(text: str, names: list[str]) -> bool:
+    """Customer offers should name the selected carrier and acknowledge exclusions generically."""
+    return any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", text, re.IGNORECASE) for name in names)
+
+
 def backfill() -> int:
     """Read every stored customer mail once at startup, so refusals made before this
     module existed (round 10820, Meyer: Zephyr Steppe Cargo) hold for the next request."""
@@ -90,10 +91,14 @@ def backfill() -> int:
     from app.mail.router import address
 
     n = 0
-    rows = db.conn().execute(
-        "SELECT id, session_id, sender, body FROM mails WHERE direction = 'in'"
-        " AND category IN ('rfq', 'customer')"
-    ).fetchall()
+    rows = (
+        db.conn()
+        .execute(
+            "SELECT id, session_id, sender, body FROM mails WHERE direction = 'in'"
+            " AND category IN ('rfq', 'customer')"
+        )
+        .fetchall()
+    )
     for mid, sid, sender, body in rows:
         for name, kind in parse(current_message(body or "").text):
             if db.add_carrier_pref(address(sender or ""), name, kind, sid or mid):

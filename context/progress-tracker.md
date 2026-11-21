@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 42 `excluded_airline`: actual offer selected Lagoon but echoed excluded Zephyr in acknowledgement; exact board trigger unverified. Reuse parallel carrier preferences; filter before fan-out cap, pass exclusions to composer/fallback, keep emergency draft and booking consistent, and acknowledge exclusions generically.
+
 - Customer carrier preferences (round 10820, excluded_airline: "do not offer Zephyr Steppe Cargo ... future inquiries"): `app/agents/carrier_prefs.py` parses refusals/preferences in code, stores them per customer (table customer_carrier_prefs). Excluded carriers are never asked for bids nor quoted; a preferred one wins when priced. Also applied in the emergency draft.
 - Setup change ~18:50: RFQs with SLI/packing-spec attachments declaring dangerous goods (UN3481 class 9). 5U rejects quotes without asking for DG documents (reason dg_docs_missing). Clarification now names the UN entry and asks for the Shipper's Declaration + SDS; documents or "attached" in the reply clear it. A ZIP in the mail beats the shipper city in the document.
 - Round 39 rejected `dg_docs_missing`: gate identified DG, but its questions omitted an explicit document request. EN/DE DG clarification now asks for applicable DG documents and review before quoting/booking; generic packing-list confirmation does not release the existing gate. 481 tests passed, 4 skipped; later non-template quote source and production deployment unverified.

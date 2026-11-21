@@ -532,6 +532,8 @@ def quote_text(
     today: date | None = None,
 ) -> str:
     """The quote mail: one all-in total with its currency, in the customer's language."""
+    if option.airline.lower() in rfq.excluded_airlines:
+        raise ValueError("selected carrier is excluded by the customer")
     lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
     name = rfq.customer_name
     if name and has_template_artifacts(name):
@@ -757,6 +759,10 @@ def _validate_composed(
         raise ValueError("empty body")
     if has_template_artifacts(body):
         raise ValueError("answer contains an unfilled template field or mail header")
+    if option.airline.lower() in rfq.excluded_airlines:
+        raise ValueError("selected carrier is excluded by the customer")
+    if carrier_prefs.mentions_excluded(body, rfq.excluded_airlines):
+        raise ValueError("acknowledge applied carrier exclusions without repeating excluded names")
     without_notices = body
     for notice in _CUTOFF_NOTICES.values():
         without_notices = without_notices.replace(notice, "")
@@ -833,6 +839,11 @@ def compose_quote_text(
         ),
         "exact_all_in_price": price,
         "requested_preference": rfq.preference,
+        "excluded_airlines": rfq.excluded_airlines,
+        "exclusion_acknowledgement_rule": (
+            "Customer exclusions have already been applied to this selection. If useful, "
+            "acknowledge that generically; never repeat excluded carrier names in the offer."
+        ),
         "origin": option.origin,
         "destination": option.destination,
         "airline": option.airline,
@@ -979,7 +990,7 @@ def _bid_carriers(rfq: Rfq, origin: str) -> tuple[list[Carrier], list[Carrier]]:
         if observation is False:
             continue
         c = carrier_by_email(a.email)
-        if c is not None:
+        if c is not None and c.name.lower() not in rfq.excluded_airlines:
             airline_candidates.append((observation is True, c))
     airline_candidates.sort(key=lambda item: (not item[0], item[1].name))
     known = [carrier for observed, carrier in airline_candidates if observed]
@@ -1254,6 +1265,8 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
     customer = address(mail.sender)
     carrier_prefs.remember(customer, _clean(mail.body), sid)
     banned, liked = carrier_prefs.excluded(customer), carrier_prefs.preferred(customer)
+    rfq = rfq.model_copy(update={"excluded_airlines": sorted(banned)})
+    db.set_request(sid, rfq.model_dump())
     truckers, email_airlines = _bid_carriers(rfq, origin)
     if banned:
         truckers = [c for c in truckers if c.name.lower() not in banned]

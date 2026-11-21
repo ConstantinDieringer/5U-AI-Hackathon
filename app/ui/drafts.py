@@ -99,7 +99,9 @@ def build(session_id: int) -> dict[str, Any]:
     from app.agents import carrier_prefs
     from app.mail.router import address
 
+    carrier_prefs.remember(address(mail.sender), rfq._clean(mail.body), session_id)
     banned = carrier_prefs.excluded(address(mail.sender))
+    request = request.model_copy(update={"excluded_airlines": sorted(banned)})
     liked = carrier_prefs.preferred(address(mail.sender))
     air = [o for o in air if o.airline.lower() not in banned]
     offers = [o for o in _session_offers(s) if o.carrier.name.lower() not in banned]

@@ -279,6 +279,12 @@ def _handle(mail: Mail, sid: int) -> None:
         )
         return
     quote = s["quotes"][0]  # only our first quote in a thread counts
+    from app.agents import carrier_prefs
+
+    customer = address(mail.sender)
+    carrier_prefs.remember(customer, own_text(mail.body), sid)
+    if quote["airline"].lower() in carrier_prefs.excluded(customer):
+        raise ValueError("customer exclusion blocks booking the quoted carrier")
     request = s.get("request") or {}
     db.emit(db.Ev.STATUS, "Kunde hat angenommen: buche", sid)
 

@@ -256,6 +256,12 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Gespeicherte kundenbezogene Carrier-Ausschlüsse gelten für Carrier-Anfragen, Auswahl,
+  Notfallentwurf und Buchung. Ausgeschlossene Carrier werden vor dem Anfrage-Limit entfernt.
+  Angebote nennen den ausgewählten Carrier; angewandte Ausschlüsse bei Bedarf allgemein
+  bestätigen, ohne ausgeschlossene Namen im Angebot erneut zu nennen. Ein Composer-Fallback
+  darf keinen ausgeschlossenen Carrier anbieten.
+
 - Gemeinsames Schreibprofil: `app/mail/customer_voice.md` kombiniert auf Kundenmails zugeschnittene Regeln aus Humanize Writing und Humanizer. Der Composer lädt diese lokale Datei als Systemanweisung; `.agents/skills/customer-email-voice/SKILL.md` verweist für künftige Agenten darauf. Quellen sind auf Commit-SHAs fixiert, MIT-Hinweise liegen beim Skill. Keine Laufzeitdownloads, kein zusätzlicher LLM-Aufruf und keine neue Abhängigkeit.
 
 - Eine Cargo-Annahmefrist ist derzeit keine belegte Angebotsinformation. Composer-Ausgaben
