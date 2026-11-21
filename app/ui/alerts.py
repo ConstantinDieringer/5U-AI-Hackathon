@@ -50,6 +50,9 @@ def classify(e: dict[str, Any]) -> tuple[str, str] | None:
         return (
             "price_change_human" if human else "price_change"
         ), f":money_with_wings: {msg[:200]}"
+    if kind == "mailbox_rate_limit":
+        # the message carries its time, so each 10-min window alerts once (see scan dedupe)
+        return "mailbox_429", f":rotating_light: {msg[:200]}"
     if kind == "board_verdict" and any(v in msg for v in BAD_VERDICTS):
         return "verdict", f":red_circle: 5U {msg.removeprefix('Board: ')}"
     if kind == "error" or (
