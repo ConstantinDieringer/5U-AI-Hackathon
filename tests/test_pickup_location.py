@@ -175,3 +175,12 @@ def test_origin_ignores_subject_of_quoted_old_request():
             "-----Original Message-----\nSubject: HAM - HKG\n\nold request 120 kg")
     m = mail(7, "x@y.example", "RE: FW: HAM - HKG / 120 KGS", body)
     assert agent.locate_origin(Rfq(destination="DEL", weight_kg=300), m, 7).origin is None
+
+
+def test_7237_self_delivery_is_not_a_pickup_request():
+    from app.mail.rfq_validation import _NO_PICKUP, _PICKUP
+
+    t = ("We'll deliver the textile samples to Cologne airport (CGN) ourselves, so there's no"
+         " need to arrange pickup.")
+    assert _PICKUP.search(t) and _NO_PICKUP.search(t)
+    assert not _NO_PICKUP.search("Please arrange the truck from our warehouse to the airport.")

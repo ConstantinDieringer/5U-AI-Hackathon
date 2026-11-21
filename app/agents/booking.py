@@ -142,11 +142,20 @@ def _book_by_email(
 ) -> None:
     ref = db.team_reference(sid)
     subject = f"[{ref}] Booking request {quote['origin']} to {quote['destination']}"
+    # The customer total includes trucking and may include a commercial adjustment.
+    # Legacy quotes lack a frozen air component: do not assert their total as an air rate.
+    air_price = quote.get("air_total_minor")
+    air_currency = quote.get("air_currency")
+    offer = (
+        f" at your offer of {amount(air_price, air_currency)}"
+        if air_price is not None and air_currency
+        else " as quoted by you"
+    )
     body = (
         "Hello,\n\n"
         f"we would like to book air freight {quote['origin']} to {quote['destination']} "
-        f"for {request['weight_kg']:g} kg / {float(request.get('volume_cbm') or 0):g} cbm "
-        f"at your offer of {amount(quote['total_minor'], quote['currency'])}.\n"
+        f"for {request['weight_kg']:g} kg / {float(request.get('volume_cbm') or 0):g} cbm"
+        f"{offer}.\n"
         f"Our reference: {ref}.\n\nPlease confirm the booking.\n\n"
         f"{SIGNATURE}\n"
     )

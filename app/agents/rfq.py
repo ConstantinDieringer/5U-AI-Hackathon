@@ -1208,6 +1208,8 @@ def _handle(mail: Mail, sid: int) -> None:
         sid,
         total_minor=total,
         currency="EUR",
+        air_total_minor=choice.total_minor,
+        air_currency=choice.currency,
         airline=choice.airline,
         origin=choice.origin,
         destination=choice.destination,

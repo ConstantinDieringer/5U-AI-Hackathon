@@ -156,6 +156,21 @@ def request(mail, sid, draft):
         return
     if db.is_paused(sid) or db.is_manual(sid) or not db.clarification_claim(sid):
         return
+    # hard cap: at most two clarifications per thread (one follow-up for a partial answer).
+    # More is a loop (round 7237 sent four identical ones); alert a human instead.
+    asked = db.conn().execute(
+        "SELECT COUNT(*) FROM mails WHERE session_id = ? AND direction = 'out'"
+        " AND category = 'clarification'",
+        (sid,),
+    ).fetchone()[0]
+    if asked >= 2:
+        db.emit(
+            "clarification_loop",
+            "Weitere Rückfrage unterdrückt: Session braucht einen Menschen",
+            sid,
+            level="error",
+        )
+        return
     body = text_for(draft, detect(current_message(mail.body).text))
     try:
         sent = hackloop.send(mail.sender, mail.subject, body, in_reply_to=mail.id)

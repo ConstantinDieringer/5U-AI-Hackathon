@@ -14,6 +14,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - Reverted PR12 cost shortcuts including local standard parsing, composer bypass and cache-key changes. Every quote again uses the individual composer, now with a warm, specific writing prompt and bounded same-customer conversation context. Default call budget is four so extraction repairs leave room for personal composition; safe fallback and current-fact checks remain.
+- Round 27 booking review: freeze selected air cost/currency separately from the customer total; airline booking emails exclude truck costs and commercial adjustments. Legacy quotes omit an unverified air amount; customer confirmations keep their all-in total. Offline suite: 350 passed, 4 skipped; migration/reopen and EUR/USD coverage; production deployment not verified.
 
 - Numeric evidence accepts labelled sentence totals with `is` as well as `of`/colon forms. Round 24 was accepted but redundantly asked for 1754 kg already stated in the current mail; regression covers gate evidence, alternate labels and negative/non-gross statements.
 - RFQ 5844 regression: explicit self-delivery to FRA is recovered deterministically from the current body even if LLM origin is null. The final missing-origin guard now asks a durable clarification instead of setting error, including in shadow mode; its answers can continue without enabling the full strict gate.
