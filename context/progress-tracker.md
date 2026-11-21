@@ -15,6 +15,7 @@ Current state only: one or two lines per entry, newest first. Subsystem behavior
 
 - LLM cost cuts: retry/rescue on `gpt-5-mini` (was `gpt-5`), rescue budget 2 calls and bounded prompt (8 mails × 2500 chars), composer repair off (`COMPOSE_REPAIR`). Railway env must not still set `LLM_RETRY_MODEL`/`LLM_RESCUE_MODEL=gpt-5`.
 - Process guardrails: PR + CI (pytest, secrets scan) instead of direct pushes, read-only `REVIEW_TOKEN` for review agents, #sos on repeated mailbox 429, `python -m app.deploy_check` confirms live. CI run on GitHub pending.
+- Any language, part 2: detection adds nl/pl/sv/da/nb/cs/tr/ro/hu/fi and non-Latin scripts (zh/ja/ko/ru/uk/el/ar/...; RFQ 20150 is Chinese); booking yes/no in those languages incl. CJK; translations keep € amounts verbatim and codes/references next to CJK text. 1359 passed/5 skipped.
 - Round 70: "we won't go ahead" booked. Explicit negated booking intent (incl. contractions, curly apostrophes) now overrides positive verbs; no booking or price-change approval from it.
 - Round 70: French RFQ got an English reply. Request language (ISO code) now reaches composer/repair; FR/ES/IT fallbacks, months, subjects and tracking notices keep the language; unsupported fallback languages fail visibly.
 - Reply in the customer's language, any language: one checked gateway call in `hackloop.send_customer` names the language and translates; pt no longer read as es; no quote template means English copy translated at send, not no quote (`REPLY_IN_CUSTOMER_LANGUAGE`).

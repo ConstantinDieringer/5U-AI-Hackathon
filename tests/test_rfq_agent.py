@@ -1,16 +1,20 @@
 """RFQ agent and carrier bids. No real 5U or LLM calls: hackloop, llm and the portal are stubbed."""
 
+import base64
 import dataclasses
+import io
 import json
 import re
 import threading
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pdfplumber
 import pytest
 
 from app import db
 from app.agents import bids, rfq
+from app.mail.style import amount
 from app.models import Mail, RateOption, Rfq
 from app.pricing.portal_sync import PortalResult
 
@@ -373,7 +377,7 @@ class Stub:
         self.sent: list[dict] = []
         self.next_id = 1000
 
-    def send(self, to, subject, body, in_reply_to=None, references=None):
+    def send(self, to, subject, body, in_reply_to=None, references=None, attachments=None):
         self.next_id += 1
         m = {
             "id": self.next_id,
@@ -383,6 +387,7 @@ class Stub:
             "body": body,
             "in_reply_to": in_reply_to,
             "references": [],
+            "attachments": attachments or [],
             "received_at": datetime.now(UTC).isoformat(),
         }
         self.sent.append(m)
@@ -475,6 +480,12 @@ def test_handle_rfq_door_to_port_with_trucker_bid(stub, monkeypatch) -> None:
     stored_quote = s["quotes"][0]
     assert stored_quote["air_currency"] == "EUR"
     assert stored_quote["total_minor"] == stored_quote["air_total_minor"] + 21000
+    # QUOTE_PDF: the same all-in total as a code-rendered PDF attachment
+    [pdf] = quote["attachments"]
+    assert pdf["filename"] == "Quotation_AP-265.pdf" and pdf["content_type"] == "application/pdf"
+    with pdfplumber.open(io.BytesIO(base64.b64decode(pdf["content_base64"]))) as doc:
+        text = doc.pages[0].extract_text() or ""
+    assert amount(stored_quote["total_minor"]) in text and "Pickup 51447" in text
     assert not db.claim_quote_send(265)  # never a second quote
 
 

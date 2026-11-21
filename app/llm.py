@@ -41,6 +41,12 @@ def model() -> str:
     return settings.llm_model or DEFAULT_MODEL
 
 
+def available_models(*, timeout_s: float = 3.0) -> set[str]:
+    """Gateway's actual allowlist; discovery spends no completion/session budget."""
+    client = _client.with_options(timeout=timeout_s, max_retries=0)
+    return {item.id for item in client.models.list().data}
+
+
 def _is_reasoning(name: str) -> bool:
     return name.startswith(("gpt-5", "gpt-6", "o"))
 
