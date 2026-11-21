@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from typing import Any
 
 from app import db, hackloop
+from app.agents.rfq import schedule
 from app.config import settings
 from app.mail.content import current_message
 from app.mail.language import detect
 from app.mail.router import address
+from app.mail.signature import first_name
 from app.mail.style import SIGNATURE, amount
-from app.models import Mail
+from app.models import Mail, Rfq
 
 log = logging.getLogger(__name__)
 
@@ -116,97 +120,258 @@ def _weight(text: str) -> float | None:
         return None
 
 
-def answer_text(r: dict[str, Any], lang: str) -> str:
+_MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _today() -> date:
+    return datetime.now(UTC).date()
+
+
+def _day(d: date, lang: str) -> str:
+    return d.strftime("%d.%m.%Y") if lang == "de" else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
+
+
+def _kg(weight: Any, lang: str) -> str:
+    text = f"{float(weight):g} kg"
+    return text.replace(".", ",") if lang == "de" else text
+
+
+def _ready(raw: Any) -> date | None:
+    try:
+        return date.fromisoformat(str(raw)[:10])
+    except ValueError:
+        return None
+
+
+@dataclass(frozen=True)
+class _Facts:
+    """Every fact the answer states, already formatted in the answer's language."""
+
+    hello: str
+    ref: str
+    route: str
+    weight: str
+    status: str
+    where: str
+    plan: str
+    price: str
+
+
+# Wording variants, picked by session id so consecutive answers do not repeat. Each states
+# every fact: reference, route, weight, status (with the airline), where the cargo is now,
+# planned departure and arrival, price. No closing formula: answer_text appends the team
+# signature after a blank line (app.mail.style).
+_VARIANTS: dict[str, tuple[str, ...]] = {
+    "en": (
+        (
+            "{hello}\n\nthanks for checking in. Your shipment {ref} ({route}, {weight}) is {status}. "
+            "{where}\n\n{plan} The all-in price remains {price}.\n\n"
+            "I'll keep you posted if anything changes."
+        ),
+        (
+            "{hello}\n\nhappy to give you an update on {ref}. The {route} shipment ({weight}) is "
+            "{status}. {where}\n\n{plan} The price stays at {price} all-in.\n\n"
+            "Just reply here if you need anything else."
+        ),
+        (
+            "{hello}\n\nhere is where things stand with {ref} ({route}, {weight}): it is {status}. "
+            "{where}\n\n{plan} Nothing changes on the price: {price} all-in.\n\n"
+            "I'll let you know as soon as there is news."
+        ),
+        (
+            "{hello}\n\nthanks for your message. {ref}, your {route} shipment of {weight}, is "
+            "{status}. {where}\n\n{plan} The all-in price is {price}, as quoted.\n\n"
+            "Let me know if you have any questions."
+        ),
+    ),
+    "de": (
+        (
+            "{hello}\n\ndanke für Ihre Nachricht. Ihre Sendung {ref} ({route}, {weight}) ist "
+            "{status}. {where}\n\n{plan} Der All-in-Preis bleibt bei {price}.\n\n"
+            "Sobald sich etwas ändert, melde ich mich."
+        ),
+        (
+            "{hello}\n\ngern ein kurzes Update zu {ref}: Die Sendung {route} ({weight}) ist "
+            "{status}. {where}\n\n{plan} Am Preis ändert sich nichts, er liegt bei {price} all-in."
+            "\n\nBei Fragen antworten Sie einfach auf diese Mail."
+        ),
+        (
+            "{hello}\n\nhier der aktuelle Stand zu {ref} ({route}, {weight}): Die Sendung ist "
+            "{status}. {where}\n\n{plan} Der Preis beträgt {price} all-in.\n\n"
+            "Ich halte Sie auf dem Laufenden."
+        ),
+        (
+            "{hello}\n\nvielen Dank für die Nachfrage. {ref}, Ihre Sendung {route} mit {weight}, "
+            "ist {status}. {where}\n\n{plan} Der Preis liegt unverändert bei {price} all-in.\n\n"
+            "Melden Sie sich gern, wenn Sie noch etwas brauchen."
+        ),
+    ),
+}
+
+
+def _where_and_plan(r: dict[str, Any], lang: str, today: date) -> tuple[str, str]:
+    """Where the cargo is now and the planned flight, from the ready date and the quote's
+    schedule (rfq.schedule: departure on the ready date, +1 day with our pickup)."""
     req = r.get("request") or {}
-    ref = r["booking_reference"] or r["team_reference"]
-    connector = "nach" if lang == "de" else "to"
-    route = (
-        f"{r['origin']} {connector} {r['destination']}"
-        if r.get("origin")
-        else r.get("subject") or ""
-    )
-    confirmed = r["status"] == "confirmed"
-    weight = req.get("weight_kg")
-    ready = req.get("ready_date")
+    o, d, days = r.get("origin") or "", r.get("destination") or "", r.get("transit_days")
     pickup = req.get("pickup_zip")
-    days = r.get("transit_days")
-    if lang == "de":
-        status = (
-            "gebucht und von der Airline bestätigt"
-            if confirmed
-            else "gebucht, die Bestätigung der Airline steht noch aus"
+    ready = _ready(req.get("ready_date"))
+    ready_raw = str(req.get("ready_date") or "")[:10]
+    de = lang == "de"
+    # the plan as booked: rfq.schedule as of the booking day, so it matches the quote and does
+    # not slide with today's date
+    booked = _ready(r.get("booked_at") or "") or today
+    when = (
+        schedule(
+            Rfq.model_construct(
+                ready_date=ready_raw, pickup_zip=pickup, pickup_city=req.get("pickup_city")
+            ),
+            int(days),
+            booked,
         )
-        lines = [
-            "Guten Tag,",
-            "",
-            f"hier der aktuelle Stand zur Sendung {ref}:",
-            "",
-            f"Status: {status}",
-            f"Strecke: {route} mit {r['airline']}",
-        ]
-        if weight:
-            lines.append(f"Gewicht: {float(weight):g} kg")
-        if pickup:
-            lines.append(f"Abholung in {pickup}, Lkw zum Abflughafen {r['origin']}")
-        if ready:
-            lines.append(f"Abholbereit ab: {ready}")
-        if days is not None:
-            lines.append(f"Laufzeit: ca. {days} Tage ab Abflug")
-        if r.get("price_minor"):
-            lines.append(f"Preis: {amount(r['price_minor'], r['currency'])} all-in")
-        lines += ["", SIGNATURE]
-        return "\n".join(lines)
-    status = (
-        "booked and confirmed by the airline"
-        if confirmed
-        else "booked, waiting for the airline's confirmation"
+        if ready and days is not None
+        else None
     )
-    lines = [
-        "Hello,",
-        "",
-        f"here is the current status of shipment {ref}:",
-        "",
-        f"Status: {status}",
-        f"Route: {route} with {r['airline']}",
-    ]
-    if weight:
-        lines.append(f"Weight: {float(weight):g} kg")
-    if pickup:
-        lines.append(f"Pickup at {pickup}, trucked to {r['origin']} airport")
-    if ready:
-        lines.append(f"Ready for pickup: {ready}")
-    if days is not None:
-        lines.append(f"Transit time: about {days} days from departure")
-    if r.get("price_minor"):
-        lines.append(f"Price: {amount(r['price_minor'], r['currency'])} all-in")
-    lines += ["", SIGNATURE]
-    return "\n".join(lines)
+    if ready is None or when is None:
+        if de:
+            where = "Aktuell hat sie sich noch nicht bewegt, die Ware steht noch bei Ihnen."
+            plan = f"Die Laufzeit beträgt rund {days} Tage ab Abflug; die Flugdaten bestätige ich, sobald der Bereitstellungstermin feststeht."
+        else:
+            where = "Right now it has not moved yet: the cargo is still at your site."
+            plan = f"Transit time is about {days} days from departure; I'll confirm the flight dates as soon as we have the ready date."
+        return where, plan
+    dep, arr = when
+    dep_s, arr_s = _day(dep, lang), _day(arr, lang)
+    if today < ready:
+        if de:
+            where = (
+                f"Aktuell hat sie sich noch nicht bewegt: Die Ware steht noch bei Ihnen am "
+                f"Standort ({pickup}), unser Lkw holt sie am Bereitstellungstag {ready_raw} ab "
+                f"und bringt sie zum Flughafen {o}."
+                if pickup
+                else "Aktuell hat sie sich noch nicht bewegt: Die Ware steht noch bei Ihnen am "
+                f"Standort und wird nach der Bereitstellung am {ready_raw} zum Flughafen {o} "
+                "geliefert."
+            )
+        else:
+            where = (
+                f"Right now it has not moved yet: the cargo is still at your site ({pickup}), "
+                f"and our trucker collects it on the ready date, {ready_raw}, and brings it to "
+                f"{o} airport."
+                if pickup
+                else "Right now it has not moved yet: the cargo is still at your site, waiting "
+                f"to be delivered to {o} airport once it is ready on {ready_raw}."
+            )
+    elif today < dep:
+        where = (
+            f"Laut Buchungsplan ist die Ware seit {ready_raw} bereit und wird gerade zum "
+            f"Flughafen {o} gebracht."
+            if de
+            else f"Per the booked schedule the cargo has been ready since {ready_raw} and is "
+            f"on its way to {o} airport."
+        )
+    elif today < arr:
+        where = (
+            f"Laut Buchungsplan ist die Ware am {dep_s} ab {o} abgeflogen und auf dem Weg nach {d}."
+            if de
+            else f"Per the booked schedule the cargo left {o} on {dep_s} and is in transit to {d}."
+        )
+    else:
+        where = (
+            f"Laut Buchungsplan ist die Ware am {arr_s} in {d} angekommen."
+            if de
+            else f"Per the booked schedule the cargo arrived in {d} on {arr_s}."
+        )
+    if today < dep:
+        plan = (
+            f"Geplant ist der Abflug ab {o} am {dep_s}, Ankunft in {d} am {arr_s}, also rund "
+            f"{days} Tage Laufzeit."
+            if de
+            else f"It is planned to depart {o} on {dep_s} and arrive in {d} on {arr_s}, about "
+            f"{days} days in transit."
+        )
+    else:
+        plan = (
+            f"Gebuchter Plan: Abflug ab {o} am {dep_s}, Ankunft in {d} am {arr_s} ({days} Tage)."
+            if de
+            else f"Booked schedule: departure from {o} on {dep_s}, arrival in {d} on {arr_s} "
+            f"({days} days in transit)."
+        )
+    return where, plan
 
 
-def _not_found_text(lang: str) -> str:
+def answer_text(
+    r: dict[str, Any],
+    lang: str,
+    name: str | None = None,
+    variant: int = 0,
+    today: date | None = None,
+) -> str:
+    """Short prose answer: status, where the cargo is now, planned departure and arrival, and
+    every CRM fact (reference, route, airline, weight, ready date, price)."""
+    lang = "de" if lang == "de" else "en"
+    req = r.get("request") or {}
+    de = lang == "de"
+    airline = r.get("airline") or ""
+    if r.get("origin"):
+        route = f"{r['origin']} {'nach' if de else 'to'} {r['destination']}"
+    else:
+        route = r.get("subject") or ""
+    if r.get("status") == "confirmed":
+        status = (
+            f"gebucht und von {airline} bestätigt" if de else f"booked and confirmed by {airline}"
+        )
+    else:
+        status = (
+            f"bei {airline} gebucht, die Bestätigung der Airline steht noch aus"
+            if de
+            else f"booked with {airline}, and the airline's confirmation is still pending"
+        )
+    where, plan = _where_and_plan(r, lang, today or _today())
+    facts = _Facts(
+        hello=(f"Hallo {name}," if name else "Guten Tag,")
+        if de
+        else (f"Hi {name}," if name else "Hello,"),
+        ref=r.get("booking_reference") or r.get("team_reference") or "",
+        route=route,
+        weight=_kg(req["weight_kg"], lang) if req.get("weight_kg") else "",
+        status=status,
+        where=where,
+        plan=plan,
+        price=amount(r["price_minor"], r.get("currency") or "EUR") if r.get("price_minor") else "",
+    )
+    templates = _VARIANTS[lang]
+    text = templates[variant % len(templates)].format(**facts.__dict__)
+    for gap, fill in ((", )", ")"), (" of ,", ","), (" mit ,", ",")):
+        text = text.replace(gap, fill)  # a missing weight leaves no gap
+    return f"{text}\n\n{SIGNATURE}\n"
+
+
+def _not_found_text(lang: str, name: str | None = None) -> str:
     if lang == "de":
         return (
-            "Guten Tag,\n\nzu Ihrer Anfrage finden wir leider keine gebuchte Sendung. "
-            "Könnten Sie uns die Buchungsnummer (BK-…) oder unsere Referenz (AP-…) "
-            f"nennen? Dann melden wir uns sofort.\n\n{SIGNATURE}"
+            f"{'Hallo ' + name if name else 'Guten Tag'},\n\n"
+            "zu Ihrer Anfrage finde ich leider keine gebuchte Sendung. Könnten Sie mir die "
+            "Buchungsnummer (BK-…) oder unsere Referenz (AP-…) nennen? Dann melde ich mich "
+            f"sofort.\n\n{SIGNATURE}\n"
         )
     return (
-        "Hello,\n\nwe couldn't find a booked shipment for your request. Could you send us "
-        "the booking reference (BK-…) or our reference (AP-…)? We'll get back to you right "
-        f"away.\n\n{SIGNATURE}"
+        f"{'Hi ' + name if name else 'Hello'},\n\n"
+        "I couldn't find a booked shipment for your request. Could you send me the booking "
+        "reference (BK-…) or our reference (AP-…)? I'll get back to you right away.\n\n"
+        f"{SIGNATURE}\n"
     )
 
 
-def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None:
-    if session_id is not None and (
-        db.is_paused(session_id) or db.is_manual(session_id)
-    ):
+def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> bool:
+    """Send the answer in the asker's thread. False when a human holds the session."""
+    if session_id is not None and (db.is_paused(session_id) or db.is_manual(session_id)):
         db.emit(
             db.Ev.WARN,
             "Tracking-Antwort nicht gesendet: Session pausiert/manuell",
             session_id,
         )
-        return
+        return False
     to = address(mail.sender)
     subject = (
         mail.subject
@@ -225,6 +390,7 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None
         in_reply_to=mail.id,
         raw=sent,
     )
+    return True
 
 
 def handle(
@@ -234,7 +400,11 @@ def handle(
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:
         text = f"{mail.subject}\n{mail.body}"
-        lang = "de" if detect(text) == "de" else "en"
+        lang = "de" if detect(text) == "de" else "en"  # other languages get English
+        name = first_name(mail.body)
+        variant = session_id if session_id is not None else mail.id
+        # a question in the customer's own booked thread keeps that session's status
+        own_session = session_id if booked_session is None else None
         records = db.tracking_records()
         if booked_session is not None:
             rec = next((r for r in records if r["session_id"] == booked_session), None)
@@ -276,9 +446,15 @@ def handle(
                     "Könnten Sie uns die Buchungsnummer oder unsere AP-Referenz nennen? Aus diesem Verlauf und unseren Unterlagen konnten wir keine eindeutige Sendung zuordnen.",
                 )
             else:
-                _reply(mail, _not_found_text(lang), session_id, "tracking_answer")
+                sent = _reply(mail, _not_found_text(lang, name), session_id, "tracking_answer")
+                if sent and own_session is not None:
+                    db.set_status(own_session, "answered", "nach Buchungsnummer gefragt")
             return
-        _reply(mail, answer_text(rec, lang), session_id, "tracking_answer")
+        body = answer_text(rec, lang, name, variant)
+        if not _reply(mail, body, session_id, "tracking_answer"):
+            return
+        if own_session is not None:
+            db.set_status(own_session, "answered")
         db.emit(
             db.Ev.STATUS,
             f"Tracking beantwortet: {rec['booking_reference']} ({rec['status']})",
