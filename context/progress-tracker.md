@@ -14,6 +14,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - Stronger RFQ models: extraction defaults to gpt-5-mini (was nano); failed extraction repair defaults to gpt-5 (was mini), with price accounting. Both passed a synthetic gateway extraction/repair probe; 40 relevant tests pass. Composer stays mini; deployment overrides still take precedence and live rollout is unverified.
+- Startup agent check: `run.py` imports every agent from `app.agents.AGENTS` and logs `agents loaded: ...`; a broken one logs an error, emits `agent_import_failed` (#sos) and does NOT stop the other agents. CI imports every app module. DEPLOY.md has live-round deploy rules. Not verified on Railway; local start with AGENTS_ENABLED=false logged the line.
 - Round 30 review: block unverified cargo cutoff promises (including close of business), retain personal quote repair and state requested cutoff as unconfirmed in composed and fallback text; no current carrier cutoff field exists. Offline suite: 353 passed, 4 skipped; EN/DE promises and rate-validity counterexample covered; deployment not verified.
 
 - Notfall-Quote (Live → "Notfall-Quote", `POST /api/sessions/{id}/draft`, `app/ui/drafts.py`): computes the quote from stored request, sheets, portal (8 s) and the session's bids, fills a house-style mail; sending it records the quote (rate_id) and hands back to the agent so booking works.

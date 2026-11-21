@@ -25,6 +25,7 @@ def main() -> None:
     from app.mail import poller, webhook
 
     db.init_db()
+    _check_agents(log)
     stop = threading.Event()
     if not settings.agents_enabled:
         log.warning("AGENTS_ENABLED=false: UI only, no polling or sending")
@@ -54,6 +55,19 @@ def main() -> None:
     threading.Thread(target=poller.run, args=(stop,), name="poller", daemon=True).start()
 
     _serve_ui(log, stop)
+
+
+def _check_agents(log: logging.Logger) -> None:
+    """A module that does not import shows in the deploy log (and #sos) right after the start,
+    not at the first mail that needs it. The start goes on: the other agents keep working."""
+    from app import db
+    from app.agents import check_imports
+
+    loaded, failed = check_imports()
+    log.info("agents loaded: %s", ", ".join(loaded) or "none")
+    for name, error in failed.items():
+        log.error("agent %s does not import: %s", name, error)
+        db.emit("agent_import_failed", f"Agent {name} lädt nicht: {error}", level="error")
 
 
 def _serve_ui(log: logging.Logger, stop: threading.Event) -> None:
