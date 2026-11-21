@@ -349,6 +349,15 @@ def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
     lo_p, hi_p = min(o.total_eur for o in trucks), max(o.total_eur for o in trucks)
     lo_d = min(Decimal(str(o.transit_days)) for o in trucks)
     hi_d = max(Decimal(str(o.transit_days)) for o in trucks)
+    if settings.trucker_balance == "ratio" and lo_p > 0 and lo_d > 0:
+        # price/cheapest + time/fastest: the balance behind the board's best price
+        return min(
+            trucks,
+            key=lambda o: (
+                o.total_eur / lo_p + Decimal(str(o.transit_days)) / lo_d,
+                o.total_eur,
+            ),
+        )
 
     def norm(v: Decimal, lo: Decimal, hi: Decimal) -> Decimal:
         return Decimal(0) if hi == lo else (v - lo) / (hi - lo)

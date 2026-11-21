@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,19 @@ load_dotenv(ROOT / ".env")
 
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, "").strip() or default
+
+
+TRUCKER_BALANCES = ("minmax", "ratio")
+
+
+def _trucker_balance() -> str:
+    """How the 50/50 price/speed balance picks a trucker bid. An unknown value falls back to
+    today's `minmax` with a warning: a typo in a variable must never stop the start."""
+    mode = _env("TRUCKER_BALANCE", "minmax").lower()
+    if mode not in TRUCKER_BALANCES:
+        logging.getLogger(__name__).warning("TRUCKER_BALANCE=%r unknown, using minmax", mode)
+        return "minmax"
+    return mode
 
 
 @dataclass(frozen=True)
@@ -47,6 +61,7 @@ class Settings:
     price_adjust_pct: float
     carrier_observation_ttl_s: float
     allow_incomplete_door_quote: bool
+    trucker_balance: str
     llm_max_calls_per_session: int
     runtime_dir: Path
     usd_eur_rate: str
@@ -98,6 +113,7 @@ settings = Settings(
     price_adjust_pct=min(10.0, max(0.0, float(_env("PRICE_ADJUST_PCT", "0")))),
     carrier_observation_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", "3600")),
     allow_incomplete_door_quote=(_env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"),
+    trucker_balance=_trucker_balance(),
     llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "4"))),
     runtime_dir=Path(
         _env(
