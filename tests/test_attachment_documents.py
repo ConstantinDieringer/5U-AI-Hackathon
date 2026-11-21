@@ -23,16 +23,17 @@ OFFER = "All-in price: EUR 1.234,50, transit time 3 days"
 
 
 @pytest.fixture(autouse=True)
-def allowed_audio_model(monkeypatch):
+def local_audio_fallback(monkeypatch):
     monkeypatch.setattr(
         audio,
         "settings",
         replace(
             audio.settings,
-            llm_audio_model="gpt-4o-mini-audio-preview",
+            llm_audio_model="",
+            local_audio_enabled=True,
         ),
     )
-    monkeypatch.setattr(llm, "available_models", lambda **kw: {"gpt-4o-mini-audio-preview"})
+    monkeypatch.setattr(llm, "available_models", lambda **kw: set())
 
 
 def text_pdf(text: str) -> bytes:
@@ -197,21 +198,20 @@ def test_unsupported_and_oversize_raise():
         documents.read_bytes("big.txt", b"x" * (documents.MAX_BYTES + 1))
 
 
-def test_transcription_sends_input_audio_once_and_caches(monkeypatch, tmp_path):
+def test_voice_is_transcribed_locally_once_and_cached(monkeypatch, tmp_path):
+    """The gateway refuses audio input: voice goes to the local speech model, never llm."""
     calls = []
 
-    def complete(purpose, messages, session_id, **kw):
-        calls.append((purpose, messages, kw))
+    def transcribe(fmt, data, deadline):
+        calls.append(data)
         return OFFER
 
-    monkeypatch.setattr(llm, "complete", complete)
+    monkeypatch.setattr(audio, "_local", transcribe)
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: pytest.fail("no gateway call"))
     path = tmp_path / "voice.mp3"
     path.write_bytes(b"ID3\x04\x00" + b"\x00" * 50)
     doc = documents.read(path)
     assert documents.transcribe(doc, 5, "bid_attachment", path) == OFFER
-    part = calls[0][1][0]["content"][1]
-    assert part["type"] == "input_audio" and part["input_audio"]["format"] == "mp3"
-    assert calls[0][2]["model_name"] == "gpt-4o-mini-audio-preview"
     again = documents.read(path)  # cached: no model needed any more
     assert not again.needs_model and OFFER in again.text
     assert len(calls) == 1
@@ -251,15 +251,11 @@ def test_voice_offer_is_transcribed(bid_db, monkeypatch):
     path = bid_db / "offer.mp3"
     path.write_bytes(b"ID3\x04\x00" + b"\x00" * 50)
     monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
-    seen = []
-
-    def complete(purpose, messages, session_id, **kw):
-        seen.append((purpose, session_id))
-        return "Hi, all-in price would be EUR 980, transit 2 days."
-
-    monkeypatch.setattr(llm, "complete", complete)
+    monkeypatch.setattr(
+        audio, "_local", lambda *args: "Hi, all-in price would be EUR 980, transit 2 days."
+    )
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: pytest.fail("no gateway call"))
     bids.on_bid_mail(bid_mail(), 3)
-    assert seen == [("bid_attachment s3", None)]  # outside the session's quote budget
     assert bids.offers(3)[-1].total_eur == Decimal("980.00")
 
 
@@ -267,7 +263,7 @@ def test_voice_offer_must_agree_with_mail_text(bid_db, monkeypatch):
     path = bid_db / "offer.mp3"
     path.write_bytes(b"ID3\x04\x00" + b"\x00" * 50)
     monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
-    monkeypatch.setattr(llm, "complete", lambda *a, **k: "Our price is EUR 999, 2 days.")
+    monkeypatch.setattr(audio, "_local", lambda *args: "Our price is EUR 999, 2 days.")
     bids.on_bid_mail(bid_mail(OFFER), 3)
     assert bids.offers(3) == []  # 1234.50 in text vs 999 spoken: never guess
 

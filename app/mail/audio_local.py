@@ -5,33 +5,30 @@ Prepare the model at image build time: python -m app.mail.audio_local base --dow
 
 from __future__ import annotations
 
-import io
+import os
 import sys
+from dataclasses import replace
 
 
 def main() -> None:
-    from faster_whisper import WhisperModel
+    from app.mail import speech
 
-    name = sys.argv[1] if len(sys.argv) > 1 else "base"
+    name = sys.argv[1] if len(sys.argv) > 1 else speech.settings.speech_model
     downloading = "--download" in sys.argv[2:]
-    model = WhisperModel(
-        name,
-        device="cpu",
-        compute_type="int8",
-        cpu_threads=2,
-        local_files_only=not downloading,
-    )
     if downloading:
+        from faster_whisper import WhisperModel
+
+        WhisperModel(
+            name,
+            device="cpu",
+            compute_type="int8",
+            download_root=speech.settings.speech_model_dir or None,
+        )
         return
-    segments, _ = model.transcribe(
-        io.BytesIO(sys.stdin.buffer.read()),
-        beam_size=5,
-        vad_filter=True,
-        condition_on_previous_text=False,
-    )
-    transcript = " ".join(s.text.strip() for s in segments).strip()
-    if not transcript:
-        raise ValueError("empty transcript")
+    # Reuse the existing recognizer in a killable process, not a second resident model.
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    speech.settings = replace(speech.settings, speech_model=name)
+    transcript = speech.transcribe(sys.stdin.buffer.read())
     sys.stdout.buffer.write(transcript.encode("utf-8"))
 
 

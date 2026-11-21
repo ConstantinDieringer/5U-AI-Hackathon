@@ -15,10 +15,12 @@ keys, 429s, provider outages, empty results and rejected input_audio use the nex
 `audio_fallback` and `audio_transcribed` events record the provider on the bid's session
 without provider response bodies or credentials. Conflicting prices are still rejected.
 
-The image preloads `base` into `/opt/whisper-cache` and includes ffmpeg. Local CPU
+The image preloads multilingual `base` into `/opt/whisper` and includes ffmpeg. Local CPU
 recognition is serialized and killed at its deadline, with no runtime downloads. On a
 local checkout first run `python -m app.mail.audio_local base --download`; for a custom
-`LOCAL_AUDIO_MODEL`, preload that model at build time too. This has no inference API fee,
+`LOCAL_AUDIO_MODEL` (default `SPEECH_MODEL`), preload that model at build time too. The
+existing `speech.transcribe` recognizer runs in a bounded child process, without also
+warming an unused model in the mail process. This has no inference API fee,
 but adds image size and CPU/RAM usage. `AUDIO_TIMEOUT_S=60` bounds the provider chain;
 `LOCAL_AUDIO_ENABLED=false` disables the offline safety net. `ATTACHMENT_TRANSCRIPTION=false`
 disables all speech/scan recognition. Do not redeploy during an active RFQ; use the gate

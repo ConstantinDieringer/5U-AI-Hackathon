@@ -768,6 +768,41 @@ def kv_claim(key: str) -> bool:
         )
 
 
+def tracking_notice_candidates() -> list[int]:
+    """Active customer workflows whose already-sent mail may need a missing notice."""
+    return [
+        int(r["id"])
+        for r in _rows(
+            conn().execute(
+                "SELECT s.id FROM sessions s WHERE s.kind='rfq' AND s.paused=0 AND s.mode='auto'"
+                " AND s.status IN ('quoted','booked','confirmed')"
+                " AND (EXISTS(SELECT 1 FROM quotes q WHERE q.session_id=s.id)"
+                " OR EXISTS(SELECT 1 FROM bookings b WHERE b.session_id=s.id)) ORDER BY s.id DESC"
+            )
+        )
+    ]
+
+
+def claim_tracking_notice(session_id: int) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "INSERT OR IGNORE INTO kv(key,value) VALUES (?, 'reserved')",
+                (f"tracking.notice.recovery.{session_id}",),
+            ).rowcount
+            == 1
+        )
+
+
+def release_tracking_notice(session_id: int) -> None:
+    """Only a known pre-transport refusal may release this claim for another attempt."""
+    with tx() as c:
+        c.execute(
+            "DELETE FROM kv WHERE key=? AND value='reserved'",
+            (f"tracking.notice.recovery.{session_id}",),
+        )
+
+
 def clarification_waiting() -> list[dict[str, Any]]:
     """Sessions whose question went out and whose answer has not resolved it yet."""
     return _rows(

@@ -255,6 +255,7 @@ def send_customer(
     deadline_at: float | None = None,
     review: bool = True,
     before_transport: Callable[[], None] | None = None,
+    tracking_booked: bool | None = None,
 ) -> dict[str, Any]:
     """All customer replies pass the final prose renderer before transport. review=False skips
     the LLM style reviewer for fixed, pre-written templates (no gateway cost).
@@ -263,7 +264,13 @@ def send_customer(
     from app import db
     from app.agents.email_review import review_customer_mail
     from app.mail.language import detect
-    from app.mail.outgoing import customer_body, customer_subject, validate_customer_text
+    from app.mail.outgoing import (
+        CustomerStyleError,
+        customer_body,
+        customer_subject,
+        validate_customer_text,
+    )
+    from app.mail.tracking_notice import customer_context, ensure_notice, has_notice
 
     def allowed() -> None:
         if session_id is not None and (
@@ -275,13 +282,23 @@ def send_customer(
 
     allowed()
     lang = detect(body)
+    context = customer_context(db.get_session(session_id) if session_id is not None else None, to)
+    if context is not None:
+        body = ensure_notice(body, lang, context if tracking_booked is None else tracking_booked)
     subject = customer_subject(subject, lang)
     rendered = customer_body(body, lang)
     if review:
         rendered = customer_body(
             review_customer_mail(rendered, lang, session_id, protected_terms), lang
         )
+    if context is not None:
+        rendered = customer_body(
+            ensure_notice(rendered, lang, context if tracking_booked is None else tracking_booked),
+            lang,
+        )
     validate_customer_text(rendered)
+    if context is not None and not has_notice(rendered):
+        raise CustomerStyleError("Required tracking invitation missing from customer mail")
     validate_customer_text(subject)
     allowed()
     if before_transport is not None:

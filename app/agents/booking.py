@@ -308,7 +308,13 @@ def _confirm_to_customer(
             quote.get("origin"), quote.get("destination"), language(mail.body), subject
         )
     sent = hackloop.send_customer(
-        to, subject, text, in_reply_to=mail.id, session_id=sid, protected_terms=protected_terms
+        to,
+        subject,
+        text,
+        in_reply_to=mail.id,
+        session_id=sid,
+        protected_terms=protected_terms,
+        tracking_booked=category == "booking_confirmation",
     )
     text = sent["body"]
     subject = sent["subject"]

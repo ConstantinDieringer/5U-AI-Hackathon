@@ -14,7 +14,7 @@ from openai import OpenAI
 
 from app import hackloop, llm
 from app.agents import booking, email_review
-from app.mail import audio, guard
+from app.mail import audio, guard, speech
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +29,11 @@ def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         booking, "settings", dataclasses.replace(booking.settings, airline_confirm_wait_s=0)
     )
     guard._reset_for_tests()  # sends remembered by the mail guard belong to one test only
+
+    def no_model(data: bytes) -> str:  # a test that needs a transcript installs its own
+        raise ValueError("no speech model in tests")
+
+    monkeypatch.setattr(speech, "transcribe", no_model)
     refused: list[str] = []
 
     def refuse(request: httpx.Request) -> httpx.Response:

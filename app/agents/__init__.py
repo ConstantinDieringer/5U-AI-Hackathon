@@ -14,6 +14,7 @@ AGENTS = (
     "rfq",
     "tariff",
     "tracking",
+    "tracking_notice",
     "watchdog",
     "rescue",
 )

@@ -55,6 +55,8 @@ def main() -> None:
             target=clarification.run, args=(stop,), name="clarifications", daemon=True
         ).start()
 
+    # Audio fallback runs in bounded child processes. Its model is baked into the image;
+    # do not also retain an unused model in the mail process while Groq is primary.
     rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
     if settings.thread_rescue_enabled:
         from app.agents import rescue
@@ -71,6 +73,11 @@ def main() -> None:
     from app.agents import followup
 
     threading.Thread(target=followup.run, args=(stop,), name="followups", daemon=True).start()
+    from app.agents import tracking_notice
+
+    threading.Thread(
+        target=tracking_notice.run, args=(stop,), name="tracking-notices", daemon=True
+    ).start()
     from app.agents import tariff
 
     db.queue_stored_tariffs()
