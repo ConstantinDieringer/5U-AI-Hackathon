@@ -215,6 +215,7 @@ class ReplyIn(BaseModel):
     # set when the text came from the emergency draft: recorded as our quote so CRM,
     # booking (rate_id) and tracking work as for an agent quote
     quote: dict[str, Any] | None = None
+    mail_id: int | None = None
 
 
 @app.post("/api/sessions/{session_id}/draft")
@@ -237,7 +238,15 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     customer_mails = [m for m in s["mails"] if m["direction"] == "in"]
     if not customer_mails:
         raise HTTPException(409, "no incoming mail to reply to")
-    parent = customer_mails[-1]
+    if body.mail_id is None:
+        parent = customer_mails[-1]
+    else:
+        parent = next(
+            (m for m in customer_mails if m["id"] == body.mail_id),
+            None,
+        )
+    if parent is None:
+        raise HTTPException(422, "selected mail is not an incoming mail in this session")
     try:
         from app import hackloop  # owned by task A; may not exist yet
     except ImportError as e:
