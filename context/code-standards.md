@@ -32,6 +32,7 @@
 
 ## Mail Handling
 
+- Blocking gaps: history/CRM first, then a persisted threaded clarification. Resume from the customer's response; incomplete responses produce another targeted question rather than a silent stop. Historical conflicts are not guessed, and approvals must be current and explicit.
 - Generated mail uses no dash punctuation or dash lists; routes use `to`/`nach`. Euro amounts use `1.475,00 €` in both languages, and the only sign-off is `Your austrian Power Team`. Hyphens in references and dates stay intact; stored/API currency codes remain unchanged.
 - Processing is idempotent by message ID: handling the same mail twice has no extra effect.
 - Reply in the customer's thread (`in_reply_to`).

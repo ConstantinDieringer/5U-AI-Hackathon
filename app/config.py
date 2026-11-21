@@ -117,7 +117,7 @@ settings = Settings(
     served_lanes_ttl_s=float(
         _env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))
     ),
-    rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "shadow"),
+    rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "enforce"),
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):

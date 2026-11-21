@@ -1,5 +1,6 @@
 """Extraction retry: an unusable first answer gets one more try with LLM_RETRY_MODEL."""
 
+import dataclasses
 import json
 
 import httpx
@@ -21,8 +22,13 @@ BAD = {**GOOD, "weight_kg": 0}  # what gpt-5-nano returned for mail 1967
 
 
 @pytest.fixture
-def mail(tmp_path) -> Mail:
+def mail(tmp_path, monkeypatch) -> Mail:
     db.init_db(str(tmp_path / "t.db"))
+    # This file exercises the legacy extraction retry contract; enforce-mode drafts
+    # and their clarification lifecycle are covered by test_rfq_validation_gate.
+    monkeypatch.setattr(
+        rfq, "settings", dataclasses.replace(rfq.settings, rfq_validation_mode="shadow")
+    )
     return Mail(7, 7, "nordlicht-audio@hackloop.mail", "x", "Air freight quote to LOS", BODY,
                 "2026-11-21T15:49:35+00:00")  # fmt: skip
 
@@ -76,7 +82,5 @@ def test_both_unusable_gives_none_after_two_calls(mail, monkeypatch) -> None:
 
 
 def test_retry_respects_the_session_budget(mail, monkeypatch) -> None:
-    calls = _stub(
-        monkeypatch, [json.dumps(BAD), rfq.llm.LlmBudgetError("no calls left")]
-    )
+    calls = _stub(monkeypatch, [json.dumps(BAD), rfq.llm.LlmBudgetError("no calls left")])
     assert rfq.extract_rfq(mail, 7) is None and len(calls) == 2

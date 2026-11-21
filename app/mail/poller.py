@@ -13,7 +13,7 @@ import re
 import threading
 from pathlib import Path
 
-from app import hackloop
+from app import db, hackloop
 from app.config import settings
 from app.mail import parse, router, store
 from app.models import Category, Mail
@@ -91,11 +91,17 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
             daemon=True,
         ).start()
     elif category == Category.TRACKING:
-        from app.agents import tracking
+        from app.agents import clarification, tracking
+
+        def tracking_reply():
+            pending = db.validation_get(session_id) if session_id is not None else None
+            workflow = (pending or {}).get("draft", {}).get("evidence", {}).get("workflow")
+            if workflow == "tracking" and clarification.handle_reply(mail, session_id):
+                return
+            tracking.handle(mail, session_id)
 
         threading.Thread(
-            target=tracking.handle,
-            args=(mail, session_id),
+            target=tracking_reply,
             name=f"track-{mail.id}",
             daemon=True,
         ).start()

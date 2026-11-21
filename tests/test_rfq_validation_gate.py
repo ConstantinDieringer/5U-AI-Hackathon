@@ -209,8 +209,10 @@ def test_yes_is_not_an_acceptance_of_clarification(monkeypatch):
         datetime.now(UTC).isoformat(),
     )
     assert clarification.handle_reply(answer, m.id)
-    assert db.validation_get(m.id)["state"] == "manual_review"
-    assert not db.get_session(m.id)["bookings"] and len(sent) == 1
+    assert db.validation_get(m.id)["state"] == "awaiting_clarification"
+    assert not db.get_session(m.id)["bookings"] and len(sent) == 2
+    clarification.handle_reply(answer, m.id)
+    assert len(sent) == 2  # duplicate delivery cannot ask again
 
 
 def test_replay_and_restart_do_not_resend(monkeypatch):
@@ -380,7 +382,7 @@ def test_unreadable_document_cannot_be_cleared_by_yes(monkeypatch):
         9999, m.id, m.sender, m.to, "Re", "yes", datetime.now(UTC).isoformat()
     )
     clarification.handle_reply(answer, m.id)
-    assert db.validation_get(m.id)["state"] == "manual_review"
+    assert db.validation_get(m.id)["state"] == "awaiting_clarification"
 
 
 def test_shadow_rollback_does_not_continue_pending_quote(monkeypatch):

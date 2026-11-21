@@ -251,6 +251,16 @@ def _handle(mail: Mail, sid: int) -> None:
         return
     verdict = is_acceptance(mail.body)
     if verdict is not True:
+        if verdict is None:
+            from app.agents import clarification
+
+            clarification.ask(
+                mail,
+                sid,
+                "booking",
+                "Could you confirm whether you would like us to book the offer in this thread, or tell us which detail needs clarifying first? We have not booked based on your last message.",
+                "Könnten Sie bestätigen, ob wir das Angebot in diesem Thread buchen sollen, oder uns sagen, welche Angabe Sie vorher klären möchten? Aufgrund Ihrer letzten Nachricht haben wir noch nicht gebucht.",
+            )
         what = "Absage" if verdict is False else "unklare Antwort"
         db.emit(
             db.Ev.WARN,
