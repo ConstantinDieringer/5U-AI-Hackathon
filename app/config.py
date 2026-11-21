@@ -43,6 +43,16 @@ def _trucker_balance() -> str:
     return mode
 
 
+def _speech_model() -> str:
+    model = _env("SPEECH_MODEL", "base")
+    if model.endswith(".en"):
+        logging.getLogger(__name__).warning(
+            "Using multilingual %s instead of English-only %s", model[:-3], model
+        )
+        return model[:-3]
+    return model
+
+
 @dataclass(frozen=True)
 class Settings:
     build_revision: str
@@ -105,6 +115,9 @@ class Settings:
     thousands_evidence: bool
     clarify_cap_resolve: bool
     revision_not_acceptance: bool
+    bid_llm_fallback: bool
+    estimate_missing_truck: bool
+    consent_llm_check: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
     rfq_watchdog: bool
@@ -240,6 +253,13 @@ settings = Settings(
     thousands_evidence=_flag("THOUSANDS_EVIDENCE"),
     clarify_cap_resolve=_flag("CLARIFY_CAP_RESOLVE"),
     revision_not_acceptance=_flag("REVISION_NOT_ACCEPTANCE", True),
+    # round 63-65: a bid the rules cannot read gets one cheap checked extraction call
+    bid_llm_fallback=_flag("BID_LLM_FALLBACK", True),
+    # no trucker bid: estimate from earlier bids for the same pickup zone instead of silence
+    estimate_missing_truck=_flag("ESTIMATE_MISSING_TRUCK", True),
+    # round 60/70: a reply the consent rules cannot decide (or a yes next to a doubt word)
+    # is checked by one cheap gateway call; the rules' explicit decline always wins
+    consent_llm_check=_flag("CONSENT_LLM_CHECK", True),
     all_excluded_notice=_flag("ALL_EXCLUDED_NOTICE", True),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)
     clarify_fallback_after_s=float(_env("CLARIFY_FALLBACK_AFTER_S", "45")),
@@ -307,7 +327,7 @@ settings = Settings(
     # Groq first, gateway only if a compatible model is allowed, local Whisper last.
     # Empty audio model auto-selects a gateway audio model; never guess access.
     llm_audio_model=_env("LLM_AUDIO_MODEL"),
-    speech_model=_env("SPEECH_MODEL", "base"),  # multilingual offline fallback
+    speech_model=_speech_model(),  # multilingual offline fallback
     speech_model_dir=_env("SPEECH_MODEL_DIR"),  # Docker bakes the model into /opt/whisper
     llm_vision_model=_env("LLM_VISION_MODEL"),
     # false = no recognition of audio/scans (deterministic text readers stay enabled)
@@ -316,7 +336,7 @@ settings = Settings(
     groq_audio_model=_env("GROQ_AUDIO_MODEL", "whisper-large-v3"),
     audio_timeout_s=max(1.0, float(_env("AUDIO_TIMEOUT_S", "60"))),
     local_audio_enabled=_flag("LOCAL_AUDIO_ENABLED", True),
-    local_audio_model=_env("LOCAL_AUDIO_MODEL", _env("SPEECH_MODEL", "base")),
+    local_audio_model=_env("LOCAL_AUDIO_MODEL", _speech_model()).removesuffix(".en"),
     # links in mail (app/mail/links.py): safety-checked, then downloaded like an attachment.
     # false = never open a link. Allowed domains empty = every domain that passes the check.
     link_fetch=_flag("LINK_FETCH", True),

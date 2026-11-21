@@ -33,6 +33,8 @@ pydantic>=2.6        # Datenmodelle / strukturierte LLM-Outputs
 openpyxl>=3.1        # xlsx-Tarife
 python-docx>=1.1     # docx-Tarife
 pdfplumber>=0.11     # pdf-Tarife (pdftotext-Fallback erlaubt)
+lingua-language-detector>=2.1,<3 # lokale Spracherkennung; keine Begrenzung der Modellsprachen
+Babel>=2.17,<3      # lokalisierte Datumsdarstellung
 pytest>=8            # Tests
 ```
 

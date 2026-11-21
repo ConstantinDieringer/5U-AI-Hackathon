@@ -1,4 +1,4 @@
-"""Which language a mail is written in, by script and common function words (no LLM).
+"""Language of the current message, independent of names, addresses and quoted history.
 
 The LLM guessed from names and places: an English mail from a German company (Sonnberg
 Kaffeeroesterei, Bad Homburg) came back as "de", and the quote went out in German.
@@ -8,6 +8,11 @@ Function words do not depend on names, signatures or addresses.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
+
+from lingua import LanguageDetector, LanguageDetectorBuilder
+
+from app.mail.content import current_message
 
 _WORDS: dict[str, frozenset[str]] = {
     "en": frozenset(
@@ -45,6 +50,27 @@ _WORDS: dict[str, frozenset[str]] = {
             "dear",
             "hello",
             "hi",
+            "where",
+            "when",
+            "what",
+            "how",
+            "i",
+            "agree",
+            "dangerous",
+            "goods",
+            "weight",
+            "gross",
+            "volume",
+            "pieces",
+            "shipment",
+            "freight",
+            "quote",
+            "pickup",
+            "booking",
+            "request",
+            "status",
+            "origin",
+            "destination",
         ]
     ),
     "de": frozenset(
@@ -108,6 +134,9 @@ _WORDS: dict[str, frozenset[str]] = {
             "bonjour",
             "pouvez",
             "cordialement",
+            "oui",
+            "allez",
+            "réservez",
         ]
     ),
     "es": frozenset(
@@ -130,6 +159,9 @@ _WORDS: dict[str, frozenset[str]] = {
             "hola",
             "podría",
             "saludos",
+            "sí",
+            "adelante",
+            "reserven",
         ]
     ),
     "it": frozenset(
@@ -152,6 +184,13 @@ _WORDS: dict[str, frozenset[str]] = {
             "potreste",
             "cordiali",
             "saluti",
+            "sì",
+            "procedete",
+            "prenotate",
+            "trasporto",
+            "aereo",
+            "spedizione",
+            "richiesta",
         ]
     ),
     # Portuguese scored as Spanish ("para", "por") and got Spanish replies: only words that
@@ -189,26 +228,195 @@ _WORDS: dict[str, frozenset[str]] = {
 # More Latin-script languages: mostly words that are distinctive for the language, so a mail
 # in one of them does not tie with a neighbour (da/nb/sv share a lot). pt is curated above.
 _MORE: dict[str, tuple[str, ...]] = {
-    "nl": ("het", "een", "en", "van", "voor", "wij", "jullie", "graag", "niet", "zijn", "bedankt",
-           "groeten", "met", "vriendelijke", "kunnen", "zending", "offerte", "ons", "onze"),
-    "pl": ("i", "nie", "się", "jest", "dla", "proszę", "dziękuję", "pozdrawiam", "oraz", "nasz",
-           "nasza", "czy", "przesyłka", "wycenę", "mogą", "od", "na", "dzień", "dobry"),
-    "sv": ("och", "att", "är", "inte", "för", "med", "vi", "ni", "tack", "hälsningar", "vänliga",
-           "kan", "från", "vår", "frakt", "offert", "hej", "också"),
-    "da": ("og", "ikke", "jeg", "vi", "har", "til", "med", "venlig", "hilsen", "tak", "kan",
-           "vores", "jer", "hvad", "også", "forsendelse", "tilbud"),
-    "nb": ("og", "ikke", "jeg", "vi", "har", "til", "med", "vennlig", "hilsen", "takk", "kan",
-           "vår", "dere", "hva", "også", "forsendelse", "tilbud"),
-    "cs": ("a", "je", "se", "na", "pro", "prosím", "děkuji", "dobrý", "den", "zásilka", "nabídku",
-           "můžete", "naše", "které", "není", "pozdravem", "s", "pozdravy"),
-    "tr": ("ve", "bir", "bu", "için", "ile", "teşekkür", "ederiz", "lütfen", "merhaba", "değil",
-           "gönderi", "teklif", "saygılarımızla", "bizim", "olarak", "kg'lık"),
-    "ro": ("și", "este", "pentru", "cu", "vă", "rugăm", "mulțumim", "bună", "ziua", "nostru",
-           "noastră", "ofertă", "expediere", "sunt", "nu", "dumneavoastră"),
-    "hu": ("és", "a", "az", "hogy", "nem", "kérjük", "köszönöm", "köszönjük", "üdvözlettel",
-           "jó", "napot", "ajánlatot", "szállítmány", "vagyunk", "egy"),
-    "fi": ("ja", "on", "ei", "että", "kiitos", "terveisin", "ystävällisin", "hei", "tarjous",
-           "lähetys", "voitteko", "meidän", "olemme", "myös"),
+    "nl": (
+        "het",
+        "een",
+        "en",
+        "van",
+        "voor",
+        "wij",
+        "jullie",
+        "graag",
+        "niet",
+        "zijn",
+        "bedankt",
+        "groeten",
+        "met",
+        "vriendelijke",
+        "kunnen",
+        "zending",
+        "offerte",
+        "ons",
+        "onze",
+    ),
+    "pl": (
+        "i",
+        "nie",
+        "się",
+        "jest",
+        "dla",
+        "proszę",
+        "dziękuję",
+        "pozdrawiam",
+        "oraz",
+        "nasz",
+        "nasza",
+        "czy",
+        "przesyłka",
+        "wycenę",
+        "mogą",
+        "od",
+        "na",
+        "dzień",
+        "dobry",
+    ),
+    "sv": (
+        "och",
+        "att",
+        "är",
+        "inte",
+        "för",
+        "med",
+        "vi",
+        "ni",
+        "tack",
+        "hälsningar",
+        "vänliga",
+        "kan",
+        "från",
+        "vår",
+        "frakt",
+        "offert",
+        "hej",
+        "också",
+    ),
+    "da": (
+        "og",
+        "ikke",
+        "jeg",
+        "vi",
+        "har",
+        "til",
+        "med",
+        "venlig",
+        "hilsen",
+        "tak",
+        "kan",
+        "vores",
+        "jer",
+        "hvad",
+        "også",
+        "forsendelse",
+        "tilbud",
+    ),
+    "nb": (
+        "og",
+        "ikke",
+        "jeg",
+        "vi",
+        "har",
+        "til",
+        "med",
+        "vennlig",
+        "hilsen",
+        "takk",
+        "kan",
+        "vår",
+        "dere",
+        "hva",
+        "også",
+        "forsendelse",
+        "tilbud",
+    ),
+    "cs": (
+        "a",
+        "je",
+        "se",
+        "na",
+        "pro",
+        "prosím",
+        "děkuji",
+        "dobrý",
+        "den",
+        "zásilka",
+        "nabídku",
+        "můžete",
+        "naše",
+        "které",
+        "není",
+        "pozdravem",
+        "s",
+        "pozdravy",
+    ),
+    "tr": (
+        "ve",
+        "bir",
+        "bu",
+        "için",
+        "ile",
+        "teşekkür",
+        "ederiz",
+        "lütfen",
+        "merhaba",
+        "değil",
+        "gönderi",
+        "teklif",
+        "saygılarımızla",
+        "bizim",
+        "olarak",
+        "kg'lık",
+    ),
+    "ro": (
+        "și",
+        "este",
+        "pentru",
+        "cu",
+        "vă",
+        "rugăm",
+        "mulțumim",
+        "bună",
+        "ziua",
+        "nostru",
+        "noastră",
+        "ofertă",
+        "expediere",
+        "sunt",
+        "nu",
+        "dumneavoastră",
+    ),
+    "hu": (
+        "és",
+        "a",
+        "az",
+        "hogy",
+        "nem",
+        "kérjük",
+        "köszönöm",
+        "köszönjük",
+        "üdvözlettel",
+        "jó",
+        "napot",
+        "ajánlatot",
+        "szállítmány",
+        "vagyunk",
+        "egy",
+    ),
+    "fi": (
+        "ja",
+        "on",
+        "ei",
+        "että",
+        "kiitos",
+        "terveisin",
+        "ystävällisin",
+        "hei",
+        "tarjous",
+        "lähetys",
+        "voitteko",
+        "meidän",
+        "olemme",
+        "myös",
+    ),
 }
 for _lang, _words in _MORE.items():
     _WORDS[_lang] = frozenset(_words)
@@ -231,14 +439,88 @@ _TOKEN = re.compile(r"[^\W\d_]+(?:'[^\W\d_]+)?")
 _QUOTED = re.compile(r"^\s*>.*$", re.MULTILINE)
 
 NAMES = {
-    "en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian",
-    "nl": "Dutch", "pt": "Portuguese", "pl": "Polish", "sv": "Swedish", "da": "Danish",
-    "nb": "Norwegian", "cs": "Czech", "tr": "Turkish", "ro": "Romanian", "hu": "Hungarian",
-    "fi": "Finnish", "ja": "Japanese", "ko": "Korean", "zh": "Chinese", "ru": "Russian",
-    "uk": "Ukrainian", "bg": "Bulgarian", "el": "Greek", "ar": "Arabic", "fa": "Persian",
-    "he": "Hebrew", "th": "Thai", "hi": "Hindi",
+    "en": "English",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "it": "Italian",
+    "nl": "Dutch",
+    "pt": "Portuguese",
+    "pl": "Polish",
+    "sv": "Swedish",
+    "da": "Danish",
+    "nb": "Norwegian",
+    "cs": "Czech",
+    "tr": "Turkish",
+    "ro": "Romanian",
+    "hu": "Hungarian",
+    "fi": "Finnish",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh": "Chinese",
+    "ru": "Russian",
+    "uk": "Ukrainian",
+    "bg": "Bulgarian",
+    "el": "Greek",
+    "ar": "Arabic",
+    "fa": "Persian",
+    "he": "Hebrew",
+    "th": "Thai",
+    "hi": "Hindi",
 }
 TEMPLATE_LANGUAGES = frozenset({"en", "de"})  # languages our fixed mail copy is written in
+
+
+def normalize(code: str | None, default: str = "en") -> str:
+    """Accept language tags without a language allowlist; strip unsafe/invalid values."""
+    tag = (code or "").strip().lower().replace("_", "-")
+    return tag if re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})*", tag) else default
+
+
+def base(code: str | None) -> str:
+    return normalize(code).split("-", 1)[0]
+
+
+@lru_cache(maxsize=1)
+def _detector() -> LanguageDetector:
+    # Trigrams keep the all-language detector small enough for the single live container.
+    return LanguageDetectorBuilder.from_all_languages().with_low_accuracy_mode().build()
+
+
+@lru_cache(maxsize=512)
+def detect(text: str, default: str = "en", hint: str | None = None) -> str:
+    """Local detection; ambiguous short replies inherit the thread's language.
+
+    `und` is available to callers that need model identification rather than an English
+    fallback. The detector's language set never limits what the gateway can process.
+    """
+    active = current_message(text or "").facts
+    active = re.sub(r"<[^>]*>", "", active)
+    active = re.sub(r"https?://\S+|[\w.+-]+@[\w.-]+|\b[A-Z]{2,4}\d*\b", "", active)
+    fallback = normalize(hint, default) if hint else default
+    if len(re.sub(r"[\W\d_]", "", active)) < 3:
+        return fallback
+    script = _script(active)
+    if script:
+        values = _detector().compute_language_confidence_values(active)
+        if values and values[0].value >= 0.6 and values[0].value - values[1].value >= 0.15:
+            return values[0].language.iso_code_639_1.name.lower()
+        return script
+    words = [w.lower() for w in _TOKEN.findall(_QUOTED.sub("", active))]
+    scores = {lang: sum(w in vocab for w in words) for lang, vocab in _WORDS.items()}
+    best = max(scores, key=lambda k: scores[k])
+    top = scores[best]
+    runner_up = sorted(scores.values())[-2]
+    if len(words) <= 5 and top > runner_up:
+        return best
+    if top >= 2 and top - runner_up >= 2:
+        return best
+    values = _detector().compute_language_confidence_values(active)
+    if values and values[0].value >= 0.6 and values[0].value - values[1].value >= 0.15:
+        return values[0].language.iso_code_639_1.name.lower()
+    if top > 0 and top > runner_up:
+        return best
+    return fallback
 
 
 def name(code: str) -> str:
@@ -274,26 +556,5 @@ def _script(text: str) -> str | None:
 
 
 def detect_or_none(text: str, hint: str | None = None) -> str | None:
-    """ISO 639-1 code of the mail's language, or None when the words do not decide it.
-    Non-Latin scripts decide by script; Latin text by counting function words. `hint`
-    (e.g. the extraction LLM's guess) only breaks a tie or fills in a language we have no
-    word list for, it never overrides a clear word count (names and places mislead it)."""
-    own = _QUOTED.sub("", text or "")
-    script = _script(own)
-    if script:
-        return script
-    words = [w.lower() for w in _TOKEN.findall(own)]
-    scores = {lang: sum(w in vocab for w in words) for lang, vocab in _WORDS.items()}
-    top = max(scores.values(), default=0)
-    hint = (hint or "").strip().lower()[:2] or None
-    if top == 0:
-        return hint
-    best = [lang for lang, score in scores.items() if score == top]
-    if len(best) == 1:
-        return best[0]
-    return hint if hint in best else None
-
-
-def detect(text: str, default: str = "en", hint: str | None = None) -> str:
-    """ISO 639-1 code of the language; `default` when it cannot be decided."""
-    return detect_or_none(text, hint) or default
+    code = detect(text, default="und", hint=hint)
+    return None if code == "und" else code

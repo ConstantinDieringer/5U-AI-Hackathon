@@ -22,7 +22,7 @@ mail in (`/hooks/mailbox` or poller) → phishing gate + mail guard → router �
 | `app/mail/` (webhook, poller, router, screening, guard, documents, speech) | `areas/mail.md` |
 | `app/agents/rfq.py`, `clarification.py`, `rescue.py`, `watchdog.py`, `followup.py`, `app/mail/rfq_validation.py` | `areas/rfq.md` |
 | `app/pricing/`, `app/agents/bids.py`, `tariff.py`, `carrier_prefs.py` | `areas/pricing.md` |
-| `app/mail/outgoing.py`, `style.py`, `voice.py`, `customer_voice.md`, `app/agents/email_review.py` | `areas/customer-email.md` |
+| `app/mail/outgoing.py`, `style.py`, `multilingual.py`, `voice.py`, `customer_voice.md`, `app/agents/email_review.py` | `areas/customer-email.md` |
 | `app/agents/booking.py`, `prebook.py`, `tracking.py`, `tracking_notice.py` | `areas/booking-tracking.md` |
 | `app/ui/` (server, static, drafts, alerts, watchers, deploy_gate) | `ui-context.md` |
 | `Dockerfile`, `railway.json`, `run.py`, `DEPLOY.md` | `areas/ops.md` |

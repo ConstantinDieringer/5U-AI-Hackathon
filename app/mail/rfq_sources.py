@@ -4,8 +4,10 @@ cached next to the file. Files behind safety-checked links count as attachments
 (app/mail/links.py)."""
 
 import base64
+import json
 
-from app.mail import documents, links
+from app import db
+from app.mail import documents, links, multilingual
 
 
 def read_sources(mail, *, local_only=False, session_id=None):
@@ -63,6 +65,14 @@ def read_sources(mail, *, local_only=False, session_id=None):
     if len(media) > documents.MAX_PAGES:
         problems.append({"field": "attachments", "code": "too_many_pages"})
         media = []
+    try:
+        if session_id is not None and not local_only:
+            db.kv_set(f"rfq.original_sources.{session_id}", json.dumps(texts, ensure_ascii=False))
+        texts = multilingual.english_sources(texts, session_id, local_only=local_only)
+    except Exception as exc:  # noqa: BLE001 - untranslated evidence blocks pricing
+        problems.append(
+            {"field": "attachments", "code": "translation_failed", "detail": type(exc).__name__}
+        )
     return texts, media, problems
 
 
@@ -81,9 +91,7 @@ def extraction_content(text, texts, media):
             {"type": "text", "text": f"Attachment page: {name}"},
             {
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:{mime};base64,{base64.b64encode(data).decode()}"
-                },
+                "image_url": {"url": f"data:{mime};base64,{base64.b64encode(data).decode()}"},
             },
         )
     ]

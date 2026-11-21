@@ -671,8 +671,66 @@ def _evaluate(
         return
     evidence, price, issue = _bid_evidence(body, files, spoken)
     if price is None:
-        _unreadable(carrier, sid, issue or "kein Preis erkannt")
+        issue = issue or "kein Preis erkannt"
+        # two sources naming different prices stay unreadable: the model must not pick one
+        if config.settings.bid_llm_fallback and not issue.startswith("conflicting"):
+            # the gateway call must not hold up the mail loop
+            _spawn(_read_with_model, mail, sid, carrier, body, files, spoken, issue)
+        else:
+            _unreadable(carrier, sid, issue)
         return
+    _add_offer(mail, sid, carrier, evidence, price, [n for n, _ in files + spoken])
+
+
+def _read_with_model(
+    mail: Mail,
+    sid: int,
+    carrier: Carrier,
+    body: str,
+    files: list[tuple[str, str]],
+    spoken: list[tuple[str, str]],
+    issue: str,
+) -> None:
+    """BID_LLM_FALLBACK: the rules found no unique total; one checked extraction call
+    (app/agents/bid_reader.py). Only if that fails too is the bid unreadable."""
+    from app.agents import bid_reader
+
+    text = "\n\n".join([body] + [f"[{n}]\n{t}" for n, t in files + spoken])
+    try:
+        reading = bid_reader.read(text, sid, {"EUR", "USD"})
+    except Exception:
+        log.exception("bid mail %s: model reading failed", mail.id)
+        reading = None
+    if reading is None:
+        _unreadable(carrier, sid, f"{issue}; auch per Modell kein eindeutiger Gesamtpreis")
+        return
+    db.emit(
+        "bid_model_read",
+        f"Gebot von {carrier.name} per Modell gelesen ({issue[:80]})",
+        sid,
+        level="warn",
+    )
+    evidence = text if reading.transit_days is None else f"transit {reading.transit_days:g} days"
+    _add_offer(
+        mail,
+        sid,
+        carrier,
+        evidence,
+        (money(reading.amount), reading.currency),
+        [n for n, _ in files + spoken],
+        via="model",
+    )
+
+
+def _add_offer(
+    mail: Mail,
+    sid: int,
+    carrier: Carrier,
+    evidence: str,
+    price: tuple[Decimal, str],
+    sources: list[str],
+    via: str = "rules",
+) -> None:
     amount, currency = price
     from app.pricing.fx import eur_rate
 
@@ -709,7 +767,8 @@ def _evaluate(
         fx_rate=str(fx),
         fx_source=fx_source,
         fx_valid_until=fx_expiry,
-        evidence_sources=[n for n, _ in files + spoken] or ["mail_body"],
+        evidence_sources=sources or ["mail_body"],
+        read_by=via,
     )
 
 

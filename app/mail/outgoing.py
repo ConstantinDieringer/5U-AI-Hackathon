@@ -5,6 +5,7 @@ import unicodedata
 from datetime import date
 from html import unescape
 
+from app.mail.language import base
 from app.mail.style import customer_presentation, written_date
 
 EMAIL_STYLE_VERSION = "strict-customer-prose-v4"
@@ -62,6 +63,7 @@ def _protect(text: str) -> tuple[str, list[str]]:
 
 def customer_body(text: str, lang: str) -> str:
     """Change display only; retain amounts, dates, words and real reference values."""
+    lang = base(lang)
     masked, references = _protect(_plain_punctuation(text))
     for contact in re.findall(r"https?://[^\s<>]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", masked):
         if re.search(r"[:;_()\-–—]", contact):
@@ -86,6 +88,8 @@ def customer_body(text: str, lang: str) -> str:
             raise CustomerStyleError("Invalid clock time")
         if lang == "de":
             return f"{hour} Uhr" + (f" {minute}" if minute else "")
+        if lang != "en":
+            return f"{hour:02d}.{minute:02d}"
         return (
             f"{hour % 12 or 12}"
             + (f".{minute:02d}" if minute else "")
@@ -141,6 +145,7 @@ def validate_customer_text(text: str) -> None:
 
 def customer_subject(subject: str, lang: str) -> str:
     """Keep threading in reply IDs rather than an unchecked Re: header prefix."""
+    lang = base(lang)
     if re.search(r"[\r\n]", subject):
         raise CustomerStyleError("Subject must be a single line")
     subject = _plain_punctuation(subject)
