@@ -1,0 +1,1 @@
+Recent changes now live in `context/changes/`, one new file per PR; only the context owner (Moritz) edits `context/progress-tracker.md`. The tracker's old Recent Changes moved to `context/history/progress-log.md`. Budget test checks name and size of change files.

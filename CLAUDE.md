@@ -9,6 +9,7 @@ Python 3.11 · FastAPI · SQLite (`sqlite3`, no ORM) · threads · one static HT
 
 1. `context/code-standards.md`: hard implementation rules
 2. `context/progress-tracker.md`: current state, pending decisions, open questions
+3. The newest eight files in `context/changes/` (`ls context/changes | sort | tail -8`): recent changes
 
 **Then read only the rows that match the task:**
 
@@ -35,7 +36,7 @@ For customer email wording or composer changes, use `.agents/skills/customer-ema
 
 ## After a change
 
-- Update `context/progress-tracker.md` (one or two lines, newest first) and move entries beyond its budget to `context/history/progress-log.md`.
+- Add **one new file** to `context/changes/` for the PR (format in `context/changes/README.md`). Do not edit `context/progress-tracker.md`; only the context owner does.
 - If a change alters a subsystem's behavior, update that subsystem's `context/areas/*.md` file, not the tracker.
 - Keep the always-read files within budget: `tests/test_context_budget.py` fails otherwise.
 
