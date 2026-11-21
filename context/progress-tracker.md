@@ -15,14 +15,14 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Context adapted from Ghost AI.
 - Stack decided (`context/docs/TECH_SPEC.md`), `context/architecture-context.md` added.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`.
-- Task B pricing: parser fix (first break 0 kg, PDFs via pdfplumber), `RateOption` in cents, `sheet_options`/`pick`, portal rates + lane snapshot (114 lanes, 15 airlines), lane index, reference data; `app/models.py`; 24 tests green.
+- Task B, Constantin, pricing: parser fix (first break 0 kg, PDFs via pdfplumber), `RateOption` in cents, `sheet_options`/`pick`, portal rates + lane snapshot (114 lanes, 15 airlines), lane index, reference data; `app/models.py`; 24 tests green.
 - Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 ## In Progress
 
-- Task C (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), implementation starting with C1 `db.py`.
-- Task A (mail poller, router, `hackloop.py`): not in repo yet. `portal_options()` is untested live until `hackloop.get_rate/get_ports/get_brackets` exist.
+- Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), implementation starting with C1 `db.py`.
+- Task A, Karim (mail poller, router, `hackloop.py`): not in repo yet. `portal_options()` (B) is untested live until `hackloop.get_rate/get_ports/get_brackets` exist.
 
 ## Next Up
 
@@ -48,7 +48,7 @@ Goal: the first accepted quote end to end before any polish.
 ## Open Questions
 
 1. ~~Architecture and stack~~ → decided (`architecture-context.md`). Still open: where the system runs overnight.
-2. Team members and owners: task C taken; owners of A and B still to be named here.
+2. ~~Team members and owners~~ → A (mail, router, RFQ agent): Karim · B (pricing, tariffs, portal): Constantin · C (CRM, sessions UI, tracking): Moritz.
 3. Scoring weights: the brief says 45/40/15 and the kickoff deck says 55/30/15. We use the brief's until 5U confirms.
 4. First request arrives 16:00 (kit card). Still open: deadline, start of hourly changes, pitch slot.
 5. Has our OpenAI key been posted to the gateway? Which models does `/v1/gateway/models` allow, and at what cost?
