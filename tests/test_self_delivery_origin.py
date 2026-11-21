@@ -198,3 +198,120 @@ def test_setting_parses_true_false(monkeypatch) -> None:
 
 def test_validation_module_reads_the_live_setting() -> None:
     assert rfq_validation.config is config  # monkeypatched settings reach validate()
+
+
+# ---------------------------------------------------------------- PR #18 follow-ups
+
+NEGATED = "We do not deliver to FRA ourselves, please arrange pickup."
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        NEGATED,
+        "We don’t deliver to FRA ourselves, please arrange pickup.",
+        "We can't bring it to FRA ourselves, so please arrange pickup.",
+        "Wir liefern die Ware nicht selbst nach Frankfurt an, bitte Abholung organisieren.",
+    ],
+)
+def test_negated_self_delivery_is_not_a_departure(recovery, body) -> None:
+    recovery(True)
+    assert explicit_delivery_origin(_mail(body), "DFW") is None
+    assert not rfq_validation.no_pickup(body)  # the customer wants a pickup
+
+
+def test_negated_sentence_asks_for_the_pickup_zip(recovery) -> None:
+    recovery(True)
+    body = f"Please quote to DFW, gross weight 85 kg, volume 0.70 cbm. {NEGATED}"
+    _, draft = validate(_mail(body), RfqDraft(facts=FACTS))
+    assert {i["field"] for i in draft.issues} == {"pickup_zip"}
+
+
+def test_negation_bug_is_todays_default(recovery) -> None:
+    """Documents the default: today's rule reads the negated sentence as FRA."""
+    recovery(False)
+    assert explicit_delivery_origin(_mail(NEGATED), "DFW") == "FRA"
+
+
+@pytest.mark.parametrize(
+    ("body", "airport"),
+    [
+        ("Wir liefern die Ware selbst nach Frankfurt an.", "FRA"),
+        ("Wir bringen die Kisten selbst zum Flughafen München.", "MUC"),
+        ("Wir liefern selbst an den Flughafen Köln.", "CGN"),
+    ],
+)
+def test_german_word_order(recovery, body, airport) -> None:
+    recovery(False)
+    assert explicit_delivery_origin(_mail(body), "DFW") is None
+    recovery(True)
+    assert explicit_delivery_origin(_mail(body), "DFW") == airport
+
+
+def test_airport_codes_in_capitals_only(recovery) -> None:
+    body = "We will bring the goods to the str ourselves."
+    recovery(False)
+    assert explicit_delivery_origin(_mail(body), "DFW") == "STR"  # today's rule
+    recovery(True)
+    assert explicit_delivery_origin(_mail(body), "DFW") is None
+    assert explicit_delivery_origin(_mail("We will bring it to STR ourselves."), "DFW") == "STR"
+
+
+def test_round_28_quotes_the_cheapest_real_price(recovery, tmp_path, monkeypatch) -> None:
+    """Round 28 live portal read: Ultraviolet 390.45 EUR (4 d), Lumen 457.08 EUR (1 d); the
+    sheet gives Quetzal 416.16 EUR (2 d), which the board rejected as too_high (6.6 % above)."""
+    import json
+    from datetime import UTC, datetime
+
+    from app.agents import bids, rfq
+    from app.models import RateOption
+    from app.pricing.portal_sync import PortalResult
+
+    recovery(True)
+    db.init_db(str(tmp_path / "t.db"))
+    now = datetime.now(UTC).isoformat()
+    mail = dataclasses.replace(_mail(ROUND_28), received_at=now)
+    db.ingest_mail(
+        mail_id=7237,
+        sender=CUSTOMER,
+        recipient=mail.to,
+        subject=mail.subject,
+        body=ROUND_28,
+        category="rfq",
+        received_at=now,
+    )
+
+    def complete(purpose, *_a, **_k):
+        if purpose.startswith("extract"):
+            return json.dumps(FACTS)
+        raise ValueError("no composer in this test")  # deterministic quote text
+
+    def portal(request, **_k):
+        assert (request.origin, request.destination) == ("CGN", "DFW")
+        def rate(airline: str, days: int, minor: int) -> RateOption:
+            return RateOption(airline, "CGN", "DFW", days, minor, "EUR", minor, "portal", "R")
+
+        return PortalResult(
+            [rate("Ultraviolet Air Freight", 4, 39045), rate("Lumen Air Cargo", 1, 45708)]
+        )
+
+    sent = []
+
+    def send(to, subject, body, in_reply_to=None, **_k):
+        sent.append({"id": 9000 + len(sent), "to": to, "subject": subject, "body": body})
+        return sent[-1]
+
+    monkeypatch.setattr(rfq.llm, "complete", complete)
+    monkeypatch.setattr(rfq, "portal_result", portal)
+    monkeypatch.setattr(rfq, "_bid_carriers", lambda *_a: ([], []))
+    monkeypatch.setattr(bids, "wait", lambda *_a, **_k: [])
+    monkeypatch.setattr(rfq.hackloop, "send", send)
+
+    rfq.handle_rfq(mail, 7237)
+
+    quote = db.get_session(7237)["quotes"][0]
+    assert (quote["airline"], quote["total_minor"]) == ("Ultraviolet Air Freight", 39045)
+    assert "390,45 €" in sent[-1]["body"]
+    audit = [e for e in db.get_session(7237)["events"] if e["kind"] == "pricing_audit"][-1]
+    sheet = [o for o in audit["payload"]["options"] if o["source"] == "sheet"]
+    assert [(o["airline"], o["total_eur_minor"]) for o in sheet] == [("Quetzal Air Freight", 41616)]

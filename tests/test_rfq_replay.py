@@ -39,9 +39,10 @@ def test_replay_never_reaches_the_network(results) -> None:
 
 def test_replay_reproduces_production_quotes(corpus, results) -> None:
     """The harness itself stays faithful: rounds whose stored data is complete quote exactly
-    what production sent. Rounds 2 and 12 lack stored data; 18 to 20 now ask for the pickup."""
+    what production sent. Rounds 2 and 12 lack stored data; 18 to 20 now ask for the pickup;
+    production never priced round 28."""
     by_round = {c["round_no"]: c for c in corpus["cases"]}
-    for round_no in (3, 5, 6, 7, 8, 13, 14, 21, 22, 23, 24, 25, 26, 27):
+    for round_no in (3, 5, 6, 7, 8, 13, 14, 21, 22, 23, 24, 25, 26, 27, 29, 30, 31):
         sent = by_round[round_no]["production_quote"]
         got = results[round_no]
         assert (got["airline"], got["total_minor"]) == (
@@ -89,3 +90,62 @@ def test_replay_cleanup_also_releases_database_on_failure(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="synthetic replay failure"):
         rfq_replay.replay_all({"cases": [{"llm_extraction": {}}]})
     assert list(tmp_path.iterdir()) == []
+
+
+def test_replayed_answers_reach_the_clarification(results) -> None:
+    """Round 28 under today's rules: the four stored answers arrive after our question (the
+    reply ledger drops older ids), none names the origin as "origin: XXX", and the second
+    question hits today's cap of two, as live (production sent four before the cap)."""
+    got = results[28]
+    assert got["outcome"] == "clarification" and got["open_issues"] == ["origin"]
+    assert got["clarifications_sent"] == 2 and "clarification_loop" in got["warnings"]
+
+
+def test_round_28_with_self_delivery_recovery_quotes_the_portal_price(
+    corpus, tmp_path, monkeypatch
+) -> None:
+    """The corpus holds the later live portal read for round 28 (production never read it)."""
+    import dataclasses
+
+    from app import config
+
+    case = next(c for c in corpus["cases"] if c["round_no"] == 28)
+    assert case["portal"]["source"].startswith("manual:")
+    monkeypatch.setattr(
+        config, "settings", dataclasses.replace(config.settings, self_delivery_recovery=True)
+    )
+    got = rfq_replay.replay_case(case, tmp_path, corpus["lane_observations"])
+    assert (got["airline"], got["total_minor"], got["clarifications_sent"]) == (
+        "Ultraviolet Air Freight",
+        39045,
+        0,
+    )
+
+
+def test_trucker_balance_evidence(corpus, results, tmp_path, monkeypatch) -> None:
+    """TRUCKER_BALANCE (default minmax) on every door-to-port round. Where ratio picks another
+    trucker, the board accuracy of the minmax quote fits 45 - 4.5 points per % deviation from
+    the ratio total (rounds 21, 22, 25, 26); round 31 has no accuracy yet. Evidence for the
+    PR's recommendation; the default stays unchanged."""
+    import dataclasses
+
+    from app import config
+    from app.agents import rfq
+
+    ratio = dataclasses.replace(config.settings, trucker_balance="ratio")
+    monkeypatch.setattr(config, "settings", ratio)
+    monkeypatch.setattr(rfq, "settings", ratio)
+    cases = {c["round_no"]: c for c in corpus["cases"]}
+    moved = {}
+    for round_no, today in results.items():
+        if not today["trucker"]:
+            continue
+        got = rfq_replay.replay_case(cases[round_no], tmp_path, corpus["lane_observations"])
+        if got["trucker"] != today["trucker"]:
+            moved[round_no] = (today["total_minor"], got["total_minor"])
+    assert sorted(moved) == [21, 22, 25, 26, 31]
+    for round_no, (minmax_total, ratio_total) in moved.items():
+        board = cases[round_no]["board"]["accuracy"]
+        if board is not None:
+            predicted = 45 - 4.5 * 100 * abs(minmax_total - ratio_total) / ratio_total
+            assert abs(predicted - board) < 0.05, (round_no, predicted, board)

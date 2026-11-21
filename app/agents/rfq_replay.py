@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from app import db, hackloop, llm
+from app import config, db, hackloop, llm
 from app.agents import bids, clarification, rfq
 from app.models import Mail, RateOption, Rfq
 from app.pricing import portal_sync, pricing, served_lanes
@@ -55,7 +55,12 @@ def _extraction(detail: dict[str, Any]) -> dict[str, Any] | None:
     """The first `extracted` event is the parsed LLM answer (before code post-processing)."""
     for event in detail["events"]:
         if event["kind"] == "extracted" and event.get("payload"):
-            return dict(event["payload"])
+            payload = dict(event["payload"])
+            if payload.get("pickup_assumed"):
+                # written after locate_pickup: the assumed site (round 20: 61391 from an older
+                # shipment) was code, not the LLM's answer, and replay must decide it anew
+                payload.update(pickup_zip=None, pickup_city=None, pickup_assumed=False)
+            return payload
     return None
 
 
@@ -120,9 +125,14 @@ def corpus_case(
     points = board.get(round_no or -1, {})
     extraction = _extraction(detail)
     source = "stored"
-    if extraction is None and str(sid) in reconstructed:
-        extraction = reconstructed[str(sid)]["extraction"]
-        source = "reconstructed: " + reconstructed[str(sid)]["note"]
+    manual = reconstructed.get(str(sid), {})
+    if extraction is None and manual.get("extraction"):
+        extraction = manual["extraction"]
+        source = "reconstructed: " + manual["note"]
+    portal = _portal(detail)
+    if manual.get("portal") and not (portal or {}).get("options"):
+        # production never read the portal (round 28): a later manual read, labelled
+        portal = {**manual["portal"], "source": "manual: " + manual["portal_note"]}
     return {
         "session_id": sid,
         "round_no": round_no,
@@ -133,7 +143,7 @@ def corpus_case(
         },
         "llm_extraction": extraction,
         "llm_extraction_source": source if extraction is not None else None,
-        "portal": _portal(detail),
+        "portal": portal,
         "mails": keep,
         "production_quote": (
             {
@@ -385,7 +395,12 @@ def replay_case(
             row = db.validation_get(sid)
             if not row or row["state"] not in ("awaiting_clarification", "resolving"):
                 break
-            reply = _mail(answer, run.delta, references=[sid])
+            # a fresh id after our latest send: live, an answer always has a higher id than
+            # the question it answers, and the reply ledger drops anything older
+            run.next_id += 1
+            reply = dataclasses.replace(
+                _mail(answer, run.delta, references=[sid]), id=run.next_id
+            )
             db.ingest_mail(
                 mail_id=reply.id,
                 sender=reply.sender,
@@ -398,6 +413,10 @@ def replay_case(
                 in_reply_to=answer.get("in_reply_to"),
             )
             clarification.handle_reply(reply, sid)
+        row = db.validation_get(sid)
+        if config.settings.clarify_once and row and row["state"] == "awaiting_clarification":
+            # no usable answer among the stored ones: the fallback deadline passes
+            rfq.quote_without_answer(sid, "keine Antwort")
         return _result(sid, run)
 
 
@@ -425,6 +444,14 @@ def _result(sid: int, run: _Run) -> dict[str, Any]:
             if e.get("level") in ("warn", "error")
         }
     )
+    trucker = next(
+        (
+            a["trucker"]
+            for a in (quote or {}).get("alternatives") or []
+            if isinstance(a, dict) and a.get("trucker")
+        ),
+        None,
+    )
     request = None
     if session.get("request"):
         stored = session["request"]
@@ -445,6 +472,7 @@ def _result(sid: int, run: _Run) -> dict[str, Any]:
         "status": session.get("status"),
         "request": request,
         "airline": quote["airline"] if quote else None,
+        "trucker": trucker,
         "source": quote["source"] if quote else None,
         "route": f"{quote['origin']}-{quote['destination']}" if quote else None,
         "transit_days": quote["transit_days"] if quote else None,
@@ -480,6 +508,7 @@ _COMPARED = (
     "outcome",
     "request",
     "airline",
+    "trucker",
     "source",
     "route",
     "transit_days",
