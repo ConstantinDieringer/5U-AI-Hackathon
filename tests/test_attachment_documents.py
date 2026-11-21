@@ -23,7 +23,9 @@ OFFER = "All-in price: EUR 1.234,50, transit time 3 days"
 
 
 @pytest.fixture(autouse=True)
-def local_audio_fallback(monkeypatch):
+def local_audio_fallback(monkeypatch, tmp_path):
+    # Recognition emits events; never create a default/production DB as a test side effect.
+    db.init_db(str(tmp_path / "attachments.db"))
     monkeypatch.setattr(
         audio,
         "settings",

@@ -48,6 +48,45 @@ must either be cleared/changed to `base` or explicitly baked into the new image 
 6. Roll back to `shadow` if required. Pending clarification replies are retained for manual
    review and no additional automated clarification is sent. Do not delete the workflow table.
 
+## Team workflow: branch → PR → merge → verify
+
+Several people and agents fix the same rounds at once. Every push to `main` restarts the live
+container. So:
+
+1. **Nobody pushes to `main` directly**, agents included (Claude, ChatGPT automation). Work on a
+   branch (`fix/<round-or-topic>`), open a PR, say in #update which case you are on. If someone
+   already has a PR for that case, add to it instead of opening a second one.
+2. **CI must be green** (`.github/workflows/ci.yml`: full pytest with dummy keys, plus a
+   secrets scan). Run `python -m pytest -q` locally first.
+3. **One merge owner per hour** (named in #update). Only that person merges, one PR at a time,
+   only while the deploy light is green (see below).
+4. **A fix is live only when the instance runs it.** After the merge run
+   `python -m app.deploy_check` (waits until `/api/health` → `build_revision` equals
+   `origin/main`, exit 0 = live). Only then write "live" in #update, with the commit hash.
+
+### Review agents never use the team key
+
+The mailbox allows one poll per 5 s per team key. Every other reader takes the live poller's
+slot (rounds 47 and 48 were lost that way). Review and analysis agents read our own API instead:
+
+```
+curl -H "Authorization: Bearer $REVIEW_TOKEN" $PUBLIC_URL/api/sessions
+curl -H "Authorization: Bearer $REVIEW_TOKEN" "$PUBLIC_URL/api/sessions/<id>"
+curl -H "Authorization: Bearer $REVIEW_TOKEN" $PUBLIC_URL/api/events
+```
+
+`REVIEW_TOKEN` (Railway variable, at least 24 characters) allows GET only; every write gets 403.
+Give agents this token, never `TEAM_API_KEY` or `UI_PASSWORD`. If the live poller still gets
+429 three times within 10 min, the event `mailbox_rate_limit` posts to #sos and
+`/api/health` shows `mailbox_429_last_10min`: find and stop the other reader.
+
+### Secrets
+
+Keys and passwords never go into Slack, chats or the repo (`tests/test_ops_guardrails.py`
+fails on committed OpenAI, 5U, Slack and GitHub tokens). A secret that was posted counts as
+leaked: rotate it (OpenAI key in the gateway, `UI_PASSWORD` and `REVIEW_TOKEN` in Railway),
+then share the new one only via Railway variables or a password manager.
+
 ## Deploy rules (during live rounds)
 
 A push to `main` restarts the live container. While it restarts, nobody answers mail.

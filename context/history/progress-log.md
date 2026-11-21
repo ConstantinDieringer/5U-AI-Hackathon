@@ -2,6 +2,7 @@
 
 ## Overflow from the lean tracker (newest first)
 
+- Thread rescue limited to input younger than 600 s and two parallel owners (was waking 40 h old threads on restart). Offline tests only.
 - Clarification cap counted per workflow instead of per thread. Offline tests only.
 - Carrier document totals hardened: 18 offer layouts x 5 formats replay exact (was 32/90 with three silent wrong values).
 - Carrier offers in any common attachment; audio transcribed locally, scans via the gateway.
