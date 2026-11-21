@@ -404,6 +404,8 @@ def api_health() -> dict[str, Any]:
         "build_revision": settings.build_revision,
         "email_reviewer_model": settings.llm_review_model,
         "email_review_enabled": settings.email_review_enabled,
+        "tracking_notice_version": "required-v1",
+        "tracking_notice_recovery_enabled": settings.agents_enabled,
         "llm_max_calls_per_session": settings.llm_max_calls_per_session,
         "phishing_gate_mode": settings.phishing_gate_mode,
         "phishing_gate_llm_mode": settings.phishing_gate_llm_mode,

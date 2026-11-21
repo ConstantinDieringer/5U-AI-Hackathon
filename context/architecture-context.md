@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Required tracking notice:** every RFQ customer send deterministically inserts a dedicated reply-by-email tracking paragraph before the signature, including after optional model editing. Before booking it is conditional. Confirmations explicitly select booked wording. `agents/tracking_notice.py` checks active quotes/bookings every 30 seconds and repairs at most one missing notice, under the booking lock. Valid legacy instructions and referenced originals prevent duplicates. Durable `kv` claims survive restarts; ambiguous transport is alerted, never blindly resent. No extra LLM call.
+
 - **Strict customer wire contract v4:** customer body AND subject are rendered and independently asserted immediately before sending. Unicode punctuation and HTML entities cannot bypass the character rules; Re/Fw label prefixes are removed without changing `in_reply_to` threading. All-excluded notices use the same reviewer. Persist the actually submitted body and subject. Carrier/trucker machine messages are unchanged.
 
 - **Final email reviewer disabled:** `EMAIL_REVIEW_ENABLED=false` is the default by user request. Customer sends retain deterministic rendering and final validation, with no extra style-review LLM call. The optional reviewer remains available only through explicit opt-in. Composer, extraction, reply controls and carrier/trucker protocols are unchanged. Health exposes the active review flag and build.
