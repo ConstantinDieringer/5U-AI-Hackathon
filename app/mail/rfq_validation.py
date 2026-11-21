@@ -288,19 +288,34 @@ def _unit_facts(text, expect):
     return found
 
 
-def numeric_facts(text, expect=None):
-    result = {}
-    patterns = {
+# Between a total's label and its number. Today's gap lets `\s*` cross a line break, so a
+# table header ending in "Gross weight (kg)" takes the first cell of the next row (Kessler
+# BOM thread: pieces 11 or a dimension against the mail's 1674 kg, a false conflict and a
+# needless weight question). TOTALS_SAME_LINE: a line break only after "of"/"is" or a ":"/"|"
+# separator, so "Gross weight:\n1674" and wrapped sentences still count.
+_GAP_TODAY = r"\s*(?:\({unit}\))?\s*(?:(?:of|is)\s+)?(?:[:|]\s*)*"
+_GAP_SAME_LINE = r"(?:[ \t]*\({unit}\))?(?:\s+(?:of|is)\b)?[ \t]*(?:[:|]\s*)*"
+
+
+def _total_patterns():
+    gap = _GAP_SAME_LINE if config.settings.totals_same_line else _GAP_TODAY
+    pieces_gap = r"[ \t]*" if config.settings.totals_same_line else r"\s*"
+    return {
         "weight_kg": [
-            rf"(?:total\s+)?gross weight\s*(?:\(kg\))?\s*(?:(?:of|is)\s+)?(?:[:|]\s*)*({_NUM})",
+            rf"(?:total\s+)?gross weight{gap.format(unit='kg')}({_NUM})",
             rf"({_NUM})\s*kg\s+gross",
         ],
         "volume_cbm": [
-            rf"(?:total\s+)?volume\s*(?:\(cbm\))?\s*(?:(?:of|is)\s+)?(?:[:|]\s*)*({_NUM})",
+            rf"(?:total\s+)?volume{gap.format(unit='cbm')}({_NUM})",
             rf"({_NUM})\s*(?:cbm|m3|m³)\b",
         ],
-        "pieces": [r"(?:total\s+)?pieces\s*(?:[:|]\s*)+(\d+)", r"\b(\d+)\s+pieces\b"],
+        "pieces": [rf"(?:total\s+)?pieces{pieces_gap}(?:[:|]\s*)+(\d+)", r"\b(\d+)\s+pieces\b"],
     }
+
+
+def numeric_facts(text, expect=None):
+    result = {}
+    patterns = _total_patterns()
     for field, patterns_ in patterns.items():
         for pattern in patterns_:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -492,11 +507,7 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         )
     )
     values = numeric_facts(active, expect=data) if not has_lots else {}
-    if (
-        has_lots
-        and totals is None
-        and not {"weight_kg", "volume_cbm"} <= corrections.keys()
-    ):
+    if has_lots and totals is None and not {"weight_kg", "volume_cbm"} <= corrections.keys():
         issues.append(
             {
                 "field": "lots",
