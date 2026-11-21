@@ -20,6 +20,7 @@ TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 MAX_RETRIES = 2
 RETRY_PAUSE_S = 1.0
 MAX_RETRY_AFTER_S = 10.0
+MAX_RATE_WAIT_S = 60.0  # a portal read never sleeps longer than this; it fails instead
 MAX_ATTACHMENT_BYTES = 20_000_000
 
 _client = httpx.Client(
@@ -106,6 +107,9 @@ def _request(
                 and "Retry-After" not in last.headers
             ):
                 wait = 30.0
+            if path == "/v1/portal/rates" and wait > MAX_RATE_WAIT_S:
+                # Retry-After stays honored by the rate gate; this call just does not sit it out
+                raise HackloopError(method, path, 429, f"Retry-After {wait:.0f} s too long")
             if deadline is not None and time.monotonic() + wait >= deadline:
                 raise HackloopError(
                     method,
@@ -362,18 +366,27 @@ _rate_cap = 10
 
 
 def _wait_rate_gate(deadline: float | None) -> None:
+    """Reserve the next free slot of the per-minute rate window under the lock, then sleep
+    outside it: parallel reads queue for slots, not behind each other's request or sleep."""
     global _rate_window_start, _rate_used
-    now = time.monotonic()
-    if now - _rate_window_start >= 60:
-        _rate_window_start, _rate_used = now, 0
-    until = max(_rate_blocked_until, _rate_window_start + 60 if _rate_used >= _rate_cap else now)
-    if deadline is not None and until >= deadline:
-        raise HackloopError("GET", "/v1/portal/rates", 429, "Rate limit exceeds RFQ budget")
-    if until > now:
-        time.sleep(until - now)
-    if time.monotonic() - _rate_window_start >= 60:
-        _rate_window_start, _rate_used = time.monotonic(), 0
-    _rate_used += 1
+    with _rate_lock:
+        now = time.monotonic()
+        start, used = _rate_window_start, _rate_used
+        if now - start >= 60:
+            start, used = now, 0
+        at = max(now, _rate_blocked_until)
+        if at - start >= 60:
+            start, used = at, 0
+        if used >= _rate_cap:
+            start, used = start + 60, 0
+            at = max(at, start)
+        if deadline is not None and at >= deadline:
+            raise HackloopError("GET", "/v1/portal/rates", 429, "Rate limit exceeds RFQ budget")
+        if at - now > MAX_RATE_WAIT_S:
+            raise HackloopError("GET", "/v1/portal/rates", 429, "Rate limit blocks too long")
+        _rate_window_start, _rate_used = start, used + 1
+    if at > now:
+        time.sleep(at - now)
 
 
 def _update_rate_gate(resp: httpx.Response) -> None:
@@ -381,14 +394,18 @@ def _update_rate_gate(resp: httpx.Response) -> None:
     rate_limit.update(
         {k: v for k, v in resp.headers.items() if k.lower().startswith("x-ratelimit")}
     )
-    try:
-        _rate_cap = max(1, int(resp.headers.get("X-RateLimit-Limit", _rate_cap)))
-        if int(resp.headers.get("X-RateLimit-Remaining", "1")) == 0:
-            _rate_blocked_until = max(_rate_blocked_until, _rate_window_start + 60)
-    except ValueError:
-        pass
-    if resp.status_code == 429:
-        _rate_blocked_until = max(_rate_blocked_until, time.monotonic() + _retry_wait(resp))
+    with _rate_lock:
+        try:
+            _rate_cap = max(1, int(resp.headers.get("X-RateLimit-Limit", _rate_cap)))
+            if int(resp.headers.get("X-RateLimit-Remaining", "1")) == 0:
+                # a window reserved ahead already starts after the server's current one ends
+                start = _rate_window_start
+                end = start + 60 if start <= time.monotonic() else start
+                _rate_blocked_until = max(_rate_blocked_until, end)
+        except ValueError:
+            pass
+        if resp.status_code == 429:
+            _rate_blocked_until = max(_rate_blocked_until, time.monotonic() + _retry_wait(resp))
 
 
 def get_ports() -> dict[str, Any]:
@@ -418,17 +435,8 @@ def get_rate(
         "weight_kg": weight_kg,
         "volume_cbm": volume_cbm,
     }
-    acquired = (
-        _rate_lock.acquire(timeout=max(0.0, deadline - time.monotonic()))
-        if deadline is not None
-        else _rate_lock.acquire()
-    )
-    if not acquired:
-        raise HackloopError("GET", "/v1/portal/rates", 429, "Portal queue exceeded RFQ budget")
-    try:
-        resp = _request("GET", "/v1/portal/rates", params=params, deadline=deadline)
-    finally:
-        _rate_lock.release()
+    # the rate gate in _request hands out slots; the request itself runs unlocked
+    resp = _request("GET", "/v1/portal/rates", params=params, deadline=deadline)
     rate_limit.update(
         {k: v for k, v in resp.headers.items() if k.lower().startswith("x-ratelimit")}
     )
