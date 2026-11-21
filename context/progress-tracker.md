@@ -14,6 +14,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - Round 61 pending "check whether we can go ahead" exposed a duplicated approval vocabulary. Pending internal checks now use the existing consent-word matcher within the same sentence; all approval markers are covered together, while a separate unrelated check does not block an explicit order. DG documents remain promised and customer hold explicit; no live booking triggered.
+- RFQ watchdog (`RFQ_WATCHDOG`, default off, PR open): unanswered RFQ at 200 s gets one quote from real prices via the one-quote claim; skips paused/manual/phishing/open DG, no price = `watchdog_alert`. Replay: off unchanged, on changes no stored round; killed after bid requests, 25/25 rounds recover the identical quote. Not verified on a live round.
+- Unanswered board rounds keep their cause (`board_results.cause_json`, "Zu tun", `python -m app.agents.watchdog report`); `process_start` events + `/api/health.process_started_at`; deploy light `/api/deploy-gate` and DEPLOY.md rule: one person pushes, only on green.
 
 - Round 56 customer will check whether booking can proceed: current keyword rule still returned acceptance. The shared consent guard now also recognizes pending EN/DE internal approval checks; positive past checks followed by an explicit booking order remain valid. Existing booking/price-change flows reuse it; no live booking triggered.
 

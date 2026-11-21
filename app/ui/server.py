@@ -379,12 +379,27 @@ async def api_import_db(request: Request) -> dict[str, Any]:
     return db.import_database(data)
 
 
+@app.get("/api/deploy-gate")
+def api_deploy_gate() -> dict[str, Any]:
+    from app.ui import deploy_gate
+
+    return deploy_gate.gate()
+
+
+@app.get("/api/unanswered")
+def api_unanswered() -> list[dict[str, Any]]:
+    return db.unanswered_rounds()
+
+
 @app.get("/api/health")
 def api_health() -> dict[str, Any]:
     from app.mail.outgoing import EMAIL_STYLE_VERSION
+    from app.process import STARTED_AT
 
     return {
         "ok": True,
+        "process_started_at": STARTED_AT.isoformat(timespec="seconds"),
+        "rfq_watchdog": settings.rfq_watchdog,
         "email_style_version": EMAIL_STYLE_VERSION,
         "build_revision": settings.build_revision,
         "email_reviewer_model": settings.llm_review_model,
