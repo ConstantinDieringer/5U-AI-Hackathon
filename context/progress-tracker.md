@@ -19,6 +19,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - B pricing: explicit expiring EUR/USD conversion for sheets/bids, original amounts and breakpoint audit retained; `python -m app.pricing.audit` joins board evidence. Scorer breakpoint semantics remain unconfirmed; existing default preserved.
 - B verification: 118 tests pass, including isolated full-app startup, 158 kit lanes, monthly reload, replay and 429/503; targeted Ruff checks/formatting pass. No live restart or live image-model extraction performed; authoritative production instance still needs identification.
 
+- UI v3 (light bento, DESIGN.md v0.2): Übersicht with hero KPI, sparklines, trend pills, bezier area chart (volume/response/cost), Apple-Health rings, attention list (expired, error, board rejected, paused, acceptance not booked), activity table; Live and CRM restyled. `/api/overview?hours=`, `/api/attention`.
 - Context adapted from Ghost AI.
 - Stack decided (`context/docs/TECH_SPEC.md`), `context/architecture-context.md` added.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`.

@@ -1238,6 +1238,209 @@ def customer_sessions(customer: str) -> list[dict[str, Any]]:
     return rows
 
 
+# ---------------------------------------------------------------- overview (dashboard v2)
+
+ACTIVITY_KINDS = ("quoted", "booked", "board_verdict", "error", "human_action", "status")
+
+
+def _ts(v: str | None) -> datetime | None:
+    if not v:
+        return None
+    try:
+        t = datetime.fromisoformat(v)
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=UTC)
+
+
+def attention_items(limit: int = 20) -> list[dict[str, Any]]:
+    """What needs a human: errors, expired, board rejections, paused/manual, close deadlines and
+    customer acceptances that are not booked yet."""
+    c = conn()
+    items: list[dict[str, Any]] = []
+    for s in list_sessions(attention=True, limit=limit):
+        reason = (
+            "Fehler" if s["status"] == "error" else "pausiert" if s["paused"] else "Deadline < 90 s"
+        )
+        items.append(
+            {
+                "session_id": s["id"],
+                "kind": "attention",
+                "reason": reason,
+                "subject": s["subject"],
+                "customer": s["customer"],
+                "status": s["status"],
+            }
+        )
+    for r in _rows(
+        c.execute(
+            "SELECT id, subject, customer, status FROM sessions WHERE status = 'expired'"
+            " ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        )
+    ):
+        items.append(
+            {
+                "session_id": r["id"],
+                "kind": "expired",
+                "reason": "ohne Quote abgelaufen",
+                "subject": r["subject"],
+                "customer": r["customer"],
+                "status": r["status"],
+            }
+        )
+    for r in _rows(
+        c.execute(
+            "SELECT b.session_id, b.verdict, b.reason, s.subject, s.customer, s.status"
+            " FROM board_results b JOIN sessions s ON s.id = b.session_id"
+            " WHERE b.verdict NOT IN ('accepted','open','pending') ORDER BY b.fetched_at DESC LIMIT ?",
+            (limit,),
+        )
+    ):
+        items.append(
+            {
+                "session_id": r["session_id"],
+                "kind": "board",
+                "reason": f"5U: {r['verdict']}" + (f" ({r['reason']})" if r["reason"] else ""),
+                "subject": r["subject"],
+                "customer": r["customer"],
+                "status": r["status"],
+            }
+        )
+    for r in _rows(
+        c.execute(
+            """
+        SELECT s.id, s.subject, s.customer, s.status FROM sessions s
+        WHERE s.kind = 'rfq' AND s.status IN ('quoted','accepted') AND s.first_reply_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.session_id = s.id AND b.status != 'failed')
+          AND EXISTS (SELECT 1 FROM mails m WHERE m.session_id = s.id AND m.direction = 'in'
+                      AND m.received_at >= s.first_reply_at AND m.category = 'customer')
+        ORDER BY s.updated_at DESC LIMIT ?
+        """,
+            (limit,),
+        )
+    ):
+        items.append(
+            {
+                "session_id": r["id"],
+                "kind": "to_book",
+                "reason": "Kunde hat geantwortet, noch nicht gebucht",
+                "subject": r["subject"],
+                "customer": r["customer"],
+                "status": r["status"],
+            }
+        )
+    seen: set[tuple[int, str]] = set()
+    out = []
+    for i in items:
+        key = (i["session_id"], i["kind"])
+        if key not in seen:
+            seen.add(key)
+            out.append(i)
+    return out[:limit]
+
+
+def overview(hours: int = 6) -> dict[str, Any]:
+    """KPIs for the window (hours, 0 = everything), the previous window for trends, sparkline
+    series per bucket, ring values, attention items and recent activity."""
+    c = conn()
+    now_dt = datetime.now(UTC)
+    sessions = _rows(
+        c.execute(
+            "SELECT id, kind, status, created_at, first_reply_at FROM sessions WHERE kind = 'rfq'"
+        )
+    )
+    llm = {
+        r["session_id"]: r["v"]
+        for r in _rows(
+            c.execute(
+                "SELECT session_id, SUM(cost_micro_usd) AS v FROM llm_calls GROUP BY session_id"
+            )
+        )
+    }
+    bookings = _rows(
+        c.execute(
+            "SELECT session_id, price_minor, status, created_at FROM bookings WHERE status != 'failed'"
+        )
+    )
+    board = {
+        r["session_id"]: r["verdict"]
+        for r in _rows(
+            c.execute("SELECT session_id, verdict FROM board_results WHERE session_id IS NOT NULL")
+        )
+    }
+
+    created = [_ts(s["created_at"]) for s in sessions]
+    first = min((t for t in created if t), default=now_dt)
+    if hours <= 0:
+        start = first
+        span = max(now_dt - start, timedelta(hours=1))
+    else:
+        span = timedelta(hours=hours)
+        start = now_dt - span
+    prev_start = start - span
+    n_buckets = (
+        12 if span <= timedelta(hours=6) else min(48, max(6, int(span.total_seconds() // 3600)))
+    )
+    width = span / n_buckets
+
+    def window_stats(lo: datetime, hi: datetime) -> dict[str, Any]:
+        ss = [s for s, t in zip(sessions, created) if t and lo <= t < hi]
+        quoted = [s for s in ss if s["first_reply_at"]]
+        resp = [
+            (_ts(s["first_reply_at"]) - _ts(s["created_at"])).total_seconds()
+            for s in quoted
+            if _ts(s["first_reply_at"]) and _ts(s["created_at"])
+        ]
+        costs = [llm.get(s["id"], 0) or 0 for s in quoted]
+        ids = {s["id"] for s in ss}
+        bk = [b for b in bookings if b["session_id"] in ids]
+        verdicts = [board[i] for i in ids if i in board]
+        rated = [v for v in verdicts if v not in ("open", "pending")]
+        return {
+            "rfqs": len(ss),
+            "quoted": len(quoted),
+            "won": len({b["session_id"] for b in bk}),
+            "booked_minor": sum(b["price_minor"] or 0 for b in bk),
+            "avg_response_s": round(sum(resp) / len(resp), 1) if resp else None,
+            "avg_cost_micro_usd": int(sum(costs) / len(costs)) if costs else None,
+            "accepted": sum(1 for v in rated if v == "accepted"),
+            "rated": len(rated),
+            "lost": sum(1 for s in ss if s["status"] in LOST),
+        }
+
+    cur, prev = window_stats(start, now_dt + timedelta(seconds=1)), window_stats(prev_start, start)
+    series = []
+    for i in range(n_buckets):
+        lo = start + width * i
+        hi = lo + width if i < n_buckets - 1 else now_dt + timedelta(seconds=1)
+        w = window_stats(lo, hi)
+        series.append({"t": lo.isoformat(timespec="minutes"), **w})
+
+    activity = _rows(
+        c.execute(
+            f"SELECT e.id, e.session_id, e.kind, e.level, e.message, e.created_at, s.subject,"
+            f" s.customer, s.status FROM events e LEFT JOIN sessions s ON s.id = e.session_id"
+            f" WHERE e.kind IN ({','.join('?' * len(ACTIVITY_KINDS))}) OR e.level = 'error'"
+            f" ORDER BY e.id DESC LIMIT 12",
+            ACTIVITY_KINDS,
+        )
+    )
+    return {
+        "hours": hours,
+        "window": {
+            "start": start.isoformat(timespec="minutes"),
+            "end": now_dt.isoformat(timespec="minutes"),
+        },
+        "current": cur,
+        "previous": prev,
+        "series": series,
+        "attention": attention_items(),
+        "activity": activity,
+        "global_pause": is_global_paused(),
+    }
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     init_db()

@@ -78,6 +78,16 @@ def api_dashboard() -> dict[str, Any]:
     return db.dashboard()
 
 
+@app.get("/api/overview")
+def api_overview(hours: int = 6) -> dict[str, Any]:
+    return db.overview(hours=max(0, min(hours, 24 * 7)))
+
+
+@app.get("/api/attention")
+def api_attention() -> list[dict[str, Any]]:
+    return db.attention_items()
+
+
 @app.get("/api/crm")
 def api_crm() -> dict[str, Any]:
     return db.crm()
