@@ -90,7 +90,9 @@ def repair(sid: int) -> bool:
             return False
         parent = incoming[-1]
         lang = detect(parent["body"])
-        greeting = "Hallo," if lang == "de" else "Hi,"
+        greeting = {"de": "Hallo,", "fr": "Bonjour,", "es": "Hola,", "it": "Buongiorno,"}.get(
+            lang, "Hi,"
+        )
         body = ensure_notice(f"{greeting}\n\n{SIGNATURE}\n", lang, booked)
         db.kv_set("tracking.notice.recovery.last_attempt", f"{sid}:{time.time_ns()}")
         try:

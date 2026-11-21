@@ -154,6 +154,37 @@ _WORDS: dict[str, frozenset[str]] = {
             "saluti",
         ]
     ),
+    # Portuguese scored as Spanish ("para", "por") and got Spanish replies: only words that
+    # Spanish and Italian do not use
+    "pt": frozenset(
+        [
+            "você",
+            "vocês",
+            "obrigado",
+            "obrigada",
+            "não",
+            "uma",
+            "os",
+            "com",
+            "em",
+            "nós",
+            "nosso",
+            "nossa",
+            "olá",
+            "bom",
+            "dia",
+            "cumprimentos",
+            "atenciosamente",
+            "podem",
+            "poderia",
+            "pelo",
+            "pela",
+            "ao",
+            "também",
+            "são",
+            "está",
+        ]
+    ),
 }
 _TOKEN = re.compile(r"[a-zà-ÿßäöü]+", re.IGNORECASE)
 _QUOTED = re.compile(r"^\s*>.*$", re.MULTILINE)
