@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- UI v3 (light bento, DESIGN.md v0.2): Übersicht with hero KPI, sparklines, trend pills, bezier area chart (volume/response/cost), Apple-Health rings, attention list (expired, error, board rejected, paused, acceptance not booked), activity table; Live and CRM restyled. `/api/overview?hours=`, `/api/attention`.
 - Context adapted from Ghost AI.
 - Stack decided (`context/docs/TECH_SPEC.md`), `context/architecture-context.md` added.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`.
