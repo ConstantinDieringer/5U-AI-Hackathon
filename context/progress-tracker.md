@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 68 rejected too_high: carrier DOCX total rows contain leading/intermediate empty cells, hiding the 41.80 EUR offer while 79.32 EUR trucking was quoted. Explicit-total parsing now normalizes table cell separators before reading labels/currency; components and surcharges remain excluded. Verified actual document replay, without changing carrier balance or claiming the unavailable live candidate trace.
+
 - Writer tone: the composer's shared profile now asks for a close, cheerful best-friend voice throughout each mail, including first contact without invented history. German defaults to du unless formal address is explicitly requested. Latest main's subject rules, separate reviewer and factual/send controls preserved. Integrated full suite passes on Python 3.11 and 3.12: 1104 passed, 5 skipped; no manual live sends.
 - Round 64 carrier documents additionally use `Total, all-in` and adjacent label/value rows. Explicit totals now support those ordinary table layouts without scanning past an unrelated row; all four observed document totals replay correctly. Production no-answer cause remains unverified beyond the already reproduced body-only bid gap.
 - Pre-booking answers (`PREBOOK_ANSWER`, default off, PR open): a reply to our quote that only asks about the quoted option (round 54 style) is answered from the stored quote with a go-ahead question and never booked; rules only, no LLM review, shares `FOLLOWUP_MAX` with the nudges; "book the faster one instead" after it never books. Reply replay: stored replies identical off/on, 19/19 injected round-54 questions answered and booked on the next yes, 0 worse. Not verified live.

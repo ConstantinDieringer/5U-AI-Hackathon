@@ -152,3 +152,42 @@ def test_explicit_total_label_and_adjacent_table_value(label, separator):
 
 def test_missing_total_does_not_scan_past_an_unrelated_row():
     assert bids.document_price("Total\nValid until Friday\nWaiting 450 EUR") is None
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        " | Total |  |  | 41.80",
+        "Total | EUR |  | 41.80",
+        " | Gesamtbetrag | | 41,80 EUR | ",
+        " | Total, all-in | | EUR | 41.80",
+    ],
+)
+def test_empty_table_cells_do_not_hide_total_or_currency(row):
+    assert bids.document_price(f"Amount (EUR)\nWaiting 450 EUR\n{row}") == (Decimal("41.80"), "EUR")
+
+
+def test_real_docx_total_row_with_empty_cells_reaches_offer(monkeypatch):
+    document = docx.Document()
+    document.add_paragraph("Lead time: 29 hours from order to collection")
+    document.add_paragraph("Not part of this offer: waiting time, 45.00 EUR per hour.")
+    table = document.add_table(rows=3, cols=5)
+    for row, values in zip(
+        table.rows,
+        [
+            ["Pos", "Description", "Quantity", "Unit price (EUR)", "Amount (EUR)"],
+            ["1", "Base charge", "1", "38.00", "38.00"],
+            ["", "Total", "", "", "41.80"],
+        ],
+    ):
+        for cell, value in zip(row.cells, values):
+            cell.text = value
+    out = io.BytesIO()
+    document.save(out)
+    monkeypatch.setattr(hackloop, "get_attachment", lambda *_: out.getvalue())
+    monkeypatch.setattr(bids, "_spawn", lambda fn, *args: fn(*args))
+    bids.on_bid_mail(_mail("offer.docx"), 123)
+    (offer,) = bids.offers(123)
+    assert offer.total_eur == Decimal("41.80")
+    assert offer.transit_days == 29 / 24
+    assert offer.timing_kind == "collection_lead"

@@ -129,7 +129,12 @@ def document_price(text: str) -> tuple[Decimal, str] | None:
         for m in re.findall(r"\bEUR\b|\bUSD\b|€|\$", text, re.IGNORECASE)
     }
     found: set[tuple[Decimal, str]] = set()
-    lines = text.splitlines()
+    # The shared document reader separates table cells with pipes. Empty quantity/unit
+    # cells must not hide a total label or split an adjacent currency and amount.
+    lines = [
+        " | ".join(cell.strip() for cell in line.split("|") if cell.strip())
+        for line in text.splitlines()
+    ]
     for index, line in enumerate(lines):
         label = re.match(
             r"\s*(?:(?:grand\s+)?total|gesamt(?:preis|betrag|summe)?)\b"
@@ -149,6 +154,7 @@ def document_price(text: str) -> tuple[Decimal, str] | None:
         tail = line[label.end() :].strip()
         if not tail and index + 1 < len(lines):
             tail = lines[index + 1].strip()
+        tail = tail.replace("|", " ").strip()
         amount = _AMOUNT.match(tail)
         if amount:
             raw = amount.group("num1") or amount.group("num2") or ""
