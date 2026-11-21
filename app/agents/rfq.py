@@ -432,6 +432,21 @@ def _parse_extraction(text: str, mail: Mail, session_id: int) -> tuple[Rfq | Non
             cached = json.loads(db.kv_get(f"rfq.sources.{session_id}", "{}"))
             if cached.get("media"):
                 cached.setdefault("texts", {})["image_transcription"] = str(transcript)
+                originals = json.loads(db.kv_get(f"rfq.original_sources.{session_id}", "{}"))
+                originals["image_transcription"] = str(transcript)
+                db.kv_set(
+                    f"rfq.original_sources.{session_id}", json.dumps(originals, ensure_ascii=False)
+                )
+                try:
+                    cached["texts"] = multilingual.english_sources(cached["texts"], session_id)
+                except Exception as exc:  # noqa: BLE001 - untranslated OCR must block pricing
+                    cached.setdefault("problems", []).append(
+                        {
+                            "field": "attachments",
+                            "code": "translation_failed",
+                            "detail": type(exc).__name__,
+                        }
+                    )
                 cached["media"] = False
                 db.kv_set(f"rfq.sources.{session_id}", json.dumps(cached))
         totals = lots.parse_lots(_clean(mail.body))

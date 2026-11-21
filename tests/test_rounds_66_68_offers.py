@@ -19,7 +19,7 @@ import pytest
 from app import db, llm
 from app.agents import bids
 from app.agents.rfq import best_truck
-from app.mail import speech
+from app.mail import audio
 from app.models import Mail
 
 VOICE_67_DOMBLICK = (
@@ -128,7 +128,7 @@ def test_round_67_voice_offer_wins_the_truck_balance(sid, tmp_path, monkeypatch)
         "schwabenbote-transporte@hackloop.mail": ("o3.txt", table("215.24", 21)),
         "domblick-kurierdienst@hackloop.mail": ("voice-message.mp3", None),
     }
-    monkeypatch.setattr(speech, "transcribe", lambda data: VOICE_67_DOMBLICK)
+    monkeypatch.setattr(audio, "_local", lambda *args: VOICE_67_DOMBLICK)
     for n, (sender, (name, text)) in enumerate(files.items()):
         path = tmp_path / str(n) / name
         path.parent.mkdir()

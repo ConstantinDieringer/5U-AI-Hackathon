@@ -1,9 +1,14 @@
 > Archived progress log (state on 21.11.2026 before the lean-context restructure). Do not read by default; grep for history. Newer overflow from `context/progress-tracker.md` is prepended below this note.
 
+- Required tracking paragraph in every RFQ customer send, plus a 30 s repair worker. 1261 passed/5 skipped; rollout pending.
+
+- Required tracking paragraph in every RFQ customer send, plus a 30 s repair worker. 1261 passed/5 skipped; rollout pending.
+
 - Reply in the customer's language, any language: one checked gateway call in `hackloop.send_customer` names the language and translates; pt no longer read as es; no quote template means English copy translated at send, not no quote (`REPLY_IN_CUSTOMER_LANGUAGE`).
 
 ## Overflow from the lean tracker (newest first)
 
+- Thread rescue limited to input younger than 600 s and two parallel owners (was waking 40 h old threads on restart). Offline tests only.
 - Clarification cap counted per workflow instead of per thread. Offline tests only.
 - Carrier document totals hardened: 18 offer layouts x 5 formats replay exact (was 32/90 with three silent wrong values).
 - Carrier offers in any common attachment; audio transcribed locally, scans via the gateway.

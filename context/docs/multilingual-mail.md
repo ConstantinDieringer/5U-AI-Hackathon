@@ -15,9 +15,10 @@ foreign attachment texts are translated together in one call; page images still 
 existing extraction model. Local-only replay reads cached translations and never makes a
 gateway call.
 
-Voice input uses the multilingual Whisper `base` model with automatic language detection.
-Docker bakes that model into the image. Legacy `.en` model settings are normalized to their
-multilingual counterpart; deployment must rebuild the image so the matching model is present.
+The current audio recovery chain (Groq, allowed gateway audio, offline Whisper) is retained.
+The offline fallback uses multilingual Whisper `base` with automatic language detection.
+Docker bakes that model into the image. Legacy `.en` speech/local model settings are normalized
+to multilingual variants; deployment must rebuild the image for the matching model.
 
 Incoming translations retain negation, conditions, revisions, deferrals, units and dangerous
 goods declarations. A translated booking approval also needs explicit unconditional consent

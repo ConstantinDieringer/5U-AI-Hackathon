@@ -29,7 +29,9 @@ PROMPT = (
 )
 _MARK = "[[0]]"
 _NUMBER = re.compile(r"\d+")
-_AIRPORT = re.compile(r"\b[A-Z]{3}\b")
+# lookarounds, not \b: CJK letters count as word characters ("发往LIM" has no boundary)
+_AIRPORT = re.compile(r"(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])")
+_AMOUNT = re.compile(r"\d[\d.,]*\s?€")
 _CODE = re.compile(r"[a-z]{2,3}")
 _NON_ASCII_LETTER = re.compile(r"[^\W\d_a-zA-Z]")
 _TIMEOUT_S = 15.0
@@ -94,12 +96,19 @@ def _check(original: str, translated: str, source_prose: str, prose: str, target
         missing = set(pattern.findall(original)) - set(pattern.findall(translated))
         if missing:
             raise _Rejected(f"{what} lost: {', '.join(sorted(missing))}")
+    # a € amount stays word for word: a locale's "1 475,00 €" or "1,475 €" can be misread
+    amounts = {re.sub(r"\s", "", a) for a in _AMOUNT.findall(original)}
+    if amounts - {re.sub(r"\s", "", a) for a in _AMOUNT.findall(translated)}:
+        raise _Rejected("€ amount changed")
     if len(translated) > 3 * len(original) + 200:
         raise _Rejected("translation much longer than the original")
-    if target in _WORDS:
-        if detect(prose, default="") != target:
-            raise _Rejected(f"translation does not read as {target}")
-    elif _english_share(prose) > _english_share(source_prose) / 2:
+    found = detect(prose, default="")
+    if found and found != target:
+        raise _Rejected(f"translation does not read as {target}")
+    # close neighbours (da/nb) may tie: then the text must at least no longer read as English
+    if (not found or target not in _WORDS) and _english_share(prose) > _english_share(
+        source_prose
+    ) / 2:
         raise _Rejected(f"translation into {target} still reads as English")
 
 

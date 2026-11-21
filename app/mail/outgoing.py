@@ -25,7 +25,10 @@ _PUNCTUATION = str.maketrans(
         "＿": "_",
     }
 )
-_REFERENCES = re.compile(r"\b(?:BK-[A-Za-z0-9]+|AP-\d+|R-[A-Za-z0-9_-]+)\b")
+# lookarounds, not \b: in Chinese/Japanese text "号是R-4821" has no word boundary before R
+_REFERENCES = re.compile(
+    r"(?<![A-Za-z0-9-])(?:BK-[A-Za-z0-9]+|AP-\d+|R-[A-Za-z0-9_-]+)(?![A-Za-z0-9_-])"
+)
 _INTERNAL = re.compile(
     r"\b(?:road_transit|collection_lead|carrier_timing_kind|road_transit_hours|carrier_reported_lead_hours|confirmed_collection_slot|pickup_included|weight_kg|volume_cbm|ready_date|selection_explanation)\b",
     re.IGNORECASE,

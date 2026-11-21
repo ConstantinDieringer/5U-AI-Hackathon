@@ -773,7 +773,42 @@ def test_voice_transcription_uses_automatic_language_detection(monkeypatch, tran
     monkeypatch.setattr(speech, "settings", replace(speech.settings, speech_model="base"))
     monkeypatch.setattr(speech, "_load", lambda: SimpleNamespace(transcribe=transcribe))
     assert transcribe_audio(b"test audio handled by the fake decoder") == transcript
-    assert calls == [{"beam_size": 1, "language": None}]
+    assert calls == [
+        {"beam_size": 1, "language": None, "vad_filter": True, "condition_on_previous_text": False}
+    ]
+
+
+def test_foreign_image_transcription_reaches_numeric_validation(monkeypatch):
+    original = mail("Please quote air freight from FRA to MIA. The packing list is attached.")
+    transcript = "总毛重100公斤，货物体积2立方米。"
+    db.kv_set("rfq.sources.100", json.dumps({"media": True, "texts": {}, "problems": []}))
+
+    def complete(purpose, messages, sid, **kwargs):
+        assert purpose == "translate_documents"
+        data = json.loads(messages[1]["content"])
+        weight, volume = re.findall(r"⟦K\d+⟧", data["doc0"])
+        return json.dumps({"doc0": f"Total gross weight {weight} kg. Total volume {volume} cbm."})
+
+    monkeypatch.setattr(llm, "complete", complete)
+    parsed, error = rfq._parse_extraction(
+        json.dumps(
+            {
+                "origin": "FRA",
+                "destination": "MIA",
+                "weight_kg": 100,
+                "volume_cbm": 2,
+                "language": "en",
+                "attachment_text": transcript,
+            }
+        ),
+        original,
+        100,
+    )
+    assert parsed is not None and not error
+    cached = json.loads(db.kv_get("rfq.sources.100"))
+    _, draft = validate(original, parsed, cached["texts"], cached["problems"])
+    assert not draft.issues and not cached["media"]
+    assert json.loads(db.kv_get("rfq.original_sources.100"))["image_transcription"] == transcript
 
 
 @pytest.mark.parametrize("lang", ["fr", "es", "ru", "ar", "zh", "ja"])

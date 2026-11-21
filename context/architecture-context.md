@@ -1,7 +1,5 @@
 # Architecture Context
 
-- **Multilingual boundary:** `app/mail/multilingual.py` normalizes working copies and validates native customer output across agents. Originals and business controls survive; details in `docs/multilingual-mail.md` and `areas/customer-email.md`.
-
 - **Manual fallback export:** `app/ui/ai_context.py` builds one markdown briefing per session (thread, attachment text, state, events, diagnostics, recent log lines from the in-memory `app/ui/logbuffer.py` ring) for pasting into an outside chat model; `context.zip` adds original attachment files. Read only: no download, send or gateway call.
 
 - **Required tracking notice:** every RFQ customer send deterministically inserts a dedicated reply-by-email tracking paragraph before the signature, including after optional model editing. Before booking it is conditional. Confirmations explicitly select booked wording. `agents/tracking_notice.py` checks active quotes/bookings every 30 seconds and repairs at most one missing notice, under the booking lock. Valid legacy instructions and referenced originals prevent duplicates. Durable `kv` claims survive restarts; ambiguous transport is alerted, never blindly resent. EN/DE/FR/ES/IT use native templates; other notices use a checked cached translation.
@@ -27,7 +25,7 @@ mail in (`/hooks/mailbox` or poller) → phishing gate + mail guard → router �
 | `app/mail/` (webhook, poller, router, screening, guard, documents, speech) | `areas/mail.md` |
 | `app/agents/rfq.py`, `clarification.py`, `rescue.py`, `watchdog.py`, `followup.py`, `app/mail/rfq_validation.py` | `areas/rfq.md` |
 | `app/pricing/`, `app/agents/bids.py`, `tariff.py`, `carrier_prefs.py` | `areas/pricing.md` |
-| `app/mail/outgoing.py`, `style.py`, `voice.py`, `customer_voice.md`, `app/agents/email_review.py` | `areas/customer-email.md` |
+| `app/mail/outgoing.py`, `style.py`, `multilingual.py`, `voice.py`, `customer_voice.md`, `app/agents/email_review.py` | `areas/customer-email.md` |
 | `app/agents/booking.py`, `prebook.py`, `tracking.py`, `tracking_notice.py` | `areas/booking-tracking.md` |
 | `app/ui/` (server, static, drafts, alerts, watchers, deploy_gate) | `ui-context.md` |
 | `Dockerfile`, `railway.json`, `run.py`, `DEPLOY.md` | `areas/ops.md` |

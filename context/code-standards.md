@@ -26,6 +26,7 @@
 ## LLM Use
 
 - Call LLMs only through the 5U gateway, and only OpenAI models.
+- User-authorized exception for speech recognition: Groq's Whisper transcription API and local Whisper may read audio attachments. No general chat/extraction/pricing calls move outside the gateway. Never log the Groq key or raw provider errors.
 - Make at least one gateway call per quote, because a quote made without one earns no cost points. Keep it as cheap as possible: the smallest model that works, short prompts, and no call where rules suffice.
 - Validate structured output against a schema before use.
 - Log the tokens and cost of each call against its request.

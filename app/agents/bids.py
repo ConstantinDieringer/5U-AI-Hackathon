@@ -193,7 +193,10 @@ def _money_at(text: str, currency: str | None) -> tuple[Decimal, str] | None:
 
 
 def _label_currency(rest: str) -> str | None:
-    found = {_CURRENCY.get(c.upper(), c.upper()) for c in re.findall(r"EUR|USD|€|\$", rest, re.IGNORECASE)}
+    found = {
+        _CURRENCY.get(c.upper(), c.upper())
+        for c in re.findall(r"EUR|USD|€|\$", rest, re.IGNORECASE)
+    }
     return next(iter(found)) if len(found) == 1 else None
 
 
@@ -210,16 +213,17 @@ def document_price(text: str) -> tuple[Decimal, str] | None:
     lines = [" | ".join(_cells(line)) for line in text.translate(_SPACES).splitlines()]
     lines = [line for line in lines if line]
     found = {
-        c for m in re.findall(r"\bEUR\b|\bUSD\b|€|\$", "\n".join(lines), re.IGNORECASE)
+        c
+        for m in re.findall(r"\bEUR\b|\bUSD\b|€|\$", "\n".join(lines), re.IGNORECASE)
         if (c := _CURRENCY.get(m.upper(), m.upper()))
     }
     only = next(iter(found)) if len(found) == 1 else None
     header: str | None = None
     tiers: tuple[set, set] = (set(), set())
     for index, line in enumerate(lines):
-        if re.search(r"\((?:EUR|USD|€|\$)\)|\bin\s+(?:EUR|USD)\b", line, re.IGNORECASE) and not re.search(
-            r"\d", re.sub(r"\((?:EUR|USD)\)", "", line)
-        ):
+        if re.search(
+            r"\((?:EUR|USD|€|\$)\)|\bin\s+(?:EUR|USD)\b", line, re.IGNORECASE
+        ) and not re.search(r"\d", re.sub(r"\((?:EUR|USD)\)", "", line)):
             header = _label_currency(line)  # a column header such as "Amount (EUR)"
         for tier, pattern in enumerate((_TOTAL_LABEL, _PRICE_LABEL)):
             label = pattern.match(line)
@@ -237,7 +241,9 @@ def document_price(text: str) -> tuple[Decimal, str] | None:
             tail = line[label.end() :].strip().lstrip("|:= ").strip()
             if not tail and index + 1 < len(lines):
                 tail = lines[index + 1].strip()  # value in the next row
-                if not re.fullmatch(rf"(?:EUR|USD|€|\$)?\s*{_MONEY}\s*(?:EUR|USD|€|\$)?", tail, re.IGNORECASE):
+                if not re.fullmatch(
+                    rf"(?:EUR|USD|€|\$)?\s*{_MONEY}\s*(?:EUR|USD|€|\$)?", tail, re.IGNORECASE
+                ):
                     break
             # a price line (tier 2) needs its currency written next to the amount
             amount = _money_at(tail, currency if tier == 0 else None)
@@ -384,9 +390,7 @@ def timing_kind(text: str) -> str:
     stop = match.end() + end.start() if end else len(text)
     clause = text[start:stop].lower()
     road = bool(re.search(r"transit time|driving|fahrzeit|transportdauer", clause))
-    collection = (
-        bool(re.search(r"pickup|pick up|collect|abhol|driver|fahrer", clause)) and not road
-    )
+    collection = bool(re.search(r"pickup|pick up|collect|abhol|driver|fahrer", clause)) and not road
     return "road_transit" if road else "collection_lead" if collection else "unspecified"
 
 
@@ -540,6 +544,13 @@ def _unreadable(carrier: Carrier, sid: int, issue: str, kind: str = "bid_unreada
     db.emit(kind, f"Gebot von {carrier.name}: {issue}"[:300], sid, level="warn")
 
 
+def _usable_voice(text: str) -> bool:
+    return (
+        spoken_price(normalize_spoken(text)) is not None
+        or served_lanes.parse_refusal(text) is not None
+    )
+
+
 def on_bid_mail(mail: Mail, session_id: int | None) -> None:
     """Called by the poller for every CARRIER_BID mail. The offer may be in the mail text or
     in attachments: documents are read in code (app/mail/documents.py), voice messages and
@@ -560,43 +571,62 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
         _unreadable(carrier, sid, "Anhang nicht geladen")
         return
     files: list[tuple[str, str]] = []
+    spoken: list[tuple[str, str]] = []
     pending: list[tuple[Path, documents.Document]] = []
     for path in paths:
         try:
             doc = documents.read(path)
+            if doc.voice and not doc.audio and not _usable_voice(doc.text):
+                # An old empty/unusable cached transcript must not prevent recovery.
+                doc = documents.read_bytes(path.name, path.read_bytes())
         except Exception as exc:  # noqa: BLE001 - a broken file must not price the bid
             _unreadable(carrier, sid, f"Anhang {path.name} nicht lesbar ({str(exc)[:80]})")
             return
         if doc.needs_model:
             pending.append((path, doc))
+        elif doc.voice:
+            spoken.append((path.name, doc.text))
         else:
             files.append((path.name, doc.text))
     if pending:
         if not config.settings.attachment_transcription:
             _unreadable(carrier, sid, "nur Audio/Scan, Transkription aus")
             return
-        _spawn(_transcribe_then_evaluate, mail, sid, carrier, body, files, pending)
+        _spawn(_transcribe_then_evaluate, mail, sid, carrier, body, files, pending, spoken)
         return
-    _evaluate(mail, sid, carrier, body, files, [])
+    _evaluate(mail, sid, carrier, body, files, spoken)
 
 
 def _transcribe_then_evaluate(
-    mail: Mail, sid: int, carrier: Carrier, body: str, files: list, pending: list
+    mail: Mail,
+    sid: int,
+    carrier: Carrier,
+    body: str,
+    files: list,
+    pending: list,
+    spoken: list[tuple[str, str]] | None = None,
 ) -> None:
-    """Runs in its own thread: transcription must not hold up the mail loop. Voice messages
-    are read locally (no cost). Scans cost a gateway call outside the session's LLM budget;
-    MAX_BID_TRANSCRIPTIONS per session bounds those."""
+    """Recognition must not hold up mail intake. Voice uses its bounded provider chain;
+    scans use gateway calls outside the quote budget, capped by MAX_BID_TRANSCRIPTIONS."""
     try:
-        spoken: list[tuple[str, str]] = []
+        spoken = list(spoken or [])
         files = list(files)
         for path, doc in pending:
-            if doc.media and documents.cached_transcript(path) is None:
+            cached = documents.cached_transcript(path)
+            if doc.media and cached is None:
                 with _cond:
                     used = _transcriptions.get(sid, 0)
                     if used >= MAX_BID_TRANSCRIPTIONS:
                         raise RuntimeError(f"{used} bid attachments already transcribed")
                     _transcriptions[sid] = used + 1
-            text = documents.transcribe(doc, None, f"bid_attachment s{sid}", path)
+            text = documents.transcribe(
+                doc,
+                None,
+                f"bid_attachment s{sid}",
+                path,
+                audit_session_id=sid,
+                accept_text=_usable_voice if doc.voice else None,
+            )
             db.emit(
                 "bid_transcribed",
                 f"Gebot von {carrier.name}: {path.name} gelesen ({doc.kind.lstrip('.')})",
