@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Trucker balance (`TRUCKER_BALANCE`, default `minmax` = today): `ratio` picks price/cheapest + time/fastest, which reproduces the board's best price on all 11 scored door rounds (minmax: 7). Replay with `ratio` moves only rounds 21/22/25/26, each to the implied best (+56.8 accuracy points there). Not verified live.
 - Stronger RFQ models: extraction defaults to gpt-5-mini (was nano); failed extraction repair defaults to gpt-5 (was mini), with price accounting. Both passed a synthetic gateway extraction/repair probe; 40 relevant tests pass. Composer stays mini; deployment overrides still take precedence and live rollout is unverified.
 - Startup agent check: `run.py` imports every agent from `app.agents.AGENTS` and logs `agents loaded: ...`; a broken one logs an error, emits `agent_import_failed` (#sos) and does NOT stop the other agents. CI imports every app module. DEPLOY.md has live-round deploy rules. Not verified on Railway; local start with AGENTS_ENABLED=false logged the line.
 - RFQ replay harness (`python -m app.agents.rfq_replay`, `tests/test_rfq_replay.py`): all 27 live rounds through the real flow offline (stored extraction/portal/bids, no network); baseline diff gates option, total, airline, carriers, clarification and mail text. 22/27 match production exactly; rounds 2/12 lack stored data, 18 to 20 now ask for the pickup. Composer output and new portal reads are not replayed.
@@ -110,6 +111,7 @@ Goal: the first accepted quote end to end before any polish.
 8. ~~Start kit contents~~ → 10 sheets (xlsx/pdf/docx/txt/jpg), 29 airlines + 23 truckers in `carrier-list.csv`, zones = 2-digit postcode → FRA/MUC/DUS/HAM/STR/CGN. Still open: trucking price (assumed: trucker bids by email).
 9. How to tell mail started by 5U's agents from other mail.
 10. The exact "fastest" rule, and the formula for the 50/50 price/speed balance among bids.
+    → Truckers: price/cheapest + time/fastest (board fit, rounds 13 to 29). Airline bids: no evidence yet.
 11. ~~How many carriers to ask and how long to wait~~ → 2–5 carriers, full-score deadline 110 s,
     final deadline 300 s; 15 s are reserved for composing and sending.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
@@ -130,6 +132,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 19:30: Board fit: accuracy = 45 × (1 − |ours − best| / best / 10 %), quoting below best costs too. Rounds 2 and 27 lost on the air leg: the best price billed the next weight break (Solace 2000 kg, Meridian 1000 kg). Round 2 is fixed by the portal next-break check; the 503 → email-bid path (27) has no break check yet.
 
 - 21.11 19:00: Board accuracy (now visible) is the largest leak on answered rounds: rounds 2, 19, 21, 22, 25, 26 scored 28 to 38 of 45 while accepted. Rounds 15 to 17 (no answer) were forwarded-subject origin AMS and two RFQs without pickup; current code asks instead. LLM cost was about 0.2 points per quote, not a leak.
 
