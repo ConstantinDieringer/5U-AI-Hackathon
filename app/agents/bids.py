@@ -310,17 +310,20 @@ def offers(session_id: int) -> list[Offer]:
 def wait(
     session_id: int, timeout_s: float, until_kinds: set[str] | None = None
 ) -> list[Offer]:
-    """Block until every asked carrier answered (or, with `until_kinds`, until at least one
-    offer of each kind is in), or the timeout passes. Returns the offers so far."""
+    """Block until every asked carrier answered (or, with `until_kinds`, until each kind has
+    an offer or nobody of that kind is left to answer), or the timeout passes. Returns the
+    offers so far."""
 
     def done() -> bool:
         req = _open.get(session_id)
         if req is None or not req.asked:
             return True
+        answered = {o.carrier.email for o in req.offers} | req.declined
         if until_kinds is not None:
             have = {o.carrier.kind for o in req.offers}
-            return until_kinds <= have
-        answered = {o.carrier.email for o in req.offers} | req.declined
+            # round 11: every airline had declined, yet we waited out the full timeout
+            waiting = {c.kind for email, c in req.asked.items() if email not in answered}
+            return all(k in have or k not in waiting for k in until_kinds)
         return answered >= set(req.asked)
 
     with _cond:

@@ -12,6 +12,7 @@ from app.mail.content import current_message
 from app.mail.language import detect
 from app.mail.rfq_validation import numeric_facts, validate
 from app.mail.router import address
+from app.mail.style import SIGNATURE
 from app.models import Mail, RfqDraft
 
 
@@ -23,7 +24,7 @@ def expired(sid):
 def text_for(draft, lang):
     if draft.evidence.get("question_en"):
         question = draft.evidence["question_de" if lang == "de" else "question_en"]
-        return f"{'Guten Tag' if lang == 'de' else 'Hello'},\n\n{question}\n\nYour austrian Power Team\n"
+        return f"{'Guten Tag' if lang == 'de' else 'Hello'},\n\n{question}\n\n{SIGNATURE}\n"
     fields = sorted({i["field"] for i in draft.issues})
     en = {
         "pickup_zip": "the pickup site's postal code (Pickup ZIP)",
@@ -50,19 +51,21 @@ def text_for(draft, lang):
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
     }
     labels = de if lang == "de" else en
-    points = "\n".join("• " + labels[f] for f in fields)
+    items = [labels[f] for f in fields]
+    joiner = " und " if lang == "de" else " and "
+    wanted = items[0] if len(items) == 1 else ", ".join(items[:-1]) + joiner + items[-1]
+    # one short human paragraph, no bullet list; the labels in brackets stay so the reply
+    # can be matched to the field
+    if lang == "de":
+        return (
+            "Guten Tag,\n\ndanke für Ihre Anfrage. Damit wir Ihnen einen genauen Preis "
+            f"nennen können, brauchen wir noch {wanted}. Schicken Sie uns das kurz hier im "
+            f"Thread, dann melden wir uns gleich mit dem Angebot.\n\n{SIGNATURE}\n"
+        )
     return (
-        (
-            "Guten Tag,\n\nfür ein vollständiges Angebot bestätigen oder korrigieren Sie bitte:\n"
-            if lang == "de"
-            else "Hello,\n\nBefore we can quote, please confirm or correct:\n"
-        )
-        + points
-        + (
-            "\n\nBitte antworten Sie in diesem Thread.\n\nYour austrian Power Team\n"
-            if lang == "de"
-            else "\n\nPlease reply in this thread with the labelled values.\n\nYour austrian Power Team\n"
-        )
+        "Hello,\n\nthanks for your request. To give you an exact price we just need "
+        f"{wanted}. Could you send that over in this thread? We'll come back with the "
+        f"quote right away.\n\n{SIGNATURE}\n"
     )
 
 
