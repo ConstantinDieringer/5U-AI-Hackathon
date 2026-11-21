@@ -52,6 +52,7 @@ button { font: inherit; color: inherit; cursor: pointer; letter-spacing: inherit
 .nav.active .icon { color: var(--blue); }
 .nav .badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill); background: var(--orange); color: #fff; font-size: 12px; font-weight: 600; display: grid; place-items: center; }
 .nav .badge:empty { display: none; }
+.nav .badge.err { background: var(--red); }
 .sidebar .spacer { flex: 1; }
 .conn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--ink-2); font-size: 12px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
@@ -164,6 +165,37 @@ table.steps { table-layout: fixed; min-width: 560px; }
 .step.green { background: var(--green-tint); color: #248A3D; } .step.blue { background: var(--blue-tint); color: var(--blue); }
 .step.orange { background: var(--orange-tint); color: #C93400; } .step.red { background: var(--red-tint); color: #D70015; }
 
+/* ---------- overview v0.3: status strip + problems feed ---------- */
+.strip { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 16px 20px; }
+.strip .verdict { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.strip .verdict .lamp { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.strip .verdict b { font-size: 20px; line-height: 26px; letter-spacing: -0.02em; }
+.lamp.green { background: var(--green); box-shadow: 0 0 0 4px var(--green-tint); }
+.lamp.orange { background: var(--orange); box-shadow: 0 0 0 4px var(--orange-tint); }
+.lamp.red { background: var(--red); box-shadow: 0 0 0 4px var(--red-tint); }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: var(--r-pill); background: var(--fill-1); font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+.pill.ok i { background: var(--green); } .pill.warn { background: var(--orange-tint); color: #C93400; } .pill.warn i { background: var(--orange); }
+.pill.bad { background: var(--red-tint); color: #D70015; } .pill.bad i { background: var(--red); }
+.strip .score { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+.strip .score b { font-size: 22px; letter-spacing: -0.03em; }
+.prob { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; padding: 12px; border-radius: var(--r-md); align-items: start; }
+.prob + .prob { border-top: 1px solid var(--hairline); border-radius: 0; }
+.prob .ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; }
+.prob.error .ic { background: var(--red-tint); color: var(--red); } .prob.warn .ic { background: var(--orange-tint); color: var(--orange); }
+.prob .msg { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.prob .msg.full { -webkit-line-clamp: unset; display: block; }
+.prob .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--ink-2); }
+.prob .count { font: 700 15px/20px var(--font); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.prob .count small { display: block; font-size: 12px; font-weight: 500; color: var(--ink-2); }
+.prob.fresh { background: var(--red-tint); }
+.chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--r-pill); background: var(--fill-1); color: var(--ink); font-size: 12px; font-weight: 500; border: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.chip:hover { background: var(--blue-tint); color: var(--blue); }
+.probs { max-height: 560px; overflow: auto; margin: 0 -12px; padding: 0 12px; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 50; padding: 10px 16px; border-radius: var(--r-md); background: var(--ink); color: #fff; font-weight: 500; box-shadow: var(--shadow-float); opacity: 0; transition: opacity var(--mid); pointer-events: none; }
+.toast.show { opacity: 1; }
+
 /* ---------- live ---------- */
 .live { display: grid; grid-template-columns: minmax(300px, 4fr) minmax(0, 8fr); gap: var(--gap); max-width: 1360px; align-items: start; }
 .live .list-card { padding: 16px; position: sticky; top: 110px; max-height: calc(100vh - 130px); display: flex; flex-direction: column; }
@@ -261,7 +293,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 
 <nav class="sidebar" aria-label="Hauptnavigation">
   <div class="brand"><span class="mark"><svg class="icon"><use href="#i-plane"/></svg></span><div><b>Austrian Power</b><small>Forwarder Console</small></div></div>
-  <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Übersicht</span></button>
+  <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Übersicht</span><span class="badge err" id="err-badge" title="Fehler der letzten 15 min"></span></button>
   <button class="nav" data-page="live"><svg class="icon"><use href="#i-radio"/></svg><span class="lbl">Live</span><span class="badge" id="attn-badge"></span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
   <div class="spacer"></div>
@@ -339,7 +371,7 @@ function emptyState(ic, text) { return el("div", { class: "empty" }, el("span", 
 
 // ---------- state ----------
 const S = { page: "overview", filter: "attention", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", initDone: false };
-const PAGES = { overview: ["Übersicht", "Was funktioniert, was nicht, was ist zu tun?"], live: ["Live", "Sessions, die dich brauchen, stehen oben."], crm: ["CRM", "Wen wir quotiert haben, was gewonnen und was verloren wurde."] };
+const PAGES = { overview: ["Übersicht", "Läuft alles? Welche Fehler gibt es? Was ist zu tun?"], live: ["Live", "Sessions, die dich brauchen, stehen oben."], crm: ["CRM", "Wen wir quotiert haben, was gewonnen und was verloren wurde."] };
 const FILTERS = [["attention", "Achtung"], ["open", "Offen"], ["all", "Alle"], ["done", "Erledigt"]];
 
 // ---------- countdown ----------
@@ -368,50 +400,68 @@ function stepChip(st) {
   const ic = STEP_ICON[st.state];
   return el("span", { class: "step " + (TONE[st.state] || ""), title: st.label }, ic ? icon(ic) : null, el("span", {}, st.label));
 }
+const KIND_LABEL = { log_error: "Log-Fehler", clarification_loop: "Rückfrage-Limit", clarification_unknown: "Versand unklar", clarification_capped: "Rückfrage-Limit", guard: "Mail-Guard", board_verdict: "5U-Urteil", watchdog_alert: "Watchdog", agent_import_failed: "Agent defekt", validation_blocked: "Rückfrage", error: "Fehler", warn: "Warnung" };
+const kindLabel = (k) => KIND_LABEL[k] || k.replace(/_/g, " ");
+const ago = (iso) => { if (!iso) return ""; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "gerade eben" : m < 60 ? `vor ${m} min` : `vor ${Math.floor(m / 60)} h ${m % 60} min`; };
+let PROBLEMS = null;
+function problemRow(g) {
+  const fresh = g.level === "error" && g.last_event_id > (S.problemsSeen || 0);
+  const msg = el("div", { class: "msg", title: "Klick: ganze Meldung" }, g.message || "(ohne Text)");
+  msg.addEventListener("click", () => msg.classList.toggle("full"));
+  return el("div", { class: "prob " + g.level + (fresh ? " fresh" : "") },
+    el("span", { class: "ic" }, icon(g.level === "error" ? "x" : "alert")),
+    el("div", { style: "min-width:0" }, msg,
+      el("div", { class: "meta" }, el("span", { class: "badge-s " + (g.level === "error" ? "red" : "orange") }, kindLabel(g.kind)),
+        fresh ? el("span", { class: "badge-s red" }, "neu") : null,
+        el("span", {}, `${hm(g.last_at)} · ${ago(g.last_at)}` + (g.count > 1 ? ` · seit ${hm(g.first_at)}` : "")),
+        ...g.sessions.map((x) => el("button", { class: "chip", title: [x.subject, x.customer].filter(Boolean).join(" · "), onclick: () => select(x.id) }, "#" + x.id + (x.customer ? " " + x.customer.replace("@hackloop.mail", "").split("-")[0] : ""))))),
+    el("div", { class: "count" }, g.count + "×", el("small", {}, g.sessions.length ? g.sessions.length + " Sess." : "System")));
+}
+function renderProblems() {
+  const box = $("#problems"); if (!box || !PROBLEMS) return;
+  const f = S.probFilter || "error", groups = PROBLEMS.groups.filter((g) => f === "all" || g.level === f);
+  $("#prob-seg").replaceChildren(...[["error", `Fehler ${PROBLEMS.errors}`], ["warn", `Warnungen ${PROBLEMS.warnings}`], ["all", "Alle"]].map(([k, l]) =>
+    el("button", { class: f === k ? "active" : "", onclick: () => { S.probFilter = k; renderProblems(); } }, l)));
+  box.replaceChildren(groups.length ? el("div", { class: "probs" }, ...groups.map(problemRow))
+    : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), f === "error" ? `Keine Fehler in den letzten ${PROBLEMS.hours} h.` : "Nichts in diesem Filter."));
+}
+async function copyText(url, btn) {
+  const old = btn.innerHTML; btn.disabled = true;
+  try {
+    const { text } = await api(url);
+    try { await navigator.clipboard.writeText(text); }
+    catch { const ta = el("textarea", { style: "position:fixed;opacity:0" }); ta.value = text; document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+    toast(`Kontext kopiert (${Math.round(text.length / 1000)}k Zeichen). In ein AI-Modell einfügen.`);
+  } catch (e) { toast("Kopieren fehlgeschlagen: " + e.message); }
+  finally { btn.disabled = false; btn.innerHTML = old; }
+}
+let toastT = null;
+function toast(text) { let t = $("#toast"); if (!t) { t = el("div", { id: "toast", class: "toast", role: "status" }); document.body.append(t); } t.textContent = text; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 3500); }
 async function loadOverview() {
-  const d = await api("/api/status").catch(() => null); if (!d) return;
+  const [d, p] = await Promise.all([api("/api/status").catch(() => null), api("/api/problems?hours=3").catch(() => null)]); if (!d) return;
+  PROBLEMS = p || { groups: [], errors: 0, warnings: 0, hours: 3 };
+  if (S.problemsSeen == null) S.problemsSeen = Math.max(0, ...PROBLEMS.groups.map((g) => g.last_event_id)) ; // first load: nothing is "neu"
   const card = (cls, ...kids) => el("div", { class: "card " + cls }, ...kids);
   const head = (title, sub, aside) => el("div", { class: "card-h" }, el("div", {}, el("h3", {}, title), sub ? el("div", { class: "caption" }, sub) : null), aside || null);
 
-  // 1. Systemcheck: one tile per pipeline part, last 2 h
+  // 1. Status strip: verdict, one pill per pipeline part, score in one line
   const bad = d.checks.filter((c) => c.level === "bad").length, warn = d.checks.filter((c) => c.level === "warn").length;
-  const verdict = bad ? ["red", `${bad} Problem${bad > 1 ? "e" : ""}`] : warn ? ["orange", `${warn} Warnung${warn > 1 ? "en" : ""}`] : ["green", "Alles läuft"];
-  const checks = card("s8",
-    head("Systemcheck", `Funktioniert jeder Schritt? Basis: letzte ${d.window_hours} h`, el("span", { class: "aside badge-s " + verdict[0] }, verdict[1])),
-    el("div", { class: "checks" }, ...d.checks.map((c) => el("div", { class: "check " + c.level },
-      el("div", { class: "ck-h" }, el("i", { class: "lamp" }), el("span", {}, c.name)),
-      el("div", { class: "ck-v num" }, c.value),
-      el("div", { class: "ck-hint" }, c.hint)))));
+  const recentErr = PROBLEMS.groups.filter((g) => g.level === "error" && Date.now() - new Date(g.last_at) < 15 * 60000).length;
+  const tone = bad || recentErr ? "red" : warn ? "orange" : "green";
+  const verdictText = bad ? `${bad} Problem${bad > 1 ? "e" : ""}` : recentErr ? `${recentErr} neue Fehler` : warn ? `${warn} Warnung${warn > 1 ? "en" : ""}` : "Alles läuft";
+  const sc = d.score;
+  const strip = card("s12 strip",
+    el("div", { class: "verdict" }, el("i", { class: "lamp " + tone }), el("div", {}, el("b", {}, verdictText), el("div", { class: "caption" }, `Systemcheck · letzte ${d.window_hours} h`))),
+    el("div", { class: "pills" }, ...d.checks.map((c) => el("span", { class: "pill " + c.level, title: `${c.name}: ${c.value} · ${c.hint}` }, el("i"), c.name))),
+    el("div", { class: "score", title: "Ø Punkte je akzeptierter Quote (Preis als voll angenommen)" }, el("b", { class: "num" }, sc.per_quote == null ? "–" : Math.round(sc.per_quote)), el("span", { class: "caption" }, `/ 100 · ${sc.accepted} von ${sc.rated} akzeptiert`)),
+    el("button", { class: "btn", title: "Lagebild (Systemcheck, Fehler, Zu tun, letzte Anfragen) als Text kopieren, zum Einfügen in ChatGPT/Claude", onclick: (e) => copyText("/api/context", e.currentTarget) }, icon("inbox"), "Lagebild kopieren"));
 
-  // 2. Punkte: what an accepted quote earns on average
-  const sc = d.score, pts = (v, max) => v == null ? "–" : `${v.toFixed(1)} / ${max}`;
-  const bar = (label, val, max, text, color) => el("div", { class: "bar" },
-    el("div", { class: "bar-h" }, el("span", {}, label), el("b", { class: "num" }, text)),
-    el("div", { class: "bar-t" }, el("i", { style: `width:${val == null ? 0 : Math.max(2, 100 * val / max)}%;background:${color}` })));
-  const accRate = sc.rated ? sc.accepted / sc.rated : null;
-  const vlist = Object.entries(sc.verdicts).sort((a, b) => b[1] - a[1]).map(([v, n]) => el("span", { class: "badge-s " + (v === "accepted" ? "green" : "red") }, `${n}× ${v}`));
-  const score = card("s4",
-    head("Punkte", "Ø je akzeptierter Quote, seit Start"),
-    el("div", { class: "big num" }, sc.per_quote == null ? "–" : Math.round(sc.per_quote), el("span", { class: "of" }, " / 100")),
-    el("div", { class: "caption", style: "margin-bottom:16px" }, "Preis als voll angenommen, das Board zeigt nur akzeptiert / abgelehnt."),
-    bar("Preis · akzeptiert", accRate, 1, sc.rated ? `${sc.accepted} von ${sc.rated}` : "–", "#34C759"),
-    bar("Kosten · Ø " + usd(sc.avg_cost_micro_usd), sc.cost_pts, 40, pts(sc.cost_pts, 40), "#5856D6"),
-    bar("Zeit · Ø " + secs(sc.avg_response_s), sc.time_pts, 15, pts(sc.time_pts, 15), "#007AFF"),
-    el("div", { class: "verdicts" }, ...vlist));
+  // 2. Fehler & Warnungen: grouped, newest first, live
+  const probs = card("s8",
+    head("Fehler & Warnungen", `Letzte ${PROBLEMS.hours} h · gleiche Meldungen zusammengefasst`, el("div", { class: "seg aside", id: "prob-seg" })),
+    el("div", { id: "problems" }));
 
-  // 3. Letzte Anfragen: each request step by step
-  const rows = d.requests.map((r) => el("tr", { onclick: () => select(r.id) },
-    el("td", { class: "muted num" }, hm(r.created_at)),
-    el("td", {}, el("div", { class: "req" }, el("b", { title: r.lane || r.subject || "#" + r.id }, r.lane || r.subject || "#" + r.id), el("span", { class: "muted", title: [(r.customer || ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ") }, [(r.customer || "").replace("@hackloop.mail", ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ")))),
-    el("td", {}, stepChip(r.steps.quote)), el("td", {}, stepChip(r.steps.board)), el("td", {}, stepChip(r.steps.booking))));
-  const reqs = card("s8",
-    head("Letzte Anfragen", "Jede RFQ von links nach rechts: Quote gesendet → 5U-Urteil → gebucht. Klick öffnet die Session.", el("button", { class: "btn ghost aside", onclick: () => show("live") }, "Alle", icon("cart"))),
-    rows.length ? el("div", { class: "table-scroll", role: "region", "aria-label": "Letzte Anfragen", tabindex: "0" },
-      el("table", { class: "list steps" }, el("colgroup", {}, ...["time", "request", "quote", "board", "booking"].map((name) => el("col", { class: "col-" + name }))),
-        el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Anfrage"), el("th", {}, "Quote"), el("th", {}, "5U"), el("th", {}, "Buchung"))), el("tbody", {}, ...rows))) : emptyState("inbox", "Noch keine Anfragen."),
-    el("div", { class: "legend", style: "margin-top:14px" }, ...[["#34C759", "erledigt"], ["#007AFF", "läuft / wartet"], ["#FF9500", "knapp"], ["#FF3B30", "verloren / Fehler"]].map(([c, l]) => el("span", {}, el("i", { style: "background:" + c }), l))));
-
-  // 4. Zu tun: only what a human can still change; quarantined mails first
+  // 3. Zu tun: only what a human can still change; quarantined mails first
   const quarantine = d.quarantine || [], open = d.todo.length + quarantine.length;
   const qItems = quarantine.map((q) => el("div", { class: "attn-item quarantine", onclick: q.session_id ? () => select(q.session_id) : null },
     el("span", { class: "ic", style: "background:var(--red-tint);color:var(--red)" }, icon("stop")),
@@ -426,9 +476,23 @@ async function loadOverview() {
       el("div", { style: "min-width:0" }, el("div", { class: "t" }, t.lane || t.subject || "Session " + t.session_id), el("div", { class: "d" }, t.reason + " · " + (t.customer || "").replace("@hackloop.mail", ""))))))
       : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts zu tun. Der Agent arbeitet allein."));
 
-  $("#overview").replaceChildren(checks, todo, reqs, score);
+  // 4. Letzte Anfragen: each request step by step
+  const rows = d.requests.map((r) => el("tr", { onclick: () => select(r.id) },
+    el("td", { class: "muted num" }, hm(r.created_at)),
+    el("td", {}, el("div", { class: "req" }, el("b", { title: r.lane || r.subject || "#" + r.id }, r.lane || r.subject || "#" + r.id), el("span", { class: "muted", title: [(r.customer || ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ") }, [(r.customer || "").replace("@hackloop.mail", ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ")))),
+    el("td", {}, stepChip(r.steps.quote)), el("td", {}, stepChip(r.steps.board)), el("td", {}, stepChip(r.steps.booking))));
+  const reqs = card("s12",
+    head("Letzte Anfragen", "Quote gesendet → 5U-Urteil → gebucht. Klick öffnet die Session.", el("button", { class: "btn ghost aside", onclick: () => show("live") }, "Alle", icon("cart"))),
+    rows.length ? el("div", { class: "table-scroll", role: "region", "aria-label": "Letzte Anfragen", tabindex: "0" },
+      el("table", { class: "list steps" }, el("colgroup", {}, ...["time", "request", "quote", "board", "booking"].map((name) => el("col", { class: "col-" + name }))),
+        el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Anfrage"), el("th", {}, "Quote"), el("th", {}, "5U"), el("th", {}, "Buchung"))), el("tbody", {}, ...rows))) : emptyState("inbox", "Noch keine Anfragen."));
+
+  $("#overview").replaceChildren(strip, probs, todo, reqs);
+  renderProblems();
   $("#attn-badge").textContent = open || "";
+  const errBadge = $("#err-badge"); if (errBadge) errBadge.textContent = recentErr || "";
 }
+document.addEventListener("visibilitychange", () => { if (document.hidden && PROBLEMS) S.problemsSeen = Math.max(S.problemsSeen || 0, ...PROBLEMS.groups.map((g) => g.last_event_id)); });
 async function releaseMail(id, btn) {
   btn.disabled = true;
   try { const r = await post(`/api/mails/${id}/release`); if (r.session_id) select(r.session_id); else loadOverview(); }
@@ -520,6 +584,7 @@ function renderDetail() {
       s.paused ? el("button", { class: "btn", onclick: act("resume") }, icon("play"), "Fortsetzen") : el("button", { class: "btn", onclick: act("pause") }, icon("pause"), "Pausieren"),
       s.mode === "manual" ? el("button", { class: "btn", onclick: act("handback") }, icon("undo"), "An Agent zurückgeben") : el("button", { class: "btn", onclick: act("takeover", "Session übernehmen? Der Agent sendet danach nichts mehr in diesem Thread.") }, icon("hand"), "Übernehmen"),
       el("button", { class: "btn", onclick: loadDraft, title: "Preis aus Tarifblatt, Portal und Geboten berechnen und eine fertige Quote ins Antwortfeld setzen" }, icon("coin"), "Notfall-Quote"),
+      el("button", { class: "btn", title: "Ganze Session (Anfrage, Mails, Quotes, Agent-Schritte, Fehler) als Text kopieren, zum Einfügen in ChatGPT/Claude", onclick: (e) => copyText(`/api/sessions/${s.id}/context`, e.currentTarget) }, icon("inbox"), "Kontext kopieren"),
       el("button", { class: "btn primary", onclick: () => toggleReply(true) }, icon("send"), "Antworten")),
     ...notices,
     el("div", { id: "reply", style: "display:none;margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
