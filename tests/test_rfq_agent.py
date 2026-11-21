@@ -106,10 +106,10 @@ def test_quote_text_has_exactly_one_total() -> None:
     o = opt("Cobalt Skylift", 2345, 2)
     t = bids.Offer(bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",)), Decimal(200), 1, 9)
     text = rfq.quote_text(r, o, 254500, t, 1)
-    assert _amounts(text) == ["2.545,00 €"]
+    assert _amounts(text) == ["2.545 €"]
     assert "Hi Sara" in text and "51447" in text and "all-in" in text
     de = rfq.quote_text(r.model_copy(update={"language": "de"}), o, 254500, None, 0)
-    assert _amounts(de) == ["2.545,00 €"]
+    assert _amounts(de) == ["2.545 €"]
 
 
 MAIL_1628 = (
@@ -310,10 +310,10 @@ def test_composer_repairs_mixed_route_phrase_once(monkeypatch) -> None:
     option = RateOption("Test Air", "FRA", "GRU", 2, 147500, "EUR", 147500, "sheet")
     bodies = [
         (
-            "Hello,\n\nTest Air from origin to nach GRU: 1.475,00 € all-in."
+            "Hello,\n\nTest Air from origin to nach GRU: 1.475 € all-in."
             "\n\nYour austrian Power Team"
         ),
-        ("Hello,\n\nTest Air from FRA to GRU: 1.475,00 € all-in.\n\nYour austrian Power Team"),
+        ("Hello,\n\nTest Air from FRA to GRU: 1.475 € all-in.\n\nYour austrian Power Team"),
     ]
     purposes: list[str] = []
 

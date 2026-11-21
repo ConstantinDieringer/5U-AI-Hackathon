@@ -202,8 +202,8 @@ def test_catch_up_books_waiting_acceptance(monkeypatch) -> None:
     ("air_minor", "air_currency", "expected"),
     [
         (287765, "EUR", "2.877,65 €"),
-        (320000, "USD", "3.200,00 USD"),
-        (0, "EUR", "0,00 €"),
+        (320000, "USD", "3.200 USD"),
+        (0, "EUR", "0 €"),
     ],
 )
 def test_email_booking_uses_frozen_air_price_after_restart(

@@ -223,7 +223,13 @@ def request(mail, sid, draft):
         return
     body = text_for(draft, detect(current_message(mail.body).text))
     try:
-        sent = hackloop.send(mail.sender, mail.subject, body, in_reply_to=mail.id)
+        sent = hackloop.send_customer(
+            mail.sender, mail.subject, body, in_reply_to=mail.id, session_id=sid
+        )
+        body = sent["body"]
+    except hackloop.CustomerSendBlocked:
+        db.clarification_sent(sid, "pending")
+        return
     except Exception:  # noqa: BLE001 - send outcome must be treated as unknown, never retried
         db.clarification_sent(sid, "unknown")
         db.emit(

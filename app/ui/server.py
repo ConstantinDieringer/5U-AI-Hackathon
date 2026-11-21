@@ -43,9 +43,7 @@ PUBLIC_PATHS = {
     "/api/health",
     webhook.PATH,
 }  # health check or separate mandatory HMAC auth
-app.add_api_route(
-    webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False
-)
+app.add_api_route(webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False)
 
 
 @app.middleware("http")
@@ -64,9 +62,7 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
             pw, settings.ui_password
         ):
             return await call_next(request)
-    return Response(
-        status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'}
-    )
+    return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'})
 
 
 @app.get("/", include_in_schema=False)
@@ -250,20 +246,20 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     try:
         from app import hackloop  # owned by task A; may not exist yet
     except ImportError as e:
-        raise HTTPException(
-            503, "mail client (app/hackloop.py) not available yet"
-        ) from e
+        raise HTTPException(503, "mail client (app/hackloop.py) not available yet") from e
 
     db.takeover(session_id)
     subject = parent["subject"] or ""
     if not subject.lower().startswith("re:"):
         subject = f"Re: {subject}"
     try:
-        sent = hackloop.send(
+        sent = hackloop.send_customer(
             to=parent["sender"],
             subject=subject,
             body=body.text,
             in_reply_to=parent["id"],
+            session_id=session_id,
+            allow_manual=True,
         )
     except Exception as e:
         db.emit(
@@ -279,7 +275,7 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
             mail_id=sent_id,
             recipient=parent["sender"],
             subject=subject,
-            body=body.text,
+            body=sent["body"],
             category="manual_reply",
             session_id=session_id,
             in_reply_to=parent["id"],
@@ -329,7 +325,14 @@ async def api_import_db(request: Request) -> dict[str, Any]:
 
 @app.get("/api/health")
 def api_health() -> dict[str, Any]:
+    from app.mail.outgoing import EMAIL_STYLE_VERSION
+
     return {
         "ok": True,
+        "email_style_version": EMAIL_STYLE_VERSION,
+        "build_revision": settings.build_revision,
+        "email_reviewer_model": settings.llm_review_model,
+        "email_review_enabled": settings.email_review_enabled,
+        "llm_max_calls_per_session": settings.llm_max_calls_per_session,
         "last_event": (db.events_after(0, limit=1) or [{}])[0].get("id"),
     }

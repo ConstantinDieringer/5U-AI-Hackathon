@@ -199,13 +199,18 @@ def _confirmation(lang: str, name: str | None, quote: dict[str, Any], booking_re
     )
 
 
-def _confirm_to_customer(sid: int, mail: Mail, text: str) -> None:
+def _confirm_to_customer(
+    sid: int, mail: Mail, text: str, protected_terms: tuple[str, ...] = ()
+) -> None:
     if db.is_paused(sid) or db.is_manual(sid):
         db.emit(db.Ev.WARN, "Bestätigung nicht gesendet: Session pausiert/manuell", sid)
         return
     to = address(mail.sender)
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
-    sent = hackloop.send(to, subject, text, in_reply_to=mail.id)
+    sent = hackloop.send_customer(
+        to, subject, text, in_reply_to=mail.id, session_id=sid, protected_terms=protected_terms
+    )
+    text = sent["body"]
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=to,
@@ -326,7 +331,7 @@ def _handle(mail: Mail, sid: int) -> None:
         )
 
     text = _confirmation(language(mail.body), request.get("customer_name"), quote, booking_ref)
-    _confirm_to_customer(sid, mail, text)
+    _confirm_to_customer(sid, mail, text, (quote["airline"], quote["origin"], quote["destination"]))
     log.info("session %s booked %s", sid, booking_ref)
 
 

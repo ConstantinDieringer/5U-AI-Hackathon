@@ -133,7 +133,7 @@ def test_ambiguous_booking_asks_then_accepts_reply(sent, monkeypatch):
     )
     unclear = mail(3, "I need to think about the timing", sid=1)
     booking.handle_reply(unclear, 1)
-    assert len(sent) == 1 and "confirm whether" in sent[0][0][2]
+    assert len(sent) == 1 and "confirm whether" in sent[0][1]["body"]
     assert db.get_session(1)["bookings"] == []
     answer = mail(5, "Yes, go ahead and book it", sid=1)
     resumed = []

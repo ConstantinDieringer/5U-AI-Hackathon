@@ -29,9 +29,9 @@ def test_writing_profile_reaches_composer_and_repair_without_extra_pass(
     profile = customer_voice()
     calls = []
     body = (
-        "Hello,\n\nTest Air flies FRA to DEL in two days for 1.200,00 € all-in."
+        "Hello,\n\nTest Air flies FRA to DEL in two days for 1.200 € all-in."
         if language == "en"
-        else "Guten Tag,\n\nTest Air fliegt von FRA nach DEL in zwei Tagen für 1.200,00 € all-in."
+        else "Guten Tag,\n\nTest Air fliegt von FRA nach DEL in zwei Tagen für 1.200 € all-in."
     ) + "\n\nYour austrian Power Team"
 
     def complete(purpose, messages, *args, **kwargs):
@@ -42,7 +42,7 @@ def test_writing_profile_reaches_composer_and_repair_without_extra_pass(
         calls.append((purpose, messages[0]["content"]))
         return json.dumps(
             {
-                "body": body.replace("1.200,00", "1.300,00") if len(calls) == 1 else body,
+                "body": body.replace("1.200", "1.300") if len(calls) == 1 else body,
                 "answered_questions": [],
                 "unavailable_questions": [],
                 "addressed_constraints": [],
@@ -55,7 +55,7 @@ def test_writing_profile_reaches_composer_and_repair_without_extra_pass(
     text = rfq.compose_quote_text(request, option, 120000, None, 7)
     assert [purpose for purpose, _ in calls] == ["compose_quote", "compose_quote_repair"]
     assert all(system.endswith(profile) for _, system in calls)
-    assert "1.200,00 €" in text and "1.300,00" not in text
+    assert "1.200 €" in text and "1.300" not in text
     assert "Test Air" in text and "FRA" in text and "DEL" in text
 
 

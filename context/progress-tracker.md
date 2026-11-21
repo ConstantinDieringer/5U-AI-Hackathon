@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Strict customer send path and dedicated gpt-5 style reviewer added. Every customer path renders/validates prose before HTTP, records the transmitted version, and rechecks controls after the single review. Real reference punctuation remains per user choice; whole numbers lose zero fractions. Public health reports style/build/model activation. Verification in progress.
+
 - Round 48 expired after two origin questions despite explicit DUS answers. Origin clarification now reuses the existing negation/ambiguity-aware free-text parser independently of optional recovery/one-question flags. No question-cap, pricing or deployment setting changes; initial extraction/runtime state remain unverified.
 - Customer presentation: €, full EN/DE months, sentence-based copy without parentheses/field names, short paragraphs across quotes/clarifications/bookings/tracking. Composer repairs leaks and safely formats dates/currency/paragraphs. 575 tests pass/4 skipped; 31 replay records unchanged except 18 quote bodies. No live mail sent; deployment unverified.
 
