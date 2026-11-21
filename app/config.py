@@ -36,6 +36,7 @@ class Settings:
     ui_password: str
     quote_target_s: float
     bid_max_wait_s: float
+    served_lanes_ttl_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -60,4 +61,5 @@ settings = Settings(
     ui_password=_env("UI_PASSWORD"),  # set it whenever the UI is reachable from the internet
     quote_target_s=float(_env("QUOTE_TARGET_S", "100")),
     bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "240")),
+    served_lanes_ttl_s=float(_env("SERVED_LANES_TTL_S", "3600")),
 )

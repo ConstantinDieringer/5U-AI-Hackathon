@@ -27,6 +27,7 @@ from app.agents import bids
 from app.config import settings
 from app.mail import language
 from app.models import Mail, RateOption, Rfq
+from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import portal_options
 from app.pricing.pricing import pick, resolve_origin, sheet_options, to_minor
@@ -312,10 +313,14 @@ def _bid_carriers(rfq: Rfq, origin: str) -> tuple[list[Carrier], list[Carrier]]:
     truckers = truckers_for_zone(zone_for_zip(rfq.pickup_zip)) if rfq.pickup_zip else []
     airlines: list[Carrier] = []
     for a in airlines_for(origin, rfq.destination):
-        if a.channel == "email_only" and a.email:
-            c = carrier_by_email(a.email)
-            if c is not None:
-                airlines.append(c)
+        if a.channel != "email_only" or not a.email:
+            continue
+        # skip an airline whose own lane list (from an earlier refusal) lacks this lane
+        if served_lanes.serves(a.email, origin, rfq.destination) is False:
+            continue
+        c = carrier_by_email(a.email)
+        if c is not None:
+            airlines.append(c)
     return truckers, airlines
 
 

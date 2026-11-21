@@ -88,6 +88,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 16:50: Every email-only airline asked so far declined ("We do not serve this lane", 19 mails). `app/pricing/served_lanes.py` keeps each airline's "We fly ..." list (kv, 1 h TTL, backfilled at startup) and we skip airlines that don't fly the lane. A decline now counts as an answer, so we no longer wait the full 100 s for bids that never come.
+
 - 21.11 16:45: Quote now answers "earliest departure and arrival" (ready date, +1 day for door pickup, + transit), de/en, no LLM; test with real mail 1628.
 
 - 21.11 16:45: Tracking questions name no reference ("Weidner Spielwaren GmbH, STR to EZE, 1228 kg, ready on 2026-11-26"). Tracking match now also uses the weight and asks for the BK reference on a tie instead of guessing.

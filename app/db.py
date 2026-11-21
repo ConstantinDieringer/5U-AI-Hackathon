@@ -586,6 +586,17 @@ def list_unassigned(limit: int = 100) -> list[dict[str, Any]]:
     )
 
 
+def incoming_mails_containing(text: str, limit: int = 1000) -> list[dict[str, Any]]:
+    """Incoming mails whose body contains `text` (case-insensitive), oldest first."""
+    return _rows(
+        conn().execute(
+            "SELECT id, sender, body, received_at FROM mails"
+            " WHERE direction = 'in' AND instr(lower(body), lower(?)) > 0 ORDER BY id LIMIT ?",
+            (text, limit),
+        )
+    )
+
+
 def set_status(session_id: int, status: str, reason: str | None = None) -> None:
     with tx() as c:
         c.execute(

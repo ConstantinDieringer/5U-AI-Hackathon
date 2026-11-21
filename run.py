@@ -26,7 +26,9 @@ def main() -> None:
 
     db.init_db()
     from app.agents import booking
+    from app.pricing import served_lanes
 
+    served_lanes.backfill()  # "We fly ..." lists from refusals already in the mailbox
     booking.catch_up()  # acceptances that arrived while the app was down or had no booking
     stop = threading.Event()
     threading.Thread(target=poller.run, args=(stop,), name="poller", daemon=True).start()
