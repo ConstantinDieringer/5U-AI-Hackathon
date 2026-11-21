@@ -28,6 +28,7 @@ from app import db, hackloop
 from app.config import settings
 from app.mail.router import address
 from app.mail.style import SIGNATURE
+from app.mail.subjects import shipment_subject
 
 log = logging.getLogger(__name__)
 
@@ -215,6 +216,12 @@ def _send(sid: int) -> None:
         reply_to = int(last_in["id"]) if last_in else sid
         subject = str(s.get("subject") or "")
         subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+        quotes = s.get("quotes") or []
+        if quotes:
+            quote = quotes[0]
+            subject = shipment_subject(
+                quote.get("origin"), quote.get("destination"), lang, subject
+            )
         sent = hackloop.send_customer(
             to, subject, body, in_reply_to=reply_to, session_id=sid, review=False
         )

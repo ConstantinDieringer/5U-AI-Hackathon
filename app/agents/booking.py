@@ -33,6 +33,7 @@ from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
 from app.mail.style import SIGNATURE, amount, booked_joke, has_template_artifacts
+from app.mail.subjects import shipment_subject
 from app.models import Mail
 from app.pricing.pricing import to_minor
 from app.pricing.reference import airline_email
@@ -101,8 +102,7 @@ _PREBOOK_QUESTION = re.compile(
 
 _PENDING_APPROVAL = re.compile(
     r"\b(?:check|checking|prüfen|prüfe|klären|kläre)\b[^.!?\n]{0,60}"
-    r"\b(?:whether|if|ob)\b[^.!?\n]{0,100}"
-    r"\b(?:book|booking|proceed|accept|buchen|buchung|annehmen)\b",
+    r"\b(?:whether|if|ob)\b",
     re.IGNORECASE,
 )
 
@@ -112,7 +112,11 @@ def is_acceptance(body: str) -> bool | None:
     text = own_text(body)
     if _DECLINE.search(text):
         return False
-    if _PREBOOK_QUESTION.search(text) or _PENDING_APPROVAL.search(text):
+    pending = any(
+        _PENDING_APPROVAL.search(sentence) and _YES.search(sentence)
+        for sentence in re.split(r"[.!?\n]", text)
+    )
+    if _PREBOOK_QUESTION.search(text) or pending:
         return None  # mentioning booking in a question/condition is not consent
     if config.settings.revision_not_acceptance and _REVISION.search(text):
         return None
@@ -296,6 +300,13 @@ def _confirm_to_customer(
         return False
     to = address(mail.sender)
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    session = db.get_session(sid) or {}
+    quotes = session.get("quotes") or []
+    if quotes:
+        quote = quotes[0]
+        subject = shipment_subject(
+            quote.get("origin"), quote.get("destination"), language(mail.body), subject
+        )
     sent = hackloop.send_customer(
         to, subject, text, in_reply_to=mail.id, session_id=sid, protected_terms=protected_terms
     )

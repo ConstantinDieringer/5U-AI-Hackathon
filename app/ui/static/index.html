@@ -274,6 +274,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
     <div><h1 id="page-title">Übersicht</h1><div class="sub" id="page-sub">Wie läuft der Forwarder gerade?</div></div>
     <div class="right">
       <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Kunde, Betreff oder ID" autocomplete="off"></label>
+      <span class="badge-s" id="deploy-gate" role="status" aria-live="polite" title="Deploy-Ampel: Push auf main nur bei Grün (DEPLOY.md)">Deploy …</span>
       <div class="avatar" title="Team Austrian Power">AP</div>
     </div>
   </header>
@@ -420,7 +421,7 @@ async function loadOverview() {
     el("button", { class: "btn sm", title: "Kein Phishing: normale Verarbeitung starten, Absender in diesem Thread vertrauen", onclick: (ev) => { ev.stopPropagation(); releaseMail(q.mail_id, ev.currentTarget); } }, icon("undo"), "Freigeben")));
   const todo = card("s4",
     head("Zu tun", "Nur was ein Mensch jetzt noch retten kann.", el("span", { class: "aside badge-s " + (quarantine.length ? "red" : d.todo.length ? "orange" : "green") }, String(open))),
-    open ? el("div", {}, ...qItems, ...d.todo.map((t) => el("div", { class: "attn-item", onclick: () => select(t.session_id) },
+    open ? el("div", {}, ...qItems, ...d.todo.map((t) => el("div", { class: "attn-item", onclick: () => { if (t.session_id != null) select(t.session_id); } },
       el("span", { class: "ic", style: `background:var(--${t.tone}-tint);color:var(--${t.tone})` }, icon(t.tone === "blue" ? "box" : "alert")),
       el("div", { style: "min-width:0" }, el("div", { class: "t" }, t.lane || t.subject || "Session " + t.session_id), el("div", { class: "d" }, t.reason + " · " + (t.customer || "").replace("@hackloop.mail", ""))))))
       : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts zu tun. Der Agent arbeitet allein."));
@@ -671,6 +672,15 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawe
   if (e.key === "p" && S.detail && S.page === "live") act(S.detail.paused ? "resume" : "pause")();
   if (e.key === "/") { e.preventDefault(); show("live"); $("#q").focus(); } });
 setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "live") loadSessions(); }, 20000);
+// Deploy-Ampel: green = newest RFQ answered and the next one more than 90 s away
+async function loadGate() {
+  const g = await api("/api/deploy-gate").catch(() => null), b = $("#deploy-gate"); if (!g) return;
+  b.className = "badge-s " + (g.safe ? "green" : "red");
+  b.textContent = g.safe ? "Deploy: frei" : "Deploy: warten";
+  b.title = "Deploy-Ampel: " + g.reason + ". Push auf main nur bei Grün, nur eine Person (DEPLOY.md).";
+}
+setInterval(loadGate, 5000);
+loadGate();
 (async function boot() {
   const ev = await api("/api/events?since=0&limit=500").catch(() => []); S.lastId = ev.length ? ev[ev.length - 1].id : 0; ev.forEach((e) => S.seen.add(e.id));
   await Promise.all([loadStats(), loadSessions()]);

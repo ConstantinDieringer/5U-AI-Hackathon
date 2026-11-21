@@ -57,6 +57,7 @@ PREBOOK_QUESTIONS = [
     "Bevor wir buchen, bestätigen Sie bitte die Abholung.",
     "Bitte buchen, falls der Abflug am Freitag möglich ist.",
     "I'll check whether we can proceed with the booking and get back to you.",
+    "I'll check whether we can go ahead and get back to you.",
     "We are checking whether we can accept the offer.",
     "Ich prüfe, ob wir die Buchung freigeben können.",
 ]
@@ -74,9 +75,17 @@ def test_prebooking_question_or_condition_is_not_consent(body):
     "Bitte buchen. Wann erhalten wir die Referenz?",
     "We checked internally and accept your offer. Please book.",
     "Wir haben die Buchung geprüft. Bitte buchen.",
+    "Please book it. I'll check whether our invoice details are current.",
 ])
 def test_explicit_booking_request_can_include_a_followup_question(body):
     assert booking.is_acceptance(body) is True
+
+
+@pytest.mark.parametrize("approval", [
+    "book", "go ahead", "proceed", "accept", "approve", "reserve", "buchen", "passt",
+])
+def test_pending_check_scopes_all_existing_approval_words(approval):
+    assert booking.is_acceptance(f"We are checking whether we can {approval}.") is None
 
 
 class Api:
@@ -171,11 +180,12 @@ def test_accept_books_portal_rate_and_confirms(monkeypatch) -> None:
     monkeypatch.setattr(booking.hackloop, "send", api.send)
     monkeypatch.setattr(booking.hackloop, "book", api.book)
     _quoted_session()
-    booking.handle_reply(_accept(), 1223)
+    booking.handle_reply(replace(_accept(), subject="FW: AMS TLV 104 crates"), 1223)
 
     assert api.booked == [("R-xLidjNtljIRSGuVR", "AP-1223")]
     conf = api.sent[-1]
     assert conf["to"] == CUSTOMER and conf["in_reply_to"] == 1429
+    assert conf["subject"] == "Air freight STR to EZE"
     assert "BK-ABCD1234" in conf["body"] and "Hi Klaus" in conf["body"]
     s = db.get_session(1223)
     assert s["status"] == "booked" and s["bookings"][0]["booking_reference"] == "BK-ABCD1234"

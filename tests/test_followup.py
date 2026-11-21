@@ -43,12 +43,12 @@ def _iso(age_s: float) -> str:
     return (datetime.now(UTC) - timedelta(seconds=age_s)).isoformat()
 
 
-def _quoted(quote_age_s: float = 30, lang: str = "en") -> None:
+def _quoted(quote_age_s: float = 30, lang: str = "en", subject="Fastest to DEL") -> None:
     db.ingest_mail(
         mail_id=SID,
         sender=CUSTOMER,
         recipient=TEAM,
-        subject="Fastest to DEL",
+        subject=subject,
         body="quote please",
         category="rfq",
         received_at=_iso(quote_age_s + 60),
@@ -94,14 +94,16 @@ def _reply(mid: int, body: str, age_s: float) -> None:
     )
 
 
-def test_silent_customer_gets_nudge_after_30s(monkeypatch) -> None:
+@pytest.mark.parametrize("subject", ["Fastest to DEL", "FW: AMS TLV 104 crates"])
+def test_silent_customer_gets_nudge_after_30s(monkeypatch, subject) -> None:
     api = Api()
     monkeypatch.setattr(hackloop, "send", api.send)
-    _quoted(quote_age_s=31)
+    _quoted(quote_age_s=31, subject=subject)
     followup.tick()
     assert len(api.sent) == 1
     m = api.sent[0]
-    assert m["to"] == CUSTOMER and m["in_reply_to"] == SID and m["subject"] == "Fastest to DEL"
+    assert m["to"] == CUSTOMER and m["in_reply_to"] == SID
+    assert m["subject"] == "Air freight FRA to DEL"
     stored = [mail for mail in db.get_session(SID)["mails"] if mail["direction"] == "out"][-1]
     assert stored["subject"] == m["subject"] and stored["body"] == m["body"]
     assert "Hi Anna" in m["body"] and "book" in m["body"]

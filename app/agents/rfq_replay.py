@@ -8,7 +8,11 @@ customer answers) on a throwaway SQLite file. Nothing leaves the machine:
 - the portal returns the options stored at quote time, only for the same lane, weight and
   volume (otherwise none: a changed request needs fresh rates and shows up as a diff);
 - carrier replies stored before our quote are delivered for the carriers the code asks now;
-- sends are captured; every other 5U call raises and is counted as `network_blocked`.
+- sends are captured; every other 5U call raises and is counted as `network_blocked`;
+- `--watchdog` (RFQ_WATCHDOG=true): a round still without a quote gets the watchdog's forced
+  quote, priced from the carrier replies stored up to RFQ_WATCHDOG_AFTER_S after arrival;
+- `--kill-after-bids`: the flow dies when it first waits for bids (a restart right after the
+  bid requests went out, rounds 4, 9, 15 to 17) and only the watchdog recovers the round.
 
 Clock: the round and its stored rate/FX expiries move forward by whole days to just after now,
 so clock times keep their original value; tariff validity and quoted dates use the original day. Rate sheets and portal lanes come from
@@ -16,6 +20,7 @@ the tracked seed files, not from RUNTIME_DIR.
 
     python -m app.agents.rfq_replay corpus <dir of /api/sessions/{id} JSON> [--board board_me.json]
     python -m app.agents.rfq_replay run [--out results.json] [--compare baseline.json]
+                                        [--watchdog] [--kill-after-bids]
     python -m app.agents.rfq_replay diff <before.json> <after.json>
 """
 
@@ -35,7 +40,7 @@ from typing import Any
 from unittest import mock
 
 from app import config, db, hackloop, llm
-from app.agents import bids, clarification, rfq
+from app.agents import bids, clarification, rfq, watchdog
 from app.models import Mail, RateOption, Rfq
 from app.pricing import portal_sync, pricing, served_lanes
 from app.pricing.portal_sync import PortalResult
@@ -72,9 +77,7 @@ def _portal(detail: dict[str, Any]) -> dict[str, Any] | None:
         if e["kind"] == "portal_warning" and e.get("payload")
         for err in e["payload"].get("errors", [])
     ]
-    audits = [
-        e for e in detail["events"] if e["kind"] == "pricing_audit" and e.get("payload")
-    ]
+    audits = [e for e in detail["events"] if e["kind"] == "pricing_audit" and e.get("payload")]
     if audits:
         payload = audits[-1]["payload"]
         request, alternatives = payload.get("request"), payload.get("options", [])
@@ -166,9 +169,7 @@ def build_corpus(session_dir: Path, board_path: Path | None) -> dict[str, Any]:
         for r in json.loads(board_path.read_text(encoding="utf-8"))["requests"]:
             board[int(r["round_no"])] = r
     reconstructed = (
-        json.loads(RECONSTRUCTED.read_text(encoding="utf-8"))
-        if RECONSTRUCTED.exists()
-        else {}
+        json.loads(RECONSTRUCTED.read_text(encoding="utf-8")) if RECONSTRUCTED.exists() else {}
     )
     cases, observations = [], []
     for path in sorted(session_dir.glob("*.json")):
@@ -176,17 +177,11 @@ def build_corpus(session_dir: Path, board_path: Path | None) -> dict[str, Any]:
         if not isinstance(detail, dict) or not detail.get("mails"):
             continue
         for m in detail["mails"]:
-            if m["direction"] == "in" and served_lanes.parse_refusal(
-                m.get("body") or ""
-            ):
-                observations.append(
-                    {k: m.get(k) for k in ("id", "sender", "received_at", "body")}
-                )
+            if m["direction"] == "in" and served_lanes.parse_refusal(m.get("body") or ""):
+                observations.append({k: m.get(k) for k in ("id", "sender", "received_at", "body")})
         if detail.get("kind") == "rfq":
             cases.append(corpus_case(detail, board, reconstructed))
-    cases.sort(
-        key=lambda c: (c["round_no"] is None, c["round_no"] or 0, c["session_id"])
-    )
+    cases.sort(key=lambda c: (c["round_no"] is None, c["round_no"] or 0, c["session_id"]))
     observations.sort(key=lambda o: (o["received_at"], o["id"]))
     # airlines' "we do not serve this lane" replies: what production knew before each round
     return {"cases": cases, "lane_observations": observations}
@@ -248,6 +243,20 @@ class _Run:
     notes: set[str] = dataclasses.field(default_factory=set)
     network_blocked: int = 0
     next_id: int = 900_000_000
+    kill_after_bids: bool = False
+
+
+class _Killed(BaseException):
+    """The process died: not an Exception, so no handler in the RFQ flow catches it."""
+
+
+def _wait_or_die(run: _Run) -> Callable[..., Any]:
+    def wait(*_a: Any, **_k: Any) -> list[Any]:
+        if run.kill_after_bids:
+            raise _Killed
+        return []
+
+    return wait
 
 
 @contextlib.contextmanager
@@ -289,17 +298,27 @@ def _sandbox(run: _Run) -> Iterator[None]:
             if stored_portal.get("options") or errors:
                 run.notes.add("portal_request_changed")
             return PortalResult()
-        options = [
-            _rate_option(o, request, run.delta)
-            for o in stored_portal.get("options", [])
-        ]
+        options = [_rate_option(o, request, run.delta) for o in stored_portal.get("options", [])]
         fallbacks = [e.split(":", 1)[0] for e in errors if "-> 503" in e]
         return PortalResult(options, fallbacks, errors)
 
     original_request = bids.request
+    root_at = next(
+        datetime.fromisoformat(m["received_at"])
+        for m in run.case["mails"]
+        if int(m["id"]) == int(run.case["session_id"])
+    )
 
     def request(sid: int, rfq_: Rfq, origin: str, carriers: list[bids.Carrier]) -> int:
+        earlier = db.bid_request_recipients(sid) if not carriers else set()
         n = original_request(sid, rfq_, origin, carriers)
+        if earlier:
+            # the watchdog's forced pass: only replies in by RFQ_WATCHDOG_AFTER_S count
+            due = root_at + timedelta(seconds=config.settings.rfq_watchdog_after_s)
+            for m in replies:
+                if m["sender"] in earlier and datetime.fromisoformat(m["received_at"]) <= due:
+                    bids.on_bid_mail(_mail(m, run.delta), None)  # as the normal pass
+            return n
         asked = {c.email for c in carriers}
         answered = {m["sender"] for m in replies}
         if asked - answered:
@@ -329,7 +348,7 @@ def _sandbox(run: _Run) -> Iterator[None]:
         (rfq, "sheet_options", sheet),
         (rfq, "schedule", schedule),
         (bids, "request", request),
-        (bids, "wait", lambda *_a, **_k: []),
+        (bids, "wait", _wait_or_die(run)),
         (pricing, "RUNTIME_TARIFFS", Path("/nonexistent/replay/tariffs.json")),
         (portal_sync, "load_portal_lanes", lambda *_a, **_k: seed),
     ]
@@ -343,9 +362,7 @@ def _sandbox(run: _Run) -> Iterator[None]:
             pricing.reload_lanes()
 
 
-def _mail(
-    m: dict[str, Any], delta: timedelta, references: list[int] | None = None
-) -> Mail:
+def _mail(m: dict[str, Any], delta: timedelta, references: list[int] | None = None) -> Mail:
     return Mail(
         int(m["id"]),
         int(references[0]) if references else int(m["id"]),
@@ -365,13 +382,14 @@ def replay_case(
     case: dict[str, Any],
     workdir: Path,
     observations: list[dict[str, Any]] | None = None,
+    kill_after_bids: bool = False,
 ) -> dict[str, Any]:
     sid = int(case["session_id"])
     root = next(m for m in case["mails"] if int(m["id"]) == sid)
     received = datetime.fromisoformat(root["received_at"])
     # whole days, so clock times in the quote ("bookable until 18:04 UTC") stay as they were
     days = math.ceil((datetime.now(UTC) - received) / timedelta(days=1))
-    run = _Run(case, timedelta(days=days), received.date())
+    run = _Run(case, timedelta(days=days), received.date(), kill_after_bids=kill_after_bids)
     db.init_db(str(workdir / f"replay-{sid}.db"))
     for seen in observations or []:
         refusal = served_lanes.parse_refusal(seen["body"] or "")
@@ -390,59 +408,62 @@ def replay_case(
             category="rfq",
             received_at=mail.received_at,
         )
-        rfq.handle_rfq(mail, sid)
-        for answer in (m for m in case["mails"] if m.get("category") == "customer"):
-            row = db.validation_get(sid)
-            if not row or row["state"] not in ("awaiting_clarification", "resolving"):
-                break
-            # a fresh id after our latest send: live, an answer always has a higher id than
-            # the question it answers, and the reply ledger drops anything older
-            run.next_id += 1
-            reply = dataclasses.replace(
-                _mail(answer, run.delta, references=[sid]), id=run.next_id
-            )
-            db.ingest_mail(
-                mail_id=reply.id,
-                sender=reply.sender,
-                recipient=reply.to,
-                subject=reply.subject,
-                body=reply.body,
-                category="customer",
-                received_at=reply.received_at,
-                references=[sid],
-                in_reply_to=answer.get("in_reply_to"),
-            )
-            clarification.handle_reply(reply, sid)
+        try:
+            _live_flow(case, run, mail, sid)
+        except _Killed:
+            # restart: in-memory bid state and workers are gone; the stored session is left
+            bids.close(sid)
+            run.notes.add("killed_after_bids")
+            run.kill_after_bids = False
+        forced = None
+        if config.settings.rfq_watchdog and not (db.get_session(sid) or {}).get("quotes"):
+            # RFQ_WATCHDOG_AFTER_S passes without our quote
+            forced = watchdog.force_quote(sid, "replay")
+        return {**_result(sid, run), "watchdog": forced}
+
+
+def _live_flow(case: dict[str, Any], run: _Run, mail: Mail, sid: int) -> None:
+    """The RFQ flow as production ran it: the request, then each stored customer answer."""
+    rfq.handle_rfq(mail, sid)
+    for answer in (m for m in case["mails"] if m.get("category") == "customer"):
         row = db.validation_get(sid)
-        if config.settings.clarify_once and row and row["state"] == "awaiting_clarification":
-            # no usable answer among the stored ones: the fallback deadline passes
-            rfq.quote_without_answer(sid, "keine Antwort")
-        return _result(sid, run)
+        if not row or row["state"] not in ("awaiting_clarification", "resolving"):
+            break
+        # a fresh id after our latest send: live, an answer always has a higher id than
+        # the question it answers, and the reply ledger drops anything older
+        run.next_id += 1
+        reply = dataclasses.replace(_mail(answer, run.delta, references=[sid]), id=run.next_id)
+        db.ingest_mail(
+            mail_id=reply.id,
+            sender=reply.sender,
+            recipient=reply.to,
+            subject=reply.subject,
+            body=reply.body,
+            category="customer",
+            received_at=reply.received_at,
+            references=[sid],
+            in_reply_to=answer.get("in_reply_to"),
+        )
+        clarification.handle_reply(reply, sid)
+    row = db.validation_get(sid)
+    if config.settings.clarify_once and row and row["state"] == "awaiting_clarification":
+        # no usable answer among the stored ones: the fallback deadline passes
+        rfq.quote_without_answer(sid, "keine Antwort")
 
 
 def _result(sid: int, run: _Run) -> dict[str, Any]:
     session = db.get_session(sid) or {}
     quote = session["quotes"][0] if session.get("quotes") else None
     body = next(
-        (
-            m["body"]
-            for m in session.get("mails", [])
-            if quote and m["id"] == quote.get("mail_id")
-        ),
+        (m["body"] for m in session.get("mails", []) if quote and m["id"] == quote.get("mail_id")),
         None,
     )
     asked = sorted({m["to"] for m in run.sent if "[AP-" in m["subject"]})
     validation = db.validation_get(sid) or {}
     issues = (validation.get("draft") or {}).get("issues") or []
-    clarifications = [
-        m for m in session.get("mails", []) if m.get("category") == "clarification"
-    ]
+    clarifications = [m for m in session.get("mails", []) if m.get("category") == "clarification"]
     warnings = sorted(
-        {
-            e["kind"]
-            for e in session.get("events", [])
-            if e.get("level") in ("warn", "error")
-        }
+        {e["kind"] for e in session.get("events", []) if e.get("level") in ("warn", "error")}
     )
     trucker = next(
         (
@@ -466,9 +487,7 @@ def _result(sid: int, run: _Run) -> dict[str, Any]:
     return {
         "session_id": sid,
         "round_no": run.case.get("round_no"),
-        "outcome": "quoted"
-        if quote
-        else ("clarification" if clarifications else "no_quote"),
+        "outcome": "quoted" if quote else ("clarification" if clarifications else "no_quote"),
         "status": session.get("status"),
         "request": request,
         "airline": quote["airline"] if quote else None,
@@ -487,18 +506,29 @@ def _result(sid: int, run: _Run) -> dict[str, Any]:
     }
 
 
-def replay_all(corpus: dict[str, Any]) -> list[dict[str, Any]]:
+def replay_all(corpus: dict[str, Any], kill_after_bids: bool = False) -> list[dict[str, Any]]:
+    extra = {"kill_after_bids": True} if kill_after_bids else {}
     with tempfile.TemporaryDirectory(prefix="rfq-replay-") as tmp:
         seen = corpus.get("lane_observations", [])
         try:
             return [
-                replay_case(c, Path(tmp), seen)
+                replay_case(c, Path(tmp), seen, **extra)
                 for c in corpus["cases"]
                 if c.get("llm_extraction") is not None
             ]
         finally:
             # Windows cannot unlink the final replay DB while SQLite still owns it.
             db.close_thread_connection()
+
+
+@contextlib.contextmanager
+def _settings(**changes: Any) -> Iterator[None]:
+    """Run the replay with changed settings in every module that holds a reference."""
+    new = dataclasses.replace(config.settings, **changes)
+    with contextlib.ExitStack() as stack:
+        for module in (config, rfq, clarification, watchdog):
+            stack.enter_context(mock.patch.object(module, "settings", new))
+        yield
 
 
 # ---------------------------------------------------------------- diff
@@ -526,10 +556,7 @@ def diff(
     corpus: dict[str, Any] | None = None,
 ) -> list[str]:
     """One line per changed field, with the board accuracy as price evidence."""
-    board = {
-        c["session_id"]: c.get("board") or {}
-        for c in (corpus or {"cases": []})["cases"]
-    }
+    board = {c["session_id"]: c.get("board") or {} for c in (corpus or {"cases": []})["cases"]}
     old = {r["session_id"]: r for r in before}
     lines = []
     for new in after:
@@ -566,6 +593,10 @@ def _main(argv: list[str]) -> int:
     r.add_argument("--corpus", type=Path, default=CORPUS)
     r.add_argument("--out", type=Path)
     r.add_argument("--compare", type=Path)
+    r.add_argument("--watchdog", action="store_true", help="RFQ_WATCHDOG=true for this run")
+    r.add_argument(
+        "--kill-after-bids", action="store_true", help="die after the bid requests (watchdog on)"
+    )
     d = sub.add_parser("diff")
     d.add_argument("before", type=Path)
     d.add_argument("after", type=Path)
@@ -578,7 +609,8 @@ def _main(argv: list[str]) -> int:
         return 0
     if args.cmd == "run":
         corpus = json.loads(args.corpus.read_text(encoding="utf-8"))
-        results = replay_all(corpus)
+        with _settings(rfq_watchdog=args.watchdog or args.kill_after_bids):
+            results = replay_all(corpus, args.kill_after_bids)
         text = json.dumps(results, ensure_ascii=False, indent=1) + "\n"
         if args.out:
             args.out.write_text(text, encoding="utf-8")
