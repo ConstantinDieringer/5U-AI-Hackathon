@@ -45,6 +45,7 @@ class Plan(BaseModel):
         "retry_pricing",
         "ask_customer",
         "resume_booking",
+        "answer_offer",
         "answer_tracking",
         "wait",
         "close",
@@ -68,7 +69,8 @@ ZIP through the pricing tool. Resolve conflicts from explicit later answers inst
 answered questions. Release only the listed field/code pair and explain why it is obsolete.
 Use continue or retry_pricing when real pricing can proceed. Use ask_customer only for a specific
 remaining gap, with one concise question in both languages. Never repeat an answered question.
-After a quote use resume_booking for a current acceptance or booking question, answer_tracking for
+After a quote use resume_booking for a current acceptance, answer_offer for questions about the
+stored offer, answer_tracking for
 a shipment status question, wait when awaiting a carrier/customer, close only for explicit customer
 rejection/cancellation (never cancel a booking). Existing tools verify actual consent and prices.
 No invented prices, dates, carrier promises, customer approvals, DG documents or shipment facts.
@@ -76,6 +78,8 @@ Do not waive missing required fields, unsupported routes, DG checks, deadlines, 
 phishing, send uncertainty, or one-quote limits. No arbitrary code, URL access or direct sending.
 Correction values are strings. Use ISO ready_date, JSON arrays for list fields, true for no_pickup,
 IATA airport codes, kg, cbm and five-digit pickup ZIPs. Omit fields without evidence.
+For an unambiguous short yes to the current offer, add booking_consent=true with the exact current
+customer affirmation as evidence. This never overrides a condition, revision, question or rejection.
 Return all schema fields; empty questions unless asking. State a short operational reason.
 """
 
@@ -189,6 +193,7 @@ def _context(mail: Mail, sid: int, root: Mail, draft: RfqDraft) -> tuple[dict, s
             "retry_pricing": "retry existing sheet/portal/email pricing with durable carrier caps",
             "ask_customer": "persist and send a targeted clarification in this thread",
             "resume_booking": "existing booking tool with real acceptance and airline confirmation",
+            "answer_offer": "answer questions from the stored quote without booking or a second offer",
             "answer_tracking": "existing CRM tracking tool",
             "wait": "no send, await a new incoming message",
             "close": "record explicit customer rejection, no booking cancellation",
@@ -510,7 +515,28 @@ def take_over(mail: Mail, sid: int) -> bool:
         elif plan.action == "resume_booking" and session["quotes"]:
             if row:
                 db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})
-            booking.handle_reply(mail, sid)
+            consent = next(
+                (
+                    c.evidence
+                    for c in plan.corrections
+                    if c.field == "booking_consent"
+                    and c.value == "true"
+                    and c.evidence.strip()
+                    and _normal(c.evidence) in _normal(current_message(mail.body).facts)
+                ),
+                None,
+            )
+            if consent:
+                booking.handle_reply(mail, sid, consent_evidence=consent)
+            else:
+                booking.handle_reply(mail, sid)
+        elif plan.action == "answer_offer" and session["quotes"]:
+            from app.agents import prebook
+
+            with booking._lock(sid):
+                answered = prebook.reply(mail, sid, session)
+            if not answered:
+                booking.handle_reply(mail, sid)
         elif plan.action == "answer_tracking" and session["bookings"]:
             if row:
                 db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})

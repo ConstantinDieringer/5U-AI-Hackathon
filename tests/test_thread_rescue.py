@@ -351,3 +351,88 @@ def test_plan_lease_and_saved_decision_survive_restart(case, monkeypatch):
         )
     resumed, _, _ = rescue._decision(answer, SID, root, draft, "owner")
     assert resumed == decision and len(calls) == 1
+
+
+def test_owner_can_book_after_evidence_bound_short_yes(case, monkeypatch):
+    _, answer, _ = case
+    db.record_quote(
+        SID,
+        total_minor=123456,
+        currency="EUR",
+        airline="Fjordline Cargo",
+        origin="CGN",
+        destination="LIM",
+        transit_days=3,
+        source="portal",
+        rate_id="test-rate",
+        mail_id=18100,
+    )
+    yes = dataclasses.replace(answer, id=18101, body="Yes.")
+    ingest(yes, "customer")
+    model(
+        monkeypatch,
+        plan(
+            "resume_booking",
+            releases=[],
+            corrections=[{"field": "booking_consent", "value": "true", "evidence": "Yes."}],
+        ),
+    )
+    actual = []
+    monkeypatch.setattr(
+        booking,
+        "_book_portal",
+        lambda *args: (
+            actual.append(args)
+            or {
+                "booking_reference": "BK-TEST",
+                "price": "1234.56",
+                "currency": "EUR",
+            }
+        ),
+    )
+    monkeypatch.setattr(booking, "_settle", lambda *args: None)
+    rescue.take_over(yes, SID)
+    assert len(actual) == 1
+    assert db.get_session(SID)["bookings"][0]["booking_reference"] == "BK-TEST"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Yes, if our team approves.",
+        "Yes, but book the other airline instead.",
+        "Before we book, could you confirm arrival?",
+        "We will check whether we can proceed.",
+        "Yes?",
+        "We will send our approval shortly.",
+    ],
+)
+def test_model_cannot_turn_a_question_or_condition_into_booking_consent(text):
+    assert booking._rescue_acceptance(text, text) is not True
+
+
+def test_owner_can_answer_offer_questions_without_global_flag(case, monkeypatch):
+    from app.agents import prebook
+
+    _, answer, _ = case
+    add_quote()
+    question = dataclasses.replace(answer, id=18101, body="What is the transit time?")
+    ingest(question, "customer")
+    model(monkeypatch, plan("answer_offer", corrections=[], releases=[]))
+    answered = []
+    monkeypatch.setattr(prebook, "reply", lambda *args: answered.append(args) or True)
+    monkeypatch.setattr(
+        booking, "handle_reply", lambda *args: pytest.fail("question must not book")
+    )
+    rescue.take_over(question, SID)
+    assert len(answered) == 1
+
+
+def test_new_business_failure_allows_owner_to_replan_without_new_customer_mail(case, monkeypatch):
+    root, answer, draft = case
+    calls = model(monkeypatch, plan("wait"))
+    _, first, _ = rescue._decision(answer, SID, root, draft, "owner")
+    db.save_rescue_run(SID, first, "done")
+    db.set_status(SID, "error", "temporary portal failure")
+    _, second, _ = rescue._decision(answer, SID, root, draft, "owner")
+    assert first != second and len(calls) == 2
