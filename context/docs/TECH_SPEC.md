@@ -235,6 +235,20 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8. LLM-Regeln
 
+- Eskalation für ungeklärte RFQs: `LLM_RESCUE_MODEL=gpt-5.6-sol`, `LLM_RESCUE_REASONING=high`.
+  Vollständiger gespeicherter Verlauf, aktuelle Kundenevidenz, Anhangtexte inklusive Tabellen,
+  Beobachtungen und verbleibende Validierungsfehler werden gemeinsam geprüft. Bis zu vier
+  Versuche pro neuer Evidenz, mit Fehlerfeedback; Stillstand beendet identische Wiederholungen.
+  Ein eigener persistenter Zähler erlaubt zwölf Rescue-Aufrufe pro Session zusätzlich zum
+  normalen Budget. Deadline, Pause und expliziter Handbetrieb bleiben verbindlich.
+  RFQs werden nach zwei Antworten nicht automatisch einem Menschen übergeben und nicht
+  ohne fehlende Evidenz per Timer quotiert. Neue Antworten setzen die Bearbeitung fort.
+  Modellverfügbarkeit im 5U-Gateway muss vor Deployment geprüft werden. Keine automatische
+  Ersetzung durch ein schwächeres Modell. OpenAI-Modellkennung/Reasoning/Listenpreise geprüft
+  unter https://developers.openai.com/api/docs/models/gpt-5.6-sol am 21.11.2026.
+  `EMAIL_REVIEW_ENABLED=false` deaktiviert den separaten Stilprüfer standardmäßig.
+  Diese Festlegungen ersetzen die älteren Rescue-/Einmal-Rückfrage-/Budgetregeln unten.
+
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
 - Standard für Extraktion ist `gpt-5-mini`, für die Reparatur `LLM_RETRY_MODEL=gpt-5`. Beide wurden über die Gateway-Modellliste bestätigt. Explizite Umgebungswerte überschreiben diese Defaults weiterhin; Kostenpreise für `gpt-5` sind hinterlegt.

@@ -303,7 +303,9 @@ def numeric_facts(text, expect=None):
     }
     for field, patterns_ in patterns.items():
         for pattern in patterns_:
-            match = re.search(pattern, text, re.IGNORECASE)
+            # Labels and their values must share a row. Never read the first cell of
+            # the next table row as the value of its last column heading.
+            match = re.search(pattern.replace(r"\s", r"[^\S\r\n]"), text, re.IGNORECASE)
             if match:
                 if re.fullmatch(r"\d{1,3}[.,]\d{3}", match[1]):
                     continue  # ambiguous thousands/decimal notation needs confirmation
@@ -492,11 +494,7 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         )
     )
     values = numeric_facts(active, expect=data) if not has_lots else {}
-    if (
-        has_lots
-        and totals is None
-        and not {"weight_kg", "volume_cbm"} <= corrections.keys()
-    ):
+    if has_lots and totals is None and not {"weight_kg", "volume_cbm"} <= corrections.keys():
         issues.append(
             {
                 "field": "lots",

@@ -336,10 +336,8 @@ def test_round_35_today_without_the_setting(world: World) -> None:
     _round_35(w)
     assert _quote(8859) is None
     events = {e["kind"] for e in db.get_session(8859)["events"]}
-    if w.settings_clarify_once:
-        assert len(w.to(ROUND_35_CUSTOMER)) == 1 and "needs_human" in events
-    else:
-        assert len(w.to(ROUND_35_CUSTOMER)) == 2
+    assert len(w.to(ROUND_35_CUSTOMER)) == 2
+    assert "needs_human" not in events
 
 
 # ---------------------------------------------------------------- round 39 (mail 10132)
@@ -368,7 +366,7 @@ ANSWER_41 = (  # round 41 (mail 10580): accepted after this answer
 )
 
 
-def test_round_39_dg_in_attachment_asks_for_documents_then_quotes(world: World) -> None:
+def test_round_39_promised_dg_documents_keep_quote_blocked(world: World) -> None:
     w = world
     w.extraction = ROUND_39_FACTS
     w.packing_spec(
@@ -391,10 +389,10 @@ def test_round_39_dg_in_attachment_asks_for_documents_then_quotes(world: World) 
     w.answer(root, ANSWER_41)
 
     quote = _quote(10132)
-    assert quote is not None
+    assert quote is None
     mails = w.to(ROUND_39_CUSTOMER)
-    assert len(mails) == 2 and mails[1]["id"] == quote["mail_id"]
-    assert db.get_session(10132)["request"]["weight_kg"] == 378.0
+    assert len(mails) == 2
+    assert any(i["field"] == "dangerous_goods" for i in db.validation_get(10132)["draft"]["issues"])
     assert w.network_blocked == 0
 
 

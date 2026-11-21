@@ -156,19 +156,18 @@ def test_one_question_and_each_real_answer_resolves_it(thread, reply) -> None:
     )
 
 
-def test_unusable_answer_quotes_from_real_prices_and_flags_a_person(thread) -> None:
+def test_unusable_answers_keep_rfq_automatic_without_human_handoff(thread) -> None:
     configure, start, answer, questions, _ = thread
     configure(True)
     start()
     answer("Thanks, I'll check and come back to you.\n\nCheers,\nKlaus")
     answer("Still checking, sorry!")  # a second unusable answer: still no second question
-    assert len(questions()) == 1
-    # the request names exactly one network airport (CGN, "Cologne airport"): stated, not guessed
-    assert (_quote()["airline"], _quote()["total_minor"]) == ("Ultraviolet Air Freight", 39045)
+    assert len(questions()) == 3
+    assert _quote() is None
     kinds = [e["kind"] for e in db.get_session(7237)["events"]]
-    assert "needs_human" in kinds and "clarification_capped" in kinds
+    assert "needs_human" not in kinds and "clarification_capped" not in kinds
     flagged = [i for i in db.attention_items() if i["kind"] == "needs_human"]
-    assert [i["session_id"] for i in flagged] == [7237]
+    assert flagged == []
 
 
 def test_no_real_price_means_no_quote(thread) -> None:
@@ -183,23 +182,23 @@ def test_no_real_price_means_no_quote(thread) -> None:
     start(body)
     assert len(questions()) == 1 and "postal code" in questions()[0]["body"]
     answer("Thanks, I'll ask the warehouse.")
-    assert len(sent) == 1 and _quote() is None
-    assert db.validation_get(7237)["state"] == "manual_review"
-    assert "needs_human" in [e["kind"] for e in db.get_session(7237)["events"]]
+    assert len(sent) == 2 and _quote() is None
+    assert db.validation_get(7237)["state"] == "awaiting_clarification"
+    assert "needs_human" not in [e["kind"] for e in db.get_session(7237)["events"]]
 
 
-def test_no_answer_by_the_deadline_quotes_once(thread) -> None:
+def test_no_answer_never_bypasses_missing_evidence(thread) -> None:
     configure, start, _, questions, _ = thread
     configure(True)
     start()
     created = datetime.fromisoformat(db.get_session(7237)["created_at"])
     assert clarification.fallback_due(created + timedelta(seconds=30)) == []  # still waiting
     started = clarification.fallback_due(created + timedelta(seconds=50))
-    assert started == [7237]
+    assert started == []
     for thread_ in __import__("threading").enumerate():
         if thread_.name == "rfq-fallback-7237":
             thread_.join(10)
-    assert _quote()["total_minor"] == 39045 and len(questions()) == 1
+    assert _quote() is None and len(questions()) == 1
     assert clarification.fallback_due(created + timedelta(seconds=60)) == []  # once only
 
 

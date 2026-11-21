@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- RFQ rescue uses `gpt-5.6-sol`/high with raw attachment tables, full conversation and validator feedback; separate persisted call budget and duplicate-evidence claims. Fixed table-header weights, contextual thousands-formatted replies and promised DG documents; removed RFQ two-question handoff/timed quote without evidence. 784 tests passed/4 skipped; final follow-up checks 120 passed. Gateway access/deployment unverified; style review defaults off.
+
 - Round 56 customer will check whether booking can proceed: current keyword rule still returned acceptance. The shared consent guard now also recognizes pending EN/DE internal approval checks; positive past checks followed by an explicit booking order remain valid. Existing booking/price-change flows reuse it; no live booking triggered.
 
 - Strict customer prose v4 closes the unchecked all-excluded notice and subject paths, including followups without an LLM review. Independent final assertions reject punctuation, including Unicode/HTML variants, and unresolved EUR/numeric dates/zero fractions; transmitted subject/body are stored, reply IDs retain threading. Reviewer acceptance instructions tightened. Integrated Python 3.11 suite: 742 passed/4 skipped; wire tests include a misbehaving reviewer and failed renderer. Existing v3 deployment verified active; v4 rollout pending.

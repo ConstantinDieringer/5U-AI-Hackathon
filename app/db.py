@@ -303,9 +303,7 @@ def init_db(path: str | None = None) -> None:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_total_minor INTEGER")
         if "air_currency" not in quote_columns:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_currency TEXT")
-        booking_columns = {
-            row["name"] for row in migration.execute("PRAGMA table_info(bookings)")
-        }
+        booking_columns = {row["name"] for row in migration.execute("PRAGMA table_info(bookings)")}
         # price the airline actually confirmed, and where the customer side of the booking
         # stands (see booking.py: awaiting_airline, confirmed_sent, price_change_asked, ...)
         for column, kind in (
@@ -1546,9 +1544,7 @@ def set_airline_price(session_id: int, price_minor: int, currency: str) -> None:
 
 
 def bookings_with_customer_state(state: str) -> list[dict[str, Any]]:
-    return _rows(
-        conn().execute("SELECT * FROM bookings WHERE customer_state = ?", (state,))
-    )
+    return _rows(conn().execute("SELECT * FROM bookings WHERE customer_state = ?", (state,)))
 
 
 def tracking_records() -> list[dict[str, Any]]:
@@ -1588,16 +1584,21 @@ def find_booking(
     return None
 
 
-def reserve_llm_call(session_id: int, limit: int) -> int | None:
+def reserve_llm_call(session_id: int, limit: int, *, rescue: bool = False) -> int | None:
     """Count one more gateway call for the session, persisted so a restart cannot reset it.
     Returns the new count, or None if the session already made `limit` calls. Calls logged in
     llm_calls before this counter existed count too."""
-    key = f"llm_calls:{session_id}"
+    key = f"llm_rescue_calls:{session_id}" if rescue else f"llm_calls:{session_id}"
     with tx() as c:
         kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (key,)))
         logged = _one(
             c.execute(
-                "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ?",
+                "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND "
+                + (
+                    "purpose = 'clarification_rescue'"
+                    if rescue
+                    else "purpose != 'clarification_rescue'"
+                ),
                 (session_id,),
             )
         )
@@ -1610,6 +1611,17 @@ def reserve_llm_call(session_id: int, limit: int) -> int | None:
             (key, str(n + 1)),
         )
     return n + 1
+
+
+def claim_rescue_input(session_id: int, fingerprint: str) -> bool:
+    """Only one worker may review identical shipment evidence, including after restart."""
+    with tx() as c:
+        return bool(
+            c.execute(
+                "INSERT OR IGNORE INTO kv(key,value) VALUES (?,?)",
+                (f"rescue_input:{session_id}:{fingerprint}", now()),
+            ).rowcount
+        )
 
 
 def record_llm_call(

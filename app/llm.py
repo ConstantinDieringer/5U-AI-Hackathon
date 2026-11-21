@@ -109,9 +109,13 @@ def accounting(name: str, usage: Any) -> dict[str, Any]:
     return result
 
 
-def _reserve(session_id: int | None) -> None:
+def _reserve(session_id: int | None, purpose: str = "") -> None:
     """Per-session call budget, counted in the db (survives a restart of run.py)."""
     if session_id is None:
+        return
+    if purpose == "clarification_rescue":
+        if db.reserve_llm_call(session_id, settings.llm_rescue_call_limit, rescue=True) is None:
+            raise LlmBudgetError("Clarification rescue budget exhausted")
         return
     if db.reserve_llm_call(session_id, MAX_CALLS_PER_SESSION) is None:
         raise LlmBudgetError(f"session {session_id} already made {MAX_CALLS_PER_SESSION} LLM calls")
@@ -125,11 +129,12 @@ def complete(
     response_format: dict[str, Any] | None = None,
     model_name: str | None = None,
     timeout_s: float | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     """One chat completion through the gateway. Returns the message text and logs the cost.
     `model_name` overrides LLM_MODEL for configured retry, rescue and compose calls.
     `timeout_s` caps the whole call (no retry), for checks that must not delay a mail."""
-    _reserve(session_id)
+    _reserve(session_id, purpose)
     name = model_name or model()
     kw: dict[str, Any] = {
         "model": name,
@@ -137,7 +142,7 @@ def complete(
         "max_completion_tokens": max_tokens,
     }
     if _is_reasoning(name):
-        kw["reasoning_effort"] = "minimal"  # reasoning usage still counts within output tokens
+        kw["reasoning_effort"] = reasoning_effort or "minimal"
     else:
         kw["temperature"] = 0
     if response_format is not None:
