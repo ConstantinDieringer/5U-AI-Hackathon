@@ -78,6 +78,8 @@ def test_booking_request_keeps_currency_and_reference(monkeypatch) -> None:
         "destination": "JFK",
         "total_minor": 147500,
         "currency": "EUR",
+        "air_total_minor": 147500,
+        "air_currency": "EUR",
     }
     booking._book_by_email(421, quote, {"weight_kg": 100}, "airline@hackloop.mail")
     subject, body = sent[0]

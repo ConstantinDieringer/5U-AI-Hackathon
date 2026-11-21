@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS quotes (
   destination       TEXT,
   total_minor       INTEGER NOT NULL,
   currency          TEXT NOT NULL,
+  air_total_minor   INTEGER,
+  air_currency      TEXT,
   transit_days      INTEGER,
   source            TEXT CHECK (source IN ('sheet','portal','bid','manual')),
   rate_id           TEXT,
@@ -265,6 +267,11 @@ def init_db(path: str | None = None) -> None:
         columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
         if "accounting_json" not in columns:
             migration.execute("ALTER TABLE llm_calls ADD COLUMN accounting_json TEXT")
+        quote_columns = {row["name"] for row in migration.execute("PRAGMA table_info(quotes)")}
+        if "air_total_minor" not in quote_columns:
+            migration.execute("ALTER TABLE quotes ADD COLUMN air_total_minor INTEGER")
+        if "air_currency" not in quote_columns:
+            migration.execute("ALTER TABLE quotes ADD COLUMN air_currency TEXT")
     remap_unassigned()
     backfill_bookings_from_confirmations()
     if path_changed:
@@ -1232,12 +1239,15 @@ def record_quote(
     valid_until: str | None = None,
     alternatives: list[dict[str, Any]] | None = None,
     mail_id: int | None = None,
+    air_total_minor: int | None = None,
+    air_currency: str | None = None,
 ) -> int:
     with tx() as c:
         cur = c.execute(
             "INSERT INTO quotes(session_id, airline, origin, destination, total_minor, currency,"
-            " transit_days, source, rate_id, valid_until, alternatives_json, mail_id, sent_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " transit_days, source, rate_id, valid_until, alternatives_json, mail_id, sent_at,"
+            " air_total_minor, air_currency)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 session_id,
                 airline,
@@ -1252,6 +1262,8 @@ def record_quote(
                 _json(alternatives),
                 mail_id,
                 now(),
+                air_total_minor,
+                air_currency,
             ),
         )
         c.execute(

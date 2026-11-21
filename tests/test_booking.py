@@ -196,3 +196,52 @@ def test_catch_up_books_waiting_acceptance(monkeypatch) -> None:
 
     time.sleep(0.2)
     assert started == [1223]
+
+
+@pytest.mark.parametrize(
+    ("air_minor", "air_currency", "expected"),
+    [
+        (287765, "EUR", "2.877,65 €"),
+        (320000, "USD", "3.200,00 USD"),
+        (0, "EUR", "0,00 €"),
+    ],
+)
+def test_email_booking_uses_frozen_air_price_after_restart(
+    monkeypatch, air_minor, air_currency, expected
+) -> None:
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    _quoted_session()
+    db.record_quote(
+        1223,
+        total_minor=301837,
+        currency="EUR",
+        airline="Meridian Freightways",
+        origin="HAM",
+        destination="EZE",
+        transit_days=3,
+        source="bid",
+        air_total_minor=air_minor,
+        air_currency=air_currency,
+    )
+    # Reopen the database: the chosen component must survive process state loss.
+    db.init_db()
+    session = db.get_session(1223)
+    quote = session["quotes"][-1]
+    booking._book_by_email(1223, quote, session["request"], "airline@hackloop.mail")
+    assert expected in api.sent[0]["body"]
+    assert "3.018,37 €" not in api.sent[0]["body"]
+    customer = booking._confirmation("en", None, quote, "AP-1223")
+    assert "3.018,37 €" in customer
+
+
+def test_legacy_email_booking_does_not_assert_customer_total_as_air_price(monkeypatch):
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    _quoted_session()
+    session = db.get_session(1223)
+    booking._book_by_email(
+        1223, session["quotes"][0], session["request"], "airline@hackloop.mail"
+    )
+    assert "as quoted by you" in api.sent[0]["body"]
+    assert "4.408,52 €" not in api.sent[0]["body"]

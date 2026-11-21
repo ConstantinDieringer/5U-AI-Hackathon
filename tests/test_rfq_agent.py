@@ -442,6 +442,9 @@ def test_handle_rfq_door_to_port_with_trucker_bid(stub, monkeypatch) -> None:
     assert "trucking to CGN" in quote["body"]
     s = db.get_session(265)
     assert s["status"] == "quoted"
+    stored_quote = s["quotes"][0]
+    assert stored_quote["air_currency"] == "EUR"
+    assert stored_quote["total_minor"] == stored_quote["air_total_minor"] + 21000
     assert not db.claim_quote_send(265)  # never a second quote
 
 
