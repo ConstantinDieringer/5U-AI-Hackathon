@@ -39,8 +39,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Austrian Power · Forwarder", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
-PUBLIC_PATHS = {"/api/health", webhook.PATH}  # health check or separate mandatory HMAC auth
-app.add_api_route(webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False)
+PUBLIC_PATHS = {
+    "/api/health",
+    webhook.PATH,
+}  # health check or separate mandatory HMAC auth
+app.add_api_route(
+    webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False
+)
 
 
 @app.middleware("http")
@@ -59,7 +64,9 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
             pw, settings.ui_password
         ):
             return await call_next(request)
-    return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'})
+    return Response(
+        status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'}
+    )
 
 
 @app.get("/", include_in_schema=False)
@@ -205,6 +212,22 @@ def api_resume_all() -> dict[str, bool]:
 
 class ReplyIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
+    # set when the text came from the emergency draft: recorded as our quote so CRM,
+    # booking (rate_id) and tracking work as for an agent quote
+    quote: dict[str, Any] | None = None
+
+
+@app.post("/api/sessions/{session_id}/draft")
+def api_draft(session_id: int) -> dict[str, Any]:
+    """Emergency quote draft for a human (nothing is sent)."""
+    from app.ui import drafts
+
+    try:
+        return drafts.build(session_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @app.post("/api/sessions/{session_id}/reply")
@@ -218,7 +241,9 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     try:
         from app import hackloop  # owned by task A; may not exist yet
     except ImportError as e:
-        raise HTTPException(503, "mail client (app/hackloop.py) not available yet") from e
+        raise HTTPException(
+            503, "mail client (app/hackloop.py) not available yet"
+        ) from e
 
     db.takeover(session_id)
     subject = parent["subject"] or ""
@@ -253,6 +278,26 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
         )
     db.mark_manual_reply(session_id)
     db.emit(db.Ev.HUMAN_ACTION, "Manuelle Antwort gesendet", session_id)
+    q = body.quote
+    if q and q.get("total_minor") and not s.get("quotes"):
+        c = q.get("choice") or {}
+        db.record_quote(
+            session_id,
+            total_minor=int(q["total_minor"]),
+            currency=q.get("currency") or "EUR",
+            airline=c.get("airline"),
+            origin=c.get("origin"),
+            destination=c.get("destination"),
+            transit_days=c.get("transit_days"),
+            source="manual",
+            rate_id=c.get("rate_id"),
+            valid_until=c.get("valid_until"),
+            alternatives=q.get("options"),
+            mail_id=sent_id or None,
+        )
+        # hand back so the booking agent books on the customer's yes (it stays silent in
+        # manual mode); the quote is sent, so the agent cannot quote a second time
+        db.handback(session_id, "Notfall-Entwurf")
     return {"ok": True, "mail_id": sent_id}
 
 
