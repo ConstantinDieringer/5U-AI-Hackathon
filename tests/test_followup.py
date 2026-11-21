@@ -101,7 +101,9 @@ def test_silent_customer_gets_nudge_after_30s(monkeypatch) -> None:
     followup.tick()
     assert len(api.sent) == 1
     m = api.sent[0]
-    assert m["to"] == CUSTOMER and m["in_reply_to"] == SID and m["subject"].startswith("Re:")
+    assert m["to"] == CUSTOMER and m["in_reply_to"] == SID and m["subject"] == "Fastest to DEL"
+    stored = [mail for mail in db.get_session(SID)["mails"] if mail["direction"] == "out"][-1]
+    assert stored["subject"] == m["subject"] and stored["body"] == m["body"]
     assert "Hi Anna" in m["body"] and "book" in m["body"]
     assert "5.000" not in m["body"] and "5,000" not in m["body"]  # price never restated
     followup.tick()  # our nudge is the last mail now and younger than 30 s
