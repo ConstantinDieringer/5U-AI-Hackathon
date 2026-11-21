@@ -17,8 +17,8 @@ from typing import Any
 from app import db, hackloop
 from app.agents.rfq import schedule
 from app.config import settings
+from app.mail import multilingual
 from app.mail.content import current_message
-from app.mail.language import detect
 from app.mail.router import address
 from app.mail.signature import first_name
 from app.mail.style import SIGNATURE, amount, written_date
@@ -384,6 +384,7 @@ def _reply(
         in_reply_to=mail.id,
         session_id=session_id,
         protected_terms=protected_terms,
+        language_code=multilingual.mail_language(mail),
     )
     body = sent["body"]
     subject = sent["subject"]
@@ -405,8 +406,9 @@ def handle(mail: Mail, session_id: int | None, booked_session: int | None = None
     """Answer one tracking question. `booked_session` is set when a customer asks in the
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:
+        mail = multilingual.prepare(mail, session_id)
         text = f"{mail.subject}\n{mail.body}"
-        lang = "de" if detect(text) == "de" else "en"  # other languages get English
+        lang = multilingual.mail_language(mail)
         name = first_name(mail.body)
         variant = session_id if session_id is not None else mail.id
         # a question in the customer's own booked thread keeps that session's status

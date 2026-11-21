@@ -4,6 +4,11 @@ import os
 import re
 from datetime import UTC, date, datetime
 
+from babel import Locale, UnknownLocaleError
+from babel.dates import format_date
+
+from app.mail.language import base, normalize
+
 TEAM_LINE = "Your austrian Power Team"
 # a real first name above the team line reads like a person wrote the mail (jury bonus)
 SIGNER = os.getenv("MAIL_SIGNER", "Moritz").strip() or "Moritz"
@@ -42,7 +47,13 @@ _MONTHS = {
 
 
 def written_date(value: date, lang: str) -> str:
-    language = "de" if lang == "de" else "en"
+    language = base(lang)
+    if language not in _MONTHS:
+        try:
+            return format_date(value, format="long", locale=Locale.parse(normalize(lang), sep="-"))
+        except (UnknownLocaleError, ValueError):
+            # Languages without CLDR data still go through the model translation boundary.
+            language = "en"
     day = f"{value.day}." if language == "de" else str(value.day)
     return f"{day} {_MONTHS[language][value.month - 1]} {value.year}"
 
@@ -70,7 +81,7 @@ def customer_presentation(text: str, lang: str) -> str:
             if value.tzinfo is not None:
                 value = value.astimezone(UTC)
                 zone = " UTC"
-            joiner = " um " if lang == "de" else " at "
+            joiner = " um " if lang == "de" else " at " if lang == "en" else " "
             return written_date(value.date(), lang) + joiner + value.strftime("%H:%M") + zone
         except ValueError:
             return match[0]

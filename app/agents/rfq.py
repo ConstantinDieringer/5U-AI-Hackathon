@@ -28,7 +28,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids, carrier_prefs
 from app.config import settings
-from app.mail import language, lots, parse
+from app.mail import language, lots, multilingual, parse
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.rfq_sources import extraction_content, read_sources
@@ -124,9 +124,12 @@ EXTRACT_PROMPT = (
     "weight_kg: total gross weight in kg (convert lb/t). volume_cbm: total volume in cbm; if only "
     "dimensions are given, compute pieces x L x W x H in metres.\n"
     "preference: 'fastest' if they ask for the fastest/quickest/express option, else 'cheapest'.\n"
-    "ready_date: ISO date or null. language: ISO 639-1 code of the email language.\n"
+    "ready_date: ISO date or null. language: BCP 47 code of the customer's language, with no "
+    "language restrictions. Read requests in any language and script. Keep customer_questions "
+    "and service_constraints in English for the deterministic safety checks.\n"
     "customer_name: the sender's first name from the signature, or null.\n"
-    "customer_questions: every explicit question or requested detail, verbatim and without "
+    "customer_questions: every explicit question or requested detail, faithfully translated "
+    "into English and without "
     "answering it (max 5). service_constraints: every other timing, handling, routing or service "
     "condition that the quote should respect (max 10)."
 )
@@ -555,8 +558,8 @@ def _with_cutoff_notice(body: str, rfq: Rfq) -> str:
         settings.cutoff_question_notice and any(_CUTOFF_QUESTIONS.search(q) for q in asked)
     ):
         return body
-    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
-    notice = _CUTOFF_NOTICES[lang]
+    lang = language.base(rfq.language)
+    notice = _CUTOFF_NOTICES.get(lang, _CUTOFF_NOTICES["en"])
     if notice in body:
         return body
     at = body.rfind(SIGNATURE)
@@ -574,7 +577,7 @@ def quote_text(
     """The quote mail: one all-in total with its currency, in the customer's language."""
     if option.airline.lower() in rfq.excluded_airlines:
         raise ValueError("selected carrier is excluded by the customer")
-    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
+    lang = language.base(rfq.language)
     name = rfq.customer_name
     if name and has_template_artifacts(name):
         name = None
@@ -878,7 +881,7 @@ def compose_quote_text(
 ) -> str:
     """Generate and verify a general answer; deterministic copy is always available."""
     fallback = _fallback_with_coverage(rfq, option, total_eur_minor, truck, session_id, today)
-    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
+    lang = language.normalize(rfq.language)
     price = _amount(total_eur_minor, lang)
     when = schedule(rfq, option.transit_days, today)
     facts = {
@@ -928,7 +931,7 @@ def compose_quote_text(
         if option.valid_until
         else None,
         "confirmed_cargo_acceptance_cutoff": None,
-        "cutoff_notice": _CUTOFF_NOTICES[lang],
+        "cutoff_notice": _CUTOFF_NOTICES.get(language.base(lang), _CUTOFF_NOTICES["en"]),
         "customer_questions": [
             {"index": index, "question": question}
             for index, question in enumerate(rfq.customer_questions)
@@ -1176,6 +1179,7 @@ def _handle(mail: Mail, sid: int) -> None:
         )
         return
     db.set_status(sid, "pricing")
+    mail = multilingual.prepare(mail, sid)
 
     start = time.monotonic()
     rfq = _stored_request(sid) or extract_rfq(mail, sid)  # stored = resumed after a restart
@@ -1252,7 +1256,13 @@ def _handle(mail: Mail, sid: int) -> None:
                 sid,
             )
     # the LLM guesses the language from names/places (English mail from a German firm -> "de")
-    rfq = rfq.model_copy(update={"language": language.detect(mail.body)})
+    rfq = rfq.model_copy(
+        update={
+            "language": multilingual.reply_language(
+                mail.sender, sid, None, multilingual.mail_language(mail, rfq.language)
+            )
+        }
+    )
     if mode != "enforce":
         rfq = locate_pickup(rfq, mail, sid)
         if settings.ask_pickup_zip and needs_pickup_site(rfq, mail):
@@ -1382,7 +1392,13 @@ def with_stated_origin(request: Rfq, mail: Mail, sid: int) -> Rfq:
     one: self-delivery wording, or the one network airport the current text names."""
     from app.mail.rfq_validation import explicit_delivery_origin
 
-    request = request.model_copy(update={"language": language.detect(mail.body)})
+    request = request.model_copy(
+        update={
+            "language": multilingual.reply_language(
+                mail.sender, sid, None, multilingual.mail_language(mail, request.language)
+            )
+        }
+    )
     if not request.origin and not request.door_to_port:
         stated = explicit_delivery_origin(mail, request.destination)
         request = (
@@ -1656,6 +1672,7 @@ def _price_and_quote(
             in_reply_to=mail.id,
             session_id=sid,
             protected_terms=(choice.airline, choice.origin, choice.destination),
+            language_code=rfq.language,
             deadline_at=t0 + RFQ_LIFETIME_S,
             review=not template,
             # from here the quote may be out: the watchdog never frees this claim again

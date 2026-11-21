@@ -16,16 +16,14 @@ from typing import Any
 
 from app import db
 from app.agents import bids, rfq
-from app.mail import language
+from app.mail import multilingual
 from app.models import Mail, Rfq
 from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import resolve_origin, sheet_options, to_minor
 from app.pricing.reference import carrier_by_name
 
 log = logging.getLogger(__name__)
-PORTAL_BUDGET_S = (
-    8.0  # a human is waiting: short portal window, sheets and bids still count
-)
+PORTAL_BUDGET_S = 8.0  # a human is waiting: short portal window, sheets and bids still count
 _BID = re.compile(r"^Gebot (.+?): ([\d.]+) EUR(?:, ([\d.]+) Tage)?")
 
 
@@ -69,6 +67,7 @@ def build(session_id: int) -> dict[str, Any]:
     mail = _first_mail(s)
     if mail is None:
         raise ValueError("no customer mail in this session")
+    mail = multilingual.prepare(mail, session_id, (s.get("request") or {}).get("language") or "und")
     warnings: list[str] = []
     stored = s.get("request")
     try:
@@ -81,15 +80,17 @@ def build(session_id: int) -> dict[str, Any]:
         if request is None:
             raise ValueError("Anfrage nicht lesbar: bitte Preis von Hand eintragen")
     # same as the agent: the language of the mail itself, not the LLM's guess from names
-    request = request.model_copy(update={"language": language.detect(mail.body)})
-    request = rfq.locate_origin(
-        rfq.locate_pickup(request, mail, session_id), mail, session_id
+    request = request.model_copy(
+        update={
+            "language": multilingual.reply_language(
+                mail.sender, session_id, None, multilingual.mail_language(mail, request.language)
+            )
+        }
     )
+    request = rfq.locate_origin(rfq.locate_pickup(request, mail, session_id), mail, session_id)
     origin = resolve_origin(request)
     if origin is None:
-        raise ValueError(
-            "kein Abflughafen erkennbar: Ort oder PLZ beim Kunden erfragen"
-        )
+        raise ValueError("kein Abflughafen erkennbar: Ort oder PLZ beim Kunden erfragen")
 
     air = sheet_options(request)
     try:
@@ -128,15 +129,16 @@ def build(session_id: int) -> dict[str, Any]:
         raise ValueError(f"kein Preis für {origin} → {request.destination} gefunden")
     truck = rfq.best_truck(offers) if request.door_to_port else None
     if request.door_to_port and truck is None:
-        warnings.append(
-            "Kein Trucker-Gebot: Preis enthält keine Abholung, bitte ergänzen"
-        )
+        warnings.append("Kein Trucker-Gebot: Preis enthält keine Abholung, bitte ergänzen")
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
     if not air:
         warnings.append("Kein Tarifblatt-/Portalpreis, nur Carrier-Gebote")
     body = rfq.quote_text(request, choice, total, truck, session_id)
     if request.pickup_assumed and truck is not None:
         body = rfq.with_pickup_note(body, request)
+    _, body = multilingual.localize(
+        "", body, request.language, session_id, (choice.airline, choice.origin, choice.destination)
+    )
     options = sorted(air + bid_opts, key=lambda o: o.total_eur_minor)
     return {
         "body": body,

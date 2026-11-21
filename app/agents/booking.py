@@ -30,6 +30,7 @@ from typing import Any
 
 from app import config, db, hackloop
 from app.config import settings
+from app.mail import multilingual
 from app.mail.language import detect
 from app.mail.router import address
 from app.mail.style import SIGNATURE, amount, booked_joke, has_template_artifacts
@@ -168,7 +169,7 @@ def classify_reply(body: str) -> str:
 
 
 def language(body: str) -> str:
-    return "de" if detect(own_text(body)) == "de" else "en"
+    return detect(own_text(body))
 
 
 # ---------------------------------------------------------------- booking
@@ -308,7 +309,13 @@ def _confirm_to_customer(
             quote.get("origin"), quote.get("destination"), language(mail.body), subject
         )
     sent = hackloop.send_customer(
-        to, subject, text, in_reply_to=mail.id, session_id=sid, protected_terms=protected_terms
+        to,
+        subject,
+        text,
+        in_reply_to=mail.id,
+        session_id=sid,
+        protected_terms=protected_terms,
+        language_code=multilingual.mail_language(mail),
     )
     text = sent["body"]
     subject = sent["subject"]
@@ -361,10 +368,27 @@ def _rescue_acceptance(body: str, evidence: str | None) -> bool | None:
     return None
 
 
+def _mail_acceptance(mail: Mail, evidence: str | None = None) -> bool | None:
+    verdict = _rescue_acceptance(mail.body, evidence)
+    authorization = multilingual.consent_allowed(mail)
+    if authorization is False and verdict is True:
+        return None
+    if (
+        authorization is True
+        and verdict is None
+        and re.fullmatch(
+            r"(?:yes(?:\s+please)?|ok(?:ay)?)[.!\s]*", own_text(mail.body), re.IGNORECASE
+        )
+    ):
+        return True
+    return verdict
+
+
 def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> None:
     s = db.get_session(sid)
     if not s or not s.get("quotes"):
         return
+    mail = multilingual.prepare(mail, sid, (s.get("request") or {}).get("language") or "und")
     if any(b["status"] in ("booked", "confirmed") for b in s.get("bookings", [])):
         from app.agents import tracking
 
@@ -376,7 +400,7 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
         else:
             log.info("session %s already booked, reply %s ignored", sid, mail.id)
         return
-    verdict = _rescue_acceptance(mail.body, consent_evidence)
+    verdict = _mail_acceptance(mail, consent_evidence)
     if settings.prebook_answer:
         from app.agents import prebook
 
@@ -725,7 +749,7 @@ def _on_price_change_answer(
     wants_other = bool(_WANTS_OTHER.search(text)) or bool(
         alt and alt["airline"].lower() in text.lower()
     )
-    verdict = _rescue_acceptance(mail.body, consent_evidence)
+    verdict = _mail_acceptance(mail, consent_evidence)
     if verdict is True and not wants_other and b.get("customer_total_minor") is not None:
         booking_ref = str(b.get("booking_reference") or b["team_reference"])
         name = (s.get("request") or {}).get("customer_name")

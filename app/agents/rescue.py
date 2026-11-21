@@ -461,9 +461,13 @@ def take_over(mail: Mail, sid: int) -> bool:
 
     if not _eligible(sid, mail) or rfq.is_working(sid):
         return True
+    from app.mail import multilingual
+
+    mail = multilingual.prepare(mail, sid)
     session = db.get_session(sid)
     row = session.get("validation") or {}
     root = Mail(**row["root"]) if row.get("root") else clarification._stored_mail(db.root_mail(sid))
+    root = multilingual.prepare(root, sid)
     draft = (
         RfqDraft.model_validate(row["draft"])
         if row.get("draft")
