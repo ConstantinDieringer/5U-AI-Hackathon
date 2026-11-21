@@ -254,25 +254,25 @@ _TO_KG = {"l": Decimal("0.45359237"), "t": Decimal(1000)}
 _GROUPED = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
 _ONE_GROUP = re.compile(r"\d{1,3}[.,]\d{3}")
 _PALLETS = re.compile(r"\b(?:pallets?|paletten?|skids?)\b", re.IGNORECASE)
-# THOUSANDS_EVIDENCE plausibility: an air shipment of pallets, several pieces or more than
-# a tenth of a cbm per kg does not weigh under 10 kg
+# Plausibility (THOUSANDS_EVIDENCE, CLARIFY_CAP_RESOLVE): pallets or several pieces do not
+# weigh under 10 kg, and no cargo is lighter than 10 kg per cbm (rounds 1 to 31: 104 to 418)
 MIN_PLAUSIBLE_KG = Decimal(10)
 MIN_DENSITY_KG_PER_CBM = Decimal(10)
 
 
-def _implausibly_light(kg, context, facts):
-    if kg >= MIN_PLAUSIBLE_KG:
-        return False
-    if _PALLETS.search(context):
-        return True
-    counts = [int(c) for c in _COUNT.findall(context)]
-    pieces = facts.get("pieces") or (max(counts) if counts else 0)
-    if pieces and int(pieces) >= 2:
-        return True
+def implausible_weight(kg, context="", facts=None):
+    """True when `context` (mail text) or `facts` (pieces, volume_cbm) rule this weight out."""
+    facts = facts or {}
     volume = facts.get("volume_cbm")
     if not volume and (match := re.search(rf"({_NUM})\s*(?:cbm|m3|m³)\b", context, re.IGNORECASE)):
         volume = match[1].replace(",", ".")
-    return bool(volume) and kg / Decimal(str(volume)) < MIN_DENSITY_KG_PER_CBM
+    if volume and Decimal(str(volume)) > 0 and kg / Decimal(str(volume)) < MIN_DENSITY_KG_PER_CBM:
+        return True
+    if kg >= MIN_PLAUSIBLE_KG:
+        return False
+    counts = [int(c) for c in _COUNT.findall(context)]
+    pieces = facts.get("pieces") or (max(counts) if counts else 0)
+    return bool(_PALLETS.search(context)) or bool(pieces and int(pieces) >= 2)
 
 
 def weight_reading(raw, factor=Decimal(1), known=(), context="", facts=None):
@@ -297,7 +297,8 @@ def weight_reading(raw, factor=Decimal(1), known=(), context="", facts=None):
         and not figures
         and factor == 1
         and _ONE_GROUP.fullmatch(raw)
-        and _implausibly_light(Decimal(raw.replace(",", ".")), context, facts or {})
+        and (decimal := Decimal(raw.replace(",", "."))) < MIN_PLAUSIBLE_KG
+        and implausible_weight(decimal, context, facts)
     ):
         return thousands
     return None

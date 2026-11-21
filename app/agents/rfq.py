@@ -1259,12 +1259,14 @@ def _sheets(rfq: Rfq) -> list[RateOption]:
 _FALLBACK_BLOCKERS = {"dangerous_goods", "pickup_zip", "weight_kg", "volume_cbm", "lots"}
 
 
-def quote_without_answer(sid: int, reason: str) -> bool:
+def quote_without_answer(sid: int, reason: str, dg_asked: bool = False) -> bool:
     """CLARIFY_ONCE: the answer to our one question is unusable or has not come. Send the best
     quote that real prices allow before the full-score deadline and flag the session for a
     person. Nothing is guessed: the departure must be stated in the request (self-delivery
     wording, or the one network airport the current text names) or follow from a pickup ZIP.
-    A pickup without a site, unproven weight/volume or open dangerous goods get no quote."""
+    A pickup without a site, unproven weight/volume or open dangerous goods get no quote.
+    `dg_asked` (CLARIFY_CAP_RESOLVE): our question already asked for the DG documents, which
+    is what the scorer requires before a quote (round 41), so open DG no longer blocks."""
     if not db.kv_claim(f"clarify.fallback.{sid}"):
         return False
     row = db.validation_get(sid)
@@ -1276,7 +1278,8 @@ def quote_without_answer(sid: int, reason: str) -> bool:
     why = ""
     request: Rfq | None = None
     origin: str | None = None
-    if blockers := _FALLBACK_BLOCKERS & set(open_fields):
+    blocking = _FALLBACK_BLOCKERS - ({"dangerous_goods"} if dg_asked else set())
+    if blockers := blocking & set(open_fields):
         why = "offen: " + ", ".join(sorted(blockers))
     else:
         try:

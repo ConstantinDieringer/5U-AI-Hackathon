@@ -453,6 +453,9 @@ def request(mail, sid, draft):
             sid,
             level="error",
         )
+        if settings.clarify_cap_resolve and draft.evidence.get("workflow", "rfq") == "rfq":
+            db.clarification_sent(sid, "capped")  # no send follows; not an unknown outcome
+            resolve_at_cap(mail, sid, draft)
         return
     body = text_for(draft, detect(current_message(mail.body).text))
     try:
@@ -485,6 +488,130 @@ def request(mail, sid, draft):
         references=[*mail.references, mail.id],
         raw=sent,
     )
+    if draft.evidence.get("workflow", "rfq") == "rfq":
+        try:  # which items our questions covered (CLARIFY_CAP_RESOLVE: was DG asked?)
+            db.kv_set(
+                f"clarify.asked.{sid}",
+                json.dumps(sorted(asked_fields(sid) | {i["field"] for i in draft.issues})),
+            )
+        except Exception:  # bookkeeping after a completed send must not fail it
+            log.exception("session %s: could not record the asked fields", sid)
+
+
+def asked_fields(sid: int) -> set[str]:
+    """Items any of our sent clarification questions in this thread asked about."""
+    try:
+        return set(json.loads(db.kv_get(f"clarify.asked.{sid}") or "[]"))
+    except ValueError:
+        return set()
+
+
+_FIGURES = {"weight_kg": r"kgs?|kilos?|kilograms?", "volume_cbm": r"cbm|m3|m³"}
+_OPEN_LABELS = {  # attention list wording for the open items
+    "weight_kg": "Gewicht",
+    "volume_cbm": "Volumen",
+    "pieces": "Stückzahl",
+    "lots": "Positionen",
+    "pickup_zip": "Abhol-PLZ",
+    "origin": "Abflughafen",
+    "destination": "Zielflughafen",
+    "dangerous_goods": "Gefahrgut-Unterlagen",
+    "attachments": "Anhang",
+    "shipment": "Sendungsdaten",
+}
+
+
+def thread_figure(field: str, draft: RfqDraft, sid: int, mail: Mail) -> float | None:
+    """CLARIFY_CAP_RESOLVE: the one plausible value of `field` across this thread, else None.
+
+    Candidates: every mail/attachment observation and every "N kg" ("N cbm") figure in the
+    current words of each customer mail of the thread, the root included. A "1,674" figure
+    adds both readings. Weights the shipment's pieces, pallets or volume rule out are dropped
+    (Kessler: 1.674 kg, or the 11 a table header produced, for 11 pieces in 4.36 cbm). More
+    candidates only make a unique value less likely, never a guess more likely."""
+    from app.mail.rfq_validation import _NUM, implausible_weight
+
+    values: set[Decimal] = set()
+    for _, value in (draft.evidence.get(field) or {}).get("observations") or []:
+        values.add(Decimal(str(value)))
+    previous = db.validation_get(sid)
+    texts = [current_message(Mail(**previous["root"]).body).facts] if previous else []
+    texts += [
+        current_message(str(row.get("body") or "")).facts
+        for row in db.customer_mail_history(sid, mail.sender, mail.id)
+    ]
+    texts.append(current_message(mail.body).facts)
+    for text in texts:
+        body = _SIGNATURE.split(text, 1)[0]
+        for raw in re.findall(rf"({_NUM})\s*(?:{_FIGURES[field]})\b", body, re.IGNORECASE):
+            values.add(Decimal(raw.replace(",", ".")))
+            if re.fullmatch(r"\d{1,3}[.,]\d{3}", raw):
+                values.add(Decimal(re.sub(r"[.,]", "", raw)))
+    values = {v for v in values if v > 0}
+    if field == "weight_kg":
+        context = "\n".join(texts)
+        values = {v for v in values if not implausible_weight(v, context, draft.facts)}
+    return float(values.pop()) if len(values) == 1 else None
+
+
+def resolve_at_cap(mail: Mail, sid: int, draft: RfqDraft) -> None:
+    """CLARIFY_CAP_RESOLVE: both questions are spent and something is still open. Never end
+    silently:
+    1. an open weight/volume with exactly one plausible value across the thread: use it;
+       nothing else open means the normal flow prices and quotes;
+    2. otherwise the best quote from what the mail states (quote_without_answer), unless a
+       rule rejects it outright: DG never asked for, a pickup without a site, no usable
+       weight/volume; customer carrier exclusions stay applied in pricing;
+    3. otherwise nothing is sent: an error event and the top of the attention list name the
+       open items, and the session waits in manual review."""
+    from app.agents import rfq as agent
+
+    previous = db.validation_get(sid)
+    root = Mail(**previous["root"]) if previous else mail
+    corrections = dict(draft.evidence.get("corrections", {}))
+    found = {
+        field: value
+        for field in sorted({i["field"] for i in draft.issues} & _FIGURES.keys())
+        if (value := thread_figure(field, draft, sid, mail)) is not None
+    }
+    if found:
+        corrections.update(found)
+        old_texts = draft.evidence.get("attachment_texts", {})
+        remaining = [i for i in draft.issues if i["field"] == "attachments"]
+        request, checked = validate(root, draft, old_texts, remaining, corrections=corrections)
+        checked.evidence.update(corrections=corrections, attachment_texts=old_texts)
+        for key in ("blocking_clarification", "rescue_before_clarification"):
+            if key in draft.evidence:
+                checked.evidence[key] = draft.evidence[key]
+        db.emit(
+            "clarification_cap_figures",
+            "Rückfrage-Limit: eindeutiger Wert aus dem Thread übernommen: "
+            + ", ".join(f"{k} {v:g}" for k, v in found.items()),
+            sid,
+            level="warn",
+            found=found,
+        )
+        draft = checked
+        if request is not None and not checked.issues:
+            db.validation_save(sid, "ready", checked.model_dump(mode="json"), {})
+            db.set_request(sid, request.model_dump())
+            agent.handle_rfq(root, sid)
+            return
+        db.validation_save(sid, "awaiting_clarification", checked.model_dump(mode="json"), {})
+    if agent.quote_without_answer(
+        sid, "Rückfrage-Limit erreicht", dg_asked="dangerous_goods" in asked_fields(sid)
+    ):
+        return
+    open_items = sorted({i["field"] for i in draft.issues})
+    db.emit(
+        "clarification_cap_open",
+        "Rückfrage-Limit erreicht, kein Angebot gesendet. Offen: "
+        + ", ".join(_OPEN_LABELS.get(f, f) for f in open_items),
+        sid,
+        level="error",
+        open=open_items,
+    )
+    db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
 
 
 def _questions_sent(sid):
