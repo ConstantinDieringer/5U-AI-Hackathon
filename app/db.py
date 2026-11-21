@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from collections.abc import Iterator, Sequence
@@ -338,6 +339,34 @@ def _resolve_session(
     return None
 
 
+_QUOTED_SUBJECT = re.compile(r'your (?:mail|message|request) "([^"]+)"', re.IGNORECASE)
+_RE_PREFIX = re.compile(r"^\s*((re|aw|fwd?|wg)\s*:\s*)+", re.IGNORECASE)
+SUBJECT_MATCH_WINDOW = timedelta(hours=2)
+
+
+def _session_by_subject(c: sqlite3.Connection, subject: str, body: str) -> int | None:
+    """Fallback when a reply carries no in_reply_to/references (seen on ratedesk replies):
+    match the quoted subject in the body, or the subject without Re:, against a mail we
+    sent recently. Newest match wins."""
+    candidates = [m.group(1) for m in _QUOTED_SUBJECT.finditer(body or "")]
+    stripped = _RE_PREFIX.sub("", subject or "").strip()
+    if stripped:
+        candidates.append(stripped)
+    since = (datetime.now(timezone.utc) - SUBJECT_MATCH_WINDOW).isoformat(timespec="seconds")
+    for cand in candidates:
+        r = _one(
+            c.execute(
+                "SELECT session_id FROM mails WHERE direction = 'out' AND session_id IS NOT NULL"
+                " AND lower(subject) = lower(?) AND received_at >= ? ORDER BY received_at DESC"
+                " LIMIT 1",
+                (cand.strip(), since),
+            )
+        )
+        if r:
+            return int(r["session_id"])
+    return None
+
+
 def ingest_mail(
     *,
     mail_id: int,
@@ -363,6 +392,13 @@ def ingest_mail(
         if known:
             return known["session_id"]
         session_id = _resolve_session(c, in_reply_to, refs)
+        if (
+            session_id is None
+            and not refs
+            and in_reply_to is None
+            and category not in SESSION_CATEGORIES
+        ):
+            session_id = _session_by_subject(c, subject, body)
         created = False
         if session_id is None and category in SESSION_CATEGORIES:
             session_id = mail_id

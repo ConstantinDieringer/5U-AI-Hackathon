@@ -294,3 +294,46 @@ def test_board_result_change_detection():
         round_id="r1", verdict="accepted", reason=None, points={"total": 87}, raw={}
     )
     assert db.get_session(sid)["board"][0]["verdict"] == "accepted"
+
+
+def test_ratedesk_reply_without_references_maps_by_quoted_subject():
+    sid = rfq()
+    db.record_outgoing(
+        mail_id=500,
+        recipient="ratedesk@hackloop.mail",
+        subject="Rate request FRA-JFK 100 kg",
+        body="...",
+        category="ratedesk",
+        session_id=sid,
+    )
+    body = 'portal rates for FRA-JFK (your mail "Rate request FRA-JFK 100 kg"):'
+    got = db.ingest_mail(
+        mail_id=501,
+        sender="ratedesk@hackloop.mail",
+        recipient=TEAM,
+        subject="Portal rates FRA-JFK 100.0 kg",
+        body=body,
+        category="portal_reply",
+    )
+    assert got == sid
+
+
+def test_reply_without_references_maps_by_re_subject():
+    sid = rfq()
+    db.record_outgoing(
+        mail_id=600,
+        recipient="kestrel-airways@hackloop.mail",
+        subject="Bid request FRA-DFW 40 kg",
+        body="...",
+        category="bid_request",
+        session_id=sid,
+    )
+    got = db.ingest_mail(
+        mail_id=601,
+        sender="kestrel-airways@hackloop.mail",
+        recipient=TEAM,
+        subject="RE: Bid request FRA-DFW 40 kg",
+        body="EUR 150",
+        category="carrier_bid",
+    )
+    assert got == sid

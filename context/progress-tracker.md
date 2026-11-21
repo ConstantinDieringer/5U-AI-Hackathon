@@ -72,6 +72,9 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 15:45: Real mail fields: `id, from, to, subject, body, in_reply_to, references, received_at, attachments`. Ratedesk replies carry NO in_reply_to/references (only `your mail "<subject>"` in the body) → `db.ingest_mail` falls back to subject matching.
+- 21.11 15:45: Mail to our own address → 422. Gateway OpenAI key not set yet (`set: false`).
+
 - 21.11: Kit card received (mailbox `austrian-power@hackloop.mail`, first request 16:00); API key kept out of the repo.
 - 21.11: Sheets show a break-point effect (billing at the next weight break is often cheaper); unconfirmed which price the scorer uses, check on the board.
 - 21.11 15:30: Portal does not round chargeable weight (0.1234 cbm -> 20.6078 kg), 404 for an airline off the lane; `dataset_version` (now v1) is logged on change as an early sign of the hourly setup changes.
