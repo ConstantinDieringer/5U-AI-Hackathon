@@ -256,6 +256,13 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Bei Portalabfragen Airline-Anfrageplätze für bekannte Portal-Carrier derselben Strecke
+  reservieren. Bei HTTP 503 zuerst diese Carrier direkt anfragen, anschließend verbleibende
+  Plätze mit anderen Kandidaten füllen. Kunden-Ausschlüsse und negative Streckenbeobachtungen
+  gelten weiterhin; bereits versendete Anfragen zählen auch nach Neustarts zum Airline-Limit.
+  Trucker haben ein getrenntes Limit. Fehlende Luftpreise dürfen keinen Truckingpreis als
+  vollständige Quote erzeugen; ein Flughafenwechsel erfordert einen passenden neuen Vorlaufpreis.
+
 - Kundenmails: Euro als €, keine Klammerzusätze oder internen Feld-/Spaltennamen. Termine mit ausgeschriebenem Monatsnamen (`24. November 2026` / `24 November 2026`), kurze Absätze und freundliche vollständige Sätze. Composer-Ausgaben werden auf diese Darstellung geprüft und bei Verstößen repariert; Angebots-, Rückfrage-, Buchungs- und Trackingvorlagen berücksichtigen dieselben Regeln. API-/CRM-Werte und technische IDs bleiben unverändert.
 
 - Gespeicherte kundenbezogene Carrier-Ausschlüsse gelten für Carrier-Anfragen, Auswahl,
@@ -313,6 +320,12 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Keine `print()`-Aufrufe im App-Code.
 
 ## 10. UI / interne API
+
+- Manuelle Antworten wählen standardmäßig die neueste eingegangene Mail des Session-Kunden,
+  nie automatisch einen Carrier. Eine andere eingegangene Mail derselben Session bleibt
+  ausdrücklich auswählbar; die Versandbestätigung nennt den tatsächlichen Empfänger.
+  Notfall-Quotes dürfen nur an den Session-Kunden gehen. Carrier-Antworten markieren weder
+  `first_reply_at` noch eine Kundenquote; ungültige Auswahl scheitert vor Versand/Übernahme.
 
 - FastAPI auf Port `UI_PORT` (8000), Bindung `0.0.0.0`.
 - Endpunkte: siehe `context/docs/design/aufgabe-c.md` Abschnitt 6. SSE über `fastapi.sse.EventSourceResponse`, ohne `event:`-Feld; Mailinhalte im Frontend nur per `textContent` rendern.
