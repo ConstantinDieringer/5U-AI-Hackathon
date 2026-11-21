@@ -101,6 +101,9 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 17:12: Price check (task 5, partial): `scores_revealed` still false, so no per-request points yet. Rounds 2–8 + 12: chosen option matches the preference every time; the only too_high (round 7, MUC-LAX 998 kg) was the missed 1000 kg break, fixed in 1e53564. Rounds 5 (1228 kg) and 6 (1549 kg) also sit just under likely breaks: re-check them once points are visible. Pricing unchanged.
+- 21.11 17:08: Round 11 (2530) lost: nano gave origin YYZ (= destination) for pickup 21663; `resolve_origin` now prefers the ZIP airport unless the LLM origin is a zone airport (57f660d). Round 10 (2256) lost: crash from mixed code versions in the live process (lazy import after a pull) → resumed at 190 s, but the portal deadline had passed (fixed c1916fc: ≥ 20 s). Lesson: restart right after every pull.
+
 - 21.11 17:05: Extraction retry: an unusable first answer (bad JSON, Rfq invalid, gateway error) gets one retry with `LLM_RETRY_MODEL` (gpt-5-mini) and the error fed back, as the 2nd budget call. Live: 302 micro-USD, 1.7 s. Mini alone gets lot sums wrong (1710 vs 1952 kg); code lot sums still win.
 
 - 21.11 16:58: Board watch: any decided verdict other than accepted, or any reason, is emitted once as an error event (Achtung list) and logged (`watchers.is_failure`). Dataset_version changes were already logged + emitted by `db.note_dataset_version`.
