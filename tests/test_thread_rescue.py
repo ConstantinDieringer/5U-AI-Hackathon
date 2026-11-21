@@ -468,3 +468,104 @@ def test_new_business_failure_allows_owner_to_replan_without_new_customer_mail(c
     db.set_status(SID, "error", "temporary portal failure")
     _, second, _ = rescue._decision(answer, SID, root, draft, "owner")
     assert first != second and len(calls) == 2
+
+
+def test_explicit_pdf_refusal_never_starts_paid_recovery(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    refusal = dataclasses.replace(
+        answer,
+        id=18101,
+        body="Thank you, but I asked for the offer as a PDF and did not get one "
+        "with your price in it, so we will not go ahead with it.",
+    )
+    ingest(refusal, "customer")
+    calls = model(monkeypatch, plan("continue"))
+    rescue.take_over(refusal, SID)
+    assert calls == []
+    assert db.get_session(SID)["bookings"] == []
+
+
+@pytest.mark.parametrize("extra", ["", " Could you confirm the pickup time?"])
+def test_booking_ack_is_free_but_a_new_question_still_reaches_recovery(case, monkeypatch, extra):
+    _, answer, _ = case
+    add_quote()
+    db.record_booking(
+        SID,
+        booking_reference="BK-TEST",
+        rate_id=None,
+        airline="Fjordline Cargo",
+        price_minor=123456,
+        currency="EUR",
+        status="confirmed",
+    )
+    ack = dataclasses.replace(
+        answer,
+        id=18101,
+        body="Thanks for confirming the booking." + extra,
+    )
+    ingest(ack, "customer")
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(ack, SID)
+    assert len(calls) == (1 if extra else 0)
+
+
+def test_recovery_context_keeps_carrier_evidence_without_duplicate_audit(case):
+    root, answer, draft = case
+    bid = dataclasses.replace(
+        answer, id=18101, sender="carrier@hackloop.mail", body="All in EUR 500"
+    )
+    ingest(bid, "carrier_bid")
+    request = dataclasses.replace(bid, id=18102, sender="team@hackloop.mail", body="Quote request")
+    ingest(request, "bid_request")
+    db.emit("pricing_audit", "Prices calculated", SID, alternatives=["x" * 20_000])
+    db.emit("no_price", "Portal unavailable", SID, level="error", detail="real failure")
+    context, _ = rescue._context(answer, SID, root, draft)
+    assert any(m["body"] == bid.body for m in context["conversation"])
+    assert not any(m["category"] == "bid_request" for m in context["conversation"])
+    assert any(e["message"] == "Portal unavailable" for e in context["events"])
+    assert "x" * 100 not in json.dumps(context)
+
+
+def test_continue_after_quote_reports_no_action_instead_of_success(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    model(monkeypatch, plan("continue", corrections=[], releases=[]))
+    rescue.take_over(answer, SID)
+    events = db.get_session(SID)["events"]
+    assert any(e["kind"] == "thread_rescue_blocked" for e in events)
+    assert not any(e["kind"] == "thread_rescue_step_done" for e in events)
+
+
+@pytest.mark.parametrize("price_pending", [False, True])
+def test_signed_booking_thanks_does_not_hide_an_open_price_approval(
+    case, monkeypatch, price_pending
+):
+    root, answer, _ = case
+    signature = "Sara\nLindqvist Medtech"
+    with db.tx() as c:
+        c.execute(
+            "UPDATE mails SET body=? WHERE id=?",
+            (root.body + "\n\nKind regards,\n\n" + signature, SID),
+        )
+    add_quote()
+    db.record_booking(
+        SID,
+        booking_reference="BK-TEST",
+        rate_id=None,
+        airline="Fjordline Cargo",
+        price_minor=123456,
+        currency="EUR",
+        status="confirmed",
+    )
+    if price_pending:
+        db.set_booking_customer_state(SID, booking.PRICE_ASKED)
+    ack = dataclasses.replace(
+        answer,
+        id=18101,
+        body="Hi Moritz,\n\nThanks for confirming the booking.\n\n" + signature,
+    )
+    ingest(ack, "customer")
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(ack, SID)
+    assert len(calls) == (1 if price_pending else 0)

@@ -6,6 +6,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+import re
 import threading
 from datetime import UTC, date, datetime, timedelta
 from decimal import InvalidOperation
@@ -105,6 +106,44 @@ def _latest_customer(session: dict, fallback: Mail) -> int:
     )
 
 
+def _passive_after_quote(session: dict, mail: Mail, root: dict) -> bool:
+    """A refusal or a pure booking acknowledgement is not a stalled workflow."""
+    from app.agents import booking
+    from app.mail.signature import first_name
+
+    if not session["quotes"] or any(
+        b.get("customer_state") == booking.PRICE_ASKED for b in session["bookings"]
+    ):
+        return False
+    if booking.classify_reply(mail.body) == "no":
+        return True
+    if not any(b["status"] == "confirmed" for b in session["bookings"]):
+        return False
+    text = current_message(mail.body).facts
+    # Strip only an exact signature already supplied in this shipment's original mail.
+    root_text = current_message(root["body"]).text
+    name = first_name(root_text)
+    paragraphs = root_text.rsplit("\n\n", 1)
+    if (
+        name
+        and len(paragraphs) == 2
+        and paragraphs[-1].splitlines()[0].split()[0] == name
+        and text.endswith("\n\n" + paragraphs[-1])
+    ):
+        text = text[: -len(paragraphs[-1])].strip()
+    text = re.sub(r"^(?:hi|hello|dear) [\w .'-]+,\s*", "", text, flags=re.IGNORECASE)
+    return (
+        re.fullmatch(
+            r"(?:thanks|thank you) for confirming (?:the booking|booking)"
+            r"(?: for (?:shipment )?(?:AP|BK)-[\w-]+)?[.!]"
+            r"(?:\s+I appreciate the update[.!])?",
+            text,
+            re.IGNORECASE,
+        )
+        is not None
+    )
+
+
 def _eligible(sid: int, mail: Mail) -> bool:
     session = db.get_session(sid)
     root = db.root_mail(sid)
@@ -128,6 +167,8 @@ def _eligible(sid: int, mail: Mail) -> bool:
         return False
     if _latest_customer(session, mail) != mail.id:
         return False
+    if _passive_after_quote(session, mail, root):
+        return False
     if any(
         m["direction"] == "out" and m["category"] == "clarification" and m["in_reply_to"] == mail.id
         for m in session["mails"]
@@ -145,7 +186,23 @@ def _eligible(sid: int, mail: Mail) -> bool:
 
 def _context(mail: Mail, sid: int, root: Mail, draft: RfqDraft) -> tuple[dict, str]:
     session = db.get_session(sid)
-    rows = [m.copy() for m in session["mails"] if m["category"] != "phishing"][-35:]
+    rows = [
+        {
+            k: m.get(k)
+            for k in (
+                "id",
+                "direction",
+                "sender",
+                "subject",
+                "body",
+                "category",
+                "received_at",
+                "in_reply_to",
+            )
+        }
+        for m in session["mails"]
+        if m["category"] not in ("phishing", "bid_request")
+    ][-35:]
     if not any(m["id"] == root.id for m in rows):
         rows.insert(
             0,
@@ -187,7 +244,13 @@ def _context(mail: Mail, sid: int, root: Mail, draft: RfqDraft) -> tuple[dict, s
         "bookings": session["bookings"],
         "status": session["status"],
         "deadline": session["deadline_at"],
-        "events": session["events"][-12:],
+        # Prices/options already live in quotes and carrier evidence. Serializing the full
+        # audit and extracted-event payloads again made recovery prompts several times larger.
+        "events": [
+            {k: e.get(k) for k in ("id", "kind", "level", "message")}
+            for e in session["events"]
+            if e["level"] in ("warn", "error") or e["kind"] in ("error", "no_price", "no_trucking")
+        ][-12:],
         "actions": {
             "continue": "validate repaired RFQ then real pricing and quote",
             "retry_pricing": "retry existing sheet/portal/email pricing with durable carrier caps",
@@ -544,6 +607,16 @@ def take_over(mail: Mail, sid: int) -> bool:
         elif plan.action == "close" and session["quotes"]:
             # Model intent is still checked by the booking tool; it owns rejection semantics.
             booking.handle_reply(mail, sid)
+        elif plan.action != "wait":
+            db.save_rescue_run(sid, key, "done")
+            db.emit(
+                "thread_rescue_blocked",
+                "Rettungsplan passt nicht zur Geschäftsphase; keine Aktion ausgeführt",
+                sid,
+                level="warn",
+                action=plan.action,
+            )
+            return True
         db.save_rescue_run(sid, key, "done")
         db.emit(
             "thread_rescue_step_done",
