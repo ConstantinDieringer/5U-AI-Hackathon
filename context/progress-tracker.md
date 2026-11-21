@@ -13,7 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
-- Reverted PR12 cost shortcuts including local standard parsing, composer bypass and cache-key changes. Every quote again uses the individual composer, now with a warm, specific writing prompt and bounded same-customer conversation context. Default call budget is four so extraction repairs leave room for personal composition; safe fallback and current-fact checks remain.
+- Reverted PR12 shortcuts (local parsing, composer bypass, cache keys). Every quote uses the individual `LLM_COMPOSE_MODEL` (default gpt-5-mini), with bounded same-customer history and audited source IDs; default budget four allows repairs. Synthetic gateway dry-run produced a personal grounded reply; no live customer mail sent or production rollout verified.
 - Round 27 booking review: freeze selected air cost/currency separately from the customer total; airline booking emails exclude truck costs and commercial adjustments. Legacy quotes omit an unverified air amount; customer confirmations keep their all-in total. Offline suite: 350 passed, 4 skipped; migration/reopen and EUR/USD coverage; production deployment not verified.
 
 - Numeric evidence accepts labelled sentence totals with `is` as well as `of`/colon forms. Round 24 was accepted but redundantly asked for 1754 kg already stated in the current mail; regression covers gate evidence, alternate labels and negative/non-gross statements.
