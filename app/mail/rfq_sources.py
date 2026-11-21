@@ -25,7 +25,13 @@ def read_sources(mail, *, local_only=False):
         return (
             {},
             [],
-            [{"field": "attachments", "code": "download_failed", "detail": str(exc)[:200]}],
+            [
+                {
+                    "field": "attachments",
+                    "code": "download_failed",
+                    "detail": str(exc)[:200],
+                }
+            ],
         )
     for path in paths:
         name = path.name
@@ -53,7 +59,11 @@ def read_sources(mail, *, local_only=False):
                 doc = docx.Document(path)
                 texts[name] = "\n".join(
                     [p.text for p in doc.paragraphs]
-                    + [" | ".join(c.text for c in row.cells) for t in doc.tables for row in t.rows]
+                    + [
+                        " | ".join(c.text for c in row.cells)
+                        for t in doc.tables
+                        for row in t.rows
+                    ]
                 )
             elif suffix == ".pdf":
                 import pdfplumber
@@ -70,7 +80,11 @@ def read_sources(mail, *, local_only=False):
                             media.append((name, "image/png", buf.getvalue()))
             elif suffix in (".jpg", ".jpeg", ".png"):
                 media.append(
-                    (name, "image/png" if suffix == ".png" else "image/jpeg", path.read_bytes())
+                    (
+                        name,
+                        "image/png" if suffix == ".png" else "image/jpeg",
+                        path.read_bytes(),
+                    )
                 )
             else:
                 raise ValueError(f"unsupported attachment {suffix}")
@@ -104,7 +118,9 @@ def extraction_content(text, texts, media):
             {"type": "text", "text": f"Attachment page: {name}"},
             {
                 "type": "image_url",
-                "image_url": {"url": f"data:{mime};base64,{base64.b64encode(data).decode()}"},
+                "image_url": {
+                    "url": f"data:{mime};base64,{base64.b64encode(data).decode()}"
+                },
             },
         )
     ]

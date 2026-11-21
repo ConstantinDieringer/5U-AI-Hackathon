@@ -63,10 +63,16 @@ def numeric_facts(text):
     return result
 
 
-def validate(mail, candidate, attachments=None, attachment_issues=None, corrections=None):
+def validate(
+    mail, candidate, attachments=None, attachment_issues=None, corrections=None
+):
     current = current_message(mail.body, mail.subject)
     active = _SIGNATURE.split(current.facts, 1)[0]
-    data = candidate.facts.copy() if isinstance(candidate, RfqDraft) else candidate.model_dump()
+    data = (
+        candidate.facts.copy()
+        if isinstance(candidate, RfqDraft)
+        else candidate.model_dump()
+    )
     issues = list(attachment_issues or [])
     evidence = {}
     corrections = corrections or {}
@@ -88,7 +94,11 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         evidence[field] = {"source": "customer_correction", "value": value}
     if pickup and not data.get("pickup_zip"):
         issues.append(
-            {"field": "pickup_zip", "code": "missing", "detail": "Pickup postal code is required"}
+            {
+                "field": "pickup_zip",
+                "code": "missing",
+                "detail": "Pickup postal code is required",
+            }
         )
     if data.get("pickup_zip"):
         airport = origin_for_zip(str(data["pickup_zip"]))
@@ -110,7 +120,9 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                 data["origin"] = airport
             evidence["origin"] = {"source": "pickup_zones", "value": data["origin"]}
         evidence["pickup_zip"] = {
-            "source": "body" if "pickup_zip" not in corrections else "customer_correction",
+            "source": "body"
+            if "pickup_zip" not in corrections
+            else "customer_correction",
             "value": data["pickup_zip"],
         }
     origin = data.get("origin")
@@ -124,7 +136,11 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                 }
             )
         elif "origin" not in evidence and not any(
-            re.search(rf"\b{re.escape(origin)}\b|{_ALIASES.get(origin, r'(?!)')}", v, re.IGNORECASE)
+            re.search(
+                rf"\b{re.escape(origin)}\b|{_ALIASES.get(origin, r'(?!)')}",
+                v,
+                re.IGNORECASE,
+            )
             for v in sources.values()
         ):
             issues.append(
@@ -135,10 +151,16 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                 }
             )
         else:
-            evidence.setdefault("origin", {"source": "current_request", "value": origin})
+            evidence.setdefault(
+                "origin", {"source": "current_request", "value": origin}
+            )
     elif not pickup:
         issues.append(
-            {"field": "origin", "code": "missing", "detail": "Departure airport is required"}
+            {
+                "field": "origin",
+                "code": "missing",
+                "detail": "Departure airport is required",
+            }
         )
     if origin and origin == data.get("destination"):
         issues.append({"field": "origin", "code": "same_as_destination"})
@@ -146,7 +168,9 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
     if not destination or (
         "destination" not in corrections
         and not re.search(
-            rf"\b{re.escape(destination or 'NO_DESTINATION')}\b", combined, re.IGNORECASE
+            rf"\b{re.escape(destination or 'NO_DESTINATION')}\b",
+            combined,
+            re.IGNORECASE,
         )
     ):
         issues.append(
@@ -160,10 +184,18 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         evidence["destination"] = {"source": "current_request", "value": destination}
     totals = parse_lots(active)
     has_lots = bool(
-        re.search(r"^\s*(?:lot|los|position|pos\.?)\s*\d+", active, re.IGNORECASE | re.MULTILINE)
+        re.search(
+            r"^\s*(?:lot|los|position|pos\.?)\s*\d+",
+            active,
+            re.IGNORECASE | re.MULTILINE,
+        )
     )
     values = numeric_facts(active) if not has_lots else {}
-    if has_lots and totals is None and not {"weight_kg", "volume_cbm"} <= corrections.keys():
+    if (
+        has_lots
+        and totals is None
+        and not {"weight_kg", "volume_cbm"} <= corrections.keys()
+    ):
         issues.append(
             {
                 "field": "lots",
@@ -199,7 +231,9 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                     }
                 )
             data[field] = (
-                int(observations[0][1]) if field == "pieces" else float(observations[0][1])
+                int(observations[0][1])
+                if field == "pieces"
+                else float(observations[0][1])
             )
             evidence[field] = {
                 "source": observations[0][0],
@@ -207,7 +241,9 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                 "observations": [(n, str(v)) for n, v in observations],
             }
         elif field != "pieces":
-            issues.append({"field": field, "code": "missing", "detail": f"Confirm {field}"})
+            issues.append(
+                {"field": field, "code": "missing", "detail": f"Confirm {field}"}
+            )
     # UN markers in any source take precedence over a generic non-dangerous statement.
     dangerous = bool(
         re.search(
@@ -216,7 +252,10 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
             re.IGNORECASE,
         )
     )
-    if dangerous and corrections.get("dangerous_goods") != "not_dangerous_document_corrected":
+    if (
+        dangerous
+        and corrections.get("dangerous_goods") != "not_dangerous_document_corrected"
+    ):
         issues.append(
             {
                 "field": "dangerous_goods",
@@ -232,6 +271,8 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         rfq = Rfq.model_validate(data)
     except ValueError as exc:
         rfq = None
-        issues.append({"field": "shipment", "code": "invalid", "detail": str(exc)[:200]})
+        issues.append(
+            {"field": "shipment", "code": "invalid", "detail": str(exc)[:200]}
+        )
     draft = RfqDraft(facts=data, evidence=evidence, issues=issues, version=VERSION)
     return rfq, draft

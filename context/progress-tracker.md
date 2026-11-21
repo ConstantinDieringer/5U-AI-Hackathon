@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Pricing review (round 20 too_high): 5 trucker requests had used every bid slot, so no airline was asked. Truckers now have their own cap (MAX_TRUCKER_BIDS). CRM tab "Preise" lists all options, truck, bids and verdict per RFQ. PRICE_ADJUST_PCT (default 0) is an untested lever.
 - RFQ validation: current-message evidence and attachment checks, additive durable clarification state, one automatic question, reply routing before booking, deadline/pause/restart protections; `RFQ_VALIDATION_MODE=shadow` remains the default pending production replay acceptance.
 - RFQ validation verification: 257 tests passed, 1 existing test skipped; relevant Ruff checks pass. Read-only local replay covered 18 sessions but no stored extractions, so no live extraction accuracy claim or production activation. Integrated the latest API-cost/pickup-note changes; enforce never prices an assumed pickup.
 

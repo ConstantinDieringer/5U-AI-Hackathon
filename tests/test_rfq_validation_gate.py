@@ -16,7 +16,9 @@ from app.models import Mail, Rfq
 def isolated(tmp_path, monkeypatch):
     db.init_db(str(tmp_path / "test.db"))
     monkeypatch.setattr(
-        rfq, "settings", dataclasses.replace(rfq.settings, rfq_validation_mode="enforce")
+        rfq,
+        "settings",
+        dataclasses.replace(rfq.settings, rfq_validation_mode="enforce"),
     )
     monkeypatch.setattr(clarification, "settings", rfq.settings)
 
@@ -46,7 +48,13 @@ def mail(body, mid=3627):
 
 def candidate(**updates):
     return Rfq(
-        **{"origin": None, "destination": "SGN", "weight_kg": 572, "volume_cbm": 2.29, **updates}
+        **{
+            "origin": None,
+            "destination": "SGN",
+            "weight_kg": 572,
+            "volume_cbm": 2.29,
+            **updates,
+        }
     )
 
 
@@ -64,10 +72,14 @@ def test_3627_old_origin_never_reaches_carriers(monkeypatch):
         rfq.bids, "request", lambda *a: pytest.fail("invalid request reached a carrier")
     )
     monkeypatch.setattr(
-        rfq, "portal_result", lambda *a, **kw: pytest.fail("invalid request reached portal")
+        rfq,
+        "portal_result",
+        lambda *a, **kw: pytest.fail("invalid request reached portal"),
     )
     monkeypatch.setattr(
-        clarification.hackloop, "send", lambda *a, **kw: sent.append((a, kw)) or {"id": 9001}
+        clarification.hackloop,
+        "send",
+        lambda *a, **kw: sent.append((a, kw)) or {"id": 9001},
     )
     rfq.handle_rfq(m, m.id)
     row = db.validation_get(m.id)
@@ -98,7 +110,11 @@ def test_2530_zip_wins_and_dg_attachment_blocks():
     r, d = validate(
         m,
         candidate(
-            origin="YYZ", pickup_zip="21663", destination="YYZ", weight_kg=855, volume_cbm=3.74
+            origin="YYZ",
+            pickup_zip="21663",
+            destination="YYZ",
+            weight_kg=855,
+            volume_cbm=3.74,
         ),
         {
             "SLI.pdf": "Total gross weight (kg): 855\nTotal volume (cbm): 3.74\nDangerous goods: UN1950, Class 2.1"
@@ -113,7 +129,9 @@ def test_2256_xlsx_dg_wins_over_body_nondg():
     )
     _, d = validate(
         m,
-        candidate(pickup_zip="61391", destination="GRU", weight_kg=715, volume_cbm=2.65),
+        candidate(
+            pickup_zip="61391", destination="GRU", weight_kg=715, volume_cbm=2.65
+        ),
         {
             "PL.xlsx": "Total gross weight (kg) | 715\nTotal volume (cbm) | 2.65\nDangerous goods: UN1133, Class 3, Adhesives"
         },
@@ -139,7 +157,9 @@ def test_mail_attachment_conflict_and_rounding():
         {"packing": "Total gross weight (kg): 100\nTotal volume (cbm): 2.646"},
     )
     assert not d.issues and r.weight_kg == 100
-    _, d = validate(m, r, {"packing": "Total gross weight (kg): 200\nTotal volume (cbm): 2.65"})
+    _, d = validate(
+        m, r, {"packing": "Total gross weight (kg): 200\nTotal volume (cbm): 2.65"}
+    )
     assert any(i["field"] == "weight_kg" and i["code"] == "conflict" for i in d.issues)
 
 
@@ -148,7 +168,9 @@ def pending(monkeypatch):
     _, d = validate(m, candidate())
     sent = []
     monkeypatch.setattr(
-        clarification.hackloop, "send", lambda *a, **kw: sent.append((a, kw)) or {"id": 9001}
+        clarification.hackloop,
+        "send",
+        lambda *a, **kw: sent.append((a, kw)) or {"id": 9001},
     )
     clarification.request(m, m.id, d)
     return m, d, sent
@@ -159,7 +181,13 @@ def test_reply_completes_only_requested_fields_and_resumes(monkeypatch):
     calls = []
     monkeypatch.setattr(rfq, "handle_rfq", lambda root, sid: calls.append((root, sid)))
     answer = Mail(
-        9999, m.id, m.sender, m.to, "Re", "Pickup ZIP: 21663", datetime.now(UTC).isoformat()
+        9999,
+        m.id,
+        m.sender,
+        m.to,
+        "Re",
+        "Pickup ZIP: 21663",
+        datetime.now(UTC).isoformat(),
     )
     assert clarification.handle_reply(answer, m.id)
     assert db.validation_get(m.id)["state"] == "ready"
@@ -172,7 +200,13 @@ def test_reply_completes_only_requested_fields_and_resumes(monkeypatch):
 def test_yes_is_not_an_acceptance_of_clarification(monkeypatch):
     m, _d, sent = pending(monkeypatch)
     answer = Mail(
-        9999, m.id, m.sender, m.to, "Re", "Yes, go ahead and book it", datetime.now(UTC).isoformat()
+        9999,
+        m.id,
+        m.sender,
+        m.to,
+        "Re",
+        "Yes, go ahead and book it",
+        datetime.now(UTC).isoformat(),
     )
     assert clarification.handle_reply(answer, m.id)
     assert db.validation_get(m.id)["state"] == "manual_review"
@@ -213,7 +247,9 @@ def test_pause_stops_clarification(monkeypatch, pause):
     else:
         db.takeover(m.id)
     monkeypatch.setattr(
-        clarification.hackloop, "send", lambda *a, **kw: pytest.fail("sent while paused")
+        clarification.hackloop,
+        "send",
+        lambda *a, **kw: pytest.fail("sent while paused"),
     )
     clarification.request(m, m.id, d)
     assert db.validation_get(m.id)["send_state"] == "pending"
@@ -223,7 +259,13 @@ def test_late_reply_does_not_quote(monkeypatch):
     m, _d, sent = pending(monkeypatch)
     monkeypatch.setattr(clarification, "expired", lambda sid: True)
     answer = Mail(
-        9999, m.id, m.sender, m.to, "Re", "Pickup ZIP: 21663", datetime.now(UTC).isoformat()
+        9999,
+        m.id,
+        m.sender,
+        m.to,
+        "Re",
+        "Pickup ZIP: 21663",
+        datetime.now(UTC).isoformat(),
     )
     assert clarification.handle_reply(answer, m.id)
     assert db.validation_get(m.id)["state"] == "expired" and len(sent) == 1
@@ -232,7 +274,9 @@ def test_late_reply_does_not_quote(monkeypatch):
 def test_restart_during_send_is_unknown(monkeypatch):
     m = mail(BODY)
     _, d = validate(m, candidate())
-    db.validation_save(m.id, "awaiting_clarification", d.model_dump(), dataclasses.asdict(m))
+    db.validation_save(
+        m.id, "awaiting_clarification", d.model_dump(), dataclasses.asdict(m)
+    )
     assert db.clarification_claim(m.id)
     clarification.catch_up()
     assert db.validation_get(m.id)["send_state"] == "unknown"
@@ -267,7 +311,10 @@ def test_read_text_pdf_xlsx_docx_sources(monkeypatch, tmp_path):
     monkeypatch.setattr(poller, "download_attachments", lambda m: [txt, xlsx, word])
     texts, media, issues = read_sources(m)
     assert (
-        not media and not issues and "100" in texts["spec.xlsx"] and "UN1133" in texts["spec.txt"]
+        not media
+        and not issues
+        and "100" in texts["spec.xlsx"]
+        and "UN1133" in texts["spec.txt"]
     )
 
 
@@ -311,7 +358,10 @@ def test_labelled_weight_of_and_decimal_units():
 
     from app.mail.rfq_validation import numeric_facts
 
-    assert numeric_facts("gross weight of 100 kg, total volume of 1.5 cbm")["weight_kg"] == 100
+    assert (
+        numeric_facts("gross weight of 100 kg, total volume of 1.5 cbm")["weight_kg"]
+        == 100
+    )
     assert numeric_facts("Gross weight: 2 t")["weight_kg"] == 2000
     assert numeric_facts("Gross weight: 10 lb")["weight_kg"] == Decimal("4.53592370")
 
@@ -326,7 +376,9 @@ def test_unreadable_document_cannot_be_cleared_by_yes(monkeypatch):
     d.evidence["attachment_texts"] = {}
     monkeypatch.setattr(clarification.hackloop, "send", lambda *a, **kw: {"id": 9001})
     clarification.request(m, m.id, d)
-    answer = Mail(9999, m.id, m.sender, m.to, "Re", "yes", datetime.now(UTC).isoformat())
+    answer = Mail(
+        9999, m.id, m.sender, m.to, "Re", "yes", datetime.now(UTC).isoformat()
+    )
     clarification.handle_reply(answer, m.id)
     assert db.validation_get(m.id)["state"] == "manual_review"
 
@@ -338,9 +390,17 @@ def test_shadow_rollback_does_not_continue_pending_quote(monkeypatch):
         "settings",
         dataclasses.replace(clarification.settings, rfq_validation_mode="shadow"),
     )
-    monkeypatch.setattr(rfq, "handle_rfq", lambda *a: pytest.fail("rollback must not resume quote"))
+    monkeypatch.setattr(
+        rfq, "handle_rfq", lambda *a: pytest.fail("rollback must not resume quote")
+    )
     answer = Mail(
-        9999, m.id, m.sender, m.to, "Re", "Pickup ZIP: 21663", datetime.now(UTC).isoformat()
+        9999,
+        m.id,
+        m.sender,
+        m.to,
+        "Re",
+        "Pickup ZIP: 21663",
+        datetime.now(UTC).isoformat(),
     )
     assert clarification.handle_reply(answer, m.id)
     assert db.validation_get(m.id)["state"] == "manual_review"
@@ -351,7 +411,14 @@ def test_replay_never_downloads_or_sends(monkeypatch):
     from app.mail.validation_replay import replay
 
     m = mail(BODY)
-    monkeypatch.setattr(poller, "download_attachments", lambda *a: pytest.fail("replay downloaded"))
-    monkeypatch.setattr(clarification.hackloop, "send", lambda *a, **kw: pytest.fail("replay sent"))
+    monkeypatch.setattr(
+        poller, "download_attachments", lambda *a: pytest.fail("replay downloaded")
+    )
+    monkeypatch.setattr(
+        clarification.hackloop, "send", lambda *a, **kw: pytest.fail("replay sent")
+    )
     rows = replay()
-    assert rows[0]["session_id"] == m.id and rows[0]["stored_extraction_available"] is False
+    assert (
+        rows[0]["session_id"] == m.id
+        and rows[0]["stored_extraction_available"] is False
+    )
