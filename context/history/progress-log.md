@@ -2,6 +2,7 @@
 
 ## Overflow from the lean tracker (newest first)
 
+- Thread rescue limited to input younger than 600 s and two parallel owners (was waking 40 h old threads on restart). Offline tests only.
 - Clarification cap counted per workflow instead of per thread. Offline tests only.
 - Carrier document totals hardened: 18 offer layouts x 5 formats replay exact (was 32/90 with three silent wrong values).
 - Carrier offers in any common attachment; audio transcribed locally, scans via the gateway.
@@ -138,7 +139,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
 - UI v2 + online prep: `DESIGN.md` (tokens/components), UI redesigned into Live · CRM (customers, won/lost, quotes, bookings, drawer) · Leistung; `/api/crm`; Basic auth; `Dockerfile` + `railway.json` + `DEPLOY.md`. Docker build not tested locally (no daemon).
 - C3+C4 done: `app/ui/server.py` (REST, SSE via `fastapi.sse`, actions), `static/index.html` (sessions + dashboard, dark), `watchers.py` (deadline, board sync), `demo.py` (seed `data/demo.db`); 20 tests green, checked in a real browser.
-- C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11. 
+- C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11.
 - A1 repo setup; fresh clone installs `requirements.txt` (Python 3.11).
 - A2 `config.py` + `hackloop.py` (mailbox, board, portal get_ports/get_brackets/get_rate for B): `/v1/me` OK live; portal calls not tried live.
 - A3 `context/docs/mail-format.md` from a real mail: self-mail is rejected (422), so one rate request went to ratedesk.

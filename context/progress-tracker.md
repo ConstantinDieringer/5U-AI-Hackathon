@@ -13,6 +13,7 @@ Current state only: one or two lines per entry, newest first. Subsystem behavior
 
 ## Recent Changes (max 8)
 
+- Audio recovery (PR #56): Groq first with verified gateway/offline fallbacks. Original session-18673 MP3 reads EUR 358.64 / collection 4 h; live Groq still needs GROQ_API_KEY. Suite 1304 passed/5 skipped; latest focused integration 109 passed/1 skipped. Not deployed.
 - Process guardrails: PR + CI (pytest, secrets scan) instead of direct pushes, read-only `REVIEW_TOKEN` for review agents, #sos on repeated mailbox 429, `python -m app.deploy_check` confirms live. CI run on GitHub pending.
 - Round 70: "we won't go ahead" booked. Explicit negated booking intent (incl. contractions, curly apostrophes) now overrides positive verbs; no booking or price-change approval from it.
 - Round 70: French RFQ got an English reply. Request language (ISO code) now reaches composer/repair; FR/ES/IT fallbacks, months, subjects and tracking notices keep the language; unsupported fallback languages fail visibly.
@@ -20,7 +21,6 @@ Current state only: one or two lines per entry, newest first. Subsystem behavior
 - Übersicht v0.3: errors first (`GET /api/problems`), ERROR log lines as `log_error` events, "Kontext kopieren" for manual AI sessions (`/api/context`). Checked in Chrome with the demo DB.
 - Context system: lean always-read core, per-area files in `context/areas/`, history archived in `context/history/`, size budgets tested.
 - Required tracking paragraph in every RFQ customer send, plus a 30 s repair worker. 1261 passed/5 skipped; rollout pending.
-- Thread rescue limited to input younger than 600 s and two parallel owners (was waking 40 h old threads on restart). Offline tests only.
 
 ## Pending Decisions and Rollouts (max 10)
 
