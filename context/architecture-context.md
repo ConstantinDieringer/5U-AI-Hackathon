@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Mailbox ingress:** signed `/hooks/mailbox` persists into `mail_delivery` before acknowledging; workers and fallback polling share atomic claims and exact-ID deduplication. Pending/stored work resumes after restart; ambiguous dispatches become `unknown` with a warning for manual inspection. Only polling advances its cursor. Subscription and its private, persistent signing-secret file are managed explicitly with `python -m app.mail.webhook_admin`; never rotate on startup. See `DEPLOY.md`.
+
 - **RFQ validation:** `app/mail/rfq_validation.py` checks the current request and attachment evidence before pricing. Drafts and a single clarification's durable state live in `rfq_validation`; no session-table rebuild. Shadow is the rollout default. Enforce excludes signature/history-based pickup guesses and handles clarification replies before booking.
 
 Decided 21.11.2026. Details live in the linked docs; this file only points to them.

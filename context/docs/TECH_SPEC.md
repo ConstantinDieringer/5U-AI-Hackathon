@@ -35,7 +35,7 @@ pytest>=8            # Tests
 ```
 
 - **Datenbank:** SQLite über die Standardbibliothek `sqlite3`. **Kein ORM.**
-- **Nebenläufigkeit:** synchron + Threads (`threading`). **Kein asyncio** im eigenen Code (FastAPI-Endpunkte als normale `def`).
+- **Nebenläufigkeit:** synchron + Threads (`threading`). FastAPI-Endpunkte als normale `def`; Ausnahme: vorhandenes SSE/Auth und der Mailbox-Webhook lesen HTTP asynchron. Der Webhook begrenzt den Rohbody und übergibt nur das SQLite-Enqueue an den Threadpool; Verarbeitung bleibt synchron in Threads.
 - **Formatierung:** `ruff format` und `ruff check` vor jedem Commit (Zeilenlänge 100).
 
 ## 3. Ordnerstruktur (fix)
@@ -81,7 +81,7 @@ requirements.txt
 
 ## 4. Konfiguration & Secrets
 
-`.env` (nie committen, das Repo ist öffentlich). **Maßgeblich ist `.env.example` im Repo-Root**: alle Variablen mit Standardwert und Kommentar. Nur `TEAM_API_KEY` ist geheim und wird von jedem selbst eingetragen. Neue Variable = Eintrag in `.env.example` + Standardwert in `app/config.py` im selben Commit.
+`.env` (nie committen, das Repo ist öffentlich). **Maßgeblich ist `.env.example` im Repo-Root**: alle Variablen mit Standardwert und Kommentar. `TEAM_API_KEY`, UI-Passwort und Webhook-Signing-Secret sind geheim. Das Signing-Secret bleibt in einer privaten Datei auf dem persistenten Volume oder in `MAILBOX_WEBHOOK_SECRET`. Neue Variable = Eintrag in `.env.example` + Standardwert in `app/config.py` im selben Commit.
 
 - Zugriff nur über `from app.config import settings` (z. B. `settings.api_key`).
 - Der eigene OpenAI-Key wird **einmalig per curl** im Gateway hinterlegt und steht **nirgends** im Repo oder in `.env`.
@@ -93,7 +93,7 @@ Details: Projekt-Doc `api-referenz.md` und `https://api.start-hack.5u.ai/openapi
 
 - Auth-Header: `X-API-Key: <key>` – in `hackloop.py` zentral gesetzt.
 - Timeouts: **10 s** pro Request, max. **2 Retries** mit 1 s Abstand, nur bei Netzwerkfehler/5xx/429 (bei 429 `Retry-After` beachten).
-- Mailbox: Polling `GET /v1/mailbox/messages?since_id=` alle 1,5 s; Senden `POST /v1/mailbox/messages` mit `to`, `subject`, `body`, `in_reply_to`.
+- Mailbox: signierte Pushes an `POST /hooks/mailbox`, Subscription über `PUT /v1/mailbox/webhook`. HMAC-SHA256 über Timestamp + Punkt + unveränderten Rohbody; Replay-Fenster 5 Minuten. Vor 202-Antwort dauerhaft in `mail_delivery` speichern; Agenten separat starten. Exakte Mail-ID dedupliziert Push/Poll auch bei vertauschter Reihenfolge. Nur Polling verändert `since_id`. Sicherheits-Polling alle 30 s bei konfiguriertem Signing-Secret, sonst mindestens 5 s, bei 429 `Retry-After` bzw. 30 s und Backoff beachten. Subscription niemals automatisch beim Start erneuern, weil PUT das Secret rotiert. Senden weiter über `POST /v1/mailbox/messages` mit `to`, `subject`, `body`, `in_reply_to`.
 - Portal: `ports` und `brackets` frei; `rates` **rate-limited (10/min, Stand 15:00)**, **eine Airline pro Aufruf** (1–4 Airlines je Lane) → nur über `hackloop.get_rate(origin, destination, airline, weight_kg, volume_cbm) -> dict` mit Rate-Limit-Zähler; `bookings` idempotent über `team_reference`. `app/pricing/portal_sync.py` erwartet zusätzlich `hackloop.get_ports() -> dict` und `hackloop.get_brackets(airline) -> dict` (rohe Antwort, Exception bei Nicht-2xx).
 - LLM: OpenAI-SDK mit `base_url=f"{BASE_URL}/v1/gateway"` und `api_key=TEAM_API_KEY`.
 

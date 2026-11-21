@@ -51,6 +51,54 @@ poll the mailbox, otherwise mails are processed twice. Once it runs online, nobo
 - First start polls from `since_id=0` and stores old mail once; that is expected.
 - Keep `numReplicas` at 1.
 
+## Mailbox webhooks
+
+Deploy this code on the sole production instance before subscribing. The public receiver is
+`POST /hooks/mailbox`; it uses HMAC authentication independently of the UI login. No agents,
+attachment downloads or API requests run inside the HTTP handler. A 202 means the raw mail
+was committed to SQLite, not that the agent already finished.
+
+1. Keep `/data` mounted. The signing secret defaults to `/data/runtime/mailbox-webhook.secret`
+   (beside `DB_PATH`); optionally set `MAILBOX_WEBHOOK_SECRET_FILE` to another private path
+   on that volume. Leave `MAILBOX_WEBHOOK_SECRET` empty when using the admin command.
+2. In the **running container's shell**, inspect the subscription:
+   ```sh
+   python -m app.mail.webhook_admin status
+   ```
+   A provider 404 means none exists. If one exists, inspect its URL and recent pushes first.
+   Do not overwrite another receiver accidentally.
+3. In that same container, subscribe once:
+   ```sh
+   python -m app.mail.webhook_admin subscribe https://5u-ai-hackathon-production.up.railway.app/hooks/mailbox
+   python -m app.mail.webhook_admin test
+   python -m app.mail.webhook_admin status
+   ```
+   The subscribe command writes the once-only secret atomically with private permissions
+   and never prints it. It refuses an existing subscription unless `--replace` is supplied.
+   Use `--replace` only for intentional rotation. A shell on a laptop, including a command
+   that only imports Railway environment variables, cannot write the container's volume.
+4. Confirm the test reports delivery with HTTP 204 and status shows the correct URL. Then
+   inspect a real `mail.received` push (HTTP 202), the routed event and the existing CRM.
+   The receiver reloads the secret file per request, so a normal subscription needs no restart.
+
+`MAILBOX_WEBHOOK_SECRET` is an alternative for an already known secret; it overrides the
+file and requires a restart when changed. Never commit either secret or paste it in logs.
+Do not put subscribe in startup/deploy hooks: every PUT rotates the secret. Key rotation
+removes the provider subscription, so re-subscribe intentionally afterwards.
+
+Fallback polling always remains enabled to recover old mail and failed pushes. With a
+configured secret it runs every `MAILBOX_WEBHOOK_POLL_INTERVAL_S` seconds (default 30);
+without one it runs at least 5 s apart. This lowers normal polling from about 40 to 2 calls
+per minute after setup. 429 honors `Retry-After` (30 s if absent), with further loop backoff.
+Full result batches also wait before the next poll. Only polling advances its cursor;
+webhook IDs cannot make it skip mail that has not been fetched yet.
+
+The queue resumes pending/stored work after restart and retains failures. A crash or error
+during dispatch is marked `unknown` and emits an error/warning instead of blindly repeating
+an external action. Inspect the CRM and agent state manually before retrying such a mail;
+the existing RFQ/booking recovery still runs. One replica remains required; this does not
+guarantee exactly-once effects across provider/network failures.
+
 ## Tariffs and portal updates
 
 - `RUNTIME_DIR` defaults to a `runtime` directory beside `DB_PATH`: `/data/runtime` in

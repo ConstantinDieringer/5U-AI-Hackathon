@@ -175,6 +175,12 @@ CREATE TABLE IF NOT EXISTS board_results (
 );
 
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS mail_delivery (
+ mail_id INTEGER PRIMARY KEY, raw_json TEXT NOT NULL, source TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+ retry_at REAL NOT NULL DEFAULT 0, error TEXT, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_mail_delivery_pending ON mail_delivery(status, retry_at, mail_id);
 CREATE TABLE IF NOT EXISTS rfq_validation (
  session_id INTEGER PRIMARY KEY REFERENCES sessions(id),
  state TEXT NOT NULL,
@@ -251,9 +257,7 @@ def init_db(path: str | None = None) -> None:
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     with tx() as migration:
-        columns = {
-            row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")
-        }
+        columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
         if "accounting_json" not in columns:
             migration.execute("ALTER TABLE llm_calls ADD COLUMN accounting_json TEXT")
     remap_unassigned()
@@ -394,6 +398,72 @@ def events_after(
 def kv_get(key: str, default: str | None = None) -> str | None:
     r = _one(conn().execute("SELECT value FROM kv WHERE key = ?", (key,)))
     return r["value"] if r else default
+
+
+def delivery_enqueue(mail_id: int, raw: dict, source: str) -> bool:
+    """Ack only after commit. A short lock timeout fits the webhook's 5s window."""
+    c = conn()
+    c.execute("PRAGMA busy_timeout=1000")
+    try:
+        with tx() as c:
+            return (
+                c.execute(
+                    "INSERT OR IGNORE INTO mail_delivery(mail_id,raw_json,source,updated_at) "
+                    "VALUES(?,?,?,?)",
+                    (mail_id, _json(raw), source, now()),
+                ).rowcount
+                == 1
+            )
+    finally:
+        c.execute("PRAGMA busy_timeout=5000")
+
+
+def delivery_claim(at: float) -> dict | None:
+    with tx() as c:
+        row = _one(
+            c.execute(
+                "SELECT * FROM mail_delivery WHERE status='pending' AND retry_at<=? "
+                "ORDER BY mail_id LIMIT 1",
+                (at,),
+            )
+        )
+        if row:
+            c.execute(
+                "UPDATE mail_delivery SET status='processing',attempts=attempts+1,updated_at=? WHERE mail_id=?",
+                (now(), row["mail_id"]),
+            )
+            row["attempts"] += 1
+        return row
+
+
+def delivery_get(mid: int) -> dict | None:
+    return _one(conn().execute("SELECT * FROM mail_delivery WHERE mail_id=?", (mid,)))
+
+
+def delivery_state(mid: int, state: str, error: str | None = None, retry_at: float = 0) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE mail_delivery SET status=?,error=?,retry_at=?,updated_at=? WHERE mail_id=?",
+            (state, error, retry_at, now(), mid),
+        )
+
+
+def delivery_recover() -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE mail_delivery SET status='pending' WHERE status IN ('processing','stored')"
+        )
+        ids = _rows(c.execute("SELECT mail_id FROM mail_delivery WHERE status='dispatching'"))
+        c.execute(
+            "UPDATE mail_delivery SET status='unknown',error='Restart during dispatch; inspect agent state' WHERE status='dispatching'"
+        )
+        for row in ids:
+            _emit(
+                c,
+                Ev.WARN,
+                f"Mail {row['mail_id']}: Verarbeitung bei Neustart unklar, manuell prüfen",
+                level="warn",
+            )
 
 
 def validation_get(sid: int) -> dict[str, Any] | None:
@@ -636,7 +706,8 @@ def ingest_mail(
     references: Sequence[int] = (),
     in_reply_to: int | None = None,
     raw: dict[str, Any] | None = None,
-) -> int | None:
+    report_new: bool = False,
+) -> int | None | tuple[int | None, bool]:
     """Store an incoming mail and return its session id (None = unassigned).
 
     Idempotent: a mail id seen before changes nothing and returns its stored session.
@@ -647,7 +718,7 @@ def ingest_mail(
     with tx() as c:
         known = _one(c.execute("SELECT session_id FROM mails WHERE id = ?", (mail_id,)))
         if known:
-            return known["session_id"]
+            return (known["session_id"], False) if report_new else known["session_id"]
         session_id = _resolve_session(c, in_reply_to, refs)
         if (
             session_id is None
@@ -706,7 +777,7 @@ def ingest_mail(
             session_id,
             payload={"mail_id": mail_id, "category": category},
         )
-    return session_id
+    return (session_id, True) if report_new else session_id
 
 
 def record_outgoing(
@@ -916,9 +987,7 @@ def last_pickup(customer: str, before_session: int | None = None) -> str | None:
         )
     )
     for m in mails:
-        for z in re.findall(
-            r"(?<![\d.,-])(\d{5})(?![\d.,-]|\s*(?:kg|cbm|kgs))", m["body"] or ""
-        ):
+        for z in re.findall(r"(?<![\d.,-])(\d{5})(?![\d.,-]|\s*(?:kg|cbm|kgs))", m["body"] or ""):
             if z[:2] in zones:
                 return z
     return None
@@ -1293,9 +1362,7 @@ def record_llm_call(
 
 def session_llm_usage(session_id: int) -> dict[str, Any]:
     calls = _rows(
-        conn().execute(
-            "SELECT * FROM llm_calls WHERE session_id = ? ORDER BY id", (session_id,)
-        )
+        conn().execute("SELECT * FROM llm_calls WHERE session_id = ? ORDER BY id", (session_id,))
     )
     incomplete = 0
     for call in calls:
@@ -1309,9 +1376,7 @@ def session_llm_usage(session_id: int) -> dict[str, Any]:
         "input_tokens": sum(c["prompt_tokens"] or 0 for c in calls),
         "output_tokens": sum(c["completion_tokens"] or 0 for c in calls),
         "known_cost_micro_usd": sum(c["cost_micro_usd"] for c in calls),
-        "total_micro_usd": None
-        if incomplete
-        else sum(c["cost_micro_usd"] for c in calls),
+        "total_micro_usd": None if incomplete else sum(c["cost_micro_usd"] for c in calls),
         "incomplete_calls": incomplete,
         "legacy_calls": sum(c["accounting"] is None for c in calls),
     }

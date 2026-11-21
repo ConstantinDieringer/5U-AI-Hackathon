@@ -22,7 +22,7 @@ def main() -> None:
     log = logging.getLogger("run")
 
     from app import db
-    from app.mail import poller
+    from app.mail import poller, webhook
 
     db.init_db()
     stop = threading.Event()
@@ -30,6 +30,7 @@ def main() -> None:
         log.warning("AGENTS_ENABLED=false: UI only, no polling or sending")
         _serve_ui(log, stop)
         return
+    db.delivery_recover()
     from app.agents import booking
     from app.pricing import served_lanes
 
@@ -49,6 +50,7 @@ def main() -> None:
     db.queue_stored_tariffs()
 
     threading.Thread(target=tariff.run, args=(stop,), name="tariffs", daemon=True).start()
+    threading.Thread(target=webhook.run, args=(stop,), name="mail-delivery", daemon=True).start()
     threading.Thread(target=poller.run, args=(stop,), name="poller", daemon=True).start()
 
     _serve_ui(log, stop)

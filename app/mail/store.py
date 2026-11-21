@@ -31,14 +31,8 @@ def set_since_id(since_id: int) -> None:
 
 
 def save_mail(mail: Mail, category: Category, in_reply_to: int | None) -> Saved:
-    """Insert the mail (idempotent by id). `is_new` is True only on the first insert.
-
-    db.ingest_mail does not report whether the insert was new (open question for C), so until
-    then `is_new` uses a high-water mark: mailbox ids only grow and the poller saves in id
-    order, so an id at or below the last saved one was inserted before.
-    """
-    is_new = mail.id > int(db.kv_get(LAST_SAVED_KEY, "0") or 0)
-    session_id = db.ingest_mail(
+    """Atomically insert by exact ID and report whether this call inserted the mail."""
+    session_id, is_new = db.ingest_mail(
         mail_id=mail.id,
         sender=mail.sender,
         recipient=mail.to,
@@ -49,13 +43,10 @@ def save_mail(mail: Mail, category: Category, in_reply_to: int | None) -> Saved:
         references=mail.references,
         in_reply_to=in_reply_to,
         raw=mail.raw,
+        report_new=True,
     )
-    if is_new:
-        db.kv_set(LAST_SAVED_KEY, str(mail.id))
     return Saved(is_new, session_id)
 
 
-def emit(
-    kind: str, message: str, session_id: int | None = None, level: str = "info"
-) -> None:
+def emit(kind: str, message: str, session_id: int | None = None, level: str = "info") -> None:
     db.emit(kind, message, session_id, level=level)

@@ -51,6 +51,9 @@ class Settings:
     use_breakpoints: bool
     served_lanes_ttl_s: float
     rfq_validation_mode: str
+    webhook_secret: str
+    webhook_secret_file: Path
+    webhook_poll_interval_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -98,6 +101,18 @@ settings = Settings(
     use_breakpoints=_env("USE_BREAKPOINTS", "true").lower() == "true",
     served_lanes_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))),
     rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "shadow"),
+    webhook_secret=_env("MAILBOX_WEBHOOK_SECRET"),
+    webhook_secret_file=Path(
+        _env(
+            "MAILBOX_WEBHOOK_SECRET_FILE",
+            str(
+                Path(_env("DB_PATH", "data/forwarder.db")).resolve().parent
+                / "runtime"
+                / "mailbox-webhook.secret"
+            ),
+        )
+    ),
+    webhook_poll_interval_s=max(1, float(_env("MAILBOX_WEBHOOK_POLL_INTERVAL_S", "30"))),
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):
