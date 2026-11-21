@@ -16,6 +16,7 @@ from typing import Any
 
 from app import db
 from app.agents import bids, rfq
+from app.mail import language
 from app.models import Mail, Rfq
 from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import resolve_origin, sheet_options, to_minor
