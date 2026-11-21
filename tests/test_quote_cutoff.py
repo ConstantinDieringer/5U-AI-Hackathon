@@ -80,7 +80,7 @@ def test_personal_quote_keeps_booking_validity_and_adds_missing_cutoff_answer(
     )
     option = RateOption("Carrier", "FRA", "DEL", 2, 10000, "EUR", 10000, "sheet")
     body = (
-        "Hello, happy to help again. Carrier FRA to DEL: 100,00 € all-in. "
+        "Hello, happy to help again. Carrier FRA to DEL: 100 € all-in. "
         "This rate can be booked until 18:00.\n\nYour austrian Power Team"
     )
     monkeypatch.setattr(rfq.llm, "complete", lambda *a, **kw: payload(body))

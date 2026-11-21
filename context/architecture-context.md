@@ -1,10 +1,12 @@
 # Architecture Context
 
+- **Final email reviewer:** every customer send uses `hackloop.send_customer`, deterministic prose validation, one dedicated `email_review` pass with `LLM_REVIEW_MODEL=gpt-5`, and final validation before transport. The reviewer only edits style; numeric/currency/date/reference values, carrier names, signature and qualified statements are checked. Failures keep the checked draft. Costs are logged per RFQ; pause/manual/deadline controls are checked again after review. Machine carrier/trucker protocols retain `send`. Health exposes the active style, model and build.
+
 - **Customer presentation:** `mail/style.py` provides written EN/DE month dates, safe standalone currency/date formatting and paragraph breaks at sentence boundaries. RFQ validation rejects parentheses, internal labels and unresolved display defects; deterministic customer templates use prose and the same date vocabulary. Technical IDs, filenames, contacts and stored API/CRM values remain intact.
 
 - **Customer writing skill:** `.agents/skills/customer-email-voice/SKILL.md` combines Humanize Writing and Humanizer for this domain; pinned sources and MIT credits accompany it. `app/mail/voice.py` loads the shared `customer_voice.md` locally into the quote composer's system prompt, including repair attempts. No extra rewrite call or runtime download.
 
-- **Personal replies:** standard RFQs again use full extraction and the composer. Bounded current-thread and earlier same-customer correspondence informs tone and grounded references; older monetary amounts are removed from this context. Only verified current facts support price/service promises. Default gateway budget is four calls to allow both extraction and composition repairs; templates are a failure fallback.
+- **Personal replies:** standard RFQs again use full extraction and the composer. Bounded current-thread and earlier same-customer correspondence informs tone and grounded references; older monetary amounts are removed from this context. Only verified current facts support price/service promises. Default gateway budget is eight calls for extraction, composition, repairs, rescue and final style reviews; templates are a failure fallback.
 
 - **Mailbox ingress:** signed `/hooks/mailbox` persists into `mail_delivery` before acknowledging; workers and fallback polling share atomic claims and exact-ID deduplication. Pending/stored work resumes after restart; ambiguous dispatches become `unknown` with a warning for manual inspection. Only polling advances its cursor. Subscription and its private, persistent signing-secret file are managed explicitly with `python -m app.mail.webhook_admin`; never rotate on startup. See `DEPLOY.md`.
 

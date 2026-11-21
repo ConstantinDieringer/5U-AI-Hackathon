@@ -13,6 +13,11 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Strict customer send path and dedicated gpt-5 style reviewer added. Every customer path validates prose before HTTP, records the transmitted version, and rechecks controls after one review. Real reference punctuation remains; whole numbers lose zero fractions. 639 tests pass/4 skip; 31 replay cases retain all facts with 19 text-only updates. Synthetic real-gateway review accepted, 396 input/94 output tokens, estimated $0.001435; no customer mail sent. Public health exposes style/build/model activation.
+
+- Dashboard overflow: fixed recent-request column proportions, bounded chip/subject ellipsis with full tooltips and a card-local scroll region on narrow screens; score labels and verdicts wrap. Browser checks at 1440/1024/390/320 show no page/card overflow. Integrated current main: 621 tests passed, 4 skipped; JS and Python 3.11 syntax checks pass. Production rollout requested.
+
+- Session 12867 hardening: airport names plus `(IATA)` and natural single-code answers resolve deterministically. Remaining RFQ gaps receive an evidence-bound full-thread `LLM_RESCUE_MODEL` pass before the first question or human review.
 - Task 4 LLM cost (no model change): measured 14:52 to 16:14 (nano) about 100 µ$ per accepted quote; estimated at today's defaults about 2,011 µ$ per accepted quote = 39.2 of 40 cost points, composer 66 %. Cheaper setups gain at most +0.2 to +0.5 points; none is proven to give identical extractions (needs live gateway calls), and production `accounting_json` is the missing evidence.
 - Task 5 bonuses: the 3 stored tracking questions (1677, 1850, 2252) replayed offline through today's `tracking.handle` all name the BK reference, where the cargo is and planned departure/arrival (the live replies then failed 2 of 3 checks); a name-only question tying two bookings asks for the reference. Five fallback quote texts collected for review; the live composer text cannot be produced offline.
 - Case 12460 portal outage: reserve slots for eligible portal airlines before speculative bids; 503 fallbacks take priority, healthy results release slots, persisted sends enforce the cap on restart. Full legacy budgets warn instead of silently losing fallbacks; trucking alone remains unquotable. Targeted regression checks cover the outage and complete quote.

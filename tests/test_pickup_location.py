@@ -127,7 +127,7 @@ def test_assumed_pickup_is_named_in_the_quote_before_the_signature():
 
     r = Rfq(destination="SGN", weight_kg=874, pickup_zip="51447", pickup_assumed=True)
     out = agent.with_pickup_note(
-        f"Hello,\n\nAir freight: 1.234,00 € all-in.\n\n{SIGNATURE}\n", r
+        f"Hello,\n\nAir freight: 1.234 € all-in.\n\n{SIGNATURE}\n", r
     )
     assert "postal code 51447" in out and out.rstrip().endswith(SIGNATURE)
     de = r.model_copy(

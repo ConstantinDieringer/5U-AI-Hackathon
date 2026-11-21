@@ -260,7 +260,7 @@ def test_missing_origin_asks_and_reply_resumes_even_in_shadow(tmp_path, monkeypa
         lambda *a, **kw: sent.append((a, kw)) or {"id": 2},
     )
     rfq._handle(m, 1)
-    assert len(sent) == 1 and "departure airport" in sent[0][0][2]
+    assert len(sent) == 1 and "departure airport" in sent[0][1]["body"]
     assert db.get_session(1)["status"] != "error"
     assert db.get_session(1)["first_reply_at"] is None
     answer = Mail(3, 1, m.sender, m.to, "Re: RFQ", "Origin: FRA", datetime.now(UTC).isoformat())

@@ -5,6 +5,7 @@ path that swallows the error still shows up."""
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterator
 
 import httpx
@@ -12,10 +13,16 @@ import pytest
 from openai import OpenAI
 
 from app import hackloop, llm
+from app.agents import email_review
 
 
 @pytest.fixture(autouse=True)
 def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setattr(
+        email_review,
+        "settings",
+        dataclasses.replace(email_review.settings, email_review_enabled=False),
+    )
     refused: list[str] = []
 
     def refuse(request: httpx.Request) -> httpx.Response:

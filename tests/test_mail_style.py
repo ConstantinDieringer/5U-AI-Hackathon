@@ -52,7 +52,7 @@ def test_customer_templates(lang: str) -> None:
         tracking.answer_text(record, lang),
     ):
         assert_style(text)
-        assert text.count("1.475,00 €") == 1
+        assert text.count("1.475 €") == 1
         assert "FRA nach JFK" in text if lang == "de" else "FRA to JFK" in text
     assert "BK-ABC123" in tracking.answer_text(record, lang)
     assert_style(tracking._not_found_text(lang))
@@ -85,7 +85,7 @@ def test_booking_request_keeps_currency_and_reference(monkeypatch) -> None:
     subject, body = sent[0]
     assert "[AP-421]" in subject
     assert "FRA to JFK" in subject
-    assert "1.475,00 €" in body
+    assert "1.475 €" in body
     assert "AP-421" in body
     assert_style(body)
     assert quote["currency"] == "EUR"
@@ -93,7 +93,7 @@ def test_booking_request_keeps_currency_and_reference(monkeypatch) -> None:
 
 def test_money_format_preserves_cents_and_other_currencies() -> None:
     assert amount(1) == "0,01 €"
-    assert amount(0) == "0,00 €"
+    assert amount(0) == "0 €"
     assert amount(147501) == "1.475,01 €"
     assert amount(147501, "USD") == "1.475,01 USD"
 
@@ -123,7 +123,7 @@ def test_composer_falls_back_when_style_is_wrong(monkeypatch, bad_copy: str) -> 
     )
     option = RateOption("Test Air", "FRA", "JFK", 2, 147500, "EUR", 147500, "sheet")
     response = {
-        "body": f"Hello,\n\n1.475,00 € all-in. {bad_copy}\n\nYour austrian Power Team",
+        "body": f"Hello,\n\n1.475 € all-in. {bad_copy}\n\nYour austrian Power Team",
         "answered_questions": [],
         "unavailable_questions": [0],
         "addressed_constraints": [],

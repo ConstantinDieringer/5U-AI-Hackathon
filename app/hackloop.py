@@ -221,6 +221,52 @@ def send(
     return sent
 
 
+class CustomerSendBlocked(RuntimeError):
+    """Review completed, but current customer controls or the deadline forbid sending."""
+
+
+def send_customer(
+    to: str,
+    subject: str,
+    body: str,
+    in_reply_to: int | None = None,
+    references: list[int] | None = None,
+    session_id: int | None = None,
+    protected_terms: tuple[str, ...] = (),
+    allow_manual: bool = False,
+    deadline_at: float | None = None,
+) -> dict[str, Any]:
+    """All customer replies pass the final prose renderer before transport."""
+    from app import db
+    from app.agents.email_review import review_customer_mail
+    from app.mail.language import detect
+    from app.mail.outgoing import customer_body
+
+    def allowed() -> None:
+        if session_id is not None and (
+            db.is_paused(session_id) or (db.is_manual(session_id) and not allow_manual)
+        ):
+            raise CustomerSendBlocked("Session is paused or under manual control")
+        if deadline_at is not None and time.time() >= deadline_at:
+            raise CustomerSendBlocked("Customer reply deadline has expired")
+
+    allowed()
+    lang = detect(body)
+    rendered = customer_body(body, lang)
+    rendered = customer_body(
+        review_customer_mail(rendered, lang, session_id, protected_terms), lang
+    )
+    allowed()
+    options: dict[str, Any] = {}
+    if in_reply_to is not None:
+        options["in_reply_to"] = in_reply_to
+    if references is not None:
+        options["references"] = references
+    sent = dict(send(to=to, subject=subject, body=rendered, **options))
+    sent["body"] = rendered
+    return sent
+
+
 # ---------------------------------------------------------------- portal
 
 rate_limit: dict[str, str] = {}  # last X-RateLimit-* headers seen on /v1/portal/rates

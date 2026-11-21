@@ -360,7 +360,13 @@ def _not_found_text(lang: str, name: str | None = None) -> str:
     )
 
 
-def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> bool:
+def _reply(
+    mail: Mail,
+    body: str,
+    session_id: int | None,
+    category: str,
+    protected_terms: tuple[str, ...] = (),
+) -> bool:
     """Send the answer in the asker's thread. False when a human holds the session."""
     if session_id is not None and (db.is_paused(session_id) or db.is_manual(session_id)):
         db.emit(
@@ -371,7 +377,15 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> bool
         return False
     to = address(mail.sender)
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
-    sent = hackloop.send(to, subject, body, in_reply_to=mail.id)
+    sent = hackloop.send_customer(
+        to,
+        subject,
+        body,
+        in_reply_to=mail.id,
+        session_id=session_id,
+        protected_terms=protected_terms,
+    )
+    body = sent["body"]
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=to,
@@ -438,7 +452,13 @@ def handle(mail: Mail, session_id: int | None, booked_session: int | None = None
                     db.set_status(own_session, "answered", "nach Buchungsnummer gefragt")
             return
         body = answer_text(rec, lang, name, variant)
-        if not _reply(mail, body, session_id, "tracking_answer"):
+        if not _reply(
+            mail,
+            body,
+            session_id,
+            "tracking_answer",
+            tuple(rec[k] for k in ("airline", "origin", "destination") if rec.get(k)),
+        ):
             return
         if own_session is not None:
             db.set_status(own_session, "answered")

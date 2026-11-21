@@ -25,7 +25,7 @@ def test_selected_carrier_remains_clear_in_customer_copy():
         origin="FRA", destination="DEL", weight_kg=100, excluded_airlines=["cobalt skylift"]
     )
     option = RateOption("Allowed Air", "FRA", "DEL", 2, 10000, "EUR", 10000, "sheet")
-    body = "Allowed Air FRA to DEL: 100,00 € all-in. We will not offer Cobalt Skylift.\n\nYour austrian Power Team"
+    body = "Allowed Air FRA to DEL: 100 € all-in. We will not offer Cobalt Skylift.\n\nYour austrian Power Team"
     data = {
         "body": body,
         "answered_questions": [],
@@ -34,11 +34,11 @@ def test_selected_carrier_remains_clear_in_customer_copy():
         "unavailable_constraints": [],
     }
     with pytest.raises(ValueError, match="without repeating excluded names"):
-        rfq._validate_composed(json.dumps(data), request, option, "100,00 €")
+        rfq._validate_composed(json.dumps(data), request, option, "100 €")
     data["body"] = body.replace(
         "We will not offer Cobalt Skylift.", "Your carrier exclusions have been applied."
     )
-    assert rfq._validate_composed(json.dumps(data), request, option, "100,00 €") == data["body"]
+    assert rfq._validate_composed(json.dumps(data), request, option, "100 €") == data["body"]
     blocked = RateOption("Cobalt Skylift", "FRA", "DEL", 2, 10000, "EUR", 10000, "sheet")
     with pytest.raises(ValueError, match="excluded"):
         rfq.quote_text(request, blocked, 10000, None, 1)
@@ -109,11 +109,11 @@ def test_all_price_sources_are_filtered_before_selection(monkeypatch):
         rfq, "compose_quote_text", lambda r, o, total, t, sid: rfq.quote_text(r, o, total, t, sid)
     )
     sent = []
-    monkeypatch.setattr(rfq.hackloop, "send", lambda *a, **kw: sent.append(a) or {"id": 101})
+    monkeypatch.setattr(rfq.hackloop, "send", lambda *a, **kw: sent.append(kw) or {"id": 101})
     rfq._price_and_quote(mail, 100, request, "FRA", time.time(), "enforce")
     quote = db.get_session(100)["quotes"][0]
     assert quote["airline"] == "Portal Air" and quote["total_minor"] == 20000
-    assert len(sent) == 1 and "Cobalt" not in sent[0][2]
+    assert len(sent) == 1 and "Cobalt" not in sent[0]["body"]
     db.init_db()
     assert carrier_prefs.excluded("one@example.com") == {"cobalt skylift"}
     assert not carrier_prefs.excluded("other@example.com")

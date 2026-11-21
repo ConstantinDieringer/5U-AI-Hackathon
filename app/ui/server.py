@@ -67,9 +67,10 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
                 status_code=401,
                 headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'},
             )
-        elif request.method not in {"GET", "HEAD", "OPTIONS"} and request.headers.get(
-            "x-requested-with"
-        ) != "XMLHttpRequest":
+        elif (
+            request.method not in {"GET", "HEAD", "OPTIONS"}
+            and request.headers.get("x-requested-with") != "XMLHttpRequest"
+        ):
             response = Response(status_code=403, content="Cross-site request blocked")
         else:
             response = await call_next(request)
@@ -284,11 +285,14 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     if not subject.lower().startswith("re:"):
         subject = f"Re: {subject}"
     try:
-        sent = hackloop.send(
+        sender = hackloop.send_customer if customer_reply else hackloop.send
+        review_args = {"session_id": session_id, "allow_manual": True} if customer_reply else {}
+        sent = sender(
             to=parent["sender"],
             subject=subject,
             body=body.text,
             in_reply_to=parent["id"],
+            **review_args,
         )
     except Exception as e:
         db.emit(
@@ -304,7 +308,7 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
             mail_id=sent_id,
             recipient=parent["sender"],
             subject=subject,
-            body=body.text,
+            body=sent.get("body", body.text),
             category="manual_reply",
             session_id=session_id,
             in_reply_to=parent["id"],
@@ -355,7 +359,14 @@ async def api_import_db(request: Request) -> dict[str, Any]:
 
 @app.get("/api/health")
 def api_health() -> dict[str, Any]:
+    from app.mail.outgoing import EMAIL_STYLE_VERSION
+
     return {
         "ok": True,
+        "email_style_version": EMAIL_STYLE_VERSION,
+        "build_revision": settings.build_revision,
+        "email_reviewer_model": settings.llm_review_model,
+        "email_review_enabled": settings.email_review_enabled,
+        "llm_max_calls_per_session": settings.llm_max_calls_per_session,
         "last_event": (db.events_after(0, limit=1) or [{}])[0].get("id"),
     }

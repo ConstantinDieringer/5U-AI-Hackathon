@@ -235,7 +235,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
 - Standard für Extraktion ist `gpt-5-mini`, für die Reparatur `LLM_RETRY_MODEL=gpt-5`. Beide wurden über die Gateway-Modellliste bestätigt. Explizite Umgebungswerte überschreiben diese Defaults weiterhin; Kostenpreise für `gpt-5` sind hinterlegt.
-- **Hartes Limit: max. 4 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Standard ist 4: Extraktion, ggf. Reparatur, evidenzgebundener Rescue bei ungeklärten RFQ-Feldern und individuelle Antwort bzw. Antwortreparatur. Sichere Textvorlagen bleiben Fehlerfallback.
+- **Hartes Limit: max. 8 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Standard ist 8 für Extraktion/Komposition samt Reparaturen und finale Stilprüfungen. Sichere Textvorlagen und deterministische Versandprüfung bleiben Fehlerfallback.
 - `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, individueller Mailtext ≤ 750).
   `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
@@ -260,6 +260,9 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Dedizierter Stilagent `app/agents/email_review.py`: `LLM_REVIEW_MODEL=gpt-5`, `EMAIL_REVIEW_ENABLED=true`, genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens. Kein eigener Versand und keine Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen werden nach dem Review geschützt; bei Fehler/Budgetende bleibt der deterministisch geprüfte Entwurf erhalten. Aufruf und Kosten werden der RFQ zugerechnet. Pause/Handbetrieb und Quote-Deadline werden nach dem Review erneut geprüft.
+
+- Strenge Versanddarstellung: alle Kunden-Sendewege nutzen `hackloop.send_customer`, das den Mailtext unmittelbar vor dem HTTP-Aufruf über `mail/outgoing.py` rendert und prüft. Prosa enthält keine Doppelpunkte, Semikola, Unterstriche, Bindestriche oder Klammern; Referenznummern bleiben zunächst kopierbar. Daten mit ausgeschriebenen Monaten, keine Null-Nachkommastellen, kurze Absätze. Die tatsächlich versandte Fassung wird gespeichert. `/api/health` nennt Stilversion und Build-Revision zur Aktivierungsprüfung. Persönliche Wärme und leichter Humor dürfen keine erfundene Kundentreue, Sonderpreise, Rabatte oder Leistungszusagen behaupten.
 - Bei Portalabfragen Airline-Anfrageplätze für bekannte Portal-Carrier derselben Strecke
   reservieren. Bei HTTP 503 zuerst diese Carrier direkt anfragen, anschließend verbleibende
   Plätze mit anderen Kandidaten füllen. Kunden-Ausschlüsse und negative Streckenbeobachtungen

@@ -742,7 +742,7 @@ def _validate_composed(
     if has_customer_presentation_issue(body):
         raise ValueError(
             "Use full sentences without parentheses or internal field names, "
-            "full month names in dates and short paragraphs of at most 70 words."
+            "full month names in dates and short paragraphs of at most 50 words."
         )
     if re.search(
         r"\b(?:road_transit|collection_lead|carrier_timing_kind|road_transit_hours|"
@@ -1462,7 +1462,23 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
         )
         return
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
-    sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
+    try:
+        sent = hackloop.send_customer(
+            mail.sender,
+            subject,
+            body,
+            in_reply_to=mail.id,
+            session_id=sid,
+            protected_terms=(choice.airline, choice.origin, choice.destination),
+            deadline_at=t0 + RFQ_LIFETIME_S,
+        )
+    except hackloop.CustomerSendBlocked:
+        if time.time() >= t0 + RFQ_LIFETIME_S:
+            db.set_status(sid, "expired", "Quote deadline exceeded during style review")
+        else:
+            db.emit("not_sent", "Nach Stilprüfung nicht gesendet: pausiert oder manuell", sid)
+        return
+    body = sent["body"]
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=mail.sender,
