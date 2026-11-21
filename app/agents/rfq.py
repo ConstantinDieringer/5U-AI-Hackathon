@@ -426,6 +426,32 @@ def _schedule_line(rfq: Rfq, option: RateOption, lang: str, today: date | None) 
     return f"Earliest departure from {option.origin} is {dep}, arriving in {option.destination} on {arr}."
 
 
+_CUTOFF_TERMS = re.compile(
+    r"cut[ -]?off|annahmeschluss|anlieferfrist|geschäftsschluss|geschaeftsschluss|"
+    r"close of business|(?:drop[ -]?off|cargo acceptance)[^.\n!?]{0,80}\b(?:until|before|by)\b",
+    re.IGNORECASE,
+)
+_CUTOFF_NOTICES = {
+    "en": "The exact cargo acceptance cutoff at the departure airport is not yet confirmed.",
+    "de": "Der genaue Annahmeschluss am Abflughafen ist noch nicht bestätigt.",
+}
+
+
+def _with_cutoff_notice(body: str, rfq: Rfq) -> str:
+    """No carrier cutoff is stored: explicitly leave requested acceptance deadlines open."""
+    if not any(
+        _CUTOFF_TERMS.search(q)
+        for q in rfq.customer_questions + rfq.service_constraints
+    ):
+        return body
+    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
+    notice = _CUTOFF_NOTICES[lang]
+    if notice in body:
+        return body
+    at = body.rfind(SIGNATURE)
+    return f"{body[:at].rstrip()}\n\n{notice}\n\n{body[at:]}" if at >= 0 else body
+
+
 def quote_text(
     rfq: Rfq,
     option: RateOption,
@@ -522,7 +548,7 @@ def quote_text(
             "",
             SIGNATURE,
         ]
-    return "\n".join(lines) + "\n"
+    return _with_cutoff_notice("\n".join(lines) + "\n", rfq)
 
 
 COMPOSE_PROMPT = (
@@ -570,6 +596,9 @@ COMPOSE_PROMPT = (
     "ONLY to verified_facts.customer_questions and verified_facts.service_constraints, never to "
     "the conversation or historical messages. If either indexed input list is empty, both "
     "corresponding output lists MUST be empty. Do not invent indices for the quote request itself."
+    " No cargo acceptance cutoff is verified. Never turn ready_date, departure date or rate "
+    "validity into an acceptance deadline, including close of business. Mark cutoff questions "
+    "unavailable. If mentioning a cutoff, use exactly the supplied cutoff_notice sentence."
 )
 
 COMPOSE_SCHEMA: dict[str, Any] = {
@@ -668,6 +697,11 @@ def _validate_composed(
         raise ValueError("empty body")
     if has_template_artifacts(body):
         raise ValueError("answer contains an unfilled template field or mail header")
+    without_notices = body
+    for notice in _CUTOFF_NOTICES.values():
+        without_notices = without_notices.replace(notice, "")
+    if _CUTOFF_TERMS.search(without_notices):
+        raise ValueError("cargo acceptance deadline is not verified; use cutoff_notice")
     if not all(
         isinstance(items, list)
         for items in (answered, unavailable, addressed, unavailable_constraints)
@@ -746,6 +780,8 @@ def compose_quote_text(
         "earliest_departure": when[0].isoformat() if when else None,
         "earliest_arrival": when[1].isoformat() if when else None,
         "bookable_until": option.valid_until,
+        "confirmed_cargo_acceptance_cutoff": None,
+        "cutoff_notice": _CUTOFF_NOTICES[lang],
         "customer_questions": [
             {"index": index, "question": question}
             for index, question in enumerate(rfq.customer_questions)
@@ -810,7 +846,8 @@ def compose_quote_text(
                 referenced_mail_ids=json.loads(raw).get("referenced_mail_ids", []),
             )
             # the model signs with the team line only; code adds the signer's name above it
-            return body.rstrip()[: -len(TEAM_LINE)] + SIGNATURE + "\n"
+            signed = body.rstrip()[: -len(TEAM_LINE)] + SIGNATURE + "\n"
+            return _with_cutoff_notice(signed, rfq)
         except Exception as exc:  # noqa: BLE001 - repair once, then safe fallback
             last_error = exc
             if attempt == 0:

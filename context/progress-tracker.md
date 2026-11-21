@@ -14,6 +14,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - RFQ replay harness (`python -m app.agents.rfq_replay`, `tests/test_rfq_replay.py`): all 27 live rounds through the real flow offline (stored extraction/portal/bids, no network); baseline diff gates option, total, airline, carriers, clarification and mail text. 22/27 match production exactly; rounds 2/12 lack stored data, 18 to 20 now ask for the pickup. Composer output and new portal reads are not replayed.
+- Round 30 review: block unverified cargo cutoff promises (including close of business), retain personal quote repair and state requested cutoff as unconfirmed in composed and fallback text; no current carrier cutoff field exists. Offline suite: 353 passed, 4 skipped; EN/DE promises and rate-validity counterexample covered; deployment not verified.
+
+- Notfall-Quote (Live → "Notfall-Quote", `POST /api/sessions/{id}/draft`, `app/ui/drafts.py`): computes the quote from stored request, sheets, portal (8 s) and the session's bids, fills a house-style mail; sending it records the quote (rate_id) and hands back to the agent so booking works.
 - Reverted PR12 shortcuts (local parsing, composer bypass, cache keys). Every quote uses the individual `LLM_COMPOSE_MODEL` (default gpt-5-mini), with bounded same-customer history and audited source IDs; default budget four allows repairs. Synthetic gateway dry-run produced a personal grounded reply; no live customer mail sent or production rollout verified.
 - Round 27 booking review: freeze selected air cost/currency separately from the customer total; airline booking emails exclude truck costs and commercial adjustments. Legacy quotes omit an unverified air amount; customer confirmations keep their all-in total. Offline suite: 350 passed, 4 skipped; migration/reopen and EUR/USD coverage; production deployment not verified.
 
