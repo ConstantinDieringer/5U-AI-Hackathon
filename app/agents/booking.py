@@ -40,6 +40,8 @@ from app.pricing.reference import airline_email
 
 log = logging.getLogger(__name__)
 
+FRESH_RATE_BUDGET_S = 30.0  # re-reading an expired rate before booking never takes longer
+
 _YES = re.compile(
     r"\b(book|book it|go ahead|proceed|accept|accepted|works for us|"
     r"sounds good|let'?s do it|approved?|"
@@ -200,17 +202,23 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
     code = _airline_code(quote["origin"], quote["destination"], quote["airline"])
     if code is None:
         return None
-    from app.pricing.portal_sync import next_break
+    from app.pricing.portal_sync import fresh_rate, next_break
     from app.pricing.pricing import chargeable_kg
 
     weight = float(request["weight_kg"])
     volume = float(request.get("volume_cbm") or 0.0)
+    deadline = time.monotonic() + FRESH_RATE_BUDGET_S
     best: dict[str, Any] | None = None
     # same weights as the quote: exact and the next break (whichever was cheaper is quoted)
     for w in (weight, next_break(code, chargeable_kg(weight, volume))):
         if w is None:
             continue
-        raw = hackloop.get_rate(quote["origin"], quote["destination"], code, w, volume)
+        key = (quote["origin"], quote["destination"], code, w, volume)
+        try:
+            raw = fresh_rate(key, stale_rate_id=str(quote["rate_id"]), deadline=deadline)
+        except hackloop.HackloopError as e:
+            log.warning("fresh rate %s at %s kg failed: %s", code, w, e)
+            continue
         if best is None or Decimal(str(raw["total"])) < Decimal(str(best["total"])):
             best = raw
     return str(best["rate_id"]) if best else None
