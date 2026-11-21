@@ -65,7 +65,12 @@ def test_booking_request_keeps_currency_and_reference(monkeypatch) -> None:
         lambda to, subject, body: sent.append((subject, body)) or {"id": 1},
     )
     monkeypatch.setattr(booking.db, "record_outgoing", lambda **kwargs: None)
-    quote = {"origin": "FRA", "destination": "JFK", "total_minor": 147500, "currency": "EUR"}
+    quote = {
+        "origin": "FRA",
+        "destination": "JFK",
+        "total_minor": 147500,
+        "currency": "EUR",
+    }
     booking._book_by_email(421, quote, {"weight_kg": 100}, "airline@hackloop.mail")
     subject, body = sent[0]
     assert "[AP-421]" in subject
@@ -101,7 +106,9 @@ def test_composer_falls_back_when_style_is_wrong(monkeypatch, bad_copy: str) -> 
         "addressed_constraints": [],
         "unavailable_constraints": [],
     }
-    monkeypatch.setattr(rfq.llm, "complete", lambda *args, **kwargs: json.dumps(response))
+    monkeypatch.setattr(
+        rfq.llm, "complete", lambda *args, **kwargs: json.dumps(response)
+    )
     text = rfq.compose_quote_text(request, option, 147500, None, 1)
     assert_style(text)
     assert "Verified information is not yet available" in text

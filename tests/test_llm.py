@@ -82,7 +82,11 @@ def test_budget_survives_a_restart(
 
 
 def test_calls_logged_before_the_counter_count(sent: list[dict[str, Any]]) -> None:
-    for purpose in ("extract", "repair", "compose"):  # rows from before the counter existed
+    for purpose in (
+        "extract",
+        "repair",
+        "compose",
+    ):  # rows from before the counter existed
         db.record_llm_call(
             9,
             purpose=purpose,

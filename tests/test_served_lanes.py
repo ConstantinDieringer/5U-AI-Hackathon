@@ -42,7 +42,9 @@ def test_parse_real_refusals() -> None:
     assert len(r.served) == 21 and "CGN-EZE" in r.served and "STR-YYZ" in r.served
     j = served_lanes.parse_refusal(MAIL_1338)
     assert j is not None and "FRA-EZE" in j.served and "STR-EZE" not in j.served
-    assert served_lanes.parse_refusal("Our all-in price is EUR 2,100.00, 3 days.") is None
+    assert (
+        served_lanes.parse_refusal("Our all-in price is EUR 2,100.00, 3 days.") is None
+    )
 
 
 def test_serves_known_unknown_and_stale() -> None:
@@ -51,7 +53,9 @@ def test_serves_known_unknown_and_stale() -> None:
     assert served_lanes.serves(COBALT, "cgn", "eze") is True
     assert served_lanes.serves(JUNIPER, "STR", "EZE") is None  # never asked
     later = datetime.now(UTC) + timedelta(hours=2)
-    assert served_lanes.serves(COBALT, "STR", "EZE", now=later) is None  # stale: ask again
+    assert (
+        served_lanes.serves(COBALT, "STR", "EZE", now=later) is None
+    )  # stale: ask again
 
 
 def test_older_refusal_does_not_overwrite_newer() -> None:
@@ -85,7 +89,9 @@ def test_refusal_counts_as_answer_and_is_not_asked_again(monkeypatch) -> None:
     assert cobalt is not None and juniper is not None
     sent: list[str] = []
     monkeypatch.setattr(
-        bids.hackloop, "send", lambda to, s, b, **k: sent.append(to) or {"id": 5000 + len(sent)}
+        bids.hackloop,
+        "send",
+        lambda to, s, b, **k: sent.append(to) or {"id": 5000 + len(sent)},
     )
     db.ingest_mail(
         mail_id=1223,
@@ -101,7 +107,9 @@ def test_refusal_counts_as_answer_and_is_not_asked_again(monkeypatch) -> None:
 
     for mid, sender, body in ((1336, COBALT, MAIL_1336), (1338, JUNIPER, MAIL_1338)):
         now = datetime.now(UTC).isoformat()
-        bids.on_bid_mail(Mail(mid, mid, sender, TEAM, "Re: [AP-1223] x", body, now), None)
+        bids.on_bid_mail(
+            Mail(mid, mid, sender, TEAM, "Re: [AP-1223] x", body, now), None
+        )
     t0 = datetime.now(UTC)
     bids.wait(1223, 30)  # both declined: returns at once instead of waiting 30 s
     assert (datetime.now(UTC) - t0).total_seconds() < 1
@@ -115,4 +123,6 @@ def test_refusal_counts_as_answer_and_is_not_asked_again(monkeypatch) -> None:
     monkeypatch.setattr(rfq, "airlines_for", lambda o, d: lane)
     assert rfq._bid_carriers(r, "STR") == ([], [])  # both said they do not fly STR-EZE
     fra = r.model_copy(update={"origin": "FRA"})
-    assert [c.email for c in rfq._bid_carriers(fra, "FRA")[1]] == [JUNIPER]  # flies FRA-EZE
+    assert [c.email for c in rfq._bid_carriers(fra, "FRA")[1]] == [
+        JUNIPER
+    ]  # flies FRA-EZE

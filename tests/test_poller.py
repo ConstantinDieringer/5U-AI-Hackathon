@@ -18,7 +18,9 @@ FIX = Path(__file__).parent / "fixtures"
 REAL = json.loads((FIX / "poll_ratedesk_reply.json").read_text())
 
 
-def real_mail(mid: int, sender: str = "ratedesk@hackloop.mail", **kw: Any) -> dict[str, Any]:
+def real_mail(
+    mid: int, sender: str = "ratedesk@hackloop.mail", **kw: Any
+) -> dict[str, Any]:
     m = copy.deepcopy(REAL["messages"][0])
     m.update(id=mid, **{"from": sender}, **kw)
     return m
@@ -46,7 +48,9 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeMailbox:
     db.init_db(str(tmp_path / "t.db"))
     monkeypatch.setattr(store, "init", lambda: None)
     monkeypatch.setattr(
-        poller, "settings", dataclasses.replace(poller.settings, inbox_dir=tmp_path / "inbox")
+        poller,
+        "settings",
+        dataclasses.replace(poller.settings, inbox_dir=tmp_path / "inbox"),
     )
     fake = FakeMailbox([])
     for name in ("poll", "get_message", "get_attachment"):
@@ -56,7 +60,11 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeMailbox:
 
 def test_parse_real_mail() -> None:
     m = parse.mail_from_api(REAL["messages"][0])
-    assert (m.id, m.sender, m.to) == (208, "ratedesk@hackloop.mail", "austrian-power@hackloop.mail")
+    assert (m.id, m.sender, m.to) == (
+        208,
+        "ratedesk@hackloop.mail",
+        "austrian-power@hackloop.mail",
+    )
     assert m.received_at.startswith("2026-11-21T14:41:37")
     assert m.references == [] and m.thread_root == 208
     assert parse.next_since_id(REAL) == 208
@@ -73,7 +81,10 @@ def test_each_mail_processed_once_across_restart(box: FakeMailbox, monkeypatch) 
     monkeypatch.setattr(
         store,
         "emit",
-        lambda kind, msg, *a, **k: (handled.append(kind), real_emit(kind, msg, *a, **k)),
+        lambda kind, msg, *a, **k: (
+            handled.append(kind),
+            real_emit(kind, msg, *a, **k),
+        ),
     )
     box.mails = [real_mail(301), real_mail(302, sender="anna@acme.hackloop.mail")]
     since, n = poller.poll_once(store.get_since_id())
@@ -98,8 +109,12 @@ def test_failing_mail_does_not_stop_the_batch(box: FakeMailbox) -> None:
 
 
 def test_attachments_saved_under_mail_id(box: FakeMailbox, tmp_path: Path) -> None:
-    att = [{"id": 7, "filename": "../../evil tariff.xlsx", "content_type": "x", "size": 5}]
-    box.mails = [real_mail(501, sender="kestrel-airways@hackloop.mail", attachments=att)]
+    att = [
+        {"id": 7, "filename": "../../evil tariff.xlsx", "content_type": "x", "size": 5}
+    ]
+    box.mails = [
+        real_mail(501, sender="kestrel-airways@hackloop.mail", attachments=att)
+    ]
     poller.poll_once(0)
     # Tariff downloads now belong to the durable background worker.
     assert db.pending_tariffs()[0]["mail_id"] == 501

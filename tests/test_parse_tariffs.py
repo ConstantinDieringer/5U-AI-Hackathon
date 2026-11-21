@@ -7,7 +7,9 @@ from pathlib import Path
 
 from app.pricing.reference import carrier_by_name
 
-DATA = json.loads((Path(__file__).parents[1] / "data" / "tariffs.json").read_text(encoding="utf-8"))
+DATA = json.loads(
+    (Path(__file__).parents[1] / "data" / "tariffs.json").read_text(encoding="utf-8")
+)
 LANES = DATA["lanes"]
 ORIGINS = {"FRA", "MUC", "DUS", "HAM", "STR", "CGN"}
 
@@ -60,7 +62,9 @@ def test_origins_and_served_destinations():
 def test_spot_checks_against_originals():
     def get(airline, o, d):
         return next(
-            x for x in LANES if (x["airline"], x["origin"], x["destination"]) == (airline, o, d)
+            x
+            for x in LANES
+            if (x["airline"], x["origin"], x["destination"]) == (airline, o, d)
         )
 
     # Danube (JPG, transcribed): FRA-DXB 2 days, min 138,86, from 0 kg 2,90 ... fuel 1,12 sec 0,22
@@ -74,10 +78,19 @@ def test_spot_checks_against_originals():
     assert [b["rate"] for b in dxb["breaks"]] == [2.90, 2.23, 2.05, 1.66, 1.45, 1.33]
     # Kestrel (xlsx, D+N transit, surcharges in columns): FRA-BOM D+2, min 134,62, +2000 1,30
     bom = get("Kestrel Airways", "FRA", "BOM")
-    assert (bom["transit_days"], bom["minimum"], bom["breaks"][-1]["rate"]) == (2, 134.62, 1.30)
+    assert (bom["transit_days"], bom["minimum"], bom["breaks"][-1]["rate"]) == (
+        2,
+        134.62,
+        1.30,
+    )
     # Orion (pdf, decimal comma): MUC-HKG 3 days, min 111,30, from 1000 kg 2,15, fuel 0,96
     hkg = get("Orion Cargo Air", "MUC", "HKG")
-    assert (hkg["transit_days"], hkg["minimum"], hkg["breaks"][-1]["rate"], hkg["fuel"]) == (
+    assert (
+        hkg["transit_days"],
+        hkg["minimum"],
+        hkg["breaks"][-1]["rate"],
+        hkg["fuel"],
+    ) == (
         3,
         111.30,
         2.15,

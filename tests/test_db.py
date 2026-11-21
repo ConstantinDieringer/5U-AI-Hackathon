@@ -404,3 +404,27 @@ def test_booking_confirmation_maps_by_bk_reference_and_startup_remap():
     assert db.remap_unassigned() == 1
     assert 400 in {m["id"] for m in db.get_session(sid)["mails"]}
     assert db.remap_unassigned() == 0
+
+
+def test_backfill_booking_from_airline_confirmation():
+    sid = rfq()
+    body = (
+        "Hello,\n\nyour booking BK-5LH10DOK is confirmed.\n\nBooking reference: BK-5LH10DOK\n"
+        f"Your reference: AP-{sid}\nAirline: Ultraviolet Air Freight (UV)\nLane: FRA-DOH\n"
+        "Price: 324.36 EUR\nStatus: booked and ready to ship\n"
+    )
+    db.ingest_mail(
+        mail_id=500,
+        sender="ultraviolet-air-freight@hackloop.mail",
+        recipient=TEAM,
+        subject="Booking BK-5LH10DOK confirmed",
+        body=body,
+        category="carrier_bid",
+    )
+    assert db.backfill_bookings_from_confirmations() == 1
+    b = db.find_booking("BK-5LH10DOK")
+    assert b["session_id"] == sid and b["status"] == "confirmed"
+    rec = next(r for r in db.tracking_records() if r["session_id"] == sid)
+    assert rec["airline"] == "Ultraviolet Air Freight" and rec["price_minor"] == 32436
+    assert rec["request"] == {"origin": "FRA", "destination": "DOH"}
+    assert db.backfill_bookings_from_confirmations() == 0

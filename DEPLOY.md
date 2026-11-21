@@ -65,6 +65,10 @@ Move it instead of starting empty (an empty DB would re-read old mail and could 
 1. Railway variables: `TEAM_API_KEY=...` and `AGENTS_ENABLED=false` → deploy. The UI runs,
    nothing polls or sends.
 2. On the laptop: stop `python run.py` (Ctrl+C). From now on nothing answers mail.
+   Then fold the write-ahead log into the file, otherwise the newest minutes (they live in
+   `forwarder.db-wal`) are missing online and the server answers those RFQs a second time:
+   `python -c "import sqlite3; sqlite3.connect('data/forwarder.db').execute('PRAGMA wal_checkpoint(TRUNCATE)')"`
+   Check that no other machine still runs `run.py` against the live mailbox.
 3. Upload the DB (Linux/macOS):
    ```
    curl -u team:<UI_PASSWORD> --data-binary @data/forwarder.db \

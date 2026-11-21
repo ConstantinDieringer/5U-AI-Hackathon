@@ -2,10 +2,14 @@ from app.mail.router import classify, route
 from app.models import Category, Mail
 
 US = "austrian-power@hackloop.mail"
-ATT = [{"id": 1, "filename": "tariff.xlsx", "content_type": "application/xlsx", "size": 10}]
+ATT = [
+    {"id": 1, "filename": "tariff.xlsx", "content_type": "application/xlsx", "size": 10}
+]
 
 
-def mail(sender: str, to: str = US, attachments: list | None = None, mid: int = 10) -> Mail:
+def mail(
+    sender: str, to: str = US, attachments: list | None = None, mid: int = 10
+) -> Mail:
     return Mail(
         id=mid,
         thread_root=mid,
@@ -41,9 +45,9 @@ def test_reply_to_our_carrier_mail_with_attachment_is_bid_not_tariff() -> None:
 
 
 def test_airline_with_attachment_is_tariff() -> None:
-    assert route(mail("Kestrel Airways <kestrel-airways@hackloop.mail>", attachments=ATT)) == (
-        Category.TARIFF
-    )
+    assert route(
+        mail("Kestrel Airways <kestrel-airways@hackloop.mail>", attachments=ATT)
+    ) == (Category.TARIFF)
 
 
 def test_airline_without_attachment_is_bid() -> None:
@@ -51,11 +55,17 @@ def test_airline_without_attachment_is_bid() -> None:
 
 
 def test_trucker_with_attachment_is_bid() -> None:
-    assert route(mail("taunusfracht@hackloop.mail", attachments=ATT)) == Category.CARRIER_BID
+    assert (
+        route(mail("taunusfracht@hackloop.mail", attachments=ATT))
+        == Category.CARRIER_BID
+    )
 
 
 def test_unknown_sender_new_thread_is_rfq() -> None:
-    assert route(mail("Anna Weber <anna.weber@acme-industries.hackloop.mail>")) == Category.RFQ
+    assert (
+        route(mail("Anna Weber <anna.weber@acme-industries.hackloop.mail>"))
+        == Category.RFQ
+    )
 
 
 def test_unknown_sender_reply_is_customer() -> None:

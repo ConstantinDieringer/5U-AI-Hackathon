@@ -7,12 +7,20 @@ import pytest
 from pydantic import ValidationError
 
 from app.models import RateOption, Rfq
-from app.pricing.pricing import chargeable_kg, load_lanes, pick, price_lane, sheet_options
+from app.pricing.pricing import (
+    chargeable_kg,
+    load_lanes,
+    pick,
+    price_lane,
+    sheet_options,
+)
 
 
 def lane(airline, origin, dest):
     return next(
-        x for x in load_lanes() if (x.airline, x.origin, x.destination) == (airline, origin, dest)
+        x
+        for x in load_lanes()
+        if (x.airline, x.origin, x.destination) == (airline, origin, dest)
     )
 
 
@@ -58,7 +66,9 @@ def test_higher_break_taken_when_cheaper():
 def test_breakpoint_switch_off_uses_plain_total():
     rfq = Rfq(origin="HAM", destination="BOG", weight_kg=999)
     yt = next(
-        o for o in sheet_options(rfq, use_breakpoints=False) if o.airline.startswith("Yellow")
+        o
+        for o in sheet_options(rfq, use_breakpoints=False)
+        if o.airline.startswith("Yellow")
     )
     assert (yt.total_minor, yt.billed_kg) == (409590, 999.0)
 
@@ -66,7 +76,9 @@ def test_breakpoint_switch_off_uses_plain_total():
 def test_first_bracket_below_45kg_kestrel():
     # regression for the "-45" header: Kestrel CGN-MIA min 76.00, 0:3.05, fuel .69 sec .24
     # 30 kg: 30 x 3.05 = 91.50 (> min) + 30 x 0.93 = 27.90 -> 119.40
-    assert price_lane(lane("Kestrel Airways", "CGN", "MIA"), 30).plain_total == D("119.40")
+    assert price_lane(lane("Kestrel Airways", "CGN", "MIA"), 30).plain_total == D(
+        "119.40"
+    )
 
 
 def test_two_airlines_on_one_lane_cheapest_and_fastest():
@@ -143,11 +155,23 @@ def test_rfq_normalises_codes():
 
 def test_rfq_accepts_icao_codes_and_drops_bad_origin_with_zip():
     # live round 4 (mail 937): the LLM wrote origin "EDDL" -> the RFQ failed
-    r = Rfq.model_validate({"origin": "EDDL", "pickup_zip": "51896", "destination": "KORD",
-                            "weight_kg": 679})
+    r = Rfq.model_validate(
+        {
+            "origin": "EDDL",
+            "pickup_zip": "51896",
+            "destination": "KORD",
+            "weight_kg": 679,
+        }
+    )
     assert (r.origin, r.destination) == ("DUS", "ORD")
-    r = Rfq.model_validate({"origin": "XXXX", "pickup_zip": "51896", "destination": "ORD",
-                            "weight_kg": 679})
+    r = Rfq.model_validate(
+        {
+            "origin": "XXXX",
+            "pickup_zip": "51896",
+            "destination": "ORD",
+            "weight_kg": 679,
+        }
+    )
     assert r.origin is None and r.pickup_zip == "51896"
 
 
@@ -155,10 +179,20 @@ def test_resolve_origin_ignores_a_wrong_llm_origin_with_pickup_zip() -> None:
     from app.pricing.pricing import resolve_origin
 
     # real round 2530: pickup 21663 Lueneburg -> YYZ, nano said origin YYZ
-    r = Rfq(origin="YYZ", pickup_zip="21663", destination="YYZ", weight_kg=855, volume_cbm=3.74)
+    r = Rfq(
+        origin="YYZ",
+        pickup_zip="21663",
+        destination="YYZ",
+        weight_kg=855,
+        volume_cbm=3.74,
+    )
     assert resolve_origin(r) == "HAM"
-    assert resolve_origin(r.model_copy(update={"origin": "LAX"})) == "HAM"  # not a kit airport
-    assert resolve_origin(r.model_copy(update={"origin": "FRA"})) == "FRA"  # customer's choice
+    assert (
+        resolve_origin(r.model_copy(update={"origin": "LAX"})) == "HAM"
+    )  # not a kit airport
+    assert (
+        resolve_origin(r.model_copy(update={"origin": "FRA"})) == "FRA"
+    )  # customer's choice
     assert resolve_origin(r.model_copy(update={"origin": None})) == "HAM"
     port = Rfq(origin="MUC", destination="LAX", weight_kg=998)
     assert resolve_origin(port) == "MUC"

@@ -245,6 +245,7 @@ def init_db(path: str | None = None) -> None:
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     remap_unassigned()
+    backfill_bookings_from_confirmations()
     if path_changed:
         # A database path can later be replaced by the UI import endpoint, which runs in a
         # different thread. Do not leave the initializing thread holding its WAL on Windows.
@@ -482,6 +483,59 @@ def remap_unassigned() -> int:
                 )
                 n += 1
         return n
+
+
+_CONF = {
+    "bk": re.compile(r"Booking reference:\s*(BK-[A-Z0-9]+)", re.IGNORECASE),
+    "ap": re.compile(r"Your reference:\s*AP-(\d+)", re.IGNORECASE),
+    "airline": re.compile(r"Airline:\s*([^\n(]+?)\s*(?:\(|\n|$)", re.IGNORECASE),
+    "lane": re.compile(r"Lane:\s*([A-Z]{3})-([A-Z]{3})", re.IGNORECASE),
+    "price": re.compile(r"Price:\s*([\d.,]+)\s*([A-Z]{3})", re.IGNORECASE),
+}
+
+
+def backfill_bookings_from_confirmations() -> int:
+    """Airline confirmations ("Booking BK-… confirmed") for sessions without a booking row,
+    e.g. booked by an instance whose data never reached this database. Recreates the
+    booking so tracking questions find it. Idempotent."""
+    c = conn()
+    mails = _rows(
+        c.execute(
+            "SELECT m.body FROM mails m WHERE m.direction = 'in' AND m.body LIKE '%Booking reference:%'"
+            " AND m.body LIKE '%Your reference: AP-%'"
+        )
+    )
+    n = 0
+    for m in mails:
+        body = m["body"] or ""
+        found = {k: rx.search(body) for k, rx in _CONF.items()}
+        if not (found["bk"] and found["ap"]):
+            continue
+        sid = int(found["ap"].group(1))
+        if not _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (sid,))):
+            continue
+        if _one(c.execute("SELECT 1 FROM bookings WHERE session_id = ?", (sid,))):
+            continue
+        price = found["price"]
+        minor = round(float(price.group(1).replace(",", "")) * 100) if price else None
+        record_booking(
+            sid,
+            booking_reference=found["bk"].group(1),
+            rate_id=None,
+            airline=found["airline"].group(1).strip() if found["airline"] else None,
+            price_minor=minor,
+            currency=price.group(2).upper() if price else None,
+            status="confirmed",
+        )
+        lane = found["lane"]
+        s = _one(c.execute("SELECT request_json FROM sessions WHERE id = ?", (sid,)))
+        if lane and s and not s["request_json"]:
+            set_request(
+                sid,
+                {"origin": lane.group(1).upper(), "destination": lane.group(2).upper()},
+            )
+        n += 1
+    return n
 
 
 def ingest_mail(
