@@ -559,22 +559,45 @@ def take_over(mail: Mail, sid: int) -> bool:
     return True
 
 
+_running: set[int] = set()
+_running_lock = threading.Lock()
+
+
+def _run_owned(mail: Mail, sid: int) -> None:
+    try:
+        take_over(mail, sid)
+    finally:
+        with _running_lock:
+            _running.discard(sid)
+
+
 def check_once(*, background: bool = True) -> list[int]:
     from app.agents import clarification, rfq
 
     started = []
-    before = (datetime.now(UTC) - timedelta(seconds=settings.thread_rescue_after_s)).isoformat()
-    for candidate in db.rescue_candidates(before):
+    now = datetime.now(UTC)
+    before = (now - timedelta(seconds=settings.thread_rescue_after_s)).isoformat()
+    after = (now - timedelta(seconds=settings.thread_rescue_max_age_s)).isoformat()
+    for candidate in db.rescue_candidates(before, after):
         sid = candidate["session_id"]
         mail = clarification._stored_mail(candidate)
         if not _eligible(sid, mail) or rfq.is_working(sid):
             continue
-        started.append(sid)
         if background:
+            # at most N owners at once: a burst of parallel model calls hits the gateway's
+            # rate limit and slows the live RFQ; the rest waits for the next tick (5 s)
+            with _running_lock:
+                if sid in _running:
+                    continue
+                if len(_running) >= settings.thread_rescue_max_parallel:
+                    break
+                _running.add(sid)
+            started.append(sid)
             threading.Thread(
-                target=take_over, args=(mail, sid), daemon=True, name=f"thread-rescue-{sid}"
+                target=_run_owned, args=(mail, sid), daemon=True, name=f"thread-rescue-{sid}"
             ).start()
         else:
+            started.append(sid)
             take_over(mail, sid)
     return started
 

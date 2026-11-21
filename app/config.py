@@ -57,6 +57,8 @@ class Settings:
     thread_rescue_enabled: bool
     thread_rescue_max_calls: int
     thread_rescue_after_s: float
+    thread_rescue_max_age_s: float
+    thread_rescue_max_parallel: int
     llm_compose_model: str
     llm_review_model: str
     email_review_enabled: bool
@@ -153,6 +155,10 @@ settings = Settings(
     thread_rescue_enabled=_env("THREAD_RESCUE_ENABLED", "true").lower() == "true",
     thread_rescue_max_calls=max(1, int(_env("THREAD_RESCUE_MAX_CALLS", "6"))),
     thread_rescue_after_s=max(10.0, float(_env("THREAD_RESCUE_AFTER_S", "45"))),
+    # only fresh customer input: older threads are history, not a live workflow (a restart
+    # woke ~40 hours-old threads at once, sent mails into them and hit gateway 429s)
+    thread_rescue_max_age_s=max(60.0, float(_env("THREAD_RESCUE_MAX_AGE_S", "600"))),
+    thread_rescue_max_parallel=max(1, int(_env("THREAD_RESCUE_MAX_PARALLEL", "2"))),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",
