@@ -183,6 +183,7 @@ def locate_origin(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
     if rfq.origin or rfq.door_to_port:
         return rfq
     network = set(pickup_zones().values())
+    # Only the current request contributes airports; quoted subjects are historical.
     current = current_message(mail.body, mail.subject)
     text = f"{current.subject}\n{current.facts}"
     found = {c for c in re.findall(r"\b[A-Z]{3}\b", text) if c in network}
