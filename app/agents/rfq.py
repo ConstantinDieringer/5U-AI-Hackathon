@@ -46,7 +46,14 @@ from app.models import Mail, RateOption, Rfq, RfqDraft
 from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import portal_result
-from app.pricing.pricing import most_balanced, pick, resolve_origin, sheet_options, to_minor
+from app.pricing.pricing import (
+    most_balanced,
+    pick,
+    resolve_origin,
+    sheet_options,
+    to_minor,
+)
+from app.pricing.pricing import today as pricing_today
 from app.pricing.reference import (
     Carrier,
     carrier_by_email,
@@ -491,9 +498,22 @@ _CUTOFF_NOTICES = {
 }
 
 
+# CUTOFF_QUESTION_NOTICE: questions about the latest hand-over time (round 43, Hofmann:
+# "the latest drop-off time at HAM") are cutoff questions too
+_CUTOFF_QUESTIONS = re.compile(
+    r"\b(?:latest|last|spätest\w*|letzte\w*)\b[^.?!\n]{0,30}"
+    r"\b(?:drop[ -]?off|delivery|hand[ -]?over|anliefer\w*|abgabe\w*|übergabe\w*)"
+    r"|\bdrop[ -]?off\s+(?:time|deadline)|\banlieferzeit\b",
+    re.IGNORECASE,
+)
+
+
 def _with_cutoff_notice(body: str, rfq: Rfq) -> str:
     """No carrier cutoff is stored: explicitly leave requested acceptance deadlines open."""
-    if not any(_CUTOFF_TERMS.search(q) for q in rfq.customer_questions + rfq.service_constraints):
+    asked = rfq.customer_questions + rfq.service_constraints
+    if not any(_CUTOFF_TERMS.search(q) for q in asked) and not (
+        settings.cutoff_question_notice and any(_CUTOFF_QUESTIONS.search(q) for q in asked)
+    ):
         return body
     lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
     notice = _CUTOFF_NOTICES[lang]
@@ -1219,6 +1239,23 @@ def _handle(mail: Mail, sid: int) -> None:
     _price_and_quote(mail, sid, rfq, origin, t0, mode)
 
 
+def _sheets(rfq: Rfq) -> list[RateOption]:
+    """Rate-sheet options. TARIFF_ON_READY_DATE: for a ready date after today, an airline's
+    sheet valid on that date (a December tariff for a 2.12 shipment) replaces today's offer;
+    airlines without one keep today's. Default: validity against today only."""
+    today = sheet_options(rfq)
+    if not settings.tariff_on_ready_date or not rfq.ready_date:
+        return today
+    try:
+        ready = date.fromisoformat(rfq.ready_date[:10])
+    except ValueError:
+        return today
+    if ready <= pricing_today():
+        return today
+    later = {o.airline: o for o in sheet_options(rfq, on=ready)}
+    return [later.pop(o.airline, o) for o in today] + list(later.values())
+
+
 _FALLBACK_BLOCKERS = {"dangerous_goods", "pickup_zip", "weight_kg", "volume_cbm", "lots"}
 
 
@@ -1294,6 +1331,65 @@ def quote_without_answer(sid: int, reason: str) -> bool:
     return True
 
 
+def _all_excluded(rfq: Rfq, origin: str, banned: set[str]) -> bool:
+    """Every carrier that serves the lane (sheet, portal, email-only) is one the customer
+    refused. Without exclusions on the lane this is an ordinary missing price."""
+    lane = {a.name.lower() for a in airlines_for(origin, rfq.destination)}
+    lane |= {o.airline.lower() for o in sheet_options(rfq)}
+    return bool(banned) and bool(lane) and lane <= banned
+
+
+def _tell_all_excluded(mail: Mail, sid: int, rfq: Rfq) -> None:
+    """ALL_EXCLUDED_NOTICE: no quote is possible without a refused carrier. Say so in the
+    thread (no price, no carrier names, as in quotes) and flag the session for a person."""
+    db.emit(
+        "needs_human",
+        "Alle Carrier der Strecke vom Kunden ausgeschlossen: Kunde informiert, bitte prüfen",
+        sid,
+        level="error",
+    )
+    if db.is_paused(sid) or db.is_manual(sid):
+        return
+    name = rfq.customer_name if rfq.customer_name and not has_template_artifacts(
+        rfq.customer_name
+    ) else None
+    if (rfq.language or "").lower().startswith("de"):
+        body = (
+            f"{'Hallo ' + name if name else 'Guten Tag'},\n\n"
+            "vielen Dank für Ihre Anfrage. Wir haben Ihre Wünsche zu den Fluggesellschaften "
+            f"berücksichtigt. Auf der Strecke von {resolve_origin(rfq)} nach {rfq.destination} "
+            "fliegen jedoch nur Fluggesellschaften, die Sie ausgeschlossen haben, daher können "
+            "wir Ihnen im Moment kein Angebot senden.\n\n"
+            "Wenn eine davon doch infrage kommt oder ein anderer Abflughafen passt, antworten "
+            "Sie einfach auf diese Mail, dann melden wir uns sofort.\n\n"
+            f"{SIGNATURE}\n"
+        )
+    else:
+        body = (
+            f"{'Hi ' + name if name else 'Hello'},\n\n"
+            "thank you for your request. We have taken your wishes about the airlines into "
+            f"account. On the route from {resolve_origin(rfq)} to {rfq.destination}, however, "
+            "every airline we can offer is one you asked us not to use, so we cannot send you "
+            "an offer right now.\n\n"
+            "If one of them is acceptable after all, or another departure airport works for "
+            "you, just reply to this email and we will come back to you right away.\n\n"
+            f"{SIGNATURE}\n"
+        )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
+    db.record_outgoing(
+        mail_id=int(sent["id"]),
+        recipient=mail.sender,
+        subject=subject,
+        body=body,
+        category="notice",
+        session_id=sid,
+        references=[*mail.references, mail.id],
+        in_reply_to=mail.id,
+        raw=sent,
+    )
+
+
 def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str) -> None:
     """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send."""
     # customer carrier preferences (round 10820, excluded_airline): stored per customer,
@@ -1355,7 +1451,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
             level="warn",
             errors=portal.errors,
         )
-    air = [o for o in sheet_options(rfq) + portal.options if o.airline.lower() not in banned]
+    air = [o for o in _sheets(rfq) + portal.options if o.airline.lower() not in banned]
     db.emit("priced", f"{len(air)} Preise aus Tarifblatt und Portal", sid)
 
     bids.wait(sid, pricing_deadline - time.time())
@@ -1412,6 +1508,8 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
     if choice is None:
         db.emit("no_price", "Kein Preis gefunden, kein Angebot", sid, level="error")
         db.set_status(sid, "error", "kein Preis")
+        if settings.all_excluded_notice and _all_excluded(rfq, origin, banned):
+            _tell_all_excluded(mail, sid, rfq)
         return
     truck = best_truck(offers) if rfq.door_to_port else None
     if rfq.door_to_port and truck is None:

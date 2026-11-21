@@ -21,7 +21,7 @@ import threading
 from decimal import Decimal
 from typing import Any
 
-from app import db, hackloop
+from app import config, db, hackloop
 from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
@@ -71,11 +71,24 @@ def own_text(body: str) -> str:
     return current_message(body).text
 
 
+# REVISION_NOT_ACCEPTANCE: "sounds good, but quote the fastest instead", "mit 800 kg statt
+# 640 kg" asks for a different offer; booking the old one would be wrong, and a second quote
+# in the thread never counts
+_REVISION = re.compile(
+    r"\binstead\b|\bstatt\b|\banstelle\b|\brevis\w*|\bupdated?\s+(?:weight|quote|offer|figures)"
+    r"|\b(?:also|additionally)\s+(?:quote|send|price)|\b(?:another|second|new)\s+(?:quote|offer)"
+    r"|\bneues?\s+angebot|\bnoch\s+ein\w*\s+angebot|\bgeändert",
+    re.IGNORECASE,
+)
+
+
 def is_acceptance(body: str) -> bool | None:
     """True = accepts, False = declines, None = unclear (left to a human)."""
     text = own_text(body)
     if _DECLINE.search(text):
         return False
+    if config.settings.revision_not_acceptance and _REVISION.search(text):
+        return None
     yes, no = bool(_YES.search(text)), bool(_NO.search(text))
     if yes and not no:
         return True

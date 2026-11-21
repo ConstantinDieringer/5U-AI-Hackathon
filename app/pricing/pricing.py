@@ -167,6 +167,11 @@ def resolve_origin(rfq: Rfq) -> str | None:
     return origin
 
 
+def today() -> date:
+    """The pricing day (UTC): tariff validity is checked against it."""
+    return datetime.now(UTC).date()
+
+
 def sheet_options(
     rfq: Rfq, use_breakpoints: bool | None = None, on: date | None = None
 ) -> list[RateOption]:
@@ -178,7 +183,7 @@ def sheet_options(
     if origin is None:
         return []
     dest = rfq.destination.upper()
-    day = on or datetime.now(UTC).date()
+    day = on or today()
     out: list[RateOption] = []
     use_breakpoints = settings.use_breakpoints if use_breakpoints is None else use_breakpoints
     # A newer overlapping tariff replaces the older offer for that airline on this day.

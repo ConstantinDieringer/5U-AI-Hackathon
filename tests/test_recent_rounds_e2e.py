@@ -146,30 +146,30 @@ class World:
         self.attachments.append(path)
 
 
-@pytest.fixture(params=[False, True], ids=["clarify_cap_two", "clarify_once"])
-def world(request, tmp_path, monkeypatch) -> World:
-    """Runs every scenario with today's two-question cap and with CLARIFY_ONCE."""
+def build_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **changes: Any) -> World:
+    """A fresh database and every stub; `changes` override the settings under test."""
     db.init_db(str(tmp_path / "e2e.db"))
     w = World(tmp_path)
     settings = dataclasses.replace(
         config.settings,
         rfq_validation_mode="enforce",
         trucker_balance="ratio",
-        clarify_once=request.param,
+        clarify_once=False,
         self_delivery_recovery=False,
         ask_pickup_zip=False,
         bid_next_break=False,
         price_adjust_pct=0,
     )
+    settings = dataclasses.replace(settings, **changes)
 
-    def configure(**changes: Any) -> None:
+    def configure(**more: Any) -> None:
         for module in (config, rfq, clarification, bids):
             monkeypatch.setattr(
-                module, "settings", dataclasses.replace(settings, **changes), raising=False
+                module, "settings", dataclasses.replace(settings, **more), raising=False
             )
 
     configure()
-    w.settings_clarify_once = request.param  # type: ignore[attr-defined]
+    w.settings_clarify_once = settings.clarify_once  # type: ignore[attr-defined]
     w.configure = configure  # type: ignore[attr-defined]
     monkeypatch.setattr(hackloop, "_request", w.blocked)
     monkeypatch.setattr(hackloop, "send", w.send)
@@ -188,6 +188,12 @@ def world(request, tmp_path, monkeypatch) -> World:
     monkeypatch.setattr(bids, "request", bid_request)
     monkeypatch.setattr(rfq.bids, "wait", lambda *_a, **_k: [])
     return w
+
+
+@pytest.fixture(params=[False, True], ids=["clarify_cap_two", "clarify_once"])
+def world(request, tmp_path, monkeypatch) -> World:
+    """Runs every scenario with today's two-question cap and with CLARIFY_ONCE."""
+    return build_world(tmp_path, monkeypatch, clarify_once=request.param)
 
 
 def _quote(sid: int) -> dict[str, Any] | None:

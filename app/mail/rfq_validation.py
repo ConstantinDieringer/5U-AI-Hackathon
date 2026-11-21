@@ -220,7 +220,75 @@ def _stated_departures(active, destination, supported):
     return found
 
 
-def numeric_facts(text):
+_THOUSANDS = r"\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?"
+_UNIT = r"kgs?|kilos?|lbs?|t|tonnes?|tons?"
+# UNIT_EVIDENCE: extra ways a mail states the totals (none of the 31 stored rounds uses them)
+_UNIT_WEIGHT = [
+    rf"({_THOUSANDS})\s*({_UNIT})\s+(?:gross|brutto)\b",
+    (
+        r"(?:(?<![a-zäöü])bruttogewicht|(?<![a-zäöü])gewicht|(?<!net )\bweight)"
+        rf"\s*(?:\(kg\))?\s*(?:(?:of|is|von|beträgt)\s+)?(?:[:|]\s*)*({_THOUSANDS})\s*({_UNIT})\b"
+    ),
+]
+_UNIT_VOLUME = rf"(?:volumen|volume)\s*(?:\(cbm\))?\s*(?:[:|]\s*)*({_NUM})\s*(?:cbm|m3|m³)\b"
+_COUNT = re.compile(
+    r"\b(\d+)\s*(?:pieces|pcs|pallets?|cartons?|boxes|crates|cases|colli|packages|stück"
+    r"|paletten|kartons|kisten)\b",
+    re.IGNORECASE,
+)
+_DIMS = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*cm\b",
+    re.IGNORECASE,
+)
+_EACH = re.compile(
+    r"\b(?:each|per (?:piece|pallet|carton)|je|pro (?:stück|palette))\b", re.IGNORECASE
+)
+_TO_KG = {"l": Decimal("0.45359237"), "t": Decimal(1000)}
+
+
+def _readings(raw):
+    """1,228 / 1.228 can be thousands (1228) or a decimal (1.228); only the thousands reading
+    may be confirmed by the extraction (a 1.2 kg air shipment would price at the minimum)."""
+    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", raw):
+        return {Decimal(re.sub(r"[.,]", "", raw)), None}
+    return {Decimal(raw.replace(",", "."))}
+
+
+def _unit_facts(text, expect):
+    """UNIT_EVIDENCE: weight in kg, lbs or tonnes with thousands separators, and volume from
+    'N pieces, each L x W x H cm'. A number readable two ways counts only when the extraction
+    (`expect`) agrees with exactly one reading; the mail always supplies the figure."""
+    found = {}
+    for pattern in _UNIT_WEIGHT:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        unit = match[2].lower()
+        factor = _TO_KG.get(unit[0], Decimal(1))
+        readings = _readings(match[1])
+        want = (expect or {}).get("weight_kg")
+        if None in readings:  # ambiguous: the extraction must agree with the thousands reading
+            readings = {
+                v
+                for v in readings - {None}
+                if want is not None and abs(v * factor - Decimal(str(want))) <= Decimal("0.1")
+            }
+        values = {v * factor for v in readings}
+        if len(values) == 1:
+            found["weight_kg"] = next(iter(values))
+        break
+    if match := re.search(_UNIT_VOLUME, text, re.IGNORECASE):
+        found["volume_cbm"] = Decimal(match[1].replace(",", "."))
+    dims, counts = _DIMS.findall(text), {int(c) for c in _COUNT.findall(text)}
+    if "volume_cbm" not in found and len(dims) == 1 and len(counts) == 1 and _EACH.search(text):
+        length, width, height = (Decimal(x.replace(",", ".")) for x in dims[0])
+        found["volume_cbm"] = (
+            next(iter(counts)) * length * width * height / Decimal(1_000_000)
+        ).quantize(Decimal("0.0001"))
+    return found
+
+
+def numeric_facts(text, expect=None):
     result = {}
     patterns = {
         "weight_kg": [
@@ -252,6 +320,9 @@ def numeric_facts(text):
                     continue
                 result[field] = amount
                 break
+    if config.settings.unit_evidence:
+        for field, value in _unit_facts(text, expect).items():
+            result.setdefault(field, value)
     return result
 
 
@@ -420,8 +491,12 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
             re.IGNORECASE | re.MULTILINE,
         )
     )
-    values = numeric_facts(active) if not has_lots else {}
-    if has_lots and totals is None and not {"weight_kg", "volume_cbm"} <= corrections.keys():
+    values = numeric_facts(active, expect=data) if not has_lots else {}
+    if (
+        has_lots
+        and totals is None
+        and not {"weight_kg", "volume_cbm"} <= corrections.keys()
+    ):
         issues.append(
             {
                 "field": "lots",
