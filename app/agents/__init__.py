@@ -13,6 +13,7 @@ AGENTS = (
     "rfq",
     "tariff",
     "tracking",
+    "watchdog",
 )
 
 

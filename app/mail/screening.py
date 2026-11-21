@@ -134,6 +134,28 @@ _AI = re.compile(
     r"<\|?(?:im_start|system)\|?>|\bjailbreak\b|\bprompt injection\b",
     _FLAGS,
 )
+# instructions to keep mailing: a mail that tells us to answer every message, again and again
+# or forever wants a loop (and our gateway budget), never a freight quote
+_LOOP = re.compile(
+    r"\b(?:reply|respond|answer|write back|send (?:me |us )?(?:a |an )?(?:reply|answer|mail|email))"
+    r" (?:to )?(?:every|each|all) (?:of )?(?:my |our |these |this |future |following )?"
+    r"(?:single )?(?:mails?|e-?mails?|messages?)\b|"
+    r"\b(?:keep|continue|carry on) (?:on )?(?:replying|responding|answering|sending|emailing|"
+    r"mailing|writing|asking)\b[^.?!\n]{0,40}?\b(?:until (?:i|we) (?:say|tell)|forever|"
+    r"no matter what|indefinitely|non-?stop|without stopping|every (?:\d+ )?(?:seconds?|minutes?))|"
+    r"\b(?:reply|respond|answer|send|write)\b[^.?!\n]{0,40}?\b(?:every|each) "
+    r"(?:\d+ )?(?:seconds?|minutes?|time (?:you|i|we) (?:get|receive|read))\b|"
+    r"\b(?:repeat|resend|re-send|send)\b[^.?!\n]{0,40}?\b(?:again and again|over and over|"
+    r"forever|indefinitely|repeatedly|in a loop|\d{2,} times|until i (?:say|tell) (?:you )?stop)\b|"
+    r"\b(?:never|don'?t|do not) stop (?:replying|responding|answering|sending|writing|mailing)\b|"
+    r"\b(?:endless|infinite|never-ending) (?:loop|chain|conversation|reply)\b|"
+    r"\bantwort\w* (?:sie |du )?(?:immer |bitte )?(?:auf )?jede (?:einzelne )?"
+    r"(?:mail|e-mail|nachricht)\b|"
+    r"\b(?:hör|hoer)\w* (?:sie |du )?nicht auf,? (?:zu |mir zu |uns zu )?(?:antworten|schreiben|senden)\b|"
+    r"\b(?:immer wieder|endlos|unendlich oft) (?:antworten|schreiben|senden|zur[üu]ckschreiben)\b|"
+    r"\bendlosschleife\b",
+    _FLAGS,
+)
 _SOLICIT = re.compile(
     r"\b(?:book|schedule|set up|arrange|grab)\b[^.?!\n]{0,30}?\b(?:\d+|a few|a quick|"
     r"a short)\s*-?\s*min(?:ute)?s?\b|\b(?:a|quick|short|free|live|product|personal) demo\b|"
@@ -307,6 +329,8 @@ def signals(mail: Mail, ctx: Context) -> list[Signal]:
         found.append(Signal("payment_change", 1.0, f"'{m.group(0)}'"))
     if m := _AI.search(text):
         found.append(Signal("ai_instruction", 1.0, f"text addressed to an AI: '{m.group(0)}'"))
+    if m := _LOOP.search(text):
+        found.append(Signal("loop_instruction", 1.0, f"asks for endless replies: '{m.group(0)}'"))
     for att in mail.attachments:
         name = str(att.get("filename") or "")
         ctype = str(att.get("content_type") or "").lower()

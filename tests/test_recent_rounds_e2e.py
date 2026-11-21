@@ -330,9 +330,10 @@ def test_round_35_asks_once_then_prices_the_attachment_weight(world: World) -> N
 
 
 def test_round_35_today_without_the_setting(world: World) -> None:
-    """CONFLICT_SOURCE_ANSWER=false (default): the answer names no number, so today's cap asks
-    a second time and CLARIFY_ONCE stops for a person. Neither quotes."""
+    """CONFLICT_SOURCE_ANSWER=false (default true since 21.11): the answer names no number, so
+    the cap asks a second time and CLARIFY_ONCE stops for a person. Neither quotes."""
     w = world
+    w.configure(conflict_source_answer=False)
     _round_35(w)
     assert _quote(8859) is None
     events = {e["kind"] for e in db.get_session(8859)["events"]}
