@@ -507,11 +507,8 @@ def test_booking_ack_is_free_but_a_new_question_still_reaches_recovery(case, mon
     )
     ingest(ack, "customer")
     calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
-    routed = []
-    monkeypatch.setattr(booking, "handle_reply", lambda *args: routed.append(args))
     rescue.take_over(ack, SID)
-    assert calls == []  # a pure thanks is free; a status question goes to the booking tool
-    assert len(routed) == (1 if extra else 0)
+    assert len(calls) == (1 if extra else 0)
 
 
 def test_recovery_context_keeps_carrier_evidence_without_duplicate_audit(case):

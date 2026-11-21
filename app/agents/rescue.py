@@ -531,16 +531,12 @@ def recover_request(
 
 
 def _rules_decide(session: dict, mail: Mail) -> bool:
-    """After a quote: input the booking tool settles by its own rules, without a plan."""
-    from app.agents import booking, tracking
+    """A clear yes to the open offer: the booking tool settles it by its own rules, without
+    a plan. Questions, conditions and anything after the booking stay with the model."""
+    from app.agents import booking
 
-    if not session["quotes"]:
+    if not session["quotes"] or session["bookings"]:
         return False
-    if any(b["status"] in ("booked", "confirmed") for b in session["bookings"]):
-        # an open price-change question is answered by yes/no, which may need the model
-        return session["bookings"][0].get(
-            "customer_state"
-        ) != booking.PRICE_ASKED and tracking.is_status_question(mail.body)
     return booking.is_acceptance(mail.body) is True
 
 
@@ -559,8 +555,8 @@ def take_over(mail: Mail, sid: int) -> bool:
         else RfqDraft(facts=session["request"] or {})
     )
     if _rules_decide(session, mail) and db.kv_claim(f"rescue.rules.{sid}.{mail.id}"):
-        # A clear yes or a status question needs no model: the booking tool decides both by
-        # rules anyway. Once per mail; if that leaves it unanswered, the model path follows.
+        # A clear yes needs no model: the booking tool decides it by rules anyway. Once per
+        # mail; if that leaves it unanswered, the model path follows.
         db.rescue_answer_seen(sid, mail.id)
         if row:
             db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})
