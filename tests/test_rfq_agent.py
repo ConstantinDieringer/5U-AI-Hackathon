@@ -423,7 +423,11 @@ def test_handle_rfq_door_to_port_with_trucker_bid(stub, monkeypatch) -> None:
             [],
         ),
     )
-    mail = dataclasses.replace(_rfq_mail(), subject="FW: AMS TLV 104 crates")
+    mail = dataclasses.replace(
+        _rfq_mail(),
+        subject="FW: AMS TLV 104 crates",
+        body=f"{BODY}\nPlease send the offer as PDF.",  # QUOTE_PDF_ON_REQUEST
+    )
 
     def reply() -> None:  # the trucker answers while the agent waits
         while not stub.sent:
