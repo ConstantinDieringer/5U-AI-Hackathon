@@ -241,6 +241,39 @@ def init_db(path: str | None = None) -> None:
     c.executescript(SCHEMA)
 
 
+def import_database(data: bytes) -> dict[str, Any]:
+    """Swap in an uploaded SQLite file as the database (see /api/admin/import-db)."""
+    tmp = f"{_db_path}.upload"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    check = sqlite3.connect(tmp)
+    try:
+        tables = {r[0] for r in check.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"sessions", "mails", "events"} <= tables:
+            raise ValueError("uploaded DB has no forwarder schema")
+        counts = {
+            t: check.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in ("sessions", "mails", "quotes", "bookings")
+        }
+        check.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        check.close()
+    c = getattr(_local, "c", None)
+    if c is not None:
+        c.close()
+        _local.c = None
+    for suffix in ("-wal", "-shm"):
+        try:
+            os.remove(_db_path + suffix)
+        except FileNotFoundError:
+            pass
+    os.replace(tmp, _db_path)
+    init_db(_db_path)  # new generation: every thread reopens; runs migrations
+    since = kv_get("mail.next_since_id")
+    log.warning("database imported: %s, since_id=%s", counts, since)
+    return {"ok": True, "counts": counts, "since_id": since}
+
+
 def _rows(cur: sqlite3.Cursor) -> list[dict[str, Any]]:
     return [dict(r) for r in cur.fetchall()]
 

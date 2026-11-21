@@ -34,6 +34,7 @@ class Settings:
     deadline_check_every_s: float
     ui_user: str
     ui_password: str
+    agents_enabled: bool
     quote_target_s: float
     bid_max_wait_s: float
     runtime_dir: Path
@@ -62,7 +63,9 @@ settings = Settings(
     board_sync_every_s=float(_env("BOARD_SYNC_EVERY_S", "60")),
     deadline_check_every_s=float(_env("DEADLINE_CHECK_EVERY_S", "10")),
     ui_user=_env("UI_USER", "team"),
-    ui_password=_env("UI_PASSWORD"),  # set it whenever the UI is reachable from the internet
+    ui_password=_env("UI_PASSWORD"),
+    # false = UI only: no polling, no sending, no catch-up (used while moving the DB online)
+    agents_enabled=_env("AGENTS_ENABLED", "true").lower() not in ("0", "false", "no", "off"),  # set it whenever the UI is reachable from the internet
     quote_target_s=float(_env("QUOTE_TARGET_S", "100")),
     bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "240")),
     runtime_dir=Path(

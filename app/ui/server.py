@@ -241,6 +241,23 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     return {"ok": True, "mail_id": sent_id}
 
 
+MAX_DB_BYTES = 500 * 1024 * 1024
+
+
+@app.post("/api/admin/import-db")
+async def api_import_db(request: Request) -> dict[str, Any]:
+    """Replace the database with an uploaded SQLite file (moving the local DB online).
+    Only while AGENTS_ENABLED=false, so nothing polls or sends during the swap.
+        curl -u team:PW --data-binary @data/forwarder.db https://<host>/api/admin/import-db
+    """
+    if settings.agents_enabled:
+        raise HTTPException(409, "set AGENTS_ENABLED=false first")
+    data = await request.body()
+    if not data.startswith(b"SQLite format 3\x00") or len(data) > MAX_DB_BYTES:
+        raise HTTPException(400, "not a SQLite database (or too large)")
+    return db.import_database(data)
+
+
 @app.get("/api/health")
 def api_health() -> dict[str, Any]:
     return {"ok": True, "last_event": (db.events_after(0, limit=1) or [{}])[0].get("id")}
