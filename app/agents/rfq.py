@@ -162,6 +162,45 @@ _SELF_DELIVERY = re.compile(
 )
 
 
+_NETWORK_CITY = {
+    "frankfurt": "FRA",
+    "munich": "MUC",
+    "münchen": "MUC",
+    "muenchen": "MUC",
+    "hamburg": "HAM",
+    "düsseldorf": "DUS",
+    "duesseldorf": "DUS",
+    "dusseldorf": "DUS",
+    "cologne": "CGN",
+    "köln": "CGN",
+    "koeln": "CGN",
+    "stuttgart": "STR",
+}
+
+
+def locate_origin(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
+    """Airport-to-airport request whose origin the LLM left empty (round 5844: "We'll
+    deliver the shipment to FRA ourselves", subject "FRA–DEL"): take the one network
+    airport named in the current text or subject. No LLM."""
+    if rfq.origin or rfq.door_to_port:
+        return rfq
+    network = set(pickup_zones().values())
+    text = f"{mail.subject or ''}\n{_clean(mail.body)}"
+    found = {c for c in re.findall(r"\b[A-Z]{3}\b", text) if c in network}
+    low = text.lower()
+    found |= {
+        code for city, code in _NETWORK_CITY.items() if re.search(rf"\b{city}\b", low)
+    }
+    found.discard((rfq.destination or "").upper())
+    if len(found) != 1:
+        return rfq
+    origin = found.pop()
+    db.emit(
+        "origin_from_text", f"Abflughafen aus dem Text: {origin}", sid, level="warn"
+    )
+    return rfq.model_copy(update={"origin": origin})
+
+
 def locate_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
     """Door-to-port without a ZIP (rounds 3627, 3930): find the pickup area in code, no LLM.
     Order: an area named in the new text or signature, then the customer's last pickup.
@@ -905,6 +944,7 @@ def _handle(mail: Mail, sid: int) -> None:
     rfq = rfq.model_copy(update={"language": language.detect(mail.body)})
     if mode != "enforce":
         rfq = locate_pickup(rfq, mail, sid)
+    rfq = locate_origin(rfq, mail, sid)
     db.set_request(sid, rfq.model_dump())
     db.emit(
         "extract_done",

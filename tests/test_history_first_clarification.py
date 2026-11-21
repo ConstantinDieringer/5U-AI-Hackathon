@@ -25,7 +25,9 @@ def mail(mid, body, sid=None, sender=OWNER):
         references=[sid] if sid else [],
         received_at=now,
     )
-    return Mail(mid, sid or mid, sender, "austrian-power@hackloop.mail", "RFQ", body, now)
+    return Mail(
+        mid, sid or mid, sender, "austrian-power@hackloop.mail", "RFQ", body, now
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -107,7 +109,9 @@ def test_wrong_sender_cannot_resolve_question(sent):
     root = mail(1, "Origin: FRA\nDestination: JFK")
     _, draft = validate(root, RfqDraft(facts={"origin": "FRA", "destination": "JFK"}))
     clarification.request(root, 1, draft)
-    stranger = mail(3, "Gross weight: 100 kg\nVolume: 2 cbm", sid=1, sender="other@hackloop.mail")
+    stranger = mail(
+        3, "Gross weight: 100 kg\nVolume: 2 cbm", sid=1, sender="other@hackloop.mail"
+    )
     assert clarification.handle_reply(stranger, 1)
     assert db.validation_get(1)["state"] == "awaiting_clarification"
     assert len(sent) == 1

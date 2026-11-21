@@ -128,3 +128,6 @@ def _match_session(r: dict[str, Any]) -> int | None:
 def start() -> None:
     for target in (deadline_loop, board_loop):
         threading.Thread(target=target, name=target.__name__, daemon=True).start()
+    from app.ui import alerts
+
+    alerts.start()  # Slack #sos, only with SLACK_SOS_WEBHOOK

@@ -71,7 +71,9 @@ def text_for(draft, lang):
 def recover_history(mail, sid, draft):
     """Only fill missing fields from this customer's same shipment thread, never conflicts."""
     history = db.customer_mail_history(sid, mail.sender, mail.id)
-    db.emit("history_checked", f"{len(history)} frühere Kundenmails im Thread geprüft", sid)
+    db.emit(
+        "history_checked", f"{len(history)} frühere Kundenmails im Thread geprüft", sid
+    )
     missing = {
         i["field"]
         for i in draft.issues
@@ -85,11 +87,15 @@ def recover_history(mail, sid, draft):
             ("origin", "origin|departure|abflug"),
             ("destination", "destination|ziel"),
         ):
-            match = re.search(rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", text, re.IGNORECASE)
+            match = re.search(
+                rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", text, re.IGNORECASE
+            )
             if match:
                 facts[field] = match[1].upper()
         if match := re.search(
-            r"(?:pickup\s*(?:zip|postal code)|abhol.*?plz)\s*[:=]?\s*(\d{5})", text, re.IGNORECASE
+            r"(?:pickup\s*(?:zip|postal code)|abhol.*?plz)\s*[:=]?\s*(\d{5})",
+            text,
+            re.IGNORECASE,
         ):
             facts["pickup_zip"] = match[1]
         for field in missing & facts.keys():
@@ -110,7 +116,10 @@ def recover_history(mail, sid, draft):
         corrections=corrections,
     )
     checked.evidence.update(
-        {"corrections": corrections, "attachment_texts": draft.evidence.get("attachment_texts", {})}
+        {
+            "corrections": corrections,
+            "attachment_texts": draft.evidence.get("attachment_texts", {}),
+        }
     )
     return result, checked
 
@@ -176,7 +185,11 @@ def request(mail, sid, draft):
 
 def ask(mail, sid, workflow, en, de):
     history = db.customer_mail_history(sid, mail.sender, mail.id)
-    db.emit("history_checked", f"{len(history)} frühere Kundenmails vor Rückfrage geprüft", sid)
+    db.emit(
+        "history_checked",
+        f"{len(history)} frühere Kundenmails vor Rückfrage geprüft",
+        sid,
+    )
     if db.is_paused(sid) or db.is_manual(sid):
         return False
     draft = RfqDraft(
@@ -232,7 +245,9 @@ def handle_reply(mail, sid, *, resume=False):
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
-    corrections.update({k: float(v) for k, v in numeric_facts(own).items() if k in asked})
+    corrections.update(
+        {k: float(v) for k, v in numeric_facts(own).items() if k in asked}
+    )
     if "lots" in asked:
         from app.mail.lots import parse_lots
 
@@ -311,7 +326,9 @@ def catch_up():
                 sid,
                 level="error",
             )
-        elif row["draft"].get("evidence", {}).get("workflow", "rfq") != "rfq" or not expired(sid):
+        elif row["draft"].get("evidence", {}).get(
+            "workflow", "rfq"
+        ) != "rfq" or not expired(sid):
             request(Mail(**row["root"]), sid, RfqDraft.model_validate(row["draft"]))
 
 
