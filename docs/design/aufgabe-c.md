@@ -258,6 +258,8 @@ record_outgoing(api_mail: dict, session_id: int | None, category: str) -> None
 get_session(session_id) -> dict ; list_sessions(status=None, q=None, limit=100) -> list[dict]
 set_status(session_id, status) ; set_request(session_id, request: dict)
 is_paused(session_id) -> bool ; is_manual(session_id) -> bool   # Agents fragen vor jedem Senden
+claim_quote_send(session_id) -> bool   # atomar: UPDATE sessions SET first_reply_at=now WHERE id=? AND mode='auto'
+                                       #   AND paused=0 AND first_reply_at IS NULL (+ global_pause prüfen); nur bei True senden
 # Geschäft
 record_quote(session_id, option: RateOption, alternatives: list, mail_id) -> int
 record_booking(session_id, resp: dict) -> int ; update_booking_status(team_reference, status)
@@ -271,6 +273,8 @@ kv_get(key, default=None) ; kv_set(key, value)                  # z. B. since_id
 # Dashboard
 stats() -> dict
 ```
+
+**Sperre gegen Doppel-Quote:** Agent und manuelle Antwort senden eine Quote nur, wenn `claim_quote_send()` bzw. `takeover` die Session vorher per bedingtem `UPDATE` reserviert hat. Ein reines `is_paused()`-Prüfen reicht nicht, weil Mensch und Agent sonst im selben Moment senden können – und nur die erste Quote zählt.
 
 **Regel:** `ingest_mail`, `record_outgoing`, `record_quote`, `record_booking`, `set_status` schreiben **selbst** das passende Event. A und B müssen dafür nichts extra tun.
 
