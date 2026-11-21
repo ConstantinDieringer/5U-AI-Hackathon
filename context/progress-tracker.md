@@ -14,6 +14,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - Round 64 carrier documents additionally use `Total, all-in` and adjacent label/value rows. Explicit totals now support those ordinary table layouts without scanning past an unrelated row; all four observed document totals replay correctly. Production no-answer cause remains unverified beyond the already reproduced body-only bid gap.
+- Carrier offers in any common attachment (PR #48): `app/mail/documents.py` reads xls/csv/rtf/odt/ods/eml/doc/msg besides pdf/docx/xlsx/txt; mp3/wav and scans are transcribed via the gateway (own thread, cached, outside the session LLM budget, max 5/session) and must agree with every other source. Airline replies with attachments route as bids when threaded or `[AP-n]`-tagged. Kill switch `ATTACHMENT_TRANSCRIPTION=false`.
 
 - Round 63 expired without a quote after carrier prices moved into attachments. Carrier bids now reuse bounded document reading and require an explicit unique total/currency, keeping timing from the same evidence. Unsupported audio, unreadable sources and conflicting totals remain visible and unpriced; actual production failure attribution is not verified without logs.
 

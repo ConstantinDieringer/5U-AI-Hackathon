@@ -115,6 +115,9 @@ class Settings:
     outbound_burst_s: float
     outbound_session_max: int
     outbound_duplicate_s: float
+    llm_audio_model: str
+    llm_vision_model: str
+    attachment_transcription: bool
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -231,6 +234,12 @@ settings = Settings(
     outbound_burst_s=float(_env("OUTBOUND_BURST_S", "120")),
     outbound_session_max=max(1, int(_env("OUTBOUND_SESSION_MAX", "15"))),  # per thread
     outbound_duplicate_s=float(_env("OUTBOUND_DUPLICATE_S", "1800")),  # same text again
+    # voice messages (mp3/wav) are read by an audio model via chat completions (input_audio);
+    # scanned pages and photos by a vision model (empty = LLM_MODEL)
+    llm_audio_model=_env("LLM_AUDIO_MODEL", "gpt-4o-mini-audio-preview"),
+    llm_vision_model=_env("LLM_VISION_MODEL"),
+    # false = never spend gateway calls on audio/scan attachments (text files still read)
+    attachment_transcription=_env("ATTACHMENT_TRANSCRIPTION", "true").lower() != "false",
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):

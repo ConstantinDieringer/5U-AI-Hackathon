@@ -354,7 +354,7 @@ def ask_pickup_zip(mail: Mail, sid: int, rfq: Rfq) -> None:
 def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
     """One gateway call; retry once with LLM_RETRY_MODEL when its output is unusable."""
     body = _clean(mail.body)
-    texts, media, problems = read_sources(mail)
+    texts, media, problems = read_sources(mail, session_id=session_id)
     db.kv_set(
         f"rfq.sources.{session_id}",
         json.dumps({"texts": texts, "problems": problems, "media": bool(media)}),
@@ -1197,7 +1197,7 @@ def _handle(mail: Mail, sid: int) -> None:
     prior = db.validation_get(sid)
     cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}"))
     if not cached:
-        texts, media, problems = read_sources(mail)
+        texts, media, problems = read_sources(mail, session_id=sid)
         cached = {"texts": texts, "problems": problems, "media": bool(media)}
     problems = list(cached.get("problems", []))
     if cached.get("media"):
