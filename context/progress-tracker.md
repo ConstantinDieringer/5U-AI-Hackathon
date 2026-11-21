@@ -8,7 +8,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Current Goal
 
-- By 16:00: receive and store every mail, show it live in the UI, portal lanes synced.
+- Part A: repo setup and mail intake (A1–A7).
+- Team goal by 16:00: receive and store every mail, show it live in the UI, portal lanes synced.
 
 ## Completed
 
@@ -23,7 +24,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## In Progress
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
-- Tasks A, Karim (mail poller, router) and B, Constantin (portal sync, lane index): status unknown in repo, no code pushed yet.
+- Task A, Karim: A1 repo setup (folders per TECH_SPEC §3, requirements, .env.example).
+- Task B, Constantin (portal sync, lane index): status unknown in repo.
 
 ## Next Up
 
