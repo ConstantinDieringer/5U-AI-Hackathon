@@ -100,6 +100,9 @@ class Settings:
     followup_max: int
     followup_window_s: float
     followup_check_every_s: float
+    phishing_gate_mode: str
+    phishing_gate_llm_mode: str
+    phishing_gate_model: str
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -194,7 +197,18 @@ settings = Settings(
     followup_max=max(0, int(_env("FOLLOWUP_MAX", "3"))),
     followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
     followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "2"))),
+    # phishing gate: off | shadow (classify and log, block nothing) | enforce
+    phishing_gate_mode=_env("PHISHING_GATE_MODE", "enforce").lower(),
+    # what an LLM-only verdict may do; it never does more than PHISHING_GATE_MODE allows
+    phishing_gate_llm_mode=_env("PHISHING_GATE_LLM_MODE", "shadow").lower(),
+    phishing_gate_model=_env("PHISHING_GATE_MODEL", "gpt-5-nano"),
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):
     raise ValueError("RFQ_VALIDATION_MODE must be shadow or enforce")
+for _name, _mode in (
+    ("PHISHING_GATE_MODE", settings.phishing_gate_mode),
+    ("PHISHING_GATE_LLM_MODE", settings.phishing_gate_llm_mode),
+):
+    if _mode not in ("off", "shadow", "enforce"):
+        raise ValueError(f"{_name} must be off, shadow or enforce")

@@ -245,6 +245,8 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 | `human_action` | C | "Pausiert von Mensch" / "Manuelle Antwort gesendet" |
 | `board_verdict` | C | "Board: accepted, 87 Punkte" |
 | `error` | alle | "Portal 429, Retry in 5 s" |
+| `phishing` | A (`poller`) | level error: "Phishing-Verdacht, keine Antwort: … Gründe: …" (Payload `mail_id`) |
+| `screening` | A (`poller`) | level warn: "Absender unklar, normale Verarbeitung läuft: …" |
 
 ---
 
@@ -296,6 +298,8 @@ stats() -> dict
 | POST | `/api/pause-all` · `/api/resume-all` | globaler Not-Aus für ausgehende Mails |
 | POST | `/api/sessions/{id}/handback` | `mode=auto`, Agent übernimmt wieder |
 | GET | `/api/stream` | Server-Sent Events aus `events`, unterstützt `Last-Event-ID` |
+| GET | `/api/quarantine` | vom Phishing-Gate blockierte, noch nicht freigegebene Mails |
+| POST | `/api/mails/{id}/release` | Quarantäne aufheben: normale Verarbeitung, Absender im Thread vertraut |
 
 **Streaming (bestätigt durch Recherche und lokalen Test):**
 - **FastAPI hat SSE eingebaut** (ab 0.135): `from fastapi.sse import EventSourceResponse, ServerSentEvent`. Kein `sse-starlette`, kein handgeschriebener `StreamingResponse`. Ping alle 15 s und die Header `Cache-Control: no-cache` / `X-Accel-Buffering: no` setzt FastAPI selbst. → `requirements.txt`: `fastapi>=0.135`.

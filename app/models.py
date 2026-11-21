@@ -61,6 +61,7 @@ class Category(str, Enum):
     PORTAL_REPLY = "portal_reply"
     TARIFF = "tariff"
     IGNORE = "ignore"
+    PHISHING = "phishing"  # quarantined by the phishing gate: stored, never answered
 
 
 class Rfq(BaseModel):

@@ -127,6 +127,7 @@ class Category(str, Enum):
     PORTAL_REPLY = "portal_reply"
     TARIFF = "tariff"
     IGNORE = "ignore"         # eigene Mails, fremde Teams, Unbekanntes
+    PHISHING = "phishing"     # vom Phishing-Gate gesperrt: gespeichert, nie beantwortet
 
 @dataclass
 class RateOption:             # Ergebnis aus Sheet, Portal oder Bid – immer gleiche Form
@@ -172,6 +173,8 @@ eingefrorene Komponente. Bei Altangeboten ohne Komponente wird kein Preis behaup
 Kundenangebote und Kundenbestätigungen behalten ihren Gesamtpreis.
 
 `clarification_answers(session_id,mail_id)` ergänzt den bestehenden `rfq_validation`-Ablauf als Antwort-Ledger. Es verhindert Replay-Duplikate über mehrere Rückfragerunden. Fehlende Felder werden zunächst anhand eindeutiger Kundenmails desselben Threads geprüft; Konflikte bleiben rückfragepflichtig. Teilantworten werden kumuliert, bei Restlücken wird die nächste Frage gespeichert und versendet. Neustart/Worker verarbeiten bereits gespeicherte, noch nicht zugeordnete Antworten. Unklare Buchungszusagen und nicht zuordenbares Tracking nutzen denselben Ablauf mit getrenntem Workflow-Typ. Keine Fristverlängerung und kein neues Quote-Claim durch Rückfragen. `RFQ_VALIDATION_MODE` ist standardmäßig `enforce`; explizites `shadow` bleibt als Diagnose-/Rollback-Option erhalten.
+
+`mail_screening(mail_id PK, sender, thread_root, verdict, layer, score, blocked, routed_as, reasons_json, detail_json, released_at, created_at)` ist das additive Protokoll des Phishing-Gates (`app/mail/screening.py`), einmal pro Mail vor jeder Aktion. Gesperrte Mails stehen mit `category='phishing'` in `mails`, öffnen keine Session und werden von Catch-ups, Historie, Served-Lanes- und Buchungs-Backfill ignoriert; `hackloop.send` verweigert Antworten auf sie. Freigabe stellt `routed_as` wieder her, öffnet die Session und vertraut dem Absender im Thread.
 
 `llm_calls.accounting_json` speichert abwärtskompatibel Usage-Details, Modellpreise und Kostenkomponenten pro Call. Migration ergänzt die nullable Spalte beim Start. `/api/sessions/{id}` ergänzt `llm_usage` mit Calls und RFQ-Summen. Cached Input wird abgezogen und separat bepreist; Reasoning bleibt Teil des Outputs. Historische Kosten bleiben erhalten, unbekannte Preise/Usage werden als unvollständig angezeigt. Preise sind USD-Schätzungen, keine bestätigten Gateway-Rechnungsbeträge.
 
@@ -240,6 +243,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
 - Routing, Preisrechnung, Auswahl und Tariflookup: **kein LLM**.
+- Phishing-Gate: Regeln (Schicht A) laufen vor jeder Aktion. Nur bei „unsure" ein Call `mail_screening` mit `PHISHING_GATE_MODEL` (Standard `gpt-5-nano`), `session_id=None` (zählt nicht gegen das Session-Limit), 2 s Timeout ohne Retry, ≤ 300 Tokens, Mail als begrenzter Datenblock. Fehler oder Timeout = unsure, nie phishing. `PHISHING_GATE_MODE` off|shadow|enforce (Standard enforce, sperrt Regel-Verdikte); `PHISHING_GATE_LLM_MODE` (Standard shadow) begrenzt LLM-Verdikte.
 - Prompts als Konstanten in der jeweiligen Datei, auf Englisch, kurz.
 
 ### RFQ-Eingangsprüfung und Rückfragen

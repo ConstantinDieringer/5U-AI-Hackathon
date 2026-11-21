@@ -212,6 +212,21 @@ CREATE TABLE IF NOT EXISTS tariff_jobs (
   status TEXT NOT NULL DEFAULT 'pending',
   error TEXT
 );
+CREATE TABLE IF NOT EXISTS mail_screening (
+  mail_id      INTEGER PRIMARY KEY,
+  sender       TEXT NOT NULL,
+  thread_root  INTEGER NOT NULL,
+  verdict      TEXT NOT NULL CHECK (verdict IN ('genuine','phishing','unsure')),
+  layer        TEXT NOT NULL,
+  score        REAL NOT NULL,
+  blocked      INTEGER NOT NULL DEFAULT 0 CHECK (blocked IN (0,1)),
+  routed_as    TEXT NOT NULL,
+  reasons_json TEXT NOT NULL CHECK (json_valid(reasons_json)),
+  detail_json  TEXT CHECK (detail_json IS NULL OR json_valid(detail_json)),
+  released_at  TEXT,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_mail_screening_thread ON mail_screening(thread_root, sender);
 """
 
 
@@ -655,7 +670,8 @@ def customer_mail_history(sid: int, sender: str, before_mail: int) -> list[dict[
     rows = _rows(
         conn().execute(
             "SELECT id,sender,subject,body FROM mails WHERE session_id=?"
-            " AND direction='in' AND id<? ORDER BY id DESC LIMIT 20",
+            " AND direction='in' AND id<? AND category IS NOT 'phishing'"
+            " ORDER BY id DESC LIMIT 20",
             (sid, before_mail),
         )
     )
@@ -885,7 +901,7 @@ def backfill_bookings_from_confirmations() -> int:
     mails = _rows(
         c.execute(
             "SELECT m.body FROM mails m WHERE m.direction = 'in' AND m.body LIKE '%Booking reference:%'"
-            " AND m.body LIKE '%Your reference: AP-%'"
+            " AND m.body LIKE '%Your reference: AP-%' AND m.category IS NOT 'phishing'"
         )
     )
     n = 0
@@ -919,6 +935,32 @@ def backfill_bookings_from_confirmations() -> int:
             )
         n += 1
     return n
+
+
+def _create_session(
+    c: sqlite3.Connection,
+    session_id: int,
+    category: str,
+    sender: str,
+    subject: str,
+    received_at: str,
+) -> None:
+    kind = SESSION_CATEGORIES[category]
+    deadline = (_parse(received_at) + DEADLINE).isoformat(timespec="seconds")
+    c.execute(
+        "INSERT INTO sessions(id, kind, customer, subject, status, deadline_at,"
+        " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+        (
+            session_id,
+            kind,
+            sender,
+            subject,
+            "new",
+            deadline if kind == "rfq" else None,
+            received_at,
+            now(),
+        ),
+    )
 
 
 def ingest_mail(
@@ -960,21 +1002,7 @@ def ingest_mail(
         if session_id is None and category in SESSION_CATEGORIES:
             session_id = mail_id
             created = True
-            deadline = (_parse(received_at) + DEADLINE).isoformat(timespec="seconds")
-            c.execute(
-                "INSERT INTO sessions(id, kind, customer, subject, status, deadline_at,"
-                " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                (
-                    session_id,
-                    SESSION_CATEGORIES[category],
-                    sender,
-                    subject,
-                    "new",
-                    deadline if SESSION_CATEGORIES[category] == "rfq" else None,
-                    received_at,
-                    now(),
-                ),
-            )
+            _create_session(c, session_id, category, sender, subject, received_at)
         c.execute(
             "INSERT INTO mails(id, session_id, thread_root, in_reply_to, direction, sender,"
             " recipient, subject, body, category, received_at, raw_json)"
@@ -1170,8 +1198,9 @@ def incoming_mails_containing(text: str, limit: int = 1000) -> list[dict[str, An
     """Incoming mails whose body contains `text` (case-insensitive), oldest first."""
     return _rows(
         conn().execute(
-            "SELECT id, sender, body, received_at FROM mails"
-            " WHERE direction = 'in' AND instr(lower(body), lower(?)) > 0 ORDER BY id LIMIT ?",
+            "SELECT id, sender, body, received_at FROM mails WHERE direction = 'in'"
+            " AND category IS NOT 'phishing' AND instr(lower(body), lower(?)) > 0"
+            " ORDER BY id LIMIT ?",
             (text, limit),
         )
     )
@@ -1745,6 +1774,165 @@ def pricing_evidence() -> list[dict[str, Any]]:
     )
 
 
+# ---------------------------------------------------------------- phishing gate (mail_screening)
+
+
+def screening_get(mail_id: int) -> dict[str, Any] | None:
+    r = _one(conn().execute("SELECT * FROM mail_screening WHERE mail_id = ?", (mail_id,)))
+    if r:
+        r["reasons"] = json.loads(r.pop("reasons_json"))
+        d = r.pop("detail_json")
+        r["detail"] = json.loads(d) if d else None
+    return r
+
+
+def screening_save(
+    *,
+    mail_id: int,
+    sender: str,
+    thread_root: int,
+    verdict: str,
+    layer: str,
+    score: float,
+    blocked: bool,
+    routed_as: str,
+    reasons: list[str],
+    detail: dict[str, Any] | None = None,
+) -> None:
+    """First verdict wins: a redelivered mail keeps its stored screening."""
+    with tx() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO mail_screening(mail_id, sender, thread_root, verdict, layer,"
+            " score, blocked, routed_as, reasons_json, detail_json, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                mail_id,
+                sender,
+                thread_root,
+                verdict,
+                layer,
+                score,
+                1 if blocked else 0,
+                routed_as,
+                _json(reasons),
+                _json(detail),
+                now(),
+            ),
+        )
+
+
+def screening_released(sender: str, thread_root: int) -> bool:
+    """A person released this sender in this thread: trust the rest of the thread."""
+    return (
+        _one(
+            conn().execute(
+                "SELECT 1 FROM mail_screening WHERE sender = ? AND thread_root = ?"
+                " AND released_at IS NOT NULL LIMIT 1",
+                (sender, thread_root),
+            )
+        )
+        is not None
+    )
+
+
+def thread_parties(mail_ids: Sequence[int]) -> list[str]:
+    """Customers of the sessions the given stored mails belong to ('' for a stored mail
+    without a session). Empty when none of the ids is a mail we stored."""
+    ids = [int(i) for i in mail_ids][:50]
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    rows = _rows(
+        conn().execute(
+            f"SELECT COALESCE(s.customer, '') AS customer FROM mails m"
+            f" LEFT JOIN sessions s ON s.id = m.session_id WHERE m.id IN ({marks})",
+            ids,
+        )
+    )
+    return [r["customer"] for r in rows]
+
+
+def known_customers() -> list[str]:
+    return [
+        r["customer"]
+        for r in _rows(
+            conn().execute(
+                "SELECT DISTINCT customer FROM sessions WHERE kind = 'rfq' AND customer IS NOT NULL"
+            )
+        )
+    ]
+
+
+def quarantined(limit: int = 50) -> list[dict[str, Any]]:
+    """Blocked mails a person has not released yet, newest first."""
+    rows = _rows(
+        conn().execute(
+            "SELECT q.mail_id, q.sender, q.verdict, q.layer, q.score, q.reasons_json,"
+            " q.routed_as, q.created_at, m.subject, m.session_id, m.received_at"
+            " FROM mail_screening q JOIN mails m ON m.id = q.mail_id"
+            " WHERE q.blocked = 1 AND q.released_at IS NULL ORDER BY q.mail_id DESC LIMIT ?",
+            (limit,),
+        )
+    )
+    for r in rows:
+        r["reasons"] = json.loads(r.pop("reasons_json"))
+    return rows
+
+
+def reply_blocked(mail_id: int) -> bool:
+    """True while `mail_id` is quarantined: nothing may be sent in reply to it."""
+    return (
+        _one(
+            conn().execute(
+                "SELECT 1 FROM mail_screening WHERE mail_id = ? AND blocked = 1"
+                " AND released_at IS NULL",
+                (mail_id,),
+            )
+        )
+        is not None
+    )
+
+
+def release_quarantined(mail_id: int) -> dict[str, Any]:
+    """Undo a quarantine: restore the routed category, open the session the mail would have
+    opened, trust the sender in this thread. Returns {session_id, category, raw}.
+    Raises LookupError when the mail is not quarantined."""
+    with tx() as c:
+        q = _one(
+            c.execute(
+                "SELECT * FROM mail_screening WHERE mail_id = ? AND blocked = 1"
+                " AND released_at IS NULL",
+                (mail_id,),
+            )
+        )
+        m = _one(c.execute("SELECT * FROM mails WHERE id = ?", (mail_id,)))
+        if not q or not m:
+            raise LookupError(f"mail {mail_id} is not in quarantine")
+        category = q["routed_as"]
+        session_id = m["session_id"]
+        if session_id is None and category in SESSION_CATEGORIES:
+            exists = _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (mail_id,)))
+            if not exists:
+                _create_session(
+                    c, mail_id, category, m["sender"], m["subject"] or "", m["received_at"]
+                )
+            session_id = mail_id
+        c.execute(
+            "UPDATE mails SET category = ?, session_id = ? WHERE id = ?",
+            (category, session_id, mail_id),
+        )
+        c.execute("UPDATE mail_screening SET released_at = ? WHERE mail_id = ?", (now(), mail_id))
+        _emit(
+            c,
+            Ev.HUMAN_ACTION,
+            f"Mail {mail_id} von {m['sender']} freigegeben, normale Verarbeitung als {category}",
+            session_id,
+            payload={"mail_id": mail_id, "category": category},
+        )
+    raw = json.loads(m["raw_json"]) if m.get("raw_json") else None
+    return {"session_id": session_id, "category": category, "raw": raw}
+
+
 # ---------------------------------------------------------------- watchers & stats
 
 
@@ -2060,7 +2248,19 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
     """What needs a human: errors, expired, board rejections, paused/manual, close deadlines and
     customer acceptances that are not booked yet."""
     c = conn()
-    items: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = [
+        {
+            "session_id": q["session_id"],
+            "mail_id": q["mail_id"],
+            "kind": "quarantine",
+            "reason": "Phishing-Verdacht: keine Antwort gesendet",
+            "subject": q["subject"],
+            "customer": q["sender"],
+            "status": "quarantined",
+            "reasons": q["reasons"],
+        }
+        for q in quarantined(limit)
+    ]
     for s in list_sessions(attention=True, limit=limit):
         reason = (
             "Fehler" if s["status"] == "error" else "pausiert" if s["paused"] else "Deadline < 90 s"
@@ -2162,10 +2362,10 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
                 "status": r["status"],
             }
         )
-    seen: set[tuple[int, str]] = set()
+    seen: set[tuple[Any, str]] = set()
     out = []
     for i in items:
-        key = (i["session_id"], i["kind"])
+        key = (i.get("mail_id") or i["session_id"], i["kind"])
         if key not in seen:
             seen.add(key)
             out.append(i)
@@ -2636,6 +2836,7 @@ def status_overview() -> dict[str, Any]:
         },
         "requests": every[:12],
         "todo": todo,
+        "quarantine": quarantined(20),
         "global_pause": is_global_paused(),
     }
 

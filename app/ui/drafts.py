@@ -30,7 +30,10 @@ _BID = re.compile(r"^Gebot (.+?): ([\d.]+) EUR(?:, ([\d.]+) Tage)?")
 
 
 def _first_mail(session: dict[str, Any]) -> Mail | None:
-    m = next((x for x in session["mails"] if x["direction"] == "in"), None)
+    m = next(
+        (x for x in session["mails"] if x["direction"] == "in" and x.get("category") != "phishing"),
+        None,
+    )
     if not m:
         return None
     return Mail(

@@ -124,9 +124,11 @@ def complete(
     max_tokens: int = 200,
     response_format: dict[str, Any] | None = None,
     model_name: str | None = None,
+    timeout_s: float | None = None,
 ) -> str:
     """One chat completion through the gateway. Returns the message text and logs the cost.
-    `model_name` overrides LLM_MODEL for configured retry, rescue and compose calls."""
+    `model_name` overrides LLM_MODEL for configured retry, rescue and compose calls.
+    `timeout_s` caps the whole call (no retry), for checks that must not delay a mail."""
     _reserve(session_id)
     name = model_name or model()
     kw: dict[str, Any] = {
@@ -143,7 +145,10 @@ def complete(
 
     start = time.monotonic()
     try:
-        resp = _client.chat.completions.create(**kw)
+        client = (
+            _client if timeout_s is None else _client.with_options(timeout=timeout_s, max_retries=0)
+        )
+        resp = client.chat.completions.create(**kw)
     except Exception:
         db.record_llm_call(
             session_id,
