@@ -33,7 +33,9 @@ def test_cache_discount_and_reasoning_not_double_charged():
 
 
 def test_missing_details_prices_and_usage():
-    a = llm.accounting("gpt-5-nano", SimpleNamespace(prompt_tokens=1000, completion_tokens=500))
+    a = llm.accounting(
+        "gpt-5-nano", SimpleNamespace(prompt_tokens=1000, completion_tokens=500)
+    )
     assert a["total_micro_usd"] == 250
     assert a["tokens"]["cached_input"] is None
     assert llm.accounting("unknown", usage())["status"] == "price_missing"
