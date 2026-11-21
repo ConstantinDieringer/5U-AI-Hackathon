@@ -1,0 +1,4 @@
+# Tool settings only; dependencies stay in requirements.txt (TECH_SPEC §2).
+[tool.ruff]
+line-length = 100  # TECH_SPEC §2: ruff format and ruff check with line length 100
+target-version = "py311"
