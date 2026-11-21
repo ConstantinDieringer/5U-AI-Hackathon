@@ -149,3 +149,17 @@ def test_rfq_accepts_icao_codes_and_drops_bad_origin_with_zip():
     r = Rfq.model_validate({"origin": "XXXX", "pickup_zip": "51896", "destination": "ORD",
                             "weight_kg": 679})
     assert r.origin is None and r.pickup_zip == "51896"
+
+
+def test_resolve_origin_ignores_a_wrong_llm_origin_with_pickup_zip() -> None:
+    from app.pricing.pricing import resolve_origin
+
+    # real round 2530: pickup 21663 Lueneburg -> YYZ, nano said origin YYZ
+    r = Rfq(origin="YYZ", pickup_zip="21663", destination="YYZ", weight_kg=855, volume_cbm=3.74)
+    assert resolve_origin(r) == "HAM"
+    assert resolve_origin(r.model_copy(update={"origin": "LAX"})) == "HAM"  # not a kit airport
+    assert resolve_origin(r.model_copy(update={"origin": "FRA"})) == "FRA"  # customer's choice
+    assert resolve_origin(r.model_copy(update={"origin": None})) == "HAM"
+    port = Rfq(origin="MUC", destination="LAX", weight_kg=998)
+    assert resolve_origin(port) == "MUC"
+    assert resolve_origin(port.model_copy(update={"origin": "LAX"})) is None

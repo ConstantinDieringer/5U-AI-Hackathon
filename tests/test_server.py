@@ -184,3 +184,26 @@ def test_overview_and_attention(client):
     )
     assert "to_book" not in {a["kind"] for a in client.get("/api/attention").json()}
     assert client.get("/api/overview", params={"hours": 0}).json()["current"]["won"] == 1
+
+
+def test_import_db_only_when_agents_disabled(client, monkeypatch, tmp_path):
+    import dataclasses
+    import sqlite3
+
+    src = tmp_path / "src.db"
+    db.init_db(str(src))
+    sid = db.ingest_mail(
+        mail_id=77, sender="x@y.example", recipient=TEAM, subject="RFQ", body="b", category="rfq"
+    )
+    db.kv_set("mail.next_since_id", "77")
+    sqlite3.connect(src).execute("PRAGMA wal_checkpoint(TRUNCATE)").close()
+    data = src.read_bytes()
+    db.init_db(str(tmp_path / "target.db"))
+    assert client.post("/api/admin/import-db", content=data).status_code == 409
+    monkeypatch.setattr(
+        server, "settings", dataclasses.replace(server.settings, agents_enabled=False)
+    )
+    assert client.post("/api/admin/import-db", content=b"nope").status_code == 400
+    r = client.post("/api/admin/import-db", content=data).json()
+    assert r["counts"]["sessions"] == 1 and r["since_id"] == "77"
+    assert db.get_session(sid)["customer"] == "x@y.example"

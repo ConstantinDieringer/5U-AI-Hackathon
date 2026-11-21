@@ -56,3 +56,24 @@ poll the mailbox, otherwise mails are processed twice. Once it runs online, nobo
   comparable best-price evidence is available.
 - Before deploying, run `python -m pytest -q`; then restart the sole live instance and
   check `/api/health`, poller logs and tariff events. Do not run a second production poller.
+
+## Moving a running local instance online (keeps all mails in and out)
+
+The local `data/forwarder.db` holds every mail we received and sent, quotes and bookings.
+Move it instead of starting empty (an empty DB would re-read old mail and could re-book).
+
+1. Railway variables: `TEAM_API_KEY=...` and `AGENTS_ENABLED=false` → deploy. The UI runs,
+   nothing polls or sends.
+2. On the laptop: stop `python run.py` (Ctrl+C). From now on nothing answers mail.
+3. Upload the DB (Linux/macOS):
+   ```
+   curl -u team:<UI_PASSWORD> --data-binary @data/forwarder.db \
+     https://5u-ai-hackathon-production.up.railway.app/api/admin/import-db
+   ```
+   Windows PowerShell:
+   ```
+   curl.exe -u team:<UI_PASSWORD> --data-binary "@data/forwarder.db" https://5u-ai-hackathon-production.up.railway.app/api/admin/import-db
+   ```
+   The answer shows the counts and `since_id`.
+4. Railway: set `AGENTS_ENABLED=true` → deploy. Polling resumes at `since_id`, so no mail is
+   processed twice. Do steps 2–4 quickly: every minute here is a minute nobody answers.

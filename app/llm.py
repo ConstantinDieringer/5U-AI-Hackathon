@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 import time
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -31,8 +30,6 @@ _client = OpenAI(
     timeout=20.0,
     max_retries=1,
 )
-_calls: dict[int, int] = {}  # per-session call count (in memory: resets on restart)
-_lock = threading.Lock()
 
 
 class LlmBudgetError(RuntimeError):
@@ -70,13 +67,13 @@ def cost_micro_usd(name: str, prompt_tokens: int, completion_tokens: int) -> int
 
 
 def _reserve(session_id: int | None) -> None:
+    """Per-session call budget, counted in the db (survives a restart of run.py)."""
     if session_id is None:
         return
-    with _lock:
-        n = _calls.get(session_id, 0)
-        if n >= MAX_CALLS_PER_SESSION:
-            raise LlmBudgetError(f"session {session_id} already made {n} LLM calls")
-        _calls[session_id] = n + 1
+    if db.reserve_llm_call(session_id, MAX_CALLS_PER_SESSION) is None:
+        raise LlmBudgetError(
+            f"session {session_id} already made {MAX_CALLS_PER_SESSION} LLM calls"
+        )
 
 
 def complete(
@@ -85,10 +82,12 @@ def complete(
     session_id: int | None,
     max_tokens: int = 200,
     response_format: dict[str, Any] | None = None,
+    model_name: str | None = None,
 ) -> str:
-    """One chat completion through the gateway. Returns the message text and logs the cost."""
+    """One chat completion through the gateway. Returns the message text and logs the cost.
+    `model_name` overrides LLM_MODEL for this call (the extraction retry uses LLM_RETRY_MODEL)."""
     _reserve(session_id)
-    name = model()
+    name = model_name or model()
     kw: dict[str, Any] = {"model": name, "messages": messages, "max_completion_tokens": max_tokens}
     if _is_reasoning(name):
         kw["reasoning_effort"] = "minimal"  # no hidden reasoning tokens: cheaper and faster

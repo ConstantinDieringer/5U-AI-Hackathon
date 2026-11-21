@@ -230,6 +230,7 @@ def tx() -> Iterator[sqlite3.Connection]:
 def init_db(path: str | None = None) -> None:
     """Create the database file and schema. Call once at startup (and per test)."""
     global _db_path, _generation
+    path_changed = path is not None
     if path is not None:
         _db_path = path
         _generation += 1
@@ -239,6 +240,44 @@ def init_db(path: str | None = None) -> None:
     c = conn()
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
+    if path_changed:
+        # A database path can later be replaced by the UI import endpoint, which runs in a
+        # different thread. Do not leave the initializing thread holding its WAL on Windows.
+        c.close()
+        _local.c = None
+
+
+def import_database(data: bytes) -> dict[str, Any]:
+    """Swap in an uploaded SQLite file as the database (see /api/admin/import-db)."""
+    tmp = f"{_db_path}.upload"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    check = sqlite3.connect(tmp)
+    try:
+        tables = {r[0] for r in check.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"sessions", "mails", "events"} <= tables:
+            raise ValueError("uploaded DB has no forwarder schema")
+        counts = {
+            t: check.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in ("sessions", "mails", "quotes", "bookings")
+        }
+        check.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        check.close()
+    c = getattr(_local, "c", None)
+    if c is not None:
+        c.close()
+        _local.c = None
+    for suffix in ("-wal", "-shm"):
+        try:
+            os.remove(_db_path + suffix)
+        except FileNotFoundError:
+            pass
+    os.replace(tmp, _db_path)
+    init_db(_db_path)  # new generation: every thread reopens; runs migrations
+    since = kv_get("mail.next_since_id")
+    log.warning("database imported: %s, since_id=%s", counts, since)
+    return {"ok": True, "counts": counts, "since_id": since}
 
 
 def _rows(cur: sqlite3.Cursor) -> list[dict[str, Any]]:
@@ -592,6 +631,22 @@ def list_unassigned(limit: int = 100) -> list[dict[str, Any]]:
     )
 
 
+def resumable_rfqs(created_after: str) -> list[dict[str, Any]]:
+    """RFQ sessions left mid-flight (new/pricing, no quote, created after `created_after`),
+    each with its first customer mail (the RFQ itself), oldest first."""
+    return _rows(
+        conn().execute(
+            "SELECT s.id AS session_id, m.id, m.sender, m.recipient, m.subject, m.body,"
+            " m.received_at, m.raw_json FROM sessions s JOIN mails m ON m.id = s.id"
+            " WHERE s.kind = 'rfq' AND s.status IN ('new','pricing') AND s.first_reply_at IS NULL"
+            " AND s.created_at > ? AND m.direction = 'in'"
+            " AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = s.id)"
+            " ORDER BY s.created_at",
+            (created_after,),
+        )
+    )
+
+
 def incoming_mails_containing(text: str, limit: int = 1000) -> list[dict[str, Any]]:
     """Incoming mails whose body contains `text` (case-insensitive), oldest first."""
     return _rows(
@@ -913,6 +968,27 @@ def find_booking(
     return None
 
 
+def reserve_llm_call(session_id: int, limit: int) -> int | None:
+    """Count one more gateway call for the session, persisted so a restart cannot reset it.
+    Returns the new count, or None if the session already made `limit` calls. Calls logged in
+    llm_calls before this counter existed count too."""
+    key = f"llm_calls:{session_id}"
+    with tx() as c:
+        kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (key,)))
+        logged = _one(
+            c.execute("SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ?", (session_id,))
+        )
+        n = max(int(kv["value"]) if kv else 0, int(logged["n"]) if logged else 0)
+        if n >= limit:
+            return None
+        c.execute(
+            "INSERT INTO kv(key, value) VALUES (?,?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(n + 1)),
+        )
+    return n + 1
+
+
 def record_llm_call(
     session_id: int | None,
     *,
@@ -957,8 +1033,10 @@ def save_board_result(
     points: dict[str, Any] | None,
     raw: dict[str, Any],
     session_id: int | None = None,
+    failed: bool = False,
 ) -> bool:
-    """Upsert one board round. Returns True if the verdict is new or changed."""
+    """Upsert one board round. Returns True if the verdict is new or changed. A changed
+    `failed` round is emitted as an error (shows in the UI attention list)."""
     with tx() as c:
         old = _one(c.execute("SELECT verdict FROM board_results WHERE round_id = ?", (round_id,)))
         c.execute(
@@ -977,7 +1055,7 @@ def save_board_result(
                 Ev.BOARD_VERDICT,
                 f"Board: {verdict}" + (f" ({reason})" if reason else ""),
                 session_id,
-                level="warn" if verdict != "accepted" else "info",
+                level="error" if failed else ("warn" if verdict != "accepted" else "info"),
                 payload={"round_id": round_id, "points": points},
             )
         return changed

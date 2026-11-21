@@ -24,6 +24,7 @@ class Settings:
     ratedesk_address: str
     tracking_address: str
     llm_model: str
+    llm_retry_model: str
     poll_interval_s: float
     db_path: str
     ui_port: int
@@ -34,6 +35,7 @@ class Settings:
     deadline_check_every_s: float
     ui_user: str
     ui_password: str
+    agents_enabled: bool
     quote_target_s: float
     bid_max_wait_s: float
     quote_full_score_deadline_s: float
@@ -60,6 +62,7 @@ settings = Settings(
     ratedesk_address=_env("RATEDESK_ADDRESS", "ratedesk@hackloop.mail").lower(),
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
     llm_model=_env("LLM_MODEL"),
+    llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5-mini"),  # 2nd try when extraction fails
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
@@ -69,7 +72,9 @@ settings = Settings(
     board_sync_every_s=float(_env("BOARD_SYNC_EVERY_S", "15")),
     deadline_check_every_s=float(_env("DEADLINE_CHECK_EVERY_S", "10")),
     ui_user=_env("UI_USER", "team"),
-    ui_password=_env("UI_PASSWORD"),  # set it whenever the UI is reachable from the internet
+    ui_password=_env("UI_PASSWORD"),
+    # false = UI only: no polling, no sending, no catch-up (used while moving the DB online)
+    agents_enabled=_env("AGENTS_ENABLED", "true").lower() not in ("0", "false", "no", "off"),
     quote_target_s=float(_env("QUOTE_TARGET_S", "110")),
     bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "300")),
     quote_full_score_deadline_s=float(

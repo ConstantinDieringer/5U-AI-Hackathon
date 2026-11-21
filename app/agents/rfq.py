@@ -21,12 +21,13 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import openai
 from pydantic import ValidationError
 
 from app import db, hackloop, llm
 from app.agents import bids
 from app.config import settings
-from app.mail import language
+from app.mail import language, lots, parse
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
@@ -42,6 +43,7 @@ from app.pricing.reference import (
 log = logging.getLogger(__name__)
 
 RFQ_LIFETIME_S = 360  # 5U expires a request 6 min after it was sent
+PORTAL_MIN_S = 20.0  # portal reads always get this long, even for a resumed RFQ
 TOO_OLD_S = (
     330  # do not start work on a request that cannot be answered in time any more
 )
@@ -60,12 +62,6 @@ EXTRACT_PROMPT = (
     "customer_questions: every explicit question or requested detail, verbatim and without "
     "answering it (max 5). service_constraints: every other timing, handling, routing or service "
     "condition that the quote should respect (max 10)."
-)
-
-REPAIR_PROMPT = (
-    "Repair the proposed RFQ JSON so that it matches the supplied JSON schema. Preserve every "
-    "fact, explicit customer question and service constraint from the email. Do not guess missing "
-    "commercial facts. Return JSON only."
 )
 
 _N = ["string", "null"]
@@ -128,54 +124,78 @@ def _clean(body: str) -> str:
 
 
 def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
-    """Extract an RFQ, with one structured repair call after invalid model output."""
-    source = f"Subject: {mail.subject}\n\n{_clean(mail.body)}"
-    text = llm.complete(
-        "extract_rfq",
-        [
-            {"role": "system", "content": EXTRACT_PROMPT},
-            {
-                "role": "user",
-                "content": source,
-            },
-        ],
+    """One gateway call; retry once with LLM_RETRY_MODEL when its output is unusable."""
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": EXTRACT_PROMPT},
+        {"role": "user", "content": f"Subject: {mail.subject}\n\n{_clean(mail.body)}"},
+    ]
+    try:
+        text = llm.complete(
+            "extract_rfq",
+            messages,
+            session_id,
+            max_tokens=350,
+            response_format=RFQ_SCHEMA,
+        )
+        rfq, error = _parse_extraction(text, mail, session_id)
+    except (
+        openai.APIError
+    ) as e:  # gateway down or timed out: the retry may still get through
+        text, rfq, error = "", None, f"{type(e).__name__}: {e}"
+    if rfq is not None:
+        return rfq
+
+    retry_model = settings.llm_retry_model
+    db.emit(
+        "extract_retry",
+        f"Extraktion unbrauchbar ({error[:120]}), zweiter Versuch mit {retry_model}",
         session_id,
-        max_tokens=350,
-        response_format=RFQ_SCHEMA,
+        level="warn",
+    )
+    feedback = (
+        f"Your previous answer was not usable: {error[:300]}\n"
+        "weight_kg and volume_cbm must be > 0: add up every lot and piece (count x each)."
     )
     try:
-        return Rfq.model_validate(json.loads(text))
+        text = llm.complete(
+            "extract_rfq_retry",
+            [
+                *messages,
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": feedback},
+            ],
+            session_id,
+            max_tokens=350,
+            response_format=RFQ_SCHEMA,
+            model_name=retry_model,
+        )
+    except (openai.APIError, llm.LlmBudgetError) as e:
+        log.warning("session %s: extraction retry failed: %s", session_id, e)
+        return None
+    rfq, _ = _parse_extraction(text, mail, session_id)
+    return rfq
+
+
+def _parse_extraction(text: str, mail: Mail, session_id: int) -> tuple[Rfq | None, str]:
+    """Validated Rfq from the LLM answer (lot sums from code win), or None plus the error."""
+    try:
+        data = json.loads(text)
+        totals = lots.parse_lots(_clean(mail.body))
+        if isinstance(data, dict) and totals is not None:
+            # lot sums in code: nano returned weight 0 for "each" lots (mail 1967)
+            data["weight_kg"] = float(totals.weight_kg)
+            data["volume_cbm"] = float(totals.volume_cbm)
+            db.emit(
+                "lots_summed",
+                f"{totals.lots} Lots: {totals.weight_kg:.1f} kg, {totals.volume_cbm:.4f} cbm",
+                session_id,
+            )
+        return Rfq.model_validate(data), ""
     except (json.JSONDecodeError, ValidationError) as e:
         log.warning(
             "session %s: extraction not usable (%s): %r", session_id, e, text[:300]
         )
-        try:
-            repaired = llm.complete(
-                "repair_rfq",
-                [
-                    {"role": "system", "content": REPAIR_PROMPT},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"EMAIL:\n{source}\n\nINVALID JSON:\n{text[:3000]}\n\n"
-                            f"VALIDATION ERROR:\n{str(e)[:1000]}"
-                        ),
-                    },
-                ],
-                session_id,
-                max_tokens=350,
-                response_format=RFQ_SCHEMA,
-            )
-            return Rfq.model_validate(json.loads(repaired))
-        except (
-            json.JSONDecodeError,
-            ValidationError,
-            llm.LlmBudgetError,
-        ) as repair_error:
-            log.warning(
-                "session %s: RFQ repair not usable (%s)", session_id, repair_error
-            )
-            return None
+        return None, str(e).replace("\n", " ")
 
 
 # ---------------------------------------------------------------- 4. choose
@@ -564,6 +584,48 @@ def _bid_carriers(rfq: Rfq, origin: str) -> tuple[list[Carrier], list[Carrier]]:
     return truckers, airlines
 
 
+def _stored_request(sid: int) -> Rfq | None:
+    stored = (db.get_session(sid) or {}).get("request")
+    if not isinstance(stored, dict):
+        return None
+    try:
+        return Rfq.model_validate(stored)
+    except ValidationError:
+        return None
+
+
+def catch_up() -> int:
+    """RFQs left mid-flight by a restart (new/pricing, no quote, still answerable): run them
+    again. Extraction and bid requests already done are reused, not repeated."""
+    since = datetime.fromtimestamp(time.time() - TOO_OLD_S, UTC).isoformat()
+    n = 0
+    for r in db.resumable_rfqs(since):
+        mail = (
+            parse.mail_from_api(json.loads(r["raw_json"]))
+            if r.get("raw_json")
+            else Mail(
+                id=int(r["id"]),
+                thread_root=int(r["id"]),
+                sender=str(r["sender"]),
+                to=str(r["recipient"] or settings.team_mailbox),
+                subject=str(r["subject"] or ""),
+                body=str(r["body"] or ""),
+                received_at=str(r["received_at"]),
+            )
+        )
+        db.emit("resumed", "Nach Neustart fortgesetzt", int(r["session_id"]))
+        threading.Thread(
+            target=handle_rfq,
+            args=(mail, int(r["session_id"])),
+            name=f"rfq-{r['session_id']}",
+            daemon=True,
+        ).start()
+        n += 1
+    if n:
+        log.info("resumed %d open RFQ(s) after restart", n)
+    return n
+
+
 def handle_rfq(mail: Mail, session_id: int) -> None:
     """Whole flow for one RFQ. Never raises (runs in a worker thread)."""
     try:
@@ -589,7 +651,9 @@ def _handle(mail: Mail, sid: int) -> None:
     db.set_status(sid, "pricing")
 
     start = time.monotonic()
-    rfq = extract_rfq(mail, sid)
+    rfq = _stored_request(sid) or extract_rfq(
+        mail, sid
+    )  # stored = resumed after a restart
     if rfq is None:
         db.set_status(sid, "error", "Anfrage nicht lesbar")
         return
@@ -623,9 +687,13 @@ def _handle(mail: Mail, sid: int) -> None:
     final_deadline = t0 + min(settings.quote_final_deadline_s, TOO_OLD_S - 1)
     pricing_deadline = max(time.time(), full_deadline - COMPOSE_RESERVE_S)
     last_bid_deadline = max(pricing_deadline, final_deadline - COMPOSE_RESERVE_S)
-    portal = portal_result(
-        rfq, deadline=time.monotonic() + max(0, pricing_deadline - time.time())
+    # portal reads get the time until the quote target, but at least PORTAL_MIN_S (a resumed
+    # RFQ is already past its target: round 2256 lost every read) and never past TOO_OLD_S
+    budget = min(
+        max(pricing_deadline - time.time(), PORTAL_MIN_S),
+        t0 + TOO_OLD_S - 30 - time.time(),
     )
+    portal = portal_result(rfq, deadline=time.monotonic() + max(0.0, budget))
     fallback_codes = set(portal.email_fallbacks)
     fallback = []
     for airline in airlines_for(origin, rfq.destination):
@@ -783,56 +851,4 @@ def _handle(mail: Mail, sid: int) -> None:
     )
 
 
-def _stored_mail(row: dict[str, Any], session_id: int) -> Mail:
-    return Mail(
-        id=int(row["id"]),
-        thread_root=session_id,
-        sender=str(row.get("sender") or ""),
-        to=str(row.get("recipient") or settings.team_mailbox),
-        subject=str(row.get("subject") or ""),
-        body=str(row.get("body") or ""),
-        received_at=str(row.get("received_at") or ""),
-    )
-
-
-def _resume(mail: Mail, session_id: int, replies: list[Mail]) -> None:
-    for reply in replies:
-        bids.on_bid_mail(reply, session_id)
-    handle_rfq(mail, session_id)
-
-
-def catch_up() -> None:
-    """Resume recent, unanswered RFQs after restart without duplicating carrier requests."""
-    seen: set[int] = set()
-    for status in ("new", "pricing", "error"):
-        for summary in db.list_sessions(status=status):
-            sid = int(summary["id"])
-            if (
-                sid in seen
-                or summary.get("first_reply_at")
-                or summary.get("mode") == "manual"
-            ):
-                continue
-            seen.add(sid)
-            full = db.get_session(sid)
-            if not full or full.get("quotes") or full.get("paused"):
-                continue
-            incoming = [m for m in full["mails"] if m["direction"] == "in"]
-            originals = [m for m in incoming if m.get("category") == "rfq"]
-            if not originals:
-                continue
-            mail = _stored_mail(originals[0], sid)
-            if time.time() - _received(mail) > TOO_OLD_S:
-                continue
-            replies = [
-                _stored_mail(row, sid)
-                for row in incoming
-                if row.get("category") == "carrier_bid"
-            ]
-            db.emit("recovery", "Offene Anfrage nach Neustart wieder aufgenommen", sid)
-            threading.Thread(
-                target=_resume,
-                args=(mail, sid, replies),
-                name=f"rfq-recover-{sid}",
-                daemon=True,
-            ).start()
+# End of the RFQ flow.
