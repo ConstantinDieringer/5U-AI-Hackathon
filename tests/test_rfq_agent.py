@@ -74,9 +74,7 @@ def test_best_air_fastest_and_balanced_bid() -> None:
         opt("Z", 1400, 3, "bid"),
     ]  # Y is the balanced bid
     assert rfq.best_air(air, bids_, "fastest").airline == "Y"
-    assert (
-        rfq.best_air(air, bids_, "cheapest").airline == "A"
-    )  # X loses the balanced bid pick
+    assert rfq.best_air(air, bids_, "cheapest").airline == "A"  # X loses the balanced bid pick
 
 
 def test_best_truck_cheapest_when_no_transit() -> None:
@@ -106,9 +104,7 @@ def test_quote_text_has_exactly_one_total() -> None:
         customer_name="Sara",
     )
     o = opt("Cobalt Skylift", 2345, 2)
-    t = bids.Offer(
-        bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",)), Decimal(200), 1, 9
-    )
+    t = bids.Offer(bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",)), Decimal(200), 1, 9)
     text = rfq.quote_text(r, o, 254500, t, 1)
     assert _amounts(text) == ["2.545,00 €"]
     assert "Hi Sara" in text and "51447" in text and "all-in" in text
@@ -142,44 +138,28 @@ def test_quote_answers_earliest_departure_and_arrival() -> None:
         language=language.detect(MAIL_1628),
         customer_name="Deniz",
     )
-    o = RateOption(
-        "Fjordline Air Cargo", "MUC", "LAX", 3, 320358, "EUR", 320358, "portal"
-    )
+    o = RateOption("Fjordline Air Cargo", "MUC", "LAX", 3, 320358, "EUR", 320358, "portal")
     today = datetime(2026, 11, 21).date()
     text = rfq.quote_text(r, o, 320358, None, 0, today=today)
     assert _amounts(text) == ["3.203,58 €"]
-    assert (
-        "Earliest departure from MUC is 29 Nov 2026, arriving in LAX on 2 Dec 2026."
-        in text
-    )
+    assert "Earliest departure from MUC is 29 Nov 2026, arriving in LAX on 2 Dec 2026." in text
 
-    de = rfq.quote_text(
-        r.model_copy(update={"language": "de"}), o, 320358, None, 0, today=today
-    )
+    de = rfq.quote_text(r.model_copy(update={"language": "de"}), o, 320358, None, 0, today=today)
     assert _amounts(de) == ["3.203,58 €"]
-    assert (
-        "Frühester Abflug ab MUC ist am 29.11.2026, Ankunft in LAX am 02.12.2026." in de
-    )
+    assert "Frühester Abflug ab MUC ist am 29.11.2026, Ankunft in LAX am 02.12.2026." in de
 
 
 def test_schedule_door_to_port_and_past_ready_date() -> None:
     today = datetime(2026, 11, 21).date()
-    door = Rfq(
-        pickup_zip="51447", destination="ORD", weight_kg=676, ready_date="2026-11-25"
-    )
+    door = Rfq(pickup_zip="51447", destination="ORD", weight_kg=676, ready_date="2026-11-25")
     assert rfq.schedule(door, 2, today) == (
         datetime(2026, 11, 26).date(),
         datetime(2026, 11, 28).date(),
     )  # +1 day for the trucking leg
-    past = door.model_copy(
-        update={"pickup_zip": None, "origin": "CGN", "ready_date": "2026-11-01"}
-    )
+    past = door.model_copy(update={"pickup_zip": None, "origin": "CGN", "ready_date": "2026-11-01"})
     assert rfq.schedule(past, 2, today)[0] == today  # never before today
     assert rfq.schedule(door.model_copy(update={"ready_date": None}), 2, today) is None
-    assert (
-        rfq.schedule(door.model_copy(update={"ready_date": "next week"}), 2, today)
-        is None
-    )
+    assert rfq.schedule(door.model_copy(update={"ready_date": "next week"}), 2, today) is None
 
 
 def test_rfq_preserves_questions_and_constraints() -> None:
@@ -218,9 +198,7 @@ def test_extract_repairs_invalid_structured_output(monkeypatch) -> None:
         return next(outputs)
 
     monkeypatch.setattr(rfq.llm, "complete", complete)
-    mail = Mail(
-        1, 1, CUSTOMER, TEAM, "MUC-LAX", MAIL_1628, datetime.now(UTC).isoformat()
-    )
+    mail = Mail(1, 1, CUSTOMER, TEAM, "MUC-LAX", MAIL_1628, datetime.now(UTC).isoformat())
     parsed = rfq.extract_rfq(mail, 1)
     assert parsed is not None
     assert parsed.customer_questions == ["Confirm earliest departure and arrival"]
@@ -241,9 +219,7 @@ def test_bid_carriers_are_capped_and_observed_lanes_rank_first(monkeypatch) -> N
     monkeypatch.setattr(
         rfq,
         "airlines_for",
-        lambda *args: [
-            SimpleNamespace(channel="email_only", email=email) for email in carriers
-        ],
+        lambda *args: [SimpleNamespace(channel="email_only", email=email) for email in carriers],
     )
     monkeypatch.setattr(rfq, "carrier_by_email", carriers.get)
     monkeypatch.setattr(
@@ -267,10 +243,7 @@ def test_bid_carriers_are_capped_and_observed_lanes_rank_first(monkeypatch) -> N
         "settings",
         dataclasses.replace(rfq.settings, max_trucker_bids=5, max_bid_carriers=5),
     )
-    many = [
-        bids.Carrier(f"T{i}", "trucker", f"t{i}@hackloop.mail", ("51",))
-        for i in range(5)
-    ]
+    many = [bids.Carrier(f"T{i}", "trucker", f"t{i}@hackloop.mail", ("51",)) for i in range(5)]
     monkeypatch.setattr(rfq, "truckers_for_zone", lambda *args: many)
     trucks, airlines = rfq._bid_carriers(request, "CGN")
     assert len(trucks) == 5 and len(airlines) == 4
@@ -327,17 +300,19 @@ def test_composer_requires_question_coverage_and_one_verified_total(
 
 
 def test_composer_repairs_mixed_route_phrase_once(monkeypatch) -> None:
-    request = Rfq(origin="FRA", destination="GRU", weight_kg=100)
+    request = Rfq(
+        origin="FRA",
+        destination="GRU",
+        weight_kg=100,
+        customer_questions=["Which airline operates this route?"],
+    )
     option = RateOption("Test Air", "FRA", "GRU", 2, 147500, "EUR", 147500, "sheet")
     bodies = [
         (
             "Hello,\n\nTest Air from origin to nach GRU: 1.475,00 € all-in."
             "\n\nYour austrian Power Team"
         ),
-        (
-            "Hello,\n\nTest Air from FRA to GRU: 1.475,00 € all-in."
-            "\n\nYour austrian Power Team"
-        ),
+        ("Hello,\n\nTest Air from FRA to GRU: 1.475,00 € all-in.\n\nYour austrian Power Team"),
     ]
     purposes: list[str] = []
 
@@ -346,7 +321,7 @@ def test_composer_repairs_mixed_route_phrase_once(monkeypatch) -> None:
         return json.dumps(
             {
                 "body": bodies.pop(0),
-                "answered_questions": [],
+                "answered_questions": [0],
                 "unavailable_questions": [],
                 "addressed_constraints": [],
                 "unavailable_constraints": [],
@@ -408,9 +383,7 @@ def stub(monkeypatch):
         "portal_result",
         lambda r, **kw: PortalResult([opt("Aurelia Air Cargo", 2000, 3, "portal")]),
     )
-    monkeypatch.setattr(
-        rfq, "settings", dataclasses.replace(rfq.settings, quote_target_s=5.0)
-    )
+    monkeypatch.setattr(rfq, "settings", dataclasses.replace(rfq.settings, quote_target_s=5.0))
     return s
 
 
@@ -488,9 +461,7 @@ def test_503_fallback_requests_known_carrier_once(stub, monkeypatch):
     monkeypatch.setattr(
         rfq,
         "airlines_for",
-        lambda *args: [
-            SimpleNamespace(channel="portal", code="JP", email=carrier.email)
-        ],
+        lambda *args: [SimpleNamespace(channel="portal", code="JP", email=carrier.email)],
     )
     monkeypatch.setattr(
         rfq,
@@ -547,9 +518,7 @@ def test_existing_bid_request_is_not_resent_after_restart(stub) -> None:
 # ---------------------------------------------------------------- resume after restart
 
 
-def test_catch_up_resumes_open_rfq_without_new_llm_call_or_bid_mail(
-    stub, monkeypatch
-) -> None:
+def test_catch_up_resumes_open_rfq_without_new_llm_call_or_bid_mail(stub, monkeypatch) -> None:
     trucker = bids.Carrier(
         "Elbkante Logistik", "trucker", "elbkante-logistik@hackloop.mail", ("51",)
     )
@@ -584,9 +553,7 @@ def test_catch_up_resumes_open_rfq_without_new_llm_call_or_bid_mail(
         t.join(10)
 
     assert llm_calls == []  # stored extraction reused; standard copy needs no composer
-    assert [m["to"] for m in stub.sent] == [
-        CUSTOMER
-    ]  # no second bid mail, just the quote
+    assert [m["to"] for m in stub.sent] == [CUSTOMER]  # no second bid mail, just the quote
     assert "trucking to CGN" in stub.sent[0]["body"]  # the replayed trucker bid is in
     assert db.get_session(265)["status"] == "quoted"
     assert rfq.catch_up() == 0  # quoted: never resumed again

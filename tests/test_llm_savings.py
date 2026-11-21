@@ -120,7 +120,7 @@ def test_standard_quote_skips_composer_but_special_questions_do_not(monkeypatch)
         None,
         10,
     )
-    assert calls == ["compose_quote"]
+    assert calls == ["compose_quote", "compose_quote_repair"]
 
 
 def test_cache_key_ignores_customer_payload_and_changes_with_schema():
