@@ -88,6 +88,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 16:45: Tracking questions name no reference ("Weidner Spielwaren GmbH, STR to EZE, 1228 kg, ready on 2026-11-26"). Tracking match now also uses the weight and asks for the BK reference on a tie instead of guessing.
+
 - 21.11 16:35: Tracking agent live (2c5e9dd, not yet seen a real tracking mail). Quote language now from function words (83b6884): the LLM had tagged 3/6 English RFQs as German. Round 6 booked live 26 s after the quote.
 
 - 21.11 16:30: Booking agent live. Board counts round 5 as booked; rounds 2+3 (booked 20 min late, rate re-fetched) show booked=false. Book fast. `kill` alone does not stop run.py while the UI has an SSE client open: use `kill -9` or close the UI first.

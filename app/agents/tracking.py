@@ -67,16 +67,50 @@ def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
 
     low = text.lower()
     routes = {(o, d) for o, d in _ROUTE.findall(text)}
-    best: tuple[int, dict[str, Any]] | None = None
-    for r in records:  # newest first: ties go to the latest booking
+    asked_kg = _weight(text)
+    scored: list[tuple[int, dict[str, Any]]] = []
+    for r in records:  # newest first
         score = 2 * sum(1 for t in _name_tokens(r["customer"] or "") if t in low)
         if (r["origin"], r["destination"]) in routes:
             score += 2
         elif r["destination"] and re.search(rf"\b{r['destination']}\b", text):
             score += 1
-        if score and (best is None or score > best[0]):
-            best = (score, r)
-    return best[1] if best and best[0] >= 2 else None
+        kg = (r.get("request") or {}).get("weight_kg")
+        if score and asked_kg and kg:
+            # questions name the weight (seen 21.11: "STR to EZE, 1228 kg"): it separates
+            # two shipments of one customer on one lane, and rules out a wrong match
+            score += 2 if abs(float(kg) - asked_kg) <= max(1.0, 0.01 * asked_kg) else -3
+        if score > 0:
+            scored.append((score, r))
+    if not scored:
+        return None
+    scored.sort(key=lambda x: -x[0])  # stable: newest first among equal scores
+    best = scored[0]
+    if best[0] < 2:
+        return None
+    if len(scored) > 1 and scored[1][0] == best[0]:
+        log.info("tracking: %s bookings match equally, asking for the reference", len(scored))
+        return None  # ambiguous: asking beats answering for the wrong shipment
+    return best[1]
+
+
+_WEIGHT = re.compile(r"(\d[\d.,]*)\s*(?:kg|kilo\w*)\b", re.IGNORECASE)
+
+
+def _weight(text: str) -> float | None:
+    """'1228 kg', '1,228 kg', '1.228 kg' (German thousands) -> 1228.0."""
+    m = _WEIGHT.search(text)
+    if not m:
+        return None
+    raw = m.group(1)
+    if re.fullmatch(r"\d{1,3}([.,]\d{3})+", raw):
+        raw = re.sub(r"[.,]", "", raw)
+    else:
+        raw = raw.replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 def _de_amount(minor: int) -> str:

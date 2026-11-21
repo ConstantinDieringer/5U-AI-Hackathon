@@ -160,3 +160,21 @@ def test_customer_status_question_in_booked_thread(two_bookings, monkeypatch) ->
         )
     assert len(api.sent) == 1  # the thank-you gets no reply, the question does
     assert "BK-J1TGYUF2" in api.sent[0]["body"] and api.sent[0]["in_reply_to"] == 1447
+
+
+def test_weight_separates_and_ties_ask(tmp_path) -> None:
+    # same customer, same lane, two shipments: only the weight tells them apart
+    _booked(1, "weidner-spielwaren@hackloop.mail", "STR", "EZE", "BK-AAAAAAAA")
+    _booked(2, "weidner-spielwaren@hackloop.mail", "STR", "EZE", "BK-BBBBBBBB")
+    db.set_request(2, {"destination": "EZE", "weight_kg": 500})
+    q = "Status of our shipment: Weidner Spielwaren GmbH, STR to EZE, 1228 kg?"
+    assert tracking.find(q, db.tracking_records())["session_id"] == 1
+    assert tracking.find(q.replace("1228", "500"), db.tracking_records())["session_id"] == 2
+    tie = "Where is the Weidner Spielwaren shipment STR to EZE?"
+    assert tracking.find(tie, db.tracking_records()) is None
+
+
+@pytest.mark.parametrize(("text", "kg"), [("1228 kg", 1228), ("1,228 kg", 1228),
+                                          ("1.228 kg", 1228), ("12,5 kg", 12.5), ("none", None)])
+def test_weight_parse(text, kg) -> None:
+    assert tracking._weight(text) == kg
