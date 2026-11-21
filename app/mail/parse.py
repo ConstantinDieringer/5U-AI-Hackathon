@@ -64,15 +64,30 @@ def in_reply_to(raw: dict[str, Any]) -> int | None:
 
 def references(raw: dict[str, Any]) -> list[int]:
     v = raw.get("references") or []
-    if not isinstance(v, list) or not all(isinstance(x, int) for x in v):
+    if not isinstance(v, list) or not all(
+        isinstance(x, int) and not isinstance(x, bool) and x > 0 for x in v
+    ):
         raise MailFormatError(f"'references' is not a list of ints: {v!r}")
     return v
 
 
 def attachments(raw: dict[str, Any]) -> list[dict[str, Any]]:
     v = raw.get("attachments") or []
-    if not isinstance(v, list) or not all(isinstance(a, dict) and "id" in a for a in v):
+    if not isinstance(v, list) or len(v) > 12 or not all(
+        isinstance(a, dict) for a in v
+    ):
         raise MailFormatError("'attachments' is not a list of objects with an id")
+    for item in v:
+        att_id = item.get("id")
+        filename = item.get("filename", "")
+        if (
+            isinstance(att_id, bool)
+            or not isinstance(att_id, int)
+            or att_id <= 0
+            or not isinstance(filename, str)
+            or len(filename) > 255
+        ):
+            raise MailFormatError("invalid attachment metadata")
     return v
 
 

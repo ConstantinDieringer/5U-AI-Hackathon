@@ -49,21 +49,44 @@ app.add_api_route(webhook.PATH, webhook.receive, methods=["POST"], include_in_sc
 
 @app.middleware("http")
 async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
-    """HTTP Basic auth for everything when UI_PASSWORD is set (always set it online: the UI
-    can stop all mail and send replies). EventSource reuses the browser's credentials."""
-    if not settings.ui_password or request.url.path in PUBLIC_PATHS:
-        return await call_next(request)
-    header = request.headers.get("authorization", "")
-    if header.lower().startswith("basic "):
-        try:
-            user, _, pw = base64.b64decode(header[6:]).decode().partition(":")
-        except (ValueError, UnicodeDecodeError):
-            user, pw = "", ""
-        if secrets.compare_digest(user, settings.ui_user) and secrets.compare_digest(
-            pw, settings.ui_password
-        ):
-            return await call_next(request)
-    return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'})
+    """Protect the dashboard and state-changing requests; the webhook uses its own HMAC."""
+    public = request.url.path in PUBLIC_PATHS
+    if settings.ui_password and not public:
+        header = request.headers.get("authorization", "")
+        authenticated = False
+        if header.lower().startswith("basic "):
+            try:
+                user, _, pw = base64.b64decode(header[6:], validate=True).decode().partition(":")
+            except (ValueError, UnicodeDecodeError):
+                user, pw = "", ""
+            authenticated = secrets.compare_digest(
+                user, settings.ui_user
+            ) and secrets.compare_digest(pw, settings.ui_password)
+        if not authenticated:
+            response = Response(
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'},
+            )
+        elif request.method not in {"GET", "HEAD", "OPTIONS"} and request.headers.get(
+            "x-requested-with"
+        ) != "XMLHttpRequest":
+            response = Response(status_code=403, content="Cross-site request blocked")
+        else:
+            response = await call_next(request)
+    else:
+        response = await call_next(request)
+
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
+        "img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; connect-src 'self'"
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/", include_in_schema=False)
@@ -320,7 +343,7 @@ MAX_DB_BYTES = 500 * 1024 * 1024
 async def api_import_db(request: Request) -> dict[str, Any]:
     """Replace the database with an uploaded SQLite file (moving the local DB online).
     Only while AGENTS_ENABLED=false, so nothing polls or sends during the swap.
-        curl -u team:PW --data-binary @data/forwarder.db https://<host>/api/admin/import-db
+        curl -u team:PW -H 'X-Requested-With: XMLHttpRequest' --data-binary @data/forwarder.db https://<host>/api/admin/import-db
     """
     if settings.agents_enabled:
         raise HTTPException(409, "set AGENTS_ENABLED=false first")
