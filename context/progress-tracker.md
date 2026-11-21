@@ -119,6 +119,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 18:30: `bids.wait(until_kinds=...)` returns once nobody of the awaited kind is left to answer (all airlines declined no longer waits out the timeout). Tested offline only.
+
 - 21.11 18:15: Tracking answers are now prose that says where the cargo is (still at the shipper before the ready date, planned departure/arrival from `rfq.schedule`), greet the asker by first name (`app/mail/signature.py`), 4 variants per language, team style kept; tracking sessions end as `answered`. Replayed on real mails 1677/1850/2252; bonus not yet verified on the board. Karim's rules cross-check and last-resort commits are NOT merged: they overlap `rfq_validation`.
 
 - 21.11: Webhook merge integrated main's history-first clarification, tracking reply routing, enforce default and trucker pricing changes; conflicts resolved without reverting them. Combined verification: 292 tests passed, 1 skipped; targeted Ruff checks pass.

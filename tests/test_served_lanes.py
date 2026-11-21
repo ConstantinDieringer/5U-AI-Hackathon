@@ -114,6 +114,9 @@ def test_refusal_counts_as_answer_and_is_not_asked_again(monkeypatch) -> None:
     bids.wait(1223, 30)  # both declined: returns at once instead of waiting 30 s
     assert (datetime.now(UTC) - t0).total_seconds() < 1
     assert bids.offers(1223) == []
+    t0 = datetime.now(UTC)
+    bids.wait(1223, 30, until_kinds={"airline"})  # no airline left to answer: no waiting either
+    assert (datetime.now(UTC) - t0).total_seconds() < 1
 
     lane = [
         LaneAirline(cobalt.name, "email_only", email=COBALT),
