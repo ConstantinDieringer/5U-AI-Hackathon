@@ -8,6 +8,24 @@ from app.mail.style import TEAM_LINE
 
 NOTICES = {
     (
+        "fr",
+        False,
+    ): "Une fois ton envoi réservé, tu peux demander des nouvelles de son suivi en répondant à ce message.",
+    ("fr", True): "Tu peux demander des nouvelles du suivi de ton envoi en répondant à ce message.",
+    (
+        "es",
+        False,
+    ): "Cuando tu envío esté reservado, puedes pedir información de seguimiento respondiendo a este correo.",
+    ("es", True): "Puedes pedir información de seguimiento de tu envío respondiendo a este correo.",
+    (
+        "it",
+        False,
+    ): "Quando la tua spedizione sarà prenotata, puoi chiedere aggiornamenti sul tracciamento rispondendo a questa email.",
+    (
+        "it",
+        True,
+    ): "Puoi chiedere aggiornamenti sul tracciamento della tua spedizione rispondendo a questa email.",
+    (
         "en",
         False,
     ): "Once your shipment is booked, you can ask us for a tracking update by replying to this email.",
@@ -64,7 +82,9 @@ def customer_context(session: dict[str, Any] | None, recipient: str) -> bool | N
 
 def ensure_notice(body: str, lang: str, booked: bool) -> str:
     """Insert one required paragraph before the signature, after any model editing."""
-    language = "de" if lang == "de" else "en"
+    language = lang.lower().split("-")[0]
+    if (language, booked) not in NOTICES:
+        language = "en"
     if language == "de" and re.search(r"\b(?:Sie|Ihnen|Ihre|Ihr)\b", body):
         language = "de_formal"
     for notice in NOTICES.values():
