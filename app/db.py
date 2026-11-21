@@ -251,7 +251,9 @@ def init_db(path: str | None = None) -> None:
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     with tx() as migration:
-        columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
+        columns = {
+            row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")
+        }
         if "accounting_json" not in columns:
             migration.execute("ALTER TABLE llm_calls ADD COLUMN accounting_json TEXT")
     remap_unassigned()
@@ -855,7 +857,9 @@ def resumable_rfqs(created_after: str) -> list[dict[str, Any]]:
         conn().execute(
             "SELECT s.id AS session_id, m.id, m.sender, m.recipient, m.subject, m.body,"
             " m.received_at, m.raw_json FROM sessions s JOIN mails m ON m.id = s.id"
-            " WHERE s.kind = 'rfq' AND s.status IN ('new','pricing') AND s.first_reply_at IS NULL"
+            # 'error' too: a restart usually ships the fix, and the stored request is reused
+            " WHERE s.kind = 'rfq' AND s.status IN ('new','pricing','error')"
+            " AND s.first_reply_at IS NULL"
             " AND s.created_at > ? AND m.direction = 'in'"
             " AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = s.id)"
             " ORDER BY s.created_at",
@@ -899,6 +903,24 @@ def last_pickup(customer: str, before_session: int | None = None) -> str | None:
         req = json.loads(r["request_json"]) or {}
         if req.get("pickup_zip") or req.get("pickup_city"):
             return str(req.get("pickup_zip") or req.get("pickup_city"))
+    # earlier requests whose extraction failed still name their ZIP in the mail text
+    # (round 4639: Rheintal's request 937 said 51896 but was never extracted)
+    from app.pricing.reference import pickup_zones
+
+    zones = pickup_zones()
+    mails = _rows(
+        conn().execute(
+            "SELECT body FROM mails WHERE sender = ? AND direction = 'in' AND id != ?"
+            " AND category IN ('rfq','customer') ORDER BY received_at DESC LIMIT 20",
+            (customer, before_session or -1),
+        )
+    )
+    for m in mails:
+        for z in re.findall(
+            r"(?<![\d.,-])(\d{5})(?![\d.,-]|\s*(?:kg|cbm|kgs))", m["body"] or ""
+        ):
+            if z[:2] in zones:
+                return z
     return None
 
 
@@ -1271,7 +1293,9 @@ def record_llm_call(
 
 def session_llm_usage(session_id: int) -> dict[str, Any]:
     calls = _rows(
-        conn().execute("SELECT * FROM llm_calls WHERE session_id = ? ORDER BY id", (session_id,))
+        conn().execute(
+            "SELECT * FROM llm_calls WHERE session_id = ? ORDER BY id", (session_id,)
+        )
     )
     incomplete = 0
     for call in calls:
@@ -1285,7 +1309,9 @@ def session_llm_usage(session_id: int) -> dict[str, Any]:
         "input_tokens": sum(c["prompt_tokens"] or 0 for c in calls),
         "output_tokens": sum(c["completion_tokens"] or 0 for c in calls),
         "known_cost_micro_usd": sum(c["cost_micro_usd"] for c in calls),
-        "total_micro_usd": None if incomplete else sum(c["cost_micro_usd"] for c in calls),
+        "total_micro_usd": None
+        if incomplete
+        else sum(c["cost_micro_usd"] for c in calls),
         "incomplete_calls": incomplete,
         "legacy_calls": sum(c["accounting"] is None for c in calls),
     }

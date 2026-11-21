@@ -134,3 +134,21 @@ def test_assumed_pickup_is_named_in_the_quote_before_the_signature():
         update={"language": "de", "pickup_zip": None, "pickup_city": "Regensburg"}
     )
     assert "Raum Regensburg" in agent.with_pickup_note(f"Hallo,\n\n{SIGNATURE}", de)
+
+
+def test_last_pickup_falls_back_to_zip_in_earlier_mail_text():
+    db.ingest_mail(
+        mail_id=937,
+        sender="rheintal-elektronik@hackloop.mail",
+        recipient="austrian-power@hackloop.mail",
+        subject="RFQ ORD",
+        body="Please arrange trucking from our site in 51896 Bergisch. 1795 kg.",
+        category="rfq",
+    )
+    assert (
+        db.last_pickup("rheintal-elektronik@hackloop.mail", before_session=4639)
+        == "51896"
+    )
+    assert (
+        db.last_pickup("rheintal-elektronik@hackloop.mail", before_session=937) is None
+    )
