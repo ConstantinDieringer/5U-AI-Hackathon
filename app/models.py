@@ -9,7 +9,23 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# ICAO -> IATA for the six German origin airports of the pickup zones. US ICAO codes are
+# "K" + IATA (KJFK -> JFK) and are handled in _to_iata.
+_ICAO_DE = {"EDDF": "FRA", "EDDM": "MUC", "EDDL": "DUS", "EDDH": "HAM", "EDDS": "STR", "EDDK": "CGN"}
+
+
+def _to_iata(v: object) -> str | None:
+    """A 3-letter IATA code from an IATA or a known ICAO code, else None."""
+    code = str(v).strip().upper()
+    if len(code) == 3 and code.isalpha():
+        return code
+    if code in _ICAO_DE:
+        return _ICAO_DE[code]
+    if len(code) == 4 and code.isalpha() and code.startswith("K"):
+        return code[1:]
+    return None
 
 
 @dataclass
@@ -54,13 +70,24 @@ class Rfq(BaseModel):
     language: str = "en"
     customer_name: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _origin_fallback(cls, data: object) -> object:
+        """LLMs sometimes give an ICAO code (EDDL) for the origin. With a pickup ZIP the origin
+        follows from the ZIP anyway, so an unusable origin is dropped instead of failing."""
+        if isinstance(data, dict) and data.get("pickup_zip"):
+            o = data.get("origin")
+            if o is not None and _to_iata(o) is None:
+                data = {**data, "origin": None}
+        return data
+
     @field_validator("origin", "destination", mode="before")
     @classmethod
     def _iata(cls, v: object) -> object:
         if v is None or (isinstance(v, str) and not v.strip()):
             return None
-        code = str(v).strip().upper()
-        if len(code) != 3 or not code.isalpha():
+        code = _to_iata(v)
+        if code is None:
             raise ValueError(f"not an IATA airport code: {v!r}")
         return code
 

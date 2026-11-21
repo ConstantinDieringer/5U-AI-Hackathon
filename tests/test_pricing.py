@@ -139,3 +139,13 @@ def test_rfq_rejects_invalid_llm_output(bad):
 def test_rfq_normalises_codes():
     r = Rfq(origin=" fra ", destination="dfw", weight_kg=1, pickup_zip=" ")
     assert (r.origin, r.destination, r.pickup_zip) == ("FRA", "DFW", None)
+
+
+def test_rfq_accepts_icao_codes_and_drops_bad_origin_with_zip():
+    # live round 4 (mail 937): the LLM wrote origin "EDDL" -> the RFQ failed
+    r = Rfq.model_validate({"origin": "EDDL", "pickup_zip": "51896", "destination": "KORD",
+                            "weight_kg": 679})
+    assert (r.origin, r.destination) == ("DUS", "ORD")
+    r = Rfq.model_validate({"origin": "XXXX", "pickup_zip": "51896", "destination": "ORD",
+                            "weight_kg": 679})
+    assert r.origin is None and r.pickup_zip == "51896"
