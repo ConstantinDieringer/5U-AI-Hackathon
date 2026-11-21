@@ -205,6 +205,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 23:25: Übersicht v0.3: status strip (verdict, check pills, score), "Fehler & Warnungen" (warn/error events of 3 h grouped, `GET /api/problems`), ERROR log lines stored as `log_error` events (`app/ui/log_events.py`, session from thread name, 30 s dedupe). "Lagebild kopieren" / "Kontext kopieren" put markdown for a manual AI session on the clipboard (`/api/context`, `/api/sessions/{id}/context`). Punkte card removed. Checked in Chrome with the demo DB.
+
 - 21.11 23:15: Thread rescue woke ~40 hours-old threads on every restart (no age limit, unbounded parallel gpt-5 calls): gateway 429 bursts, mails into stale threads, a Kessler loop stopped by the mail guard. Now only input younger than `THREAD_RESCUE_MAX_AGE_S` (600 s), max `THREAD_RESCUE_MAX_PARALLEL` (2) owners at once. Offline tests only.
 
 - 21.11 23:05: "Weitere Rückfrage unterdrückt" fired far too often: the two-question cap counted RFQ, booking and tracking questions together (all `category='clarification'`), so one RFQ question plus one "shall we book?" question capped the thread. Now counted per workflow (`clarify.sent.<sid>` in kv); booking/tracking at the cap is a warning, not an error/#sos. Offline tests only.
