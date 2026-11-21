@@ -95,30 +95,11 @@ button { font: inherit; color: inherit; cursor: pointer; letter-spacing: inherit
 .badge-s.orange { background: var(--orange-tint); color: #C93400; }
 .badge-s.indigo { background: var(--indigo-tint); color: var(--indigo); }
 .badge-s.red { background: var(--red-tint); color: #D70015; }
-.trend { display: inline-flex; align-items: center; gap: 2px; height: 22px; padding: 0 8px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600; }
-.trend.up { background: var(--green-tint); color: #248A3D; } .trend.down { background: var(--red-tint); color: #D70015; } .trend.flat { background: var(--fill-1); color: var(--ink-2); }
 .kpi .label { color: var(--ink-2); font-size: 13px; font-weight: 500; }
 .kpi .value { font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.035em; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
 .kpi .meta { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12px; min-height: 22px; }
-.kpi .spark { display: block; width: 100%; height: 44px; margin-top: 14px; }
-.hero { position: relative; overflow: hidden; background:
-  radial-gradient(60% 80% at 0% 0%, rgba(0,122,255,.16), transparent 60%),
-  radial-gradient(50% 70% at 100% 10%, rgba(88,86,214,.16), transparent 60%),
-  radial-gradient(60% 70% at 70% 100%, rgba(52,199,89,.16), transparent 60%), var(--card); }
-.hero .value { font-size: 48px; line-height: 52px; letter-spacing: -0.04em; }
-.hero .split { display: flex; gap: 28px; margin-top: 4px; }
-.hero .split div { font-size: 12px; color: var(--ink-2); } .hero .split b { display: block; font-size: 17px; color: var(--ink); letter-spacing: -0.02em; }
-.chart { display: block; width: 100%; height: 240px; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
-.rings { display: flex; align-items: center; gap: 20px; }
-.rings svg { width: 168px; height: 168px; flex: none; }
-.ring-legend { display: flex; flex-direction: column; gap: 14px; }
-.ring-legend .l { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
-.ring-legend .v { font-size: 22px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.pts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
-.pts > div { background: var(--fill-1); border-radius: var(--r-md); padding: 12px; }
-.pts b { display: block; font-size: 17px; letter-spacing: -0.02em; }
 table.list { width: 100%; border-collapse: collapse; }
 .list th { text-align: left; font-size: 12px; font-weight: 500; color: var(--ink-2); padding: 0 12px 10px; border-bottom: 1px solid var(--hairline-strong); white-space: nowrap; }
 .list td { height: 52px; padding: 0 12px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
@@ -136,6 +117,33 @@ table.list { width: 100%; border-collapse: collapse; }
 .attn-item .ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex: none; }
 .attn-item .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attn-item .d { font-size: 12px; color: var(--ink-2); }
+
+/* ---------- overview: checks, score, steps ---------- */
+.checks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.check { border-radius: var(--r-md); padding: 14px; background: var(--fill-1); min-width: 0; }
+.check .ck-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.check .lamp { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--ink-3); }
+.check.ok .lamp { background: var(--green); box-shadow: 0 0 0 3px var(--green-tint); }
+.check.warn { background: var(--orange-tint); } .check.warn .lamp { background: var(--orange); }
+.check.bad { background: var(--red-tint); } .check.bad .lamp { background: var(--red); }
+.check .ck-v { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.03em; margin: 6px 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.check .ck-hint { font-size: 12px; line-height: 16px; color: var(--ink-2); }
+.big { font-size: 48px; line-height: 52px; font-weight: 700; letter-spacing: -0.04em; }
+.big .of { font-size: 20px; color: var(--ink-3); letter-spacing: -0.02em; }
+.bar { margin-bottom: 14px; }
+.bar-h { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+.bar-h b { color: var(--ink); font-weight: 600; }
+.bar-t { height: 8px; border-radius: var(--r-pill); background: var(--fill-1); overflow: hidden; }
+.bar-t i { display: block; height: 100%; border-radius: var(--r-pill); }
+.verdicts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.req { display: flex; flex-direction: column; line-height: 18px; min-width: 0; }
+.req span { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.steps td { height: 58px; }
+.step { display: inline-flex; align-items: center; gap: 4px; max-width: 190px; height: 24px; padding: 0 10px 0 8px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600; background: var(--fill-1); color: var(--ink-2); }
+.step span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .icon { width: 14px; height: 14px; stroke-width: 2.25; }
+.step.green { background: var(--green-tint); color: #248A3D; } .step.blue { background: var(--blue-tint); color: var(--blue); }
+.step.orange { background: var(--orange-tint); color: #C93400; } .step.red { background: var(--red-tint); color: #D70015; }
 
 /* ---------- live ---------- */
 .live { display: grid; grid-template-columns: minmax(300px, 4fr) minmax(0, 8fr); gap: var(--gap); max-width: 1360px; align-items: start; }
@@ -196,7 +204,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   :root { --sidebar: 72px; }
   .brand div, .nav span.lbl, .conn span.lbl, .stop span { display: none; }
   .nav { justify-content: center; } .nav .badge { position: absolute; top: 2px; right: 2px; }
-  .s3 { grid-column: span 6; } .s4, .s8 { grid-column: span 12; } .s6 { grid-column: span 12; }
+  .s3 { grid-column: span 6; } .s4, .s8 { grid-column: span 12; } .s6 { grid-column: span 12; } .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .search { width: 200px; }
 }
 @media (max-width: 899px) {
@@ -247,7 +255,6 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
     <div><h1 id="page-title">Übersicht</h1><div class="sub" id="page-sub">Wie läuft der Forwarder gerade?</div></div>
     <div class="right">
       <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Kunde, Betreff oder ID" autocomplete="off"></label>
-      <div class="seg" id="range" role="tablist" aria-label="Zeitraum"></div>
       <div class="avatar" title="Team Austrian Power">AP</div>
     </div>
   </header>
@@ -304,80 +311,15 @@ const pct = (a, b) => b ? Math.round(100 * a / b) + " %" : "–";
 const STATUS = { new: ["neu", "blue"], pricing: ["bepreisen", "blue"], quoted: ["quotiert", "indigo"], accepted: ["angenommen", "green"], booked: ["gebucht", "green"], confirmed: ["bestätigt", "green"], answered: ["beantwortet", "green"], lost: ["verloren", "red"], expired: ["abgelaufen", "red"], error: ["Fehler", "red"] };
 const badge = (status) => { const [l, t] = STATUS[status] || [status, ""]; return el("span", { class: "badge-s " + t }, l); };
 const OPEN = ["new", "pricing"];
-const costPts = (u) => u == null ? null : Math.max(0, 40 * (1 - u / 100000));
-const timePts = (s) => s == null ? null : s <= 120 ? 15 : s >= 360 ? 0 : 15 * (360 - s) / 240;
 const PALETTE = [["blue", "#007AFF"], ["indigo", "#5856D6"], ["green", "#34C759"], ["orange", "#FF9500"]];
 function initials(email) { const w = (email || "?").split("@")[0].split(/[-_.]/).filter(Boolean); return ((w[0] || "?")[0] + ((w[1] || "")[0] || "")).toUpperCase(); }
 function tintFor(s) { let h = 0; for (const ch of s || "") h = (h * 31 + ch.charCodeAt(0)) >>> 0; return PALETTE[h % PALETTE.length]; }
 function who(email) { const [name, hex] = tintFor(email); return el("div", { class: "who" }, el("span", { class: "ini", style: `background:var(--${name}-tint);color:${hex}` }, initials(email)), el("span", { class: "txt" }, (email || "").replace("@hackloop.mail", ""))); }
 function emptyState(ic, text) { return el("div", { class: "empty" }, el("span", { class: "ic" }, icon(ic)), text); }
 
-// ---------- charts ----------
-function smoothPath(pts) { // Catmull-Rom -> cubic bezier
-  if (pts.length < 2) return pts.length ? `M${pts[0][0]},${pts[0][1]}` : "";
-  let d = `M${pts[0][0]},${pts[0][1]}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
-    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6], c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
-    d += ` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
-  }
-  return d;
-}
-let gid = 0;
-function areaChart(series, { w = 760, h = 240, pad = [8, 8, 28, 36], labels = [], refLines = [], fmt = (v) => v } = {}) {
-  const all = series.flatMap((s) => s.values).concat(refLines.map((r) => r.v));
-  const max = Math.max(1, ...all.filter((v) => v != null)) * 1.15;
-  const [pt, pr, pb, pl] = pad, iw = w - pl - pr, ih = h - pt - pb;
-  const n = Math.max(1, (series[0]?.values.length || 1) - 1);
-  const X = (i) => pl + iw * i / n, Y = (v) => pt + ih - ih * (v || 0) / max;
-  const root = svg("svg", { viewBox: `0 0 ${w} ${h}`, class: "chart", preserveAspectRatio: "none", role: "img" });
-  const defs = svg("defs"); root.append(defs);
-  for (let i = 0; i <= 3; i++) { const v = max / 1.15 * i / 3, y = Y(v);
-    root.append(svg("line", { x1: pl, x2: w - pr, y1: y, y2: y, stroke: "rgba(0,0,0,.06)", "stroke-width": 1 }));
-    const t = svg("text", { x: pl - 8, y: y + 4, "text-anchor": "end", "font-size": 11, fill: "#AEAEB2" }); t.textContent = fmt(Math.round(v)); root.append(t); }
-  refLines.forEach((r) => { const y = Y(r.v); root.append(svg("line", { x1: pl, x2: w - pr, y1: y, y2: y, stroke: r.color || "#FF9500", "stroke-dasharray": "4 4", "stroke-width": 1 }));
-    const t = svg("text", { x: w - pr, y: y - 6, "text-anchor": "end", "font-size": 11, fill: r.color || "#FF9500" }); t.textContent = r.label; root.append(t); });
-  series.forEach((s) => {
-    const id = "g" + (++gid), pts = s.values.map((v, i) => [X(i), Y(v)]), line = smoothPath(pts);
-    const grad = svg("linearGradient", { id, x1: 0, x2: 0, y1: 0, y2: 1 }, svg("stop", { offset: "0%", "stop-color": s.color, "stop-opacity": .28 }), svg("stop", { offset: "100%", "stop-color": s.color, "stop-opacity": 0 }));
-    defs.append(grad);
-    if (s.fill !== false) root.append(svg("path", { d: `${line} L${X(pts.length - 1)},${pt + ih} L${X(0)},${pt + ih} Z`, fill: `url(#${id})` }));
-    root.append(svg("path", { d: line, fill: "none", stroke: s.color, "stroke-width": 2.5, "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }));
-  });
-  const step = Math.max(1, Math.ceil(labels.length / 6));
-  labels.forEach((l, i) => { if (i % step && i !== labels.length - 1) return; const t = svg("text", { x: X(i), y: h - 8, "text-anchor": i === 0 ? "start" : i === labels.length - 1 ? "end" : "middle", "font-size": 11, fill: "#AEAEB2" }); t.textContent = l; root.append(t); });
-  return root;
-}
-function sparkline(values, color) {
-  const w = 240, h = 44, n = Math.max(1, values.length - 1), max = Math.max(1, ...values.map((v) => v || 0));
-  const pts = values.map((v, i) => [w * i / n, h - 4 - (h - 8) * (v || 0) / max]);
-  const id = "s" + (++gid), line = smoothPath(pts);
-  return svg("svg", { viewBox: `0 0 ${w} ${h}`, class: "spark", preserveAspectRatio: "none" },
-    svg("defs", {}, svg("linearGradient", { id, x1: 0, x2: 0, y1: 0, y2: 1 }, svg("stop", { offset: "0%", "stop-color": color, "stop-opacity": .25 }), svg("stop", { offset: "100%", "stop-color": color, "stop-opacity": 0 }))),
-    svg("path", { d: `${line} L${w},${h} L0,${h} Z`, fill: `url(#${id})` }),
-    svg("path", { d: line, fill: "none", stroke: color, "stroke-width": 2, "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }));
-}
-function rings(items) { // Apple Health style, outer -> inner
-  const size = 168, stroke = 14, gap = 4, root = svg("svg", { viewBox: `0 0 ${size} ${size}`, role: "img" });
-  items.forEach((it, i) => {
-    const r = size / 2 - stroke / 2 - i * (stroke + gap), c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, it.value ?? 0));
-    root.append(svg("circle", { cx: size / 2, cy: size / 2, r, fill: "none", stroke: it.tint, "stroke-width": stroke }));
-    root.append(svg("circle", { cx: size / 2, cy: size / 2, r, fill: "none", stroke: it.color, "stroke-width": stroke, "stroke-linecap": "round",
-      "stroke-dasharray": `${(c * f).toFixed(1)} ${c.toFixed(1)}`, transform: `rotate(-90 ${size / 2} ${size / 2})` }));
-  });
-  return root;
-}
-function trend(cur, prev, { lowerIsBetter = false } = {}) {
-  if (cur == null || prev == null || prev === 0) return el("span", { class: "trend flat" }, "neu");
-  const d = (cur - prev) / Math.abs(prev); if (Math.abs(d) < .005) return el("span", { class: "trend flat" }, "± 0 %");
-  const good = lowerIsBetter ? d < 0 : d > 0;
-  return el("span", { class: "trend " + (good ? "up" : "down") }, (d > 0 ? "↑ " : "↓ ") + Math.abs(Math.round(d * 100)) + " %");
-}
-
 // ---------- state ----------
-const S = { page: "overview", range: 6, filter: "attention", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", metric: "volume", initDone: false };
-const PAGES = { overview: ["Übersicht", "Wie läuft der Forwarder gerade?"], live: ["Live", "Sessions, die dich brauchen, stehen oben."], crm: ["CRM", "Wen wir quotiert haben, was gewonnen und was verloren wurde."] };
-const RANGES = [[6, "6 h"], [24, "24 h"], [0, "Gesamt"]];
+const S = { page: "overview", filter: "attention", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", initDone: false };
+const PAGES = { overview: ["Übersicht", "Was funktioniert, was nicht, was ist zu tun?"], live: ["Live", "Sessions, die dich brauchen, stehen oben."], crm: ["CRM", "Wen wir quotiert haben, was gewonnen und was verloren wurde."] };
 const FILTERS = [["attention", "Achtung"], ["open", "Offen"], ["all", "Alle"], ["done", "Erledigt"]];
 
 // ---------- countdown ----------
@@ -393,75 +335,70 @@ function show(page) {
   document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + page));
   document.querySelectorAll(".nav").forEach((n) => n.classList.toggle("active", n.dataset.page === page));
   $("#page-title").textContent = PAGES[page][0]; $("#page-sub").textContent = PAGES[page][1];
-  $("#range").style.visibility = page === "overview" ? "visible" : "hidden";
   if (page === "overview") loadOverview(); if (page === "crm") loadCrm(); if (page === "live") loadSessions();
   history.replaceState(null, "", page === "live" && S.selected ? "#session=" + S.selected : "#" + page);
 }
 document.querySelectorAll(".nav").forEach((n) => n.addEventListener("click", () => show(n.dataset.page)));
-function renderRange() { const box = $("#range"); box.replaceChildren(...RANGES.map(([h, l]) => el("button", { class: S.range === h ? "active" : "", role: "tab", onclick: () => { S.range = h; renderRange(); loadOverview(); } }, l))); }
 $("#global-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { S.q = e.target.value.trim(); S.filter = "all"; $("#q").value = S.q; show("live"); renderFilters(); renderList(); } });
 
 // ---------- OVERVIEW ----------
+const TONE = { ok: "green", warn: "orange", bad: "red", run: "blue", none: "" };
+const STEP_ICON = { ok: "check", warn: "clock", bad: "x", run: "clock", none: null };
+function stepChip(st) {
+  const ic = STEP_ICON[st.state];
+  return el("span", { class: "step " + (TONE[st.state] || ""), title: st.label }, ic ? icon(ic) : null, el("span", {}, st.label));
+}
 async function loadOverview() {
-  const d = await api("/api/overview?hours=" + S.range).catch(() => null); if (!d) return;
-  const c = d.current, p = d.previous, ser = d.series, labels = ser.map((b) => hm(b.t));
+  const d = await api("/api/status").catch(() => null); if (!d) return;
   const card = (cls, ...kids) => el("div", { class: "card " + cls }, ...kids);
-  const rangeLbl = S.range ? `letzte ${S.range} h` : "seit Start";
+  const head = (title, sub, aside) => el("div", { class: "card-h" }, el("div", {}, el("h3", {}, title), sub ? el("div", { class: "caption" }, sub) : null), aside || null);
 
-  const hero = card("kpi hero s6",
-    el("div", { class: "label" }, "Gebuchtes Volumen · " + rangeLbl),
-    el("div", { class: "value" }, euro(c.booked_minor)),
-    el("div", { class: "meta" }, trend(c.booked_minor, p.booked_minor), el("span", {}, "vs. vorheriger Zeitraum")),
-    el("div", { class: "split" }, el("div", {}, el("b", {}, String(c.won)), "gewonnen"), el("div", {}, el("b", {}, String(c.lost)), "verloren"), el("div", {}, el("b", {}, `${c.accepted}/${c.rated}`), "von 5U akzeptiert")),
-    sparkline(ser.map((b) => b.booked_minor), "#5856D6"));
-  const k1 = card("kpi s3", el("div", { class: "label" }, "Anfragen"), el("div", { class: "value" }, String(c.rfqs)),
-    el("div", { class: "meta" }, trend(c.rfqs, p.rfqs), el("span", {}, pct(c.quoted, c.rfqs) + " beantwortet")), sparkline(ser.map((b) => b.rfqs), "#007AFF"));
-  const k2 = card("kpi s3", el("div", { class: "label" }, "Ø Antwortzeit"), el("div", { class: "value", style: c.avg_response_s > 120 ? "color:var(--orange)" : "" }, secs(c.avg_response_s)),
-    el("div", { class: "meta" }, trend(c.avg_response_s, p.avg_response_s, { lowerIsBetter: true }), el("span", {}, "Ziel ≤ 2:00")), sparkline(ser.map((b) => b.avg_response_s || 0), "#34C759"));
+  // 1. Systemcheck: one tile per pipeline part, last 2 h
+  const bad = d.checks.filter((c) => c.level === "bad").length, warn = d.checks.filter((c) => c.level === "warn").length;
+  const verdict = bad ? ["red", `${bad} Problem${bad > 1 ? "e" : ""}`] : warn ? ["orange", `${warn} Warnung${warn > 1 ? "en" : ""}`] : ["green", "Alles läuft"];
+  const checks = card("s8",
+    head("Systemcheck", `Funktioniert jeder Schritt? Basis: letzte ${d.window_hours} h`, el("span", { class: "aside badge-s " + verdict[0] }, verdict[1])),
+    el("div", { class: "checks" }, ...d.checks.map((c) => el("div", { class: "check " + c.level },
+      el("div", { class: "ck-h" }, el("i", { class: "lamp" }), el("span", {}, c.name)),
+      el("div", { class: "ck-v num" }, c.value),
+      el("div", { class: "ck-hint" }, c.hint)))));
 
-  const metrics = { volume: "Anfragen & Quotes", response: "Antwortzeit", cost: "LLM-Kosten" };
-  const seg = el("div", { class: "seg aside" }, ...Object.entries(metrics).map(([k, l]) => el("button", { class: S.metric === k ? "active" : "", onclick: () => { S.metric = k; loadOverview(); } }, l)));
-  let chart, legend;
-  if (S.metric === "volume") {
-    chart = areaChart([{ values: ser.map((b) => b.rfqs), color: "#007AFF" }, { values: ser.map((b) => b.quoted), color: "#34C759" }], { labels });
-    legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:#007AFF" }), "Anfragen"), el("span", {}, el("i", { style: "background:#34C759" }), "Quotes gesendet"));
-  } else if (S.metric === "response") {
-    chart = areaChart([{ values: ser.map((b) => b.avg_response_s || 0), color: "#34C759" }], { labels, refLines: [{ v: 120, label: "2 min · volle Zeitpunkte" }], fmt: (v) => v + " s" });
-    legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:#34C759" }), "Ø Sekunden bis zur Quote"));
-  } else {
-    chart = areaChart([{ values: ser.map((b) => b.avg_cost_micro_usd || 0), color: "#5856D6" }], { labels, fmt: (v) => v + " µ$" });
-    legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:#5856D6" }), "Ø LLM-Kosten je Quote (µ$) · 0 Punkte bei 100 000 µ$"));
-  }
-  const chartCard = card("s8", el("div", { class: "card-h" }, el("h3", {}, "Verlauf"), seg), chart, legend);
+  // 2. Punkte: what an accepted quote earns on average
+  const sc = d.score, pts = (v, max) => v == null ? "–" : `${v.toFixed(1)} / ${max}`;
+  const bar = (label, val, max, text, color) => el("div", { class: "bar" },
+    el("div", { class: "bar-h" }, el("span", {}, label), el("b", { class: "num" }, text)),
+    el("div", { class: "bar-t" }, el("i", { style: `width:${val == null ? 0 : Math.max(2, 100 * val / max)}%;background:${color}` })));
+  const accRate = sc.rated ? sc.accepted / sc.rated : null;
+  const vlist = Object.entries(sc.verdicts).sort((a, b) => b[1] - a[1]).map(([v, n]) => el("span", { class: "badge-s " + (v === "accepted" ? "green" : "red") }, `${n}× ${v}`));
+  const score = card("s4",
+    head("Punkte", "Ø je akzeptierter Quote, seit Start"),
+    el("div", { class: "big num" }, sc.per_quote == null ? "–" : Math.round(sc.per_quote), el("span", { class: "of" }, " / 100")),
+    el("div", { class: "caption", style: "margin-bottom:16px" }, "Preis als voll angenommen, das Board zeigt nur akzeptiert / abgelehnt."),
+    bar("Preis · akzeptiert", accRate, 1, sc.rated ? `${sc.accepted} von ${sc.rated}` : "–", "#34C759"),
+    bar("Kosten · Ø " + usd(sc.avg_cost_micro_usd), sc.cost_pts, 40, pts(sc.cost_pts, 40), "#5856D6"),
+    bar("Zeit · Ø " + secs(sc.avg_response_s), sc.time_pts, 15, pts(sc.time_pts, 15), "#007AFF"),
+    el("div", { class: "verdicts" }, ...vlist));
 
-  const quoteRate = c.rfqs ? c.quoted / c.rfqs : 0, accRate = c.rated ? c.accepted / c.rated : 0, winRate = c.quoted ? c.won / c.quoted : 0;
-  const cp = costPts(c.avg_cost_micro_usd), tp = timePts(c.avg_response_s);
-  const ringCard = card("s4", el("div", { class: "card-h" }, el("h3", {}, "Leistung")),
-    el("div", { class: "rings" }, rings([{ value: accRate, color: "#34C759", tint: "rgba(52,199,89,.15)" }, { value: quoteRate, color: "#007AFF", tint: "rgba(0,122,255,.13)" }, { value: winRate, color: "#5856D6", tint: "rgba(88,86,214,.13)" }]),
-      el("div", { class: "ring-legend" },
-        el("div", {}, el("div", { class: "l" }, el("i", { class: "dot", style: "background:#34C759" }), "5U akzeptiert"), el("div", { class: "v" }, pct(c.accepted, c.rated))),
-        el("div", {}, el("div", { class: "l" }, el("i", { class: "dot", style: "background:#007AFF" }), "Beantwortet"), el("div", { class: "v" }, pct(c.quoted, c.rfqs))),
-        el("div", {}, el("div", { class: "l" }, el("i", { class: "dot", style: "background:#5856D6" }), "Gebucht"), el("div", { class: "v" }, pct(c.won, c.quoted))))),
-    el("div", { class: "pts" },
-      el("div", {}, el("span", { class: "caption" }, "Zeitpunkte"), el("b", {}, tp == null ? "–" : tp.toFixed(1) + " / 15")),
-      el("div", {}, el("span", { class: "caption" }, "Kostenpunkte · Ø " + usd(c.avg_cost_micro_usd)), el("b", {}, cp == null ? "–" : cp.toFixed(1) + " / 40"))));
+  // 3. Letzte Anfragen: each request step by step
+  const rows = d.requests.map((r) => el("tr", { onclick: () => select(r.id) },
+    el("td", { class: "muted num" }, hm(r.created_at)),
+    el("td", {}, el("div", { class: "req" }, el("b", {}, r.lane || r.subject || "#" + r.id), el("span", { class: "muted" }, [(r.customer || "").replace("@hackloop.mail", ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ")))),
+    el("td", {}, stepChip(r.steps.quote)), el("td", {}, stepChip(r.steps.board)), el("td", {}, stepChip(r.steps.booking))));
+  const reqs = card("s8",
+    head("Letzte Anfragen", "Jede RFQ von links nach rechts: Quote gesendet → 5U-Urteil → gebucht. Klick öffnet die Session.", el("button", { class: "btn ghost aside", onclick: () => show("live") }, "Alle", icon("cart"))),
+    rows.length ? el("table", { class: "list steps" }, el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Anfrage"), el("th", {}, "Quote"), el("th", {}, "5U"), el("th", {}, "Buchung"))), el("tbody", {}, ...rows)) : emptyState("inbox", "Noch keine Anfragen."),
+    el("div", { class: "legend", style: "margin-top:14px" }, ...[["#34C759", "erledigt"], ["#007AFF", "läuft / wartet"], ["#FF9500", "knapp"], ["#FF3B30", "verloren / Fehler"]].map(([c, l]) => el("span", {}, el("i", { style: "background:" + c }), l))));
 
-  const attn = d.attention;
-  const ATT = { attention: ["alert", "orange"], expired: ["clock", "red"], board: ["trophy", "red"], to_book: ["box", "blue"] };
-  const attnCard = card("s4", el("div", { class: "card-h" }, el("h3", {}, "Braucht Aufmerksamkeit"), el("span", { class: "aside badge-s " + (attn.length ? "orange" : "green") }, String(attn.length))),
-    attn.length ? el("div", {}, ...attn.slice(0, 6).map((a) => { const [ic, col] = ATT[a.kind] || ["alert", "orange"];
-      return el("div", { class: "attn-item", onclick: () => select(a.session_id) }, el("span", { class: "ic", style: `background:var(--${col}-tint);color:var(--${col})` }, icon(ic)),
-        el("div", { style: "min-width:0" }, el("div", { class: "t" }, a.subject || "Session " + a.session_id), el("div", { class: "d" }, a.reason + " · " + (a.customer || "").replace("@hackloop.mail", "")))); }))
-      : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Alles im grünen Bereich."));
+  // 4. Zu tun: only what a human can still change
+  const todo = card("s4",
+    head("Zu tun", "Nur was ein Mensch jetzt noch retten kann.", el("span", { class: "aside badge-s " + (d.todo.length ? "orange" : "green") }, String(d.todo.length))),
+    d.todo.length ? el("div", {}, ...d.todo.map((t) => el("div", { class: "attn-item", onclick: () => select(t.session_id) },
+      el("span", { class: "ic", style: `background:var(--${t.tone}-tint);color:var(--${t.tone})` }, icon(t.tone === "blue" ? "box" : "alert")),
+      el("div", { style: "min-width:0" }, el("div", { class: "t" }, t.lane || t.subject || "Session " + t.session_id), el("div", { class: "d" }, t.reason + " · " + (t.customer || "").replace("@hackloop.mail", ""))))))
+      : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts zu tun. Der Agent arbeitet allein."));
 
-  const actRows = d.activity.map((a) => el("tr", { onclick: () => a.session_id && select(a.session_id) },
-    el("td", { class: "muted num" }, hm(a.created_at)), el("td", {}, a.customer ? who(a.customer) : el("span", { class: "faint" }, "System")),
-    el("td", { class: "wrap" }, a.message || a.kind), el("td", { class: "r" }, a.status ? badge(a.status) : (a.level === "error" ? el("span", { class: "badge-s red" }, "Fehler") : ""))));
-  const actCard = card("s8", el("div", { class: "card-h" }, el("h3", {}, "Letzte Aktivität"), el("button", { class: "btn ghost aside", onclick: () => show("live") }, "Alle Sessions", icon("cart"))),
-    actRows.length ? el("table", { class: "list" }, el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Kunde"), el("th", {}, "Ereignis"), el("th", { class: "r" }, "Status"))), el("tbody", {}, ...actRows))
-      : emptyState("inbox", "Noch keine Aktivität."));
-  $("#overview").replaceChildren(hero, k1, k2, chartCard, ringCard, attnCard, actCard);
-  $("#attn-badge").textContent = attn.length || "";
+  $("#overview").replaceChildren(checks, todo, reqs, score);
+  $("#attn-badge").textContent = d.todo.length || "";
 }
 
 // ---------- LIVE ----------
@@ -620,7 +557,6 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawe
   if (e.key === "/") { e.preventDefault(); show("live"); $("#q").focus(); } });
 setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "live") loadSessions(); }, 20000);
 (async function boot() {
-  renderRange();
   const ev = await api("/api/events?since=0&limit=500").catch(() => []); S.lastId = ev.length ? ev[ev.length - 1].id : 0; ev.forEach((e) => S.seen.add(e.id));
   await Promise.all([loadStats(), loadSessions()]);
   const h = location.hash, m = h.match(/session=(\d+)/);

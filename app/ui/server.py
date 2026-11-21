@@ -57,7 +57,9 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
             pw, settings.ui_password
         ):
             return await call_next(request)
-    return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'})
+    return Response(
+        status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'}
+    )
 
 
 @app.get("/", include_in_schema=False)
@@ -81,6 +83,11 @@ def api_dashboard() -> dict[str, Any]:
 @app.get("/api/overview")
 def api_overview(hours: int = 6) -> dict[str, Any]:
     return db.overview(hours=max(0, min(hours, 24 * 7)))
+
+
+@app.get("/api/status")
+def api_status() -> dict[str, Any]:
+    return db.status_overview()
 
 
 @app.get("/api/attention")
@@ -211,7 +218,9 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     try:
         from app import hackloop  # owned by task A; may not exist yet
     except ImportError as e:
-        raise HTTPException(503, "mail client (app/hackloop.py) not available yet") from e
+        raise HTTPException(
+            503, "mail client (app/hackloop.py) not available yet"
+        ) from e
 
     db.takeover(session_id)
     subject = parent["subject"] or ""
@@ -219,10 +228,18 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
         subject = f"Re: {subject}"
     try:
         sent = hackloop.send(
-            to=parent["sender"], subject=subject, body=body.text, in_reply_to=parent["id"]
+            to=parent["sender"],
+            subject=subject,
+            body=body.text,
+            in_reply_to=parent["id"],
         )
     except Exception as e:
-        db.emit(db.Ev.ERROR, f"Manuelle Antwort fehlgeschlagen: {e}", session_id, level="error")
+        db.emit(
+            db.Ev.ERROR,
+            f"Manuelle Antwort fehlgeschlagen: {e}",
+            session_id,
+            level="error",
+        )
         raise HTTPException(502, f"send failed: {e}") from e
     sent_id = int(sent.get("id", 0)) if isinstance(sent, dict) else 0
     if sent_id:
@@ -260,4 +277,7 @@ async def api_import_db(request: Request) -> dict[str, Any]:
 
 @app.get("/api/health")
 def api_health() -> dict[str, Any]:
-    return {"ok": True, "last_event": (db.events_after(0, limit=1) or [{}])[0].get("id")}
+    return {
+        "ok": True,
+        "last_event": (db.events_after(0, limit=1) or [{}])[0].get("id"),
+    }

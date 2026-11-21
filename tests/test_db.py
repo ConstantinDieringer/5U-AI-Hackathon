@@ -205,14 +205,18 @@ def test_events_after_and_kv():
 
 
 def test_expire_overdue():
-    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(timespec="seconds")
+    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(
+        timespec="seconds"
+    )
     sid = rfq(received_at=old)
     assert db.expire_overdue() == [sid]
     assert db.get_session(sid)["status"] == "expired"
 
 
 def test_list_sessions_attention_first():
-    old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(timespec="seconds")
+    old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(
+        timespec="seconds"
+    )
     calm = rfq(1)
     urgent = rfq(2, received_at=old)  # 1 min left -> needs attention
     rows = db.list_sessions()
@@ -285,7 +289,12 @@ def test_concurrent_writers_no_lock_errors():
 def test_board_result_change_detection():
     sid = rfq()
     assert db.save_board_result(
-        round_id="r1", verdict="pending", reason=None, points=None, raw={}, session_id=sid
+        round_id="r1",
+        verdict="pending",
+        reason=None,
+        points=None,
+        raw={},
+        session_id=sid,
     )
     assert not db.save_board_result(
         round_id="r1", verdict="pending", reason=None, points=None, raw={}
@@ -343,3 +352,55 @@ def test_session_by_created_at_matches_board_sent_at():
     sid = rfq(received_at="2026-11-21T15:00:59.986067+00:00")
     assert db.session_by_created_at("2026-11-21T15:00:59.986067+00:00") == sid
     assert db.session_by_created_at("2026-11-21T15:01:00+00:00") is None
+
+
+def test_bid_reply_maps_by_ap_tag_when_request_was_not_stored():
+    sid = rfq()
+    # carrier answers a bid request we never stored: headers point to an unknown mail id
+    got = db.ingest_mail(
+        mail_id=300,
+        sender="alpenblick-logistik@hackloop.mail",
+        recipient=TEAM,
+        subject=f"Re: [AP-{sid}] Pickup 24983 to HAM airport, 1619 kg",
+        body="Our price: 122.76 EUR",
+        category="carrier_bid",
+        references=[299],
+        in_reply_to=299,
+    )
+    assert got == sid
+    # an unknown AP number stays unassigned
+    assert (
+        db.ingest_mail(
+            mail_id=301,
+            sender="x@hackloop.mail",
+            recipient=TEAM,
+            subject="Re: [AP-999] test",
+            body="",
+            category="carrier_bid",
+        )
+        is None
+    )
+
+
+def test_booking_confirmation_maps_by_bk_reference_and_startup_remap():
+    sid = rfq()
+    # stored before the fallback existed: unassigned
+    with db.tx() as c:
+        c.execute(
+            "INSERT INTO mails(id, session_id, thread_root, direction, sender, recipient, subject,"
+            " body, category, received_at) VALUES (400, NULL, 400, 'in', 'a@hackloop.mail', ?,"
+            " 'Booking BK-FG57LGZ7 confirmed', 'Confirmed.', 'carrier_bid', ?)",
+            (TEAM, db.now()),
+        )
+    db.record_booking(
+        sid,
+        booking_reference="BK-FG57LGZ7",
+        rate_id="R-1",
+        airline="A",
+        price_minor=100,
+        currency="EUR",
+        status="confirmed",
+    )
+    assert db.remap_unassigned() == 1
+    assert 400 in {m["id"] for m in db.get_session(sid)["mails"]}
+    assert db.remap_unassigned() == 0
