@@ -25,6 +25,7 @@ from app import db, hackloop
 from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
+from app.mail.style import SIGNATURE, amount
 from app.models import Mail
 from app.pricing.pricing import to_minor
 from app.pricing.reference import airline_email
@@ -70,9 +71,7 @@ def own_text(body: str) -> str:
         s = line.strip()
         if s.startswith(">"):
             continue
-        if re.match(
-            r"^(on .+ wrote:|am .+ schrieb|-----\s*original|from:\s)", s, re.IGNORECASE
-        ):
+        if re.match(r"^(on .+ wrote:|am .+ schrieb|-----\s*original|from:\s)", s, re.IGNORECASE):
             break
         out.append(line)
     return "\n".join(out)
@@ -127,9 +126,7 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
     return str(best["rate_id"]) if best else None
 
 
-def _book_portal(
-    sid: int, quote: dict[str, Any], request: dict[str, Any]
-) -> dict[str, Any]:
+def _book_portal(sid: int, quote: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     """Book the quoted rate; on expired/unknown fetch a fresh one once. Raises HackloopError."""
     ref = db.team_reference(sid)
     try:
@@ -144,18 +141,16 @@ def _book_portal(
         return hackloop.book(fresh, ref)
 
 
-def _book_by_email(
-    sid: int, quote: dict[str, Any], request: dict[str, Any], to: str
-) -> None:
+def _book_by_email(sid: int, quote: dict[str, Any], request: dict[str, Any], to: str) -> None:
     ref = db.team_reference(sid)
-    subject = f"[{ref}] Booking request {quote['origin']}-{quote['destination']}"
+    subject = f"[{ref}] Booking request {quote['origin']} to {quote['destination']}"
     body = (
         "Hello,\n\n"
         f"we would like to book air freight {quote['origin']} to {quote['destination']} "
         f"for {request['weight_kg']:g} kg / {float(request.get('volume_cbm') or 0):g} cbm "
-        f"at your offer of {quote['total_minor'] / 100:.2f} {quote['currency']}.\n"
+        f"at your offer of {amount(quote['total_minor'], quote['currency'])}.\n"
         f"Our reference: {ref}.\n\nPlease confirm the booking.\n\n"
-        "Thank you,\nAustrian Power Forwarding\n"
+        f"{SIGNATURE}\n"
     )
     sent = hackloop.send(to, subject, body)
     db.record_outgoing(
@@ -170,32 +165,30 @@ def _book_by_email(
     )
 
 
-def _confirmation(
-    lang: str, name: str | None, quote: dict[str, Any], booking_ref: str
-) -> str:
-    price = Decimal(quote["total_minor"]) / 100
-    route = f"{quote['origin']} – {quote['destination']}"
+def _confirmation(lang: str, name: str | None, quote: dict[str, Any], booking_ref: str) -> str:
+    price = amount(quote["total_minor"], quote["currency"])
+    connector = "nach" if lang == "de" else "to"
+    route = f"{quote['origin']} {connector} {quote['destination']}"
     if lang == "de":
-        amount = f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return (
             f"{'Hallo ' + name if name else 'Guten Tag'},\n\n"
             f"vielen Dank, Ihre Sendung ist gebucht.\n\n"
             f"Buchungsnummer: {booking_ref}\n"
             f"Strecke: {route} mit {quote['airline']}\n"
-            f"Preis: {amount} {quote['currency']} all-in\n\n"
+            f"Preis: {price} all-in\n\n"
             "Wir melden uns, sobald es Neuigkeiten gibt. Bei Fragen zum Status "
             "antworten Sie einfach auf diese Mail.\n\n"
-            "Viele Grüße\nIhr Team von Austrian Power Forwarding\n"
+            f"{SIGNATURE}\n"
         )
     return (
         f"{'Hi ' + name if name else 'Hello'},\n\n"
         "thanks, your shipment is booked.\n\n"
         f"Booking reference: {booking_ref}\n"
         f"Route: {route} with {quote['airline']}\n"
-        f"Price: {price:,.2f} {quote['currency']} all-in\n\n"
+        f"Price: {price} all-in\n\n"
         "We'll keep you posted. If you have any questions about the status, just reply "
         "to this mail.\n\n"
-        "Best regards,\nAustrian Power Forwarding\n"
+        f"{SIGNATURE}\n"
     )
 
 
@@ -204,11 +197,7 @@ def _confirm_to_customer(sid: int, mail: Mail, text: str) -> None:
         db.emit(db.Ev.WARN, "Bestätigung nicht gesendet: Session pausiert/manuell", sid)
         return
     to = address(mail.sender)
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(to, subject, text, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -313,9 +302,7 @@ def _handle(mail: Mail, sid: int) -> None:
             currency=quote["currency"],
         )
 
-    text = _confirmation(
-        language(mail.body), request.get("customer_name"), quote, booking_ref
-    )
+    text = _confirmation(language(mail.body), request.get("customer_name"), quote, booking_ref)
     _confirm_to_customer(sid, mail, text)
     log.info("session %s booked %s", sid, booking_ref)
 
@@ -353,8 +340,7 @@ def catch_up() -> None:
             for m in full["mails"]
             if m["direction"] == "in"
             and m["id"] > quote_mail
-            and address(str(m["sender"] or ""))
-            == address(str(full.get("customer") or ""))
+            and address(str(m["sender"] or "")) == address(str(full.get("customer") or ""))
         ]
         if not replies:
             continue

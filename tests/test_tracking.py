@@ -37,9 +37,7 @@ class Api:
         return m
 
 
-def _booked(
-    sid: int, customer: str, o: str, d: str, bk: str, confirmed: bool = True
-) -> None:
+def _booked(sid: int, customer: str, o: str, d: str, bk: str, confirmed: bool = True) -> None:
     now = datetime.now(UTC).isoformat()
     db.ingest_mail(
         mail_id=sid,
@@ -114,15 +112,13 @@ def test_answer_from_crm(two_bookings, monkeypatch) -> None:
     a = api.sent[-1]
     assert a["to"] == TRACK and a["in_reply_to"] == 3000
     assert "BK-6Z1GMPG3" in a["body"] and "confirmed by the airline" in a["body"]
-    assert "STR – EZE" in a["body"] and "Fjordline Air Cargo" in a["body"]
+    assert "STR to EZE" in a["body"] and "Fjordline Air Cargo" in a["body"]
 
 
 def test_unknown_asks_for_reference(two_bookings, monkeypatch) -> None:
     api = Api()
     monkeypatch.setattr(tracking.hackloop, "send", api.send)
-    tracking.handle(
-        Mail(3001, 3001, TRACK, TEAM, "Status", "Where is my cargo?", ""), 3001
-    )
+    tracking.handle(Mail(3001, 3001, TRACK, TEAM, "Status", "Where is my cargo?", ""), 3001)
     assert "booking reference" in api.sent[-1]["body"]
 
 
@@ -130,9 +126,7 @@ def test_customer_status_question_in_booked_thread(two_bookings, monkeypatch) ->
     api = Api()
     monkeypatch.setattr(tracking.hackloop, "send", api.send)
     now = datetime.now(UTC).isoformat()
-    thanks = (
-        "Thank you for confirming the booking. Please keep me informed of any updates."
-    )
+    thanks = "Thank you for confirming the booking. Please keep me informed of any updates."
     for mid, body in ((1446, thanks), (1447, "When will it arrive in JFK?")):
         db.ingest_mail(
             mail_id=mid,
@@ -174,7 +168,9 @@ def test_weight_separates_and_ties_ask(tmp_path) -> None:
     assert tracking.find(tie, db.tracking_records()) is None
 
 
-@pytest.mark.parametrize(("text", "kg"), [("1228 kg", 1228), ("1,228 kg", 1228),
-                                          ("1.228 kg", 1228), ("12,5 kg", 12.5), ("none", None)])
+@pytest.mark.parametrize(
+    ("text", "kg"),
+    [("1228 kg", 1228), ("1,228 kg", 1228), ("1.228 kg", 1228), ("12,5 kg", 12.5), ("none", None)],
+)
 def test_weight_parse(text, kg) -> None:
     assert tracking._weight(text) == kg

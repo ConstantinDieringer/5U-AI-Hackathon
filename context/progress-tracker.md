@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Mail style: quotes, booking confirmations/requests, carrier bids and tracking replies use `€`, no dash punctuation/lists, and only `Your austrian Power Team` as sign-off. Shared integer-cent formatter; API currency codes and reference IDs unchanged.
 - B merge integration: preserved main's booking/tracking, language/date replies, served-lane refusals and portal next-weight-break optimisation alongside tariff/FX/429/503 hardening; 161 tests pass on the combined code.
 
 - B hardening: durable tariff worker and reusable monthly parsers (text/table + gateway image transcription), atomic runtime data, dataset/board alerts, bounded portal 429 waits and known-carrier 503 fallback.

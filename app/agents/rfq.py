@@ -28,6 +28,7 @@ from app import db, hackloop, llm
 from app.agents import bids
 from app.config import settings
 from app.mail import language, lots, parse
+from app.mail.style import SIGNATURE, amount
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
@@ -44,9 +45,7 @@ log = logging.getLogger(__name__)
 
 RFQ_LIFETIME_S = 360  # 5U expires a request 6 min after it was sent
 PORTAL_MIN_S = 20.0  # portal reads always get this long, even for a resumed RFQ
-TOO_OLD_S = (
-    330  # do not start work on a request that cannot be answered in time any more
-)
+TOO_OLD_S = 330  # do not start work on a request that cannot be answered in time any more
 
 EXTRACT_PROMPT = (
     "Extract the air freight request from the email as JSON.\n"
@@ -138,7 +137,11 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
     try:
         text = llm.complete(
             "extract_rfq_retry",
-            [*messages, {"role": "assistant", "content": text}, {"role": "user", "content": feedback}],
+            [
+                *messages,
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": feedback},
+            ],
             session_id,
             max_tokens=200,
             response_format=RFQ_SCHEMA,
@@ -167,9 +170,7 @@ def _parse_extraction(text: str, mail: Mail, session_id: int) -> tuple[Rfq | Non
             )
         return Rfq.model_validate(data), ""
     except (json.JSONDecodeError, ValidationError) as e:
-        log.warning(
-            "session %s: extraction not usable (%s): %r", session_id, e, text[:300]
-        )
+        log.warning("session %s: extraction not usable (%s): %r", session_id, e, text[:300])
         return None, str(e).replace("\n", " ")
 
 
@@ -201,8 +202,7 @@ def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
     return min(
         trucks,
         key=lambda o: (
-            norm(o.total_eur, lo_p, hi_p) / 2
-            + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
+            norm(o.total_eur, lo_p, hi_p) / 2 + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
             o.total_eur,
         ),
     )
@@ -212,21 +212,14 @@ def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
 
 
 def _amount(minor: int, lang: str) -> str:
-    whole, cents = divmod(minor, 100)
-    if lang == "de":
-        return f"{whole:,}".replace(",", ".") + f",{cents:02d} EUR"
-    return f"EUR {whole:,}.{cents:02d}"
+    return amount(minor)
 
 
 def _valid(option: RateOption) -> str | None:
     if not option.valid_until:
         return None
     try:
-        return (
-            datetime.fromisoformat(option.valid_until)
-            .astimezone(UTC)
-            .strftime("%H:%M UTC")
-        )
+        return datetime.fromisoformat(option.valid_until).astimezone(UTC).strftime("%H:%M UTC")
     except ValueError:
         return None
 
@@ -247,9 +240,7 @@ _MONTHS_EN = [
 ]
 
 
-def schedule(
-    rfq: Rfq, transit_days: int, today: date | None = None
-) -> tuple[date, date] | None:
+def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[date, date] | None:
     """Earliest departure and arrival: departure on the ready date (one day later when we
     truck it to the airport first, never before today), arrival = departure + transit."""
     if not rfq.ready_date:
@@ -265,16 +256,10 @@ def schedule(
 
 
 def _date(d: date, lang: str) -> str:
-    return (
-        d.strftime("%d.%m.%Y")
-        if lang == "de"
-        else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
-    )
+    return d.strftime("%d.%m.%Y") if lang == "de" else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
 
 
-def _schedule_line(
-    rfq: Rfq, option: RateOption, lang: str, today: date | None
-) -> str | None:
+def _schedule_line(rfq: Rfq, option: RateOption, lang: str, today: date | None) -> str | None:
     when = schedule(rfq, option.transit_days, today)
     if when is None:
         return None
@@ -328,8 +313,7 @@ def quote_text(
             "",
             "Wenn das für Sie passt, antworten Sie einfach auf diese Mail und wir buchen sofort.",
             "",
-            "Viele Grüße",
-            "Ihr Team von Austrian Power Forwarding",
+            SIGNATURE,
         ]
     else:
         hello = f"Hi {name}," if name else "Hello,"
@@ -340,7 +324,9 @@ def quote_text(
         )
         what = f"Air freight {option.origin} to {option.destination}"
         if truck is not None and rfq.pickup_zip:
-            what += f", including pickup at {rfq.pickup_zip} and trucking to {option.origin} airport"
+            what += (
+                f", including pickup at {rfq.pickup_zip} and trucking to {option.origin} airport"
+            )
         lines = [
             hello,
             "",
@@ -357,8 +343,7 @@ def quote_text(
             "",
             "If that works for you, just reply to this email and we will book it right away.",
             "",
-            "Best regards",
-            "Austrian Power Forwarding",
+            SIGNATURE,
         ]
     return "\n".join(lines) + "\n"
 
@@ -455,9 +440,7 @@ def _handle(mail: Mail, sid: int) -> None:
     db.set_status(sid, "pricing")
 
     start = time.monotonic()
-    rfq = _stored_request(sid) or extract_rfq(
-        mail, sid
-    )  # stored = resumed after a restart
+    rfq = _stored_request(sid) or extract_rfq(mail, sid)  # stored = resumed after a restart
     if rfq is None:
         db.set_status(sid, "error", "Anfrage nicht lesbar")
         return
@@ -567,9 +550,7 @@ def _handle(mail: Mail, sid: int) -> None:
         return
     truck = best_truck(offers) if rfq.pickup_zip else None
     if rfq.pickup_zip and truck is None:
-        db.emit(
-            "no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn"
-        )
+        db.emit("no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn")
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
 
     body = quote_text(rfq, choice, total, truck, sid)
@@ -593,11 +574,7 @@ def _handle(mail: Mail, sid: int) -> None:
             level="warn",
         )
         return
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -622,11 +599,7 @@ def _handle(mail: Mail, sid: int) -> None:
         rate_id=choice.rate_id,
         valid_until=choice.valid_until,
         alternatives=[asdict(o) for o in air + bid_opts]
-        + (
-            [{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}]
-            if truck
-            else []
-        ),
+        + ([{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}] if truck else []),
         mail_id=int(sent["id"]),
     )
     log.info(
