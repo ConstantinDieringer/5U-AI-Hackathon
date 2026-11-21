@@ -50,6 +50,7 @@ class Settings:
     llm_rescue_reasoning: str
     llm_rescue_attempts: int
     llm_rescue_call_limit: int
+    llm_rescue_stall_s: float
     llm_compose_model: str
     llm_review_model: str
     email_review_enabled: bool
@@ -124,6 +125,7 @@ settings = Settings(
     llm_rescue_reasoning=_env("LLM_RESCUE_REASONING", "high"),
     llm_rescue_attempts=max(1, int(_env("LLM_RESCUE_ATTEMPTS", "4"))),
     llm_rescue_call_limit=max(1, int(_env("LLM_RESCUE_CALL_LIMIT", "12"))),
+    llm_rescue_stall_s=max(0.0, float(_env("LLM_RESCUE_STALL_S", "30"))),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",

@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Rescue activation:** persist the last meaningful clarification progress time; invoke the strong model only after 30 seconds stalled, an unprocessable explicit answer, or the former handoff threshold. Normal first clarification and waiting for documents do not invoke it. The clarification worker checks stalled waiting RFQs; stale results cannot replace a newer validation state.
+
 - **RFQ evidence recovery:** `gpt-5.6-sol` with high reasoning reads the saved conversation, raw attachment text, observations and validation feedback. Four correction rounds per new evidence set, twelve separately budgeted calls per session, persisted input claims prevent duplicate workers/restart calls. Deadline and human controls remain binding; RFQs no longer hand off merely after two questions or quote missing evidence on a timer. Separate style review defaults off. Gateway model access/deployment unverified.
 
 - **Strict customer wire contract v4:** customer body AND subject are rendered and independently asserted immediately before sending. Unicode punctuation and HTML entities cannot bypass the character rules; Re/Fw label prefixes are removed without changing `in_reply_to` threading. All-excluded notices use the same reviewer. Persist the actually submitted body and subject. Carrier/trucker machine messages are unchanged.

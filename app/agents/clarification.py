@@ -366,7 +366,12 @@ def _rescue_attempt(
             "rescue_evidence": accepted,
         }
     )
-    for key in ("blocking_clarification", "rescue_before_clarification"):
+    for key in (
+        "blocking_clarification",
+        "rescue_before_clarification",
+        "rescue_progress_at",
+        "rescue_progress_state",
+    ):
         if key in draft.evidence:
             checked.evidence[key] = draft.evidence[key]
     if checked.issues or rfq is None:
@@ -445,7 +450,42 @@ def recover_history(mail, sid, draft):
     return result, checked
 
 
+def _track_progress(draft: RfqDraft, previous: RfqDraft | None = None) -> None:
+    """Only resolved issues or accepted corrections restart the persisted stall clock."""
+    state = json.dumps(
+        {
+            "issues": sorted((i["field"], i.get("code", "")) for i in draft.issues),
+            "corrections": draft.evidence.get("corrections", {}),
+        },
+        sort_keys=True,
+    )
+    old = previous.evidence if previous else draft.evidence
+    draft.evidence["rescue_progress_at"] = (
+        old.get("rescue_progress_at", datetime.now(UTC).isoformat())
+        if old.get("rescue_progress_state") == state
+        else datetime.now(UTC).isoformat()
+    )
+    draft.evidence["rescue_progress_state"] = state
+
+
+def _rescue_due(draft: RfqDraft, *, blocked: bool = False, now: datetime | None = None) -> bool:
+    # Waiting for actual customer documents cannot be solved by another model call.
+    fields = {i["field"] for i in draft.issues}
+    if not fields or not fields.intersection(set(_RESCUE_FIELDS) - {"dangerous_goods"}):
+        return False
+    if blocked:
+        return True
+    since = draft.evidence.get("rescue_progress_at")
+    return bool(
+        since
+        and ((now or datetime.now(UTC)) - datetime.fromisoformat(since)).total_seconds()
+        >= settings.llm_rescue_stall_s
+    )
+
+
 def request(mail, sid, draft):
+    previous = db.validation_get(sid)
+    root = Mail(**previous["root"]) if previous else mail
     if draft.evidence.get("workflow", "rfq") == "rfq":
         recovered, draft = recover_history(mail, sid, draft)
         if recovered is not None and not draft.issues:
@@ -459,7 +499,8 @@ def request(mail, sid, draft):
 
             rfq.handle_rfq(root, sid)
             return
-        if not draft.evidence.get("rescue_before_clarification"):
+        _track_progress(draft, RfqDraft.model_validate(previous["draft"]) if previous else None)
+        if _rescue_due(draft):
             draft.evidence["rescue_before_clarification"] = True
             previous = db.validation_get(sid)
             root = Mail(**previous["root"]) if previous else mail
@@ -477,7 +518,7 @@ def request(mail, sid, draft):
         sid,
         "awaiting_clarification",
         draft.model_dump(mode="json"),
-        dataclasses.asdict(mail),
+        dataclasses.asdict(root),
     )
     db.emit(
         "validation_blocked",
@@ -705,7 +746,21 @@ def handle_reply(mail, sid, *, resume=False):
         if key in draft.evidence:
             checked.evidence[key] = draft.evidence[key]
     if checked.issues or rfq is None:
-        rescued, checked = rescue_with_model(mail, sid, root, checked)
+        _track_progress(checked, draft)
+        progressed = checked.evidence["rescue_progress_state"] != draft.evidence.get(
+            "rescue_progress_state"
+        )
+        blocked = not progressed and (
+            _questions_sent(sid) >= 2
+            or any(i.get("code") == "conflict" for i in checked.issues)
+            and bool(re.search(r"\d", own))
+            or "origin" in asked
+            and bool(re.search(r"departure|airport|aerodrome|abflug|flughafen", own, re.IGNORECASE))
+            and not re.search(r"check|later|shortly|später|prüfen", own, re.IGNORECASE)
+        )
+        rescued = None
+        if _rescue_due(checked, blocked=blocked):
+            rescued, checked = rescue_with_model(mail, sid, root, checked)
         if rescued is not None:
             db.validation_save(sid, "ready", checked.model_dump(mode="json"), {})
             db.set_request(sid, rescued.model_dump())
@@ -777,6 +832,7 @@ def run(stop):
         try:
             for saved in db.clarification_unhandled_replies():
                 handle_reply(_stored_mail(saved), saved["session_id"])
+            rescue_stalled()
             for item in db.validation_pending():
                 row = db.validation_get(item["session_id"])
                 if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
@@ -794,3 +850,39 @@ def run(stop):
 def fallback_due(now=None):
     """Compatibility entry point: unresolved evidence waits for a reply, never a guessed quote."""
     return []
+
+
+def rescue_stalled(now: datetime | None = None) -> None:
+    """Review waiting RFQs once their persisted progress clock has stalled."""
+    for item in db.clarification_waiting():
+        sid = item["session_id"]
+        row = db.validation_get(sid)
+        draft = RfqDraft.model_validate(row["draft"])
+        if draft.evidence.get("workflow", "rfq") != "rfq" or not _rescue_due(draft, now=now):
+            continue
+        if expired(sid) or db.is_paused(sid) or db.is_manual(sid):
+            continue
+        root = Mail(**row["root"])
+        latest = next(
+            (
+                m
+                for m in reversed(db.get_session(sid)["mails"])
+                if m["direction"] == "in" and address(m["sender"]) == address(root.sender)
+            ),
+            None,
+        )
+        mail = _stored_mail({**latest, "session_id": sid}) if latest else root
+        rescued, checked = rescue_with_model(mail, sid, root, draft)
+        # A customer reply may have advanced the workflow during this model call.
+        current = db.validation_get(sid)
+        if current != row or current["state"] != "awaiting_clarification":
+            continue
+        if rescued is not None:
+            db.validation_save(sid, "ready", checked.model_dump(mode="json"), {})
+            db.set_request(sid, rescued.model_dump())
+            from app.agents import rfq
+
+            rfq.handle_rfq(root, sid)
+        elif checked.evidence.get("corrections", {}) != draft.evidence.get("corrections", {}):
+            _track_progress(checked, draft)
+            db.validation_save(sid, "awaiting_clarification", checked.model_dump(mode="json"), {})

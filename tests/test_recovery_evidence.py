@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app import db, llm
@@ -10,6 +11,31 @@ from app.mail.rfq_validation import numeric_facts, validate
 from app.models import Mail, RfqDraft
 from tests.test_llm import fake_response
 from tests.test_origin_clarification_fallback import setup_mail
+
+
+def test_progress_restarts_stall_clock_but_identical_state_does_not():
+    draft = RfqDraft(issues=[{"field": "origin"}, {"field": "weight_kg"}])
+    clarification._track_progress(draft)
+    start = datetime.now(UTC) - timedelta(seconds=31)
+    draft.evidence["rescue_progress_at"] = start.isoformat()
+    assert clarification._rescue_due(draft)
+    unchanged = draft.model_copy(deep=True)
+    clarification._track_progress(unchanged, draft)
+    assert unchanged.evidence["rescue_progress_at"] == start.isoformat()
+    progressed = draft.model_copy(deep=True)
+    progressed.issues = [{"field": "origin"}]
+    progressed.evidence["corrections"] = {"weight_kg": 1674}
+    clarification._track_progress(progressed, draft)
+    assert not clarification._rescue_due(progressed)
+    assert clarification._rescue_due(progressed, blocked=True)
+
+
+def test_missing_documents_do_not_trigger_model_even_after_stall():
+    draft = RfqDraft(issues=[{"field": "dangerous_goods"}])
+    clarification._track_progress(draft)
+    draft.evidence["rescue_progress_at"] = (datetime.now(UTC) - timedelta(minutes=2)).isoformat()
+    assert not clarification._rescue_due(draft)
+    assert not clarification._rescue_due(draft, blocked=True)
 
 
 def test_session_16288_table_header_cannot_read_pieces_as_weight():

@@ -2,7 +2,7 @@
 
 import dataclasses
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -211,7 +211,7 @@ def test_stronger_model_rescues_unusual_but_explicit_reply(tmp_path, monkeypatch
     assert len(sent) == 1 and len(resumed) == 1
 
 
-def test_stronger_model_reads_original_before_first_question(tmp_path, monkeypatch):
+def test_stronger_model_reads_original_only_after_stall(tmp_path, monkeypatch):
     evidence = "We tender the cargo at the Düsseldorf departure aerodrome."
     body = f"Please quote to BOM. {evidence} Gross weight: 1676 kg. Volume: 11.14 cbm. Pieces: 2."
     m, request = setup_mail(tmp_path, monkeypatch, "enforce", body, "Quote to BOM")
@@ -224,21 +224,32 @@ def test_stronger_model_reads_original_before_first_question(tmp_path, monkeypat
         }
     )
     _, draft = validate(m, request)
+    calls = []
+
+    def rescue(*args, **kwargs):
+        calls.append(kwargs)
+        return json.dumps(
+            {"corrections": [{"field": "origin", "value": "DUS", "evidence": evidence}]}
+        )
+
     monkeypatch.setattr(
         clarification.llm,
         "complete",
-        lambda *args, **kwargs: json.dumps(
-            {"corrections": [{"field": "origin", "value": "DUS", "evidence": evidence}]}
-        ),
+        rescue,
     )
     monkeypatch.setattr(
         clarification.hackloop,
         "send",
-        lambda *args, **kwargs: pytest.fail("rescue should avoid a clarification"),
+        lambda *args, **kwargs: {"id": 2},
     )
     resumed = []
     monkeypatch.setattr(rfq, "handle_rfq", lambda *args: resumed.append(args))
     clarification.request(m, m.id, draft)
+    assert calls == []
+    assert db.validation_get(m.id)["state"] == "awaiting_clarification"
+    clarification.rescue_stalled(now=datetime.now(UTC) + timedelta(seconds=29))
+    assert calls == []
+    clarification.rescue_stalled(now=datetime.now(UTC) + timedelta(seconds=31))
     assert db.validation_get(m.id)["state"] == "ready"
     assert db.get_session(m.id)["request"]["origin"] == "DUS"
     assert len(resumed) == 1

@@ -236,6 +236,10 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 ## 8. LLM-Regeln
 
 - Eskalation für ungeklärte RFQs: `LLM_RESCUE_MODEL=gpt-5.6-sol`, `LLM_RESCUE_REASONING=high`.
+  Erst nach `LLM_RESCUE_STALL_S=30` Sekunden ohne akzeptierte Korrektur/Fortschritt,
+  bei einer erkennbar nicht verarbeitbaren konkreten Antwort oder vor der früheren
+  Zwei-Rückfragen-Übergabe aktivieren. Keine Routineprüfung vor der ersten Rückfrage.
+  Der bestehende Worker prüft wartende RFQs; fehlende Dokumente allein lösen keinen Call aus.
   Vollständiger gespeicherter Verlauf, aktuelle Kundenevidenz, Anhangtexte inklusive Tabellen,
   Beobachtungen und verbleibende Validierungsfehler werden gemeinsam geprüft. Bis zu vier
   Versuche pro neuer Evidenz, mit Fehlerfeedback; Stillstand beendet identische Wiederholungen.
