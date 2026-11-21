@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Rounds 49/50 (-22.5 each): portal-booked XC, customer confirmed the quoted total, airline then confirmed +10 % air. Booking now waits for the airline price (`AIRLINE_CONFIRM_WAIT_S`=180), asks the customer on a change beyond `PRICE_CHANGE_TOLERANCE_PCT`=0.5 with the new all-in and one cheaper alternative, yes confirms, other answers `needs_human` + #sos. Final style reviewer keeps amounts/airlines as protected terms. 689 passed/4 skipped; airline mail price format and scorer rule unverified live.
+
 - Strict customer send path and dedicated gpt-5 style reviewer added. Every customer path validates prose before HTTP, records the transmitted version, and rechecks controls after one review. Real reference punctuation remains; whole numbers lose zero fractions. 639 tests pass/4 skip; 31 replay cases retain all facts with 19 text-only updates. Synthetic real-gateway review accepted, 396 input/94 output tokens, estimated $0.001435; no customer mail sent. Public health exposes style/build/model activation.
 
 - Dashboard overflow: fixed recent-request column proportions, bounded chip/subject ellipsis with full tooltips and a card-local scroll region on narrow screens; score labels and verdicts wrap. Browser checks at 1440/1024/390/320 show no page/card overflow. Integrated current main: 621 tests passed, 4 skipped; JS and Python 3.11 syntax checks pass. Production rollout requested.
@@ -172,6 +174,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 21:45: Price changes at booking are now live in the setup (rounds 49/50, airline confirms +10 % over the portal rate). Whether the scorer wants the question before or after booking is not published; we book on yes, then ask before confirming. Tracking still reports `bookings.price_minor` (air only on portal door quotes), not `customer_total_minor`.
 
 - 21.11 21:20: `tests/conftest.py` refuses every 5U and gateway call from tests and fails the test that tries. `test_reply_without_mail_client_is_503` posted to the real mailbox on every pytest run (a real mail with the key from `.env`); it now stubs the send.
 

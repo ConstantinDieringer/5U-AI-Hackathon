@@ -45,6 +45,7 @@
 
 - Throttle and cache for the portal's rate limit, and honor `Retry-After` on a 429.
 - Before booking, re-fetch a rate ID that is older than 15 minutes.
+- Never confirm a booking price to the customer that the airline has not confirmed. A changed price is put to the customer first; the agent never rebooks on its own.
 - Retry transient failures with backoff.
 - Never bypass the portal page's bot challenge. Use the API or the email desk.
 

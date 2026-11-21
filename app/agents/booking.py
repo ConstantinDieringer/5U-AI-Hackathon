@@ -9,7 +9,12 @@ Flow for a customer reply in a quoted session:
    410/404 (expired/unknown) -> fetch a fresh rate for the same airline and book that.
    503 -> book by email with the airline (the message names the address).
    Sheet/bid quote (no rate_id) -> book by email with the airline.
-3. record_booking, then confirm to the customer in the thread (in_reply_to).
+3. record_booking. The customer is confirmed only once the airline's price is known: from
+   the portal booking response, else from the airline's confirmation mail, else after
+   AIRLINE_CONFIRM_WAIT_S. A price off the quoted air price by more than
+   PRICE_CHANGE_TOLERANCE_PCT is put to the customer instead (new total, one cheaper
+   alternative if we have one). Their yes confirms at the new total; anything else goes to
+   a human. The portal has no cancel call, so nothing is ever rebooked automatically.
 Airline mails "Booking <ref> confirmed" set the booking to confirmed (on_airline_mail).
 """
 
@@ -18,6 +23,8 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -181,10 +188,16 @@ def _book_by_email(sid: int, quote: dict[str, Any], request: dict[str, Any], to:
     )
 
 
-def _confirmation(lang: str, name: str | None, quote: dict[str, Any], booking_ref: str) -> str:
+def _confirmation(
+    lang: str,
+    name: str | None,
+    quote: dict[str, Any],
+    booking_ref: str,
+    total_minor: int | None = None,
+) -> str:
     if name and has_template_artifacts(name):
         name = None
-    price = amount(quote["total_minor"], quote["currency"])
+    price = amount(quote["total_minor"] if total_minor is None else total_minor, quote["currency"])
     connector = "nach" if lang == "de" else "to"
     route = f"{quote['origin']} {connector} {quote['destination']}"
     if lang == "de":
@@ -213,11 +226,15 @@ def _confirmation(lang: str, name: str | None, quote: dict[str, Any], booking_re
 
 
 def _confirm_to_customer(
-    sid: int, mail: Mail, text: str, protected_terms: tuple[str, ...] = ()
-) -> None:
+    sid: int,
+    mail: Mail,
+    text: str,
+    protected_terms: tuple[str, ...] = (),
+    category: str = "booking_confirmation",
+) -> bool:
     if db.is_paused(sid) or db.is_manual(sid):
         db.emit(db.Ev.WARN, "Bestätigung nicht gesendet: Session pausiert/manuell", sid)
-        return
+        return False
     to = address(mail.sender)
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send_customer(
@@ -229,12 +246,13 @@ def _confirm_to_customer(
         recipient=to,
         subject=subject,
         body=text,
-        category="booking_confirmation",
+        category=category,
         session_id=sid,
         sender=settings.team_mailbox,
         in_reply_to=mail.id,
         raw=sent,
     )
+    return True
 
 
 def handle_reply(mail: Mail, session_id: int | None) -> None:
@@ -261,7 +279,10 @@ def _handle(mail: Mail, sid: int) -> None:
     if any(b["status"] in ("booked", "confirmed") for b in s.get("bookings", [])):
         from app.agents import tracking
 
-        if tracking.is_status_question(mail.body):  # "where is it?" in their own thread
+        b = s["bookings"][0]
+        if b.get("customer_state") == PRICE_ASKED:  # open price question: answer it first
+            _on_price_change_answer(mail, sid, s, b)
+        elif tracking.is_status_question(mail.body):  # "where is it?" in their own thread
             tracking.handle(mail, sid, booked_session=sid)
         else:
             log.info("session %s already booked, reply %s ignored", sid, mail.id)
@@ -295,6 +316,7 @@ def _handle(mail: Mail, sid: int) -> None:
         raise ValueError("customer exclusion blocks booking the quoted carrier")
     request = s.get("request") or {}
     db.emit(db.Ev.STATUS, "Kunde hat angenommen: buche", sid)
+    portal_price: tuple[int, str] | None = None
 
     if quote.get("source") == "portal" and quote.get("rate_id"):
         try:
@@ -328,6 +350,8 @@ def _handle(mail: Mail, sid: int) -> None:
             price_minor=price_minor,
             currency=res.get("currency") or quote["currency"],
         )
+        if price:  # the portal's own booking price is the first word on a change
+            portal_price = (price_minor, str(res.get("currency") or quote["currency"]).upper())
     else:
         to = airline_email(quote["airline"])
         if not to:
@@ -343,9 +367,320 @@ def _handle(mail: Mail, sid: int) -> None:
             currency=quote["currency"],
         )
 
-    text = _confirmation(language(mail.body), request.get("customer_name"), quote, booking_ref)
-    _confirm_to_customer(sid, mail, text, (quote["airline"], quote["origin"], quote["destination"]))
     log.info("session %s booked %s", sid, booking_ref)
+    if portal_price is not None and _differs(quote, portal_price):
+        _ask_price_change(sid, mail, portal_price)
+        return
+    if settings.airline_confirm_wait_s > 0:
+        db.set_booking_customer_state(sid, AWAITING_AIRLINE)
+        db.emit(db.Ev.STATUS, "Gebucht: warte auf den Preis in der Airline-Bestätigung", sid)
+        _start_waiter(sid, mail, time.monotonic() + settings.airline_confirm_wait_s)
+        return
+    _settle(sid, mail)
+
+
+# ---------------------------------------------------------------- price changes
+
+# bookings.customer_state
+AWAITING_AIRLINE = "awaiting_airline"  # booked, customer not yet confirmed, airline price open
+CONFIRMED_SENT = "confirmed_sent"  # customer confirmed at a price we believed
+PRICE_ASKED = "price_change_asked"  # customer asked whether the new total is ok
+PRICE_ACCEPTED = "price_accepted"  # customer said yes to the new total, confirmed
+HUMAN = "needs_human"  # declined, wants the alternative, unclear or not computable
+
+_WANTS_OTHER = re.compile(
+    r"alternativ\w*|instead|stattdessen|other (?:airline|carrier|option)|"
+    r"andere\w* (?:airline|fluggesellschaft|option)|switch|wechseln",
+    re.IGNORECASE,
+)
+
+
+def _has_trucking(quote: dict[str, Any]) -> bool:
+    return any("trucker" in a for a in quote.get("alternatives") or [] if isinstance(a, dict))
+
+
+def _terms(quote: dict[str, Any], *extra: str) -> tuple[str, ...]:
+    """Words the final style reviewer must keep exactly."""
+    return (quote["airline"], quote["origin"], quote["destination"], *extra)
+
+
+def _quoted_air(quote: dict[str, Any]) -> tuple[int, str] | None:
+    """The air price we quoted. Legacy quotes without a frozen air amount: the total, unless
+    trucking is part of it (then unknown, and a change cannot be measured)."""
+    if quote.get("air_total_minor") is not None and quote.get("air_currency"):
+        return int(quote["air_total_minor"]), str(quote["air_currency"]).upper()
+    if _has_trucking(quote):
+        return None
+    return int(quote["total_minor"]), str(quote["currency"]).upper()
+
+
+def _differs(quote: dict[str, Any], actual: tuple[int, str]) -> bool:
+    quoted = _quoted_air(quote)
+    if quoted is None:
+        return False
+    if quoted[1] != actual[1]:
+        return True
+    tolerance = Decimal(str(settings.price_change_tolerance_pct)) / 100 * quoted[0]
+    return abs(actual[0] - quoted[0]) > tolerance
+
+
+def _airline_price(sid: int) -> tuple[int, str] | None:
+    b = (db.get_session(sid) or {}).get("bookings") or []
+    if not b or b[0].get("airline_price_minor") is None or not b[0].get("airline_currency"):
+        return None
+    return int(b[0]["airline_price_minor"]), str(b[0]["airline_currency"])
+
+
+def _customer_state(sid: int) -> str | None:
+    b = (db.get_session(sid) or {}).get("bookings") or []
+    return b[0].get("customer_state") if b else None
+
+
+def _settle(sid: int, mail: Mail) -> None:
+    """Confirm the booking to the customer, or ask first if the airline price changed.
+    Caller holds the session lock."""
+    s = db.get_session(sid)
+    if not s or not s.get("quotes") or not s.get("bookings"):
+        return
+    quote, b = s["quotes"][0], s["bookings"][0]
+    actual = _airline_price(sid)
+    if actual is not None and _differs(quote, actual):
+        _ask_price_change(sid, mail, actual)
+        return
+    booking_ref = str(b.get("booking_reference") or b["team_reference"])
+    name = (s.get("request") or {}).get("customer_name")
+    text = _confirmation(language(mail.body), name, quote, booking_ref)
+    if _confirm_to_customer(sid, mail, text, _terms(quote, booking_ref)):
+        db.set_booking_customer_state(sid, CONFIRMED_SENT, quote["total_minor"])
+
+
+def _start_waiter(sid: int, mail: Mail, deadline: float) -> None:
+    threading.Thread(
+        target=_wait_for_airline, args=(sid, mail, deadline), name=f"price-{sid}", daemon=True
+    ).start()
+
+
+def _wait_for_airline(sid: int, mail: Mail, deadline: float) -> None:
+    """Until the airline's confirmation (with its price) arrives or the wait is over."""
+    try:
+        while time.monotonic() < deadline and _customer_state(sid) == AWAITING_AIRLINE:
+            if _airline_price(sid) is not None:
+                break
+            time.sleep(1.0)
+        with _lock(sid):
+            if _customer_state(sid) != AWAITING_AIRLINE:
+                return
+            if _airline_price(sid) is None:
+                db.emit(db.Ev.WARN, "Keine Airline-Bestätigung abgewartet: bestätige Kunde", sid)
+            _settle(sid, mail)
+    except Exception as e:
+        log.exception("session %s: settling booking failed", sid)
+        db.emit(db.Ev.ERROR, f"Buchungsbestätigung fehlgeschlagen: {e}"[:300], sid, level="error")
+
+
+def _alternative(quote: dict[str, Any], below_minor: int) -> dict[str, Any] | None:
+    """The cheapest other airline from the quote's own options whose all-in (same trucking)
+    stays below the new total. Prices are from the quote time and are labelled as such."""
+    if str(quote["currency"]).upper() != "EUR":
+        return None
+    alts = [a for a in quote.get("alternatives") or [] if isinstance(a, dict)]
+    truck = next((a for a in alts if "trucker" in a), None)
+    truck_minor = to_minor(Decimal(str(truck["total_eur"]))) if truck else 0
+    best: dict[str, Any] | None = None
+    for a in alts:
+        air = a.get("total_eur_minor")
+        if not a.get("airline") or a["airline"] == quote["airline"] or air is None:
+            continue
+        total = int(air) + truck_minor
+        if total < below_minor and (best is None or total < best["total_minor"]):
+            best = {"airline": a["airline"], "total_minor": total, "days": a.get("transit_days")}
+    return best
+
+
+def _price_change_text(
+    lang: str,
+    name: str | None,
+    quote: dict[str, Any],
+    booking_ref: str,
+    new_total: int,
+    alt: dict[str, Any] | None,
+    already_confirmed: bool,
+) -> str:
+    if name and has_template_artifacts(name):
+        name = None
+    cur = quote["currency"]
+    old, new = amount(quote["total_minor"], cur), amount(new_total, cur)
+    if lang == "de":
+        route = f"{quote['origin']} nach {quote['destination']}"
+        lead = (
+            "in unserer Bestätigung hatten wir den angebotenen Preis genannt. "
+            f"{quote['airline']} hat die Buchung {booking_ref} inzwischen bestätigt, "
+            "allerdings zu einer höheren Luftfrachtrate."
+            if already_confirmed
+            else f"vielen Dank für Ihre Zusage. {quote['airline']} hat die Buchung "
+            f"{booking_ref} angenommen, allerdings zu einer höheren Luftfrachtrate als in "
+            "unserem Angebot."
+        )
+        parts = [
+            f"{'Hallo ' + name if name else 'Guten Tag'},",
+            lead,
+            f"Für Ihre Sendung von {route} liegt der Gesamtpreis damit bei {new} statt {old}.",
+        ]
+        if alt:
+            days = f" mit etwa {alt['days']} Tagen Flugzeit" if alt.get("days") else ""
+            parts.append(
+                f"Alternativ könnten wir mit {alt['airline']} fliegen{days}. Nach unserem "
+                f"letzten Stand wären das {amount(alt['total_minor'], cur)} insgesamt. Diesen "
+                "Preis würden wir vor einer Umbuchung noch einmal bestätigen lassen."
+            )
+        parts.append(
+            f"Ist der neue Gesamtpreis von {new} für Sie in Ordnung? Eine kurze Antwort hier "
+            "genügt."
+        )
+        return "\n\n".join(parts) + f"\n\n{SIGNATURE}\n"
+    route = f"{quote['origin']} to {quote['destination']}"
+    lead = (
+        "our confirmation mentioned the price from our offer. "
+        f"{quote['airline']} has since confirmed booking {booking_ref}, but at a higher air rate."
+        if already_confirmed
+        else f"thanks for confirming. {quote['airline']} has accepted booking {booking_ref}, "
+        "but at a higher air rate than in our offer."
+    )
+    parts = [
+        f"{'Hi ' + name if name else 'Hello'},",
+        lead,
+        f"The total for your shipment from {route} would now be {new} instead of {old}.",
+    ]
+    if alt:
+        days = f" with about {alt['days']} days in the air" if alt.get("days") else ""
+        parts.append(
+            f"Alternatively, we could fly it with {alt['airline']}{days}. At our last check "
+            f"that came to {amount(alt['total_minor'], cur)} in total. We'd have that price "
+            "confirmed again before switching."
+        )
+    parts.append(f"Is the new total of {new} okay for you? A short reply here is all we need.")
+    return "\n\n".join(parts) + f"\n\n{SIGNATURE}\n"
+
+
+def _ask_price_change(sid: int, mail: Mail, actual: tuple[int, str]) -> None:
+    """The airline's price differs from our quote: tell the customer before confirming."""
+    s = db.get_session(sid) or {}
+    quote, b = s["quotes"][0], s["bookings"][0]
+    quoted = _quoted_air(quote)
+    shown = amount(actual[0], actual[1])
+    if quoted is None or quoted[1] != actual[1] or quoted[1] != str(quote["currency"]).upper():
+        db.set_booking_customer_state(sid, HUMAN)
+        db.emit(
+            db.Ev.WARN,
+            f"Preisänderung: Airline bestätigt {shown}, neuer Gesamtpreis nicht berechenbar. "
+            "Bitte Kunde manuell informieren",
+            sid,
+            level="warn",
+        )
+        return
+    new_total = int(quote["total_minor"]) + actual[0] - quoted[0]
+    booking_ref = str(b.get("booking_reference") or b["team_reference"])
+    name = (s.get("request") or {}).get("customer_name")
+    lang = language(mail.body)
+    if new_total < int(quote["total_minor"]):  # cheaper: nothing to agree, confirm the truth
+        text = _confirmation(lang, name, quote, booking_ref, new_total)
+        if _confirm_to_customer(sid, mail, text, _terms(quote, booking_ref)):
+            db.set_booking_customer_state(sid, CONFIRMED_SENT, new_total)
+            db.emit(db.Ev.STATUS, f"Airline-Preis niedriger ({shown}): bestätigt", sid)
+        return
+    already = b.get("customer_state") == CONFIRMED_SENT
+    alt = _alternative(quote, new_total)
+    text = _price_change_text(lang, name, quote, booking_ref, new_total, alt, already)
+    terms = _terms(quote, booking_ref, *([alt["airline"]] if alt else []))
+    if not _confirm_to_customer(sid, mail, text, terms, category="price_change"):
+        db.set_booking_customer_state(sid, HUMAN, new_total)
+        return
+    db.set_booking_customer_state(sid, PRICE_ASKED, new_total)
+    db.emit(
+        db.Ev.WARN,
+        f"Preisänderung: Airline bestätigt {shown} statt {amount(quoted[0], quoted[1])}. "
+        f"Kunde gefragt, neuer Gesamtpreis {amount(new_total, quote['currency'])}"
+        + (f", Alternative {alt['airline']}" if alt else ""),
+        sid,
+        level="warn",
+    )
+
+
+def _on_price_change_answer(mail: Mail, sid: int, s: dict[str, Any], b: dict[str, Any]) -> None:
+    """Yes to the new total: confirm at it. Anything else (no, the alternative, unclear):
+    a human decides, because the booking cannot be cancelled or swapped by the agent."""
+    quote = s["quotes"][0]
+    text = own_text(mail.body)
+    alt = _alternative(quote, int(b.get("customer_total_minor") or 0))
+    wants_other = bool(_WANTS_OTHER.search(text)) or bool(
+        alt and alt["airline"].lower() in text.lower()
+    )
+    verdict = is_acceptance(mail.body)
+    if verdict is True and not wants_other and b.get("customer_total_minor") is not None:
+        booking_ref = str(b.get("booking_reference") or b["team_reference"])
+        name = (s.get("request") or {}).get("customer_name")
+        body = _confirmation(
+            language(mail.body), name, quote, booking_ref, int(b["customer_total_minor"])
+        )
+        if _confirm_to_customer(sid, mail, body, _terms(quote, booking_ref)):
+            db.set_booking_customer_state(sid, PRICE_ACCEPTED)
+            db.emit(db.Ev.STATUS, "Kunde akzeptiert neuen Preis: Buchung bestätigt", sid)
+        return
+    what = (
+        "wünscht die Alternative"
+        if wants_other
+        else ("lehnt ab" if verdict is False else "unklare Antwort")
+    )
+    db.set_booking_customer_state(sid, HUMAN)
+    db.emit(
+        db.Ev.WARN,
+        f"Preisänderung: Kunde {what}. Bitte übernehmen, nichts wurde umgebucht",
+        sid,
+        level="warn",
+    )
+
+
+def _last_customer_mail(sid: int) -> Mail | None:
+    s = db.get_session(sid) or {}
+    customer = address(str(s.get("customer") or ""))
+    mails = [
+        m
+        for m in s.get("mails") or []
+        if m["direction"] == "in" and customer and address(str(m["sender"] or "")) == customer
+    ]
+    if not mails:
+        return None
+    r = mails[-1]
+    return Mail(
+        id=int(r["id"]),
+        thread_root=sid,
+        sender=str(r["sender"]),
+        to=settings.team_mailbox,
+        subject=str(r["subject"] or ""),
+        body=str(r["body"] or ""),
+        received_at=str(r["received_at"]),
+    )
+
+
+def _late_price_change(sid: int) -> None:
+    """Airline price arrived after we had already confirmed the customer."""
+    try:
+        with _lock(sid):
+            s = db.get_session(sid) or {}
+            actual = _airline_price(sid)
+            mail = _last_customer_mail(sid)
+            if (
+                _customer_state(sid) != CONFIRMED_SENT
+                or actual is None
+                or mail is None
+                or not s.get("quotes")
+                or not _differs(s["quotes"][0], actual)
+            ):
+                return
+            _ask_price_change(sid, mail, actual)
+    except Exception as e:
+        log.exception("session %s: late price change failed", sid)
+        db.emit(db.Ev.ERROR, f"Preisänderung nicht gemeldet: {e}"[:300], sid, level="error")
 
 
 # ---------------------------------------------------------------- airline confirmations
@@ -362,6 +697,17 @@ def on_airline_mail(mail: Mail) -> bool:
         if tag:
             sid = db.update_booking_status(f"AP-{tag.group(1)}", "confirmed")
     log.info("airline confirmation %s -> session %s", m.group(1), sid)
+    if sid is not None:
+        from app.agents.bids import parse_price
+
+        found = parse_price(mail.body)
+        if found and found[1]:
+            db.set_airline_price(sid, to_minor(found[0]), found[1])
+            # awaiting: the waiter picks it up; already confirmed: tell the customer now
+            if _customer_state(sid) == CONFIRMED_SENT:
+                threading.Thread(
+                    target=_late_price_change, args=(sid,), name=f"late-{sid}", daemon=True
+                ).start()
     return True
 
 
@@ -370,7 +716,18 @@ def on_airline_mail(mail: Mail) -> bool:
 
 def catch_up() -> None:
     """Acceptances that arrived while no booking agent ran: book them now (rates are re-fetched
-    if expired). Only quoted, unbooked sessions with a customer reply after our quote."""
+    if expired). Only quoted, unbooked sessions with a customer reply after our quote.
+    Bookings still waiting for the airline's price get their waiter back."""
+    for b in db.bookings_with_customer_state(AWAITING_AIRLINE):
+        sid = int(b["session_id"])
+        mail = _last_customer_mail(sid)
+        if mail is None:
+            continue
+        try:
+            age = (datetime.now(UTC) - datetime.fromisoformat(str(b["created_at"]))).total_seconds()
+        except ValueError:
+            age = 0.0
+        _start_waiter(sid, mail, time.monotonic() + max(0.0, settings.airline_confirm_wait_s - age))
     for s in db.list_sessions(status="quoted"):
         full = db.get_session(int(s["id"]))
         if not full or not full.get("quotes") or full.get("bookings"):

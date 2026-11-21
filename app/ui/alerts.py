@@ -27,9 +27,9 @@ from app import db
 log = logging.getLogger(__name__)
 
 WEBHOOK = os.getenv("SLACK_SOS_WEBHOOK", "").strip()
-PUBLIC_URL = os.getenv(
-    "PUBLIC_URL", "https://5u-ai-hackathon-production.up.railway.app"
-).rstrip("/")
+PUBLIC_URL = os.getenv("PUBLIC_URL", "https://5u-ai-hackathon-production.up.railway.app").rstrip(
+    "/"
+)
 EVERY_S = 20.0
 MAIL_SILENCE_MIN = 15
 KV_LAST = "sos.last_event_id"
@@ -44,6 +44,12 @@ def classify(e: dict[str, Any]) -> tuple[str, str] | None:
         return "no_quote", f":x: Keine Quote möglich: {reason}"
     if kind == "warn" and "abgelaufen ohne Quote" in msg:
         return "expired", ":alarm_clock: RFQ ohne Antwort abgelaufen"
+    if kind == "warn" and msg.startswith("Preisänderung"):
+        # asking the customer and a human having to step in are separate alerts
+        human = "übernehmen" in msg or "manuell" in msg
+        return (
+            "price_change_human" if human else "price_change"
+        ), f":money_with_wings: {msg[:200]}"
     if kind == "board_verdict" and any(v in msg for v in BAD_VERDICTS):
         return "verdict", f":red_circle: 5U {msg.removeprefix('Board: ')}"
     if kind == "error" or (
@@ -60,9 +66,7 @@ def format_alert(headline: str, session: dict[str, Any] | None, sid: int | None)
         req = session.get("request") or {}
         lane = " → ".join(x for x in (req.get("origin"), req.get("destination")) if x)
         who = (session.get("customer") or "").replace("@hackloop.mail", "")
-        lines.append(
-            " · ".join(x for x in (f"#{sid}", lane, who, session.get("subject")) if x)
-        )
+        lines.append(" · ".join(x for x in (f"#{sid}", lane, who, session.get("subject")) if x))
     if sid is not None:
         lines.append(f"<{PUBLIC_URL}/#session={sid}|In der Konsole öffnen>")
     return "\n".join(lines)
@@ -101,11 +105,7 @@ def scan(seen: set[tuple[int | None, str]]) -> list[str]:
 
 
 def mail_silence_minutes() -> float | None:
-    r = (
-        db.conn()
-        .execute("SELECT MAX(received_at) FROM mails WHERE direction = 'in'")
-        .fetchone()
-    )
+    r = db.conn().execute("SELECT MAX(received_at) FROM mails WHERE direction = 'in'").fetchone()
     if not r or not r[0]:
         return None
     t = datetime.fromisoformat(r[0])
@@ -119,9 +119,7 @@ def loop() -> None:
         return
     # start at the newest event: a restart must not replay old alerts into Slack
     if db.kv_get(KV_LAST) is None:
-        newest = (
-            db.conn().execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
-        )
+        newest = db.conn().execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
         db.kv_set(KV_LAST, str(newest))
     seen: set[tuple[int | None, str]] = set()
     silent_alerted = False

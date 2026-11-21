@@ -288,6 +288,19 @@ def init_db(path: str | None = None) -> None:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_total_minor INTEGER")
         if "air_currency" not in quote_columns:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_currency TEXT")
+        booking_columns = {
+            row["name"] for row in migration.execute("PRAGMA table_info(bookings)")
+        }
+        # price the airline actually confirmed, and where the customer side of the booking
+        # stands (see booking.py: awaiting_airline, confirmed_sent, price_change_asked, ...)
+        for column, kind in (
+            ("airline_price_minor", "INTEGER"),
+            ("airline_currency", "TEXT"),
+            ("customer_state", "TEXT"),
+            ("customer_total_minor", "INTEGER"),
+        ):
+            if column not in booking_columns:
+                migration.execute(f"ALTER TABLE bookings ADD COLUMN {column} {kind}")
     remap_unassigned()
     backfill_bookings_from_confirmations()
     if path_changed:
@@ -1478,6 +1491,35 @@ def update_booking_status(reference: str, status: str) -> int | None:
             )
         _emit(c, Ev.BOOKED, f"Buchung {reference}: {status}", r["session_id"])
         return int(r["session_id"])
+
+
+def set_booking_customer_state(
+    session_id: int, state: str, customer_total_minor: int | None = None
+) -> None:
+    """Where the customer side of a booking stands (booking.py owns the states)."""
+    with tx() as c:
+        c.execute(
+            "UPDATE bookings SET customer_state = ?,"
+            " customer_total_minor = COALESCE(?, customer_total_minor), updated_at = ?"
+            " WHERE session_id = ?",
+            (state, customer_total_minor, now(), session_id),
+        )
+
+
+def set_airline_price(session_id: int, price_minor: int, currency: str) -> None:
+    """The air price the airline confirmed (booking response or confirmation mail)."""
+    with tx() as c:
+        c.execute(
+            "UPDATE bookings SET airline_price_minor = ?, airline_currency = ?, updated_at = ?"
+            " WHERE session_id = ?",
+            (price_minor, currency.upper(), now(), session_id),
+        )
+
+
+def bookings_with_customer_state(state: str) -> list[dict[str, Any]]:
+    return _rows(
+        conn().execute("SELECT * FROM bookings WHERE customer_state = ?", (state,))
+    )
 
 
 def tracking_records() -> list[dict[str, Any]]:

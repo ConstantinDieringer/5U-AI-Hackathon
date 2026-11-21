@@ -93,6 +93,8 @@ class Settings:
     webhook_secret: str
     webhook_secret_file: Path
     webhook_poll_interval_s: float
+    price_change_tolerance_pct: float
+    airline_confirm_wait_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -175,6 +177,12 @@ settings = Settings(
         )
     ),
     webhook_poll_interval_s=max(1, float(_env("MAILBOX_WEBHOOK_POLL_INTERVAL_S", "30"))),
+    # booking: an airline price this far (%) from the quoted air price counts as a change and
+    # is put to the customer before we confirm (rounds 49/50: +10 % at confirmation, -22.5)
+    price_change_tolerance_pct=max(0.0, float(_env("PRICE_CHANGE_TOLERANCE_PCT", "0.5"))),
+    # wait this long for the airline's confirmation mail (with its price) before confirming
+    # the booking to the customer anyway; 0 confirms right after booking as before
+    airline_confirm_wait_s=max(0.0, float(_env("AIRLINE_CONFIRM_WAIT_S", "180"))),
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):

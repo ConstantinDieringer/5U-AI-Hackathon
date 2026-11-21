@@ -13,7 +13,7 @@ import pytest
 from openai import OpenAI
 
 from app import hackloop, llm
-from app.agents import email_review
+from app.agents import booking, email_review
 
 
 @pytest.fixture(autouse=True)
@@ -22,6 +22,10 @@ def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         email_review,
         "settings",
         dataclasses.replace(email_review.settings, email_review_enabled=False),
+    )
+    # no booking waiter thread may outlive its test database; price tests set their own wait
+    monkeypatch.setattr(
+        booking, "settings", dataclasses.replace(booking.settings, airline_confirm_wait_s=0)
     )
     refused: list[str] = []
 
