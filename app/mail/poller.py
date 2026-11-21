@@ -100,12 +100,17 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
             daemon=True,
         ).start()
     elif category == Category.CUSTOMER and session_id is not None:
-        from app.agents import booking
+        from app import db
+        from app.agents import booking, rfq
 
         threading.Thread(
-            target=booking.handle_reply,
+            target=(
+                rfq.handle_clarification_reply
+                if db.pending_clarification(session_id)
+                else booking.handle_reply
+            ),
             args=(mail, session_id),
-            name=f"book-{session_id}",
+            name=f"customer-{session_id}",
             daemon=True,
         ).start()
     elif category == Category.CARRIER_BID:

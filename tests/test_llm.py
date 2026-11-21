@@ -51,24 +51,24 @@ def test_call_is_logged_with_cost(sent: list[dict[str, Any]]) -> None:
 
 def test_configured_call_limit_in_a_session(sent: list[dict[str, Any]]) -> None:
     msg = [{"role": "user", "content": "hi"}]
-    llm.complete("extract", msg, session_id=7)
-    llm.complete("reply", msg, session_id=7)
-    llm.complete("compose", msg, session_id=7)
+    limit = llm.settings.llm_max_calls_per_session
+    for index in range(limit):
+        llm.complete(f"call_{index}", msg, session_id=7)
     with pytest.raises(llm.LlmBudgetError):
         llm.complete("again", msg, session_id=7)
-    assert len(sent) == 3
+    assert len(sent) == limit
 
 
 def test_budget_survives_a_restart(
     sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The count lives in the db: a restarted app still refuses call 4."""
+    """The count lives in the db: a restarted app still enforces the configured cap."""
     import importlib
 
     msg = [{"role": "user", "content": "hi"}]
-    llm.complete("extract", msg, session_id=8)
-    llm.complete("repair", msg, session_id=8)
-    llm.complete("compose", msg, session_id=8)
+    limit = llm.settings.llm_max_calls_per_session
+    for index in range(limit):
+        llm.complete(f"call_{index}", msg, session_id=8)
     importlib.reload(llm)  # what a restart of run.py does to module state
     monkeypatch.setattr(  # the reloaded client must not reach the network either
         llm._client.chat.completions, "create", lambda **kw: sent.append(kw)
@@ -78,18 +78,14 @@ def test_budget_survives_a_restart(
             llm.complete("again", msg, session_id=8)
     finally:
         importlib.reload(llm)
-    assert len(sent) == 3
+    assert len(sent) == limit
 
 
 def test_calls_logged_before_the_counter_count(sent: list[dict[str, Any]]) -> None:
-    for purpose in (
-        "extract",
-        "repair",
-        "compose",
-    ):  # rows from before the counter existed
+    for index in range(llm.settings.llm_max_calls_per_session):
         db.record_llm_call(
             9,
-            purpose=purpose,
+            purpose=f"old_{index}",
             model="m",
             prompt_tokens=1,
             completion_tokens=1,

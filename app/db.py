@@ -124,6 +124,22 @@ CREATE TABLE IF NOT EXISTS quotes (
 );
 CREATE INDEX IF NOT EXISTS ix_quotes_session ON quotes(session_id);
 
+CREATE TABLE IF NOT EXISTS clarifications (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id     INTEGER NOT NULL REFERENCES sessions(id),
+  state          TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (state IN ('pending','resolved','manual')),
+  conflicts_json TEXT NOT NULL CHECK (json_valid(conflicts_json)),
+  resolutions_json TEXT CHECK (resolutions_json IS NULL OR json_valid(resolutions_json)),
+  question_mail_id INTEGER,
+  reply_mail_id  INTEGER,
+  created_at     TEXT NOT NULL,
+  resolved_at    TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_clarifications_pending
+  ON clarifications(session_id) WHERE state = 'pending';
+CREATE INDEX IF NOT EXISTS ix_clarifications_session ON clarifications(session_id, id);
+
 CREATE TABLE IF NOT EXISTS bookings (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id        INTEGER NOT NULL REFERENCES sessions(id),
@@ -682,6 +698,109 @@ def record_outgoing(
     return session_id
 
 
+def pending_clarification(session_id: int) -> dict[str, Any] | None:
+    """The one open fact clarification for a session, if any."""
+    row = _one(
+        conn().execute(
+            "SELECT * FROM clarifications WHERE session_id = ? AND state = 'pending'"
+            " ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        )
+    )
+    if row:
+        row["conflicts"] = json.loads(row.pop("conflicts_json"))
+        raw = row.pop("resolutions_json")
+        row["resolutions"] = json.loads(raw) if raw else None
+    return row
+
+
+def ensure_clarification(
+    session_id: int, conflicts: Sequence[dict[str, Any]]
+) -> tuple[dict[str, Any], bool]:
+    """Return the pending clarification and whether this caller created it.
+
+    Creation is the send claim. Existing rows are never sent again, making retries and
+    concurrent RFQ workers idempotent.
+    """
+    with tx() as c:
+        existing = _one(
+            c.execute(
+                "SELECT * FROM clarifications WHERE session_id = ? AND state = 'pending'",
+                (session_id,),
+            )
+        )
+        created = existing is None
+        if existing is None:
+            stamp = now()
+            cur = c.execute(
+                "INSERT INTO clarifications(session_id, conflicts_json, created_at)"
+                " VALUES (?,?,?)",
+                (session_id, _json(list(conflicts)), stamp),
+            )
+            existing = _one(
+                c.execute("SELECT * FROM clarifications WHERE id = ?", (cur.lastrowid,))
+            )
+            c.execute(
+                "UPDATE sessions SET updated_at = ? WHERE id = ?", (stamp, session_id)
+            )
+            _emit(
+                c,
+                "clarification_pending",
+                "Sachverhalt muss mit dem Kunden geklärt werden",
+                session_id,
+                level="warn",
+                payload={"conflicts": list(conflicts)},
+            )
+    assert existing is not None
+    existing["conflicts"] = json.loads(existing.pop("conflicts_json"))
+    raw = existing.pop("resolutions_json")
+    existing["resolutions"] = json.loads(raw) if raw else None
+    return existing, created
+
+
+def mark_clarification_sent(clarification_id: int, mail_id: int) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE clarifications SET question_mail_id = COALESCE(question_mail_id, ?)"
+            " WHERE id = ? AND state = 'pending'",
+            (mail_id, clarification_id),
+        )
+
+
+def resolve_clarification(
+    clarification_id: int,
+    reply_mail_id: int,
+    resolutions: dict[str, Any] | None = None,
+    *,
+    manual: bool = False,
+) -> None:
+    state = "manual" if manual else "resolved"
+    with tx() as c:
+        row = _one(
+            c.execute(
+                "SELECT session_id FROM clarifications WHERE id = ? AND state = 'pending'",
+                (clarification_id,),
+            )
+        )
+        if row is None:
+            return
+        c.execute(
+            "UPDATE clarifications SET state = ?, reply_mail_id = ?, resolutions_json = ?,"
+            " resolved_at = ? WHERE id = ?",
+            (state, reply_mail_id, _json(resolutions), now(), clarification_id),
+        )
+        _emit(
+            c,
+            "clarification_manual" if manual else "clarification_resolved",
+            "Kundenantwort benötigt manuelle Prüfung"
+            if manual
+            else "Widersprüche durch Kundenantwort geklärt",
+            int(row["session_id"]),
+            level="warn" if manual else "info",
+            payload={"reply_mail_id": reply_mail_id, "resolutions": resolutions},
+        )
+
+
 def get_session(session_id: int) -> dict[str, Any] | None:
     c = conn()
     s = _one(c.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)))
@@ -724,6 +843,18 @@ def get_session(session_id: int) -> dict[str, Any] | None:
     s["board"] = _rows(
         c.execute("SELECT * FROM board_results WHERE session_id = ?", (session_id,))
     )
+    s["clarifications"] = _rows(
+        c.execute(
+            "SELECT id, state, conflicts_json, resolutions_json, question_mail_id,"
+            " reply_mail_id, created_at, resolved_at FROM clarifications"
+            " WHERE session_id = ? ORDER BY id",
+            (session_id,),
+        )
+    )
+    for clarification in s["clarifications"]:
+        clarification["conflicts"] = json.loads(clarification.pop("conflicts_json"))
+        raw = clarification.pop("resolutions_json")
+        clarification["resolutions"] = json.loads(raw) if raw else None
     return s
 
 
@@ -741,7 +872,11 @@ def list_sessions(
       (SELECT COALESCE(SUM(cost_micro_usd),0) FROM llm_calls l WHERE l.session_id = s.id) AS llm_cost_micro_usd,
       (SELECT total_minor FROM quotes qq WHERE qq.session_id = s.id ORDER BY qq.id LIMIT 1) AS quote_total_minor,
       (SELECT currency FROM quotes qq WHERE qq.session_id = s.id ORDER BY qq.id LIMIT 1) AS quote_currency,
+      EXISTS(SELECT 1 FROM clarifications c WHERE c.session_id = s.id
+             AND c.state = 'pending') AS needs_clarification,
       CASE WHEN s.status = 'error' OR s.paused = 1
+             OR EXISTS(SELECT 1 FROM clarifications c WHERE c.session_id = s.id
+                       AND c.state = 'pending')
              OR (s.status IN ('new','pricing') AND s.deadline_at IS NOT NULL
                  AND (julianday(s.deadline_at) - julianday('now')) * 86400 < ?)
            THEN 1 ELSE 0 END AS needs_attention
@@ -786,6 +921,8 @@ def resumable_rfqs(created_after: str) -> list[dict[str, Any]]:
             " WHERE s.kind = 'rfq' AND s.status IN ('new','pricing') AND s.first_reply_at IS NULL"
             " AND s.created_at > ? AND m.direction = 'in'"
             " AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = s.id)"
+            " AND NOT EXISTS (SELECT 1 FROM clarifications c WHERE c.session_id = s.id"
+            "                 AND c.state = 'pending')"
             " ORDER BY s.created_at",
             (created_after,),
         )

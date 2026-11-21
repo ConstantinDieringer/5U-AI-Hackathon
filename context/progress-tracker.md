@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- RFQ evidence hardening: XLSX/DOCX/TXT/PDF/image attachments are checked against mail facts; origin, DG, weight, volume, pieces, pickup, destination and date conflicts trigger one persisted customer clarification. Clear replies resume the same RFQ, ambiguous/DG replies hand off; quote copy gets one validated repair then deterministic fallback. 230+ tests pass plus all eight historical failure replays.
 - RFQ history isolation: current cargo blocks exclude obsolete forwarded specifications and thread subjects from extraction/lot sums; pure forwarding remains supported. Round 15 carrier requests used historical AMS; actual pickup location was absent, so this fix cannot reconstruct it or recover the expired round.
 - Door-to-port without ZIP (rounds 3627, 3930 lost): pickup area from the mail/signature (pickup_zones.csv) or the customer's last pickup → zone → airport → truck + air. No email-only airline bids for origins outside our 6 airports.
 - Mail template guard: generated RFQ bodies reject unfilled placeholders and embedded mail headers, falling back to verified copy; placeholder customer names use a generic greeting. Observed live mail 3495 still used pre-style-fix output, so production rollout requires confirmation.

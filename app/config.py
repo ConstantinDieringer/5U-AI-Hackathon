@@ -94,7 +94,7 @@ settings = Settings(
     allow_incomplete_door_quote=(
         _env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"
     ),
-    llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "3"))),
+    llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "5"))),
     runtime_dir=Path(
         _env(
             "RUNTIME_DIR",

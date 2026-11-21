@@ -416,7 +416,7 @@ function renderList() {
   if (!rows.length) box.append(S.filter === "attention" && S.sessions.length ? el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts braucht dich gerade.") : emptyState("inbox", S.sessions.length ? "Keine Session für diesen Filter." : "Noch keine Anfragen."));
   for (const s of rows) box.append(el("div", { class: "row" + (s.id === S.selected ? " sel" : "") + (s.needs_attention ? " attn" : ""), onclick: () => select(s.id) },
     el("div", { class: "t" }, (s.kind === "tracking" ? "Tracking · " : "") + (s.subject || "(ohne Betreff)")), countdown(s),
-    el("div", { class: "m" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Mensch") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", ""))),
+    el("div", { class: "m" }, badge(s.status), s.needs_clarification ? el("span", { class: "badge-s orange" }, "Klärung offen") : null, s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Mensch") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", ""))),
     el("div", { class: "m num" }, s.quote_total_minor != null ? money(s.quote_total_minor, s.quote_currency) : ""),
     el("div", { class: "e" }, s.last_event || "")));
 }
@@ -435,6 +435,8 @@ function laneOf(s) { const r = s.request || {}, q = (s.quotes || [])[0] || {}; c
   if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(r.preference || r.mode); return parts.join(" · "); }
 function renderDetail() {
   const s = S.detail, notices = [];
+  const pendingClarification = (s.clarifications || []).find((c) => c.state === "pending");
+  if (pendingClarification) notices.push(el("div", { class: "notice" }, icon("alert"), "Kundenklärung offen. Der Agent wartet auf eine eindeutige Antwort und sendet bis dahin keine Quote."));
   if (s.mode === "manual") notices.push(el("div", { class: "notice" }, icon("hand"), "Ein Mensch hat diese Session übernommen. Der Agent antwortet hier nicht mehr."));
   if (S.globalPause) notices.push(el("div", { class: "notice" }, icon("stop"), "Globaler Stopp aktiv: es werden keine Mails gesendet."));
   const head = el("div", { class: "card" },

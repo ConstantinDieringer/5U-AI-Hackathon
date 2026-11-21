@@ -191,8 +191,8 @@ def test_resolve_origin_ignores_a_wrong_llm_origin_with_pickup_zip() -> None:
         resolve_origin(r.model_copy(update={"origin": "LAX"})) == "HAM"
     )  # not a kit airport
     assert (
-        resolve_origin(r.model_copy(update={"origin": "FRA"})) == "FRA"
-    )  # customer's choice
+        resolve_origin(r.model_copy(update={"origin": "FRA"})) == "HAM"
+    )  # pickup zone wins over a plausible but inconsistent airport
     assert resolve_origin(r.model_copy(update={"origin": None})) == "HAM"
     port = Rfq(origin="MUC", destination="LAX", weight_kg=998)
     assert resolve_origin(port) == "MUC"

@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids
 from app.config import settings
+from app.mail import attachments as attachment_analysis
 from app.mail import language, lots, parse
 from app.mail.style import SIGNATURE, amount, has_template_artifacts
 from app.models import Mail, RateOption, Rfq
@@ -129,6 +130,52 @@ _SHIPMENT_DATA = re.compile(
     r"\b\d+(?:[.,]\d+)?\s*(?:kgs?|kilograms?|lbs?|cbm|m3|pieces?|pcs|cartons?|pallets?)\b",
     re.IGNORECASE,
 )
+_ORIGIN_LABEL = re.compile(
+    r"\b(?:origin|departure(?: airport)?|abflughafen)\s*:?\s*([A-Z]{3,4})\b",
+    re.IGNORECASE,
+)
+_ROUTE_SUBJECT = re.compile(
+    r"\b([A-Z]{3,4})\s*(?:-|–|—|to|nach)\s*[A-Z]{3,4}\b", re.IGNORECASE
+)
+_ICAO_ORIGINS = {
+    "EDDF": "FRA",
+    "EDDM": "MUC",
+    "EDDL": "DUS",
+    "EDDH": "HAM",
+    "EDDS": "STR",
+    "EDDK": "CGN",
+}
+
+CLARIFICATION_SCHEMA: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "clarification_resolution",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["clear", "choices"],
+            "properties": {
+                "clear": {"type": "boolean"},
+                "choices": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["index", "choice"],
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "choice": {
+                                "type": "string",
+                                "enum": ["mail", "attachment", "ambiguous"],
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
 
 
 # ---------------------------------------------------------------- 1. extract
@@ -247,6 +294,279 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
         return None
     rfq, _ = _parse_extraction(text, mail, session_id)
     return rfq
+
+
+def _clarification_text(rfq: Rfq, conflicts: list[dict[str, Any]]) -> str:
+    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
+    lines = [
+        "Guten Tag," if lang == "de" else "Hello,",
+        "",
+        (
+            "bevor wir ein verbindliches Angebot erstellen, bitten wir um kurze Bestätigung:"
+            if lang == "de"
+            else "before we prepare a binding quote, please confirm the following:"
+        ),
+        "",
+    ]
+    labels = {
+        "dangerous_goods": "Gefahrgut" if lang == "de" else "dangerous goods",
+        "weight_kg": "Gewicht" if lang == "de" else "weight",
+        "volume_cbm": "Volumen" if lang == "de" else "volume",
+        "pieces": "Packstücke" if lang == "de" else "pieces",
+        "destination": "Zielflughafen" if lang == "de" else "destination",
+        "pickup_zip": "Abholort" if lang == "de" else "pickup location",
+        "pickup_location": "Abholort" if lang == "de" else "pickup location",
+        "ready_date": "Bereitstellungsdatum" if lang == "de" else "ready date",
+        "attachment": "Anhang" if lang == "de" else "attachment",
+        "origin": "Abflughafen" if lang == "de" else "origin airport",
+    }
+    for index, conflict in enumerate(conflicts, 1):
+        field = str(conflict.get("field", "fact"))
+        mail_value = conflict.get("mail_value")
+        attachment_value = conflict.get("attachment_value")
+        filename = conflict.get("filename")
+        if field == "origin":
+            detail = (
+                f"Als Abflughafen ist {mail_value} genannt, der Abholort gehört jedoch zur "
+                f"Zone {attachment_value}. Welchen Abflughafen sollen wir verwenden?"
+                if lang == "de"
+                else f"The request names {mail_value} as origin, while the pickup location maps "
+                f"to {attachment_value}. Which origin airport should we use?"
+            )
+        elif field == "dangerous_goods":
+            detail = (
+                (
+                    "Die Mail nennt die Sendung als ungefährlich, der Anhang enthält jedoch "
+                    "Gefahrgutangaben. Ist die Sendung Gefahrgut?"
+                    if mail_value is False
+                    else "Der Anhang enthält Gefahrgutangaben. Ist die Sendung Gefahrgut?"
+                )
+                if lang == "de"
+                else (
+                    "The email describes non dangerous cargo, but the attachment contains "
+                    "dangerous goods details. Is this shipment dangerous goods?"
+                    if mail_value is False
+                    else "The attachment contains dangerous goods details. Is this shipment "
+                    "dangerous goods?"
+                )
+            )
+        elif field == "attachment":
+            detail = (
+                f"Der Anhang {filename} konnte nicht verlässlich geprüft werden. "
+                "Dürfen wir ausschließlich die Angaben in Ihrer Mail verwenden?"
+                if lang == "de"
+                else f"We could not reliably verify attachment {filename}. May we use only "
+                "the details in your email?"
+            )
+        else:
+            detail = (
+                f"{labels.get(field, field)}: Mail {mail_value}, Anhang {attachment_value}. "
+                "Welche Angabe ist korrekt?"
+                if lang == "de"
+                else f"{labels.get(field, field)}: email {mail_value}, attachment "
+                f"{attachment_value}. Which value is correct?"
+            )
+        lines.append(f"{index}. {detail}")
+    lines += ["", "Vielen Dank." if lang == "de" else "Thank you.", "", SIGNATURE]
+    return "\n".join(lines) + "\n"
+
+
+def _ask_clarification(mail: Mail, rfq: Rfq, sid: int, conflicts: list[Any]) -> None:
+    payload = [
+        conflict.model_dump() if hasattr(conflict, "model_dump") else dict(conflict)
+        for conflict in conflicts
+    ]
+    clarification, created = db.ensure_clarification(sid, payload)
+    if not created:
+        db.emit(
+            "clarification_not_resent",
+            "Offene Rückfrage wurde nicht erneut gesendet",
+            sid,
+        )
+        return
+    body = _clarification_text(rfq, payload)
+    subject = (
+        mail.subject
+        if mail.subject.lower().startswith("re:")
+        else f"Re: {mail.subject}"
+    )
+    sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
+    sent_id = int(sent["id"])
+    db.record_outgoing(
+        mail_id=sent_id,
+        recipient=mail.sender,
+        subject=subject,
+        body=body,
+        category="clarification",
+        session_id=sid,
+        references=[*mail.references, mail.id],
+        in_reply_to=mail.id,
+        raw=sent,
+    )
+    db.mark_clarification_sent(int(clarification["id"]), sent_id)
+    db.emit("clarification_sent", "Rückfrage an Kunden gesendet", sid)
+
+
+def _resolution_from_reply(
+    mail: Mail, sid: int, conflicts: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Resolve each conflict only when the customer's reply is explicit."""
+    if len(conflicts) == 1 and conflicts[0].get("field") == "dangerous_goods":
+        current_reply = _clean(mail.body)
+        if attachment_analysis.email_dangerous(current_reply) is False:
+            return {"0": "mail"}
+        if attachment_analysis.email_dangerous(current_reply) is True:
+            return {"0": "attachment"}
+    prompt = (
+        "Decide whether the customer's latest reply explicitly resolves every listed conflict. "
+        "For each index choose mail when the customer confirms the original email value, "
+        "attachment when they confirm the attachment value, or ambiguous. Do not infer. clear "
+        "is true only when every conflict is explicit.\n\nConflicts:\n"
+        + json.dumps(conflicts, ensure_ascii=False)
+        + "\n\nLatest customer reply:\n"
+        + _clean(mail.body)
+    )
+    try:
+        raw = llm.complete(
+            "resolve_clarification",
+            [{"role": "user", "content": prompt}],
+            sid,
+            max_tokens=250,
+            response_format=CLARIFICATION_SCHEMA,
+        )
+        parsed = json.loads(raw)
+        choices = parsed.get("choices")
+        if not parsed.get("clear") or not isinstance(choices, list):
+            return None
+        by_index = {int(item["index"]): str(item["choice"]) for item in choices}
+        if (
+            set(by_index) != set(range(len(conflicts)))
+            or "ambiguous" in by_index.values()
+        ):
+            return None
+        return {str(index): choice for index, choice in by_index.items()}
+    except Exception as exc:  # noqa: BLE001 - ambiguity is a safe manual handoff
+        log.warning("session %s: clarification could not be resolved: %s", sid, exc)
+        return None
+
+
+def _apply_resolutions(
+    request: Rfq, conflicts: list[dict[str, Any]], choices: dict[str, Any]
+) -> Rfq | None:
+    updates: dict[str, Any] = {}
+    for index, conflict in enumerate(conflicts):
+        choice = choices.get(str(index))
+        if choice not in {"mail", "attachment"}:
+            return None
+        field = str(conflict.get("field"))
+        value = conflict.get(f"{choice}_value")
+        if field == "dangerous_goods":
+            if bool(value):
+                return (
+                    None  # DG pricing is unsupported and must be handled by a person.
+                )
+            continue
+        if field == "attachment":
+            if choice != "mail":
+                return None
+            continue
+        if field == "origin" and choice == "mail":
+            return None  # a zone-external pickup route needs a human routing decision
+        if field == "pickup_location":
+            if choice == "attachment":
+                from app.pricing.reference import zone_for_area
+
+                if not isinstance(value, str) or zone_for_area(value) is None:
+                    return None
+                updates["pickup_zip"] = None
+                updates["pickup_city"] = value
+            continue
+        field = {"volume_cbm": "volume_cbm", "weight_kg": "weight_kg"}.get(field, field)
+        if field in Rfq.model_fields:
+            updates[field] = value
+    try:
+        return (
+            Rfq.model_validate({**request.model_dump(), **updates})
+            if updates
+            else request
+        )
+    except ValidationError:
+        return None
+
+
+def _explicit_origin_conflict(rfq: Rfq, mail: Mail) -> dict[str, Any] | None:
+    """A customer-named origin that disagrees with the deterministic pickup zone."""
+    if not rfq.door_to_port or not rfq.pickup_zone:
+        return None
+    zone_origin = pickup_zones().get(rfq.pickup_zone)
+    if not zone_origin or not rfq.origin or rfq.origin == zone_origin:
+        return None
+    labelled = _ORIGIN_LABEL.search(_clean(mail.body))
+    routed = _ROUTE_SUBJECT.search(mail.subject or "")
+    raw = (labelled or routed).group(1).upper() if labelled or routed else None
+    if raw is None:
+        return None  # likely an extraction guess; the pickup zone simply wins
+    normalized = _ICAO_ORIGINS.get(raw, raw)
+    if normalized == zone_origin:
+        return None
+    return {
+        "field": "origin",
+        "mail_value": raw,
+        "attachment_value": zone_origin,
+        "filename": "pickup zone",
+        "reason": "named origin disagrees with the pickup zone",
+    }
+
+
+def handle_clarification_reply(mail: Mail, session_id: int) -> None:
+    """Interpret a customer answer and resume the original RFQ when it is unambiguous."""
+    pending = db.pending_clarification(session_id)
+    if pending is None:
+        return
+    stored = _stored_request(session_id)
+    conflicts = pending["conflicts"]
+    choices = _resolution_from_reply(mail, session_id, conflicts)
+    resolved = (
+        _apply_resolutions(stored, conflicts, choices) if stored and choices else None
+    )
+    if resolved is None:
+        db.resolve_clarification(int(pending["id"]), mail.id, choices, manual=True)
+        db.takeover(session_id, "unklare Kundenantwort")
+        return
+    db.set_request(session_id, resolved.model_dump())
+    db.resolve_clarification(int(pending["id"]), mail.id, choices)
+    session = db.get_session(session_id) or {}
+    source = next(
+        (
+            item
+            for item in session.get("mails", [])
+            if item.get("direction") == "in" and item.get("category") == "rfq"
+        ),
+        None,
+    )
+    if source is None:
+        db.takeover(session_id, "RFQ Mail fehlt")
+        return
+    continuation = Mail(
+        id=mail.id,
+        thread_root=mail.thread_root,
+        sender=str(source.get("sender") or mail.sender),
+        to=mail.to,
+        subject=mail.subject,
+        body=str(source.get("body") or ""),
+        received_at=mail.received_at,
+        references=mail.references,
+    )
+    db.emit(
+        "clarification_resumed", "Angebot nach Kundenklärung fortgesetzt", session_id
+    )
+    try:
+        _handle(continuation, session_id, skip_attachment_check=True)
+    except Exception as exc:
+        log.exception("session %s: resumed RFQ failed", session_id)
+        db.set_status(session_id, "error", f"{type(exc).__name__}: {exc}")
+    finally:
+        bids.close(session_id)
 
 
 def _parse_extraction(text: str, mail: Mail, session_id: int) -> tuple[Rfq | None, str]:
@@ -466,7 +786,9 @@ COMPOSE_PROMPT = (
     "exactly Your austrian Power Team, with no other sign-off or complimentary close. "
     "Return only the email body, never a Subject/Betreff/From/To header. Never include template "
     "placeholders such as [Your Name], [Your Company], {company}, or <name>. If a name is "
-    "unknown, use a generic greeting. The sender is Your austrian Power Team; do not invent "
+    "unknown, use a generic greeting. Never print literal field labels such as origin or "
+    "destination in place of airport codes. Never mix route words such as 'to nach' or 'nach to'. "
+    "The sender is Your austrian Power Team; do not invent "
     "a sender name or company. "
     "Answer every indexed customer question when the facts support it; otherwise explicitly say "
     "that detail is not yet available. Do not promise services absent from the facts. Return JSON "
@@ -536,6 +858,62 @@ def _fallback_with_coverage(
     return body.replace(closing, f"\n\n{note}{closing}", 1)
 
 
+def _validate_composed(raw: str, rfq: Rfq, option: RateOption, price: str) -> str:
+    result = json.loads(raw)
+    body = result.get("body")
+    answered = result.get("answered_questions")
+    unavailable = result.get("unavailable_questions")
+    addressed = result.get("addressed_constraints")
+    unavailable_constraints = result.get("unavailable_constraints")
+    expected = set(range(len(rfq.customer_questions)))
+    expected_constraints = set(range(len(rfq.service_constraints)))
+    if not isinstance(body, str) or not body.strip():
+        raise ValueError("empty body")
+    if has_template_artifacts(body):
+        raise ValueError("answer contains an unfilled template field or mail header")
+    if not all(
+        isinstance(items, list)
+        for items in (answered, unavailable, addressed, unavailable_constraints)
+    ):
+        raise TypeError("missing coverage lists")
+    answered_set, unavailable_set = set(answered), set(unavailable)
+    if answered_set & unavailable_set or answered_set | unavailable_set != expected:
+        raise ValueError("question coverage is incomplete or overlapping")
+    addressed_set, constraint_unavailable_set = (
+        set(addressed),
+        set(unavailable_constraints),
+    )
+    if (
+        addressed_set & constraint_unavailable_set
+        or addressed_set | constraint_unavailable_set != expected_constraints
+    ):
+        raise ValueError("constraint coverage is incomplete or overlapping")
+    if body.count(price) != 1 or body.count("€") != 1 or "EUR" in body.upper():
+        raise ValueError("answer must contain exactly the verified EUR total")
+    if (
+        option.origin not in body
+        or option.destination not in body
+        or option.airline not in body
+    ):
+        raise ValueError("answer omits the verified route or airline")
+    if re.search(
+        r"\b(?:to\s+nach|nach\s+to|origin\s+(?:to|nach)|destination\s+(?:to|nach))\b",
+        body,
+        re.IGNORECASE,
+    ):
+        raise ValueError("answer contains a mixed route phrase or literal placeholder")
+    if (
+        not body.rstrip().endswith(f"\n\n{SIGNATURE}")
+        or body.count(SIGNATURE) != 1
+        or re.search(r"[–—]|\s-\s|(?m:^-\s)", body)
+        or re.search(
+            r"best regards|kind regards|viele gr[üu]ße|thank you,", body, re.IGNORECASE
+        )
+    ):
+        raise ValueError("answer does not follow the team mail style")
+    return body.rstrip() + "\n"
+
+
 def compose_quote_text(
     rfq: Rfq,
     option: RateOption,
@@ -583,66 +961,41 @@ def compose_quote_text(
             for index, constraint in enumerate(rfq.service_constraints)
         ],
     }
-    try:
-        raw = llm.complete(
-            "compose_quote",
-            [
-                {"role": "system", "content": COMPOSE_PROMPT},
-                {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
-            ],
-            session_id,
-            max_tokens=500,
-            response_format=COMPOSE_SCHEMA,
-        )
-        result = json.loads(raw)
-        body = result.get("body")
-        answered = result.get("answered_questions")
-        unavailable = result.get("unavailable_questions")
-        addressed_constraints = result.get("addressed_constraints")
-        unavailable_constraints = result.get("unavailable_constraints")
-        expected = set(range(len(rfq.customer_questions)))
-        expected_constraints = set(range(len(rfq.service_constraints)))
-        if not isinstance(body, str) or not body.strip():
-            raise ValueError("empty body")
-        if has_template_artifacts(body):
-            raise ValueError(
-                "answer contains an unfilled template field or mail header"
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": COMPOSE_PROMPT},
+        {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
+    ]
+    last_error: Exception | None = None
+    for attempt in range(2):
+        raw = ""
+        try:
+            raw = llm.complete(
+                "compose_quote" if attempt == 0 else "compose_quote_repair",
+                messages,
+                session_id,
+                max_tokens=500,
+                response_format=COMPOSE_SCHEMA,
             )
-        coverage_lists = (
-            answered,
-            unavailable,
-            addressed_constraints,
-            unavailable_constraints,
-        )
-        if not all(isinstance(items, list) for items in coverage_lists):
-            raise TypeError("missing coverage lists")
-        answered_set, unavailable_set = set(answered), set(unavailable)
-        if answered_set & unavailable_set or answered_set | unavailable_set != expected:
-            raise ValueError("question coverage is incomplete or overlapping")
-        addressed_set = set(addressed_constraints)
-        constraint_unavailable_set = set(unavailable_constraints)
-        if (
-            addressed_set & constraint_unavailable_set
-            or addressed_set | constraint_unavailable_set != expected_constraints
-        ):
-            raise ValueError("constraint coverage is incomplete or overlapping")
-        if body.count(price) != 1 or body.count("€") != 1 or "EUR" in body.upper():
-            raise ValueError("answer must contain exactly the verified EUR total")
-        if (
-            not body.rstrip().endswith(f"\n\n{SIGNATURE}")
-            or body.count(SIGNATURE) != 1
-            or re.search(r"[–—]|\s-\s|(?m:^-\s)", body)
-            or re.search(
-                r"best regards|kind regards|viele gr[üu]ße|thank you,",
-                body,
-                re.IGNORECASE,
-            )
-        ):
-            raise ValueError("answer does not follow the team mail style")
-        return body.rstrip() + "\n"
-    except Exception as e:  # noqa: BLE001 - quote has a safe deterministic fallback
-        log.warning("session %s: using deterministic quote copy (%s)", session_id, e)
-        return fallback
+            return _validate_composed(raw, rfq, option, price)
+        except Exception as exc:  # noqa: BLE001 - repair once, then safe fallback
+            last_error = exc
+            if attempt == 0:
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": raw},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Repair the answer. Validation failed with: "
+                                f"{type(exc).__name__}: {exc}. Return the full corrected JSON."
+                            ),
+                        },
+                    ]
+                )
+    log.warning(
+        "session %s: using deterministic quote copy (%s)", session_id, last_error
+    )
+    return fallback
 
 
 # ---------------------------------------------------------------- flow
@@ -739,7 +1092,7 @@ def handle_rfq(mail: Mail, session_id: int) -> None:
         bids.close(session_id)
 
 
-def _handle(mail: Mail, sid: int) -> None:
+def _handle(mail: Mail, sid: int, *, skip_attachment_check: bool = False) -> None:
     t0 = _received(mail)
     age = time.time() - t0
     if age > TOO_OLD_S:
@@ -769,6 +1122,25 @@ def _handle(mail: Mail, sid: int) -> None:
         sid,
         duration_ms=int((time.monotonic() - start) * 1000),
     )
+
+    if not skip_attachment_check:
+        conflicts: list[Any] = []
+        origin_conflict = _explicit_origin_conflict(rfq, mail)
+        if origin_conflict:
+            conflicts.append(origin_conflict)
+            db.emit(
+                "fact_conflict",
+                "Genannter Abflughafen widerspricht der Abholzone",
+                sid,
+                level="warn",
+                conflict=origin_conflict,
+            )
+        if mail.attachments:
+            _, attachment_conflicts = attachment_analysis.analyze(mail, rfq, sid)
+            conflicts.extend(attachment_conflicts)
+        if conflicts:
+            _ask_clarification(mail, rfq, sid, conflicts)
+            return
 
     origin = resolve_origin(rfq)
     if origin is None:
