@@ -235,8 +235,10 @@ def send_customer(
     protected_terms: tuple[str, ...] = (),
     allow_manual: bool = False,
     deadline_at: float | None = None,
+    review: bool = True,
 ) -> dict[str, Any]:
-    """All customer replies pass the final prose renderer before transport."""
+    """All customer replies pass the final prose renderer before transport. review=False skips
+    the LLM style reviewer for fixed, pre-written templates (no gateway cost)."""
     from app import db
     from app.agents.email_review import review_customer_mail
     from app.mail.language import detect
@@ -254,9 +256,10 @@ def send_customer(
     lang = detect(body)
     subject = customer_subject(subject, lang)
     rendered = customer_body(body, lang)
-    rendered = customer_body(
-        review_customer_mail(rendered, lang, session_id, protected_terms), lang
-    )
+    if review:
+        rendered = customer_body(
+            review_customer_mail(rendered, lang, session_id, protected_terms), lang
+        )
     validate_customer_text(rendered)
     validate_customer_text(subject)
     allowed()

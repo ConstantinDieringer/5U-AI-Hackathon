@@ -1,0 +1,259 @@
+"""Follow-up agent: when the customer goes quiet on our offer (or on our clarification
+question before the offer), a short nudge goes into the thread.
+
+Why: rounds 54/55 were accepted on price but never booked. The customer answered "I'll look
+at it and get back to you" and then stayed silent; only a follow-up from us moves it on.
+
+Rules (no LLM, no reviewer call: zero gateway cost per nudge):
+- session is `quoted`, has a quote and no booking, not paused / manual
+- the last mail between us and the customer is ours (quote, clarification, earlier nudge),
+  or a customer reply that is neither yes nor no ("I'll get back to you")
+- that last mail is at least FOLLOWUP_AFTER_S old (default 30 s)
+- at most FOLLOWUP_MAX nudges (default 3), only within FOLLOWUP_WINDOW_S after the quote
+  (default 900 s = portal rate_id validity)
+- an explicit customer decline after the quote stops all nudges
+- clarification questions before the quote: same 30 s / max 3 rule, only while the RFQ
+  deadline has not passed, never once the customer has answered
+- the nudge never restates or changes the price: only the first quote in a thread counts
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from datetime import UTC, datetime
+from typing import Any
+
+from app import db, hackloop
+from app.config import settings
+from app.mail.router import address
+from app.mail.style import SIGNATURE
+
+log = logging.getLogger(__name__)
+
+CATEGORY = "followup"
+CATEGORY_QUESTION = "followup_question"
+
+_EN = (
+    (
+        "just checking in on the offer I sent over. Shall I go ahead and book it for you?\n\n"
+        "A short yes is enough and I will take care of the rest."
+    ),
+    (
+        "a quick follow up on our offer. If it works for you, just reply with a yes and I will "
+        "book it right away.\n\nIf anything needs changing, tell me what and I will look into it."
+    ),
+    (
+        "one last nudge on the offer. Rates can move quickly, so if you would like to go "
+        "ahead, a quick yes is all I need."
+    ),
+)
+_DE = (
+    (
+        "ich wollte kurz nachfragen, ob das Angebot für Sie passt. Soll ich die Sendung für Sie "
+        "buchen?\n\nEin kurzes Ja genügt, um den Rest kümmere ich mich."
+    ),
+    (
+        "kurze Nachfrage zu unserem Angebot. Wenn es für Sie passt, antworten Sie einfach mit "
+        "Ja und ich buche sofort.\n\nFalls etwas angepasst werden soll, sagen Sie mir einfach was."
+    ),
+    (
+        "ein letzter kurzer Hinweis zu unserem Angebot. Raten können sich schnell ändern. Wenn "
+        "Sie buchen möchten, reicht mir ein kurzes Ja."
+    ),
+)
+
+
+_Q_EN = (
+    (
+        "did you get a chance to look at my question below? As soon as I have your answer I "
+        "can send you the price."
+    ),
+    (
+        "a quick reminder about my question below. Once I have that detail your offer goes out "
+        "right away."
+    ),
+    (
+        "one last nudge on my question below. A short answer is enough and I will price it "
+        "straight away."
+    ),
+)
+_Q_DE = (
+    (
+        "konnten Sie sich meine Frage unten schon ansehen? Sobald ich Ihre Antwort habe, "
+        "schicke ich Ihnen den Preis."
+    ),
+    (
+        "kurze Erinnerung an meine Frage unten. Sobald ich die Angabe habe, geht Ihr Angebot "
+        "sofort raus."
+    ),
+    (
+        "ein letzter kurzer Hinweis auf meine Frage unten. Eine kurze Antwort genügt und ich "
+        "rechne sofort."
+    ),
+)
+
+
+def text(lang: str, name: str | None, n: int, kind: str = "offer") -> str:
+    """The n-th nudge (0-based) in the customer's language. kind: "offer" or "question"."""
+    de = lang == "de"
+    if kind == "question":
+        body = (_Q_DE if de else _Q_EN)[min(n, 2)]
+    else:
+        body = (_DE if de else _EN)[min(n, 2)]
+    if de:
+        greeting = f"Hallo {name}," if name else "Guten Tag,"
+    else:
+        greeting = f"Hi {name}," if name else "Hello,"
+    return f"{greeting}\n\n{body}\n\n{SIGNATURE}\n"
+
+
+def _age_s(ts: str, now: datetime) -> float:
+    t = datetime.fromisoformat(str(ts))
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=UTC)
+    return (now - t).total_seconds()
+
+
+def _conversation(s: dict[str, Any]) -> list[dict[str, Any]]:
+    customer = address(str(s.get("customer") or ""))
+    return [
+        m
+        for m in s.get("mails", [])
+        if (m["direction"] == "in" and address(str(m["sender"] or "")) == customer)
+        or (m["direction"] == "out" and address(str(m["recipient"] or "")) == customer)
+    ]
+
+
+def due(s: dict[str, Any], now: datetime | None = None) -> tuple[str, int] | None:
+    """(kind, index) of the nudge to send now, or None. Pure: reads the session only.
+    kind "offer": quoted, customer silent or stalling. kind "question": our clarification
+    question before the quote is unanswered (until the RFQ deadline)."""
+    now = now or datetime.now(UTC)
+    if s.get("bookings"):
+        return None
+    if s.get("status") == "quoted" and s.get("quotes"):
+        return _due_offer(s, now)
+    if s.get("status") in ("new", "pricing") and not s.get("quotes"):
+        return _due_question(s, now)
+    return None
+
+
+def _due_offer(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
+    from app.agents import booking
+
+    quote = s["quotes"][0]
+    if _age_s(quote["sent_at"], now) > settings.followup_window_s:
+        return None
+    conv = _conversation(s)
+    if not conv:
+        return None
+    quote_mail = int(quote.get("mail_id") or 0)
+    after_quote = [m for m in conv if int(m["id"]) >= quote_mail] if quote_mail else conv
+    replies = [m for m in after_quote if m["direction"] == "in"]
+    if any(booking._DECLINE.search(booking.own_text(str(m["body"] or ""))) for m in replies):
+        return None  # explicit decline: never nudge again ("not sure yet" is no decline)
+    sent = sum(1 for m in conv if m["direction"] == "out" and m.get("category") == CATEGORY)
+    if sent >= settings.followup_max:
+        return None
+    last = conv[-1]
+    if last["direction"] == "in" and booking.is_acceptance(str(last["body"] or "")) is True:
+        return None  # the booking agent handles it
+    if _age_s(last["received_at"], now) < settings.followup_after_s:
+        return None
+    return "offer", sent
+
+
+def _due_question(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
+    v = s.get("validation") or {}
+    if v.get("state") != "awaiting_clarification":
+        return None
+    if s.get("deadline_at") and _age_s(s["deadline_at"], now) >= -5:
+        return None  # the RFQ is (almost) expired: a nudge earns nothing
+    conv = _conversation(s)
+    if not conv or conv[-1]["direction"] != "out":
+        return None  # customer answered: the clarification agent is on it
+    if not any(m["direction"] == "out" and m.get("category") == "clarification" for m in conv):
+        return None
+    sent = sum(
+        1 for m in conv if m["direction"] == "out" and m.get("category") == CATEGORY_QUESTION
+    )
+    if sent >= settings.followup_max:
+        return None
+    if _age_s(conv[-1]["received_at"], now) < settings.followup_after_s:
+        return None
+    return "question", sent
+
+
+def _send(sid: int) -> None:
+    from app.agents import booking
+
+    with booking._lock(sid):  # never race the booking agent on the same thread
+        s = db.get_session(sid)
+        if not s or db.is_paused(sid) or db.is_manual(sid):
+            return
+        found = due(s)
+        if found is None:
+            return
+        kind, n = found
+        request = s.get("request") or {}
+        conv = _conversation(s)
+        last_in = next((m for m in reversed(conv) if m["direction"] == "in"), None)
+        lang = (
+            booking.language(str(last_in["body"] or ""))
+            if last_in
+            else ("de" if str(request.get("language") or "").startswith("de") else "en")
+        )
+        body = text(lang, request.get("customer_name"), n, kind)
+        to = address(str(s["customer"]))
+        reply_to = int(last_in["id"]) if last_in else sid
+        subject = str(s.get("subject") or "")
+        subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+        sent = hackloop.send_customer(
+            to, subject, body, in_reply_to=reply_to, session_id=sid, review=False
+        )
+        db.record_outgoing(
+            mail_id=int(sent["id"]),
+            recipient=to,
+            subject=sent["subject"],
+            body=sent["body"],
+            category=CATEGORY if kind == "offer" else CATEGORY_QUESTION,
+            session_id=sid,
+            sender=settings.team_mailbox,
+            in_reply_to=reply_to,
+            raw=sent,
+        )
+        db.emit(
+            db.Ev.STATUS,
+            f"Follow-up {n + 1} an Kunden gesendet ({'Angebot' if kind == 'offer' else 'Rückfrage'} unbeantwortet)",
+            sid,
+        )
+
+
+def tick() -> None:
+    rows = [r for st in ("quoted", "new", "pricing") for r in db.list_sessions(status=st)]
+    for row in rows:
+        sid = int(row["id"])
+        try:
+            _send(sid)
+        except hackloop.CustomerSendBlocked:
+            pass
+        except Exception as e:
+            log.exception("session %s: follow-up failed", sid)
+            db.emit(
+                db.Ev.ERROR,
+                f"Follow-up fehlgeschlagen: {type(e).__name__}: {e}"[:300],
+                sid,
+                level="error",
+            )
+
+
+def run(stop: threading.Event) -> None:
+    if not settings.followup_enabled:
+        log.info("FOLLOWUP_ENABLED=false: no follow-ups")
+        return
+    while not stop.wait(settings.followup_check_every_s):
+        try:
+            tick()
+        except Exception:
+            log.exception("follow-up loop")

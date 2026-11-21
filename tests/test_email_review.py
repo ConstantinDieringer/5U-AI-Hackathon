@@ -176,8 +176,9 @@ def test_zero_decimals_preserve_real_fractions_and_thousands():
 @pytest.mark.parametrize(
     "colon,semicolon", [(":", ";"), ("：", "；"), ("∶", ";"), ("&#58;", "&semi;")]
 )
+@pytest.mark.parametrize("review", [True, False])
 def test_wire_payload_and_subject_are_clean_even_when_reviewer_reintroduces_punctuation(
-    monkeypatch, colon, semicolon
+    monkeypatch, colon, semicolon, review
 ):
     wire = []
 
@@ -208,6 +209,7 @@ def test_wire_payload_and_subject_are_clean_even_when_reviewer_reintroduces_punc
         BODY,
         in_reply_to=10,
         session_id=99,
+        review=review,
     )
     assert len(wire) == 1
     assert wire[0]["subject"] == "Quote. FRA to DEL"
