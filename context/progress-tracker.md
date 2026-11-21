@@ -14,20 +14,21 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 - Context adapted from Ghost AI.
 - Stack decided (`context/docs/TECH_SPEC.md`), `context/architecture-context.md` added.
-- Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`, pricing module in `app/pricing/` (floats still, to fix).
+- Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`.
+- Task B pricing: parser fix (first break 0 kg, PDFs via pdfplumber), `RateOption` in cents, `sheet_options`/`pick`, portal rates + lane snapshot (114 lanes, 15 airlines), lane index, reference data; `app/models.py`; 24 tests green.
 - Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 ## In Progress
 
 - Task C (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), implementation starting with C1 `db.py`.
-- Tasks A (mail poller, router) and B (portal sync, lane index): status unknown in repo, no code pushed yet.
+- Task A (mail poller, router, `hackloop.py`): not in repo yet. `portal_options()` is untested live until `hackloop.get_rate/get_ports/get_brackets` exist.
 
 ## Next Up
 
 1. Phase 1 tasks A/B/C (see team plan): mail poller + router, portal sync, db.py + UI.
 2. Agree with A: every outgoing mail via `db.record_outgoing()`, quote sends only after `db.claim_quote_send()`.
-3. Switch `app/pricing/pricing.py` to integer cents (code-standards).
+3. B next: door-to-port trucking, carrier-bid selection, tariff mails (`agents/tariff.py`).
 
 Build order (proposed, confirm):
 
@@ -51,7 +52,7 @@ Goal: the first accepted quote end to end before any polish.
 3. Scoring weights: the brief says 45/40/15 and the kickoff deck says 55/30/15. We use the brief's until 5U confirms.
 4. First request arrives 16:00 (kit card). Still open: deadline, start of hourly changes, pitch slot.
 5. Has our OpenAI key been posted to the gateway? Which models does `/v1/gateway/models` allow, and at what cost?
-6. The portal's current rate-read cap (`X-RateLimit-Limit`).
+6. ~~Portal rate-read cap~~ → 10/min (15:00), one read per airline, 1–4 airlines per lane.
 7. Formats of RFQs, carrier bids, rate desk replies, booking confirmations and tariff mails. Unknown until we see real mail.
 8. ~~Start kit contents~~ → 10 sheets (xlsx/pdf/docx/txt/jpg), 29 airlines + 23 truckers in `carrier-list.csv`, zones = 2-digit postcode → FRA/MUC/DUS/HAM/STR/CGN. Still open: trucking price (assumed: trucker bids by email).
 9. How to tell mail started by 5U's agents from other mail.
@@ -59,6 +60,7 @@ Goal: the first accepted quote end to end before any polish.
 11. How many carriers to ask and how long to wait for bids within the 2-minute target.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
 13. ~~What one UI session is~~ → one customer-started thread (see design C).
+14. 4 airlines (Zephyr, Himalaya Bridge, Lagoon Isles, Pampero) serve only ASU/KTM/PPT/TNR/ULN, on neither sheet nor portal: email bids only.
 
 ## Architecture Decisions
 

@@ -104,7 +104,7 @@ Details: Projekt-Doc `api-referenz.md` und `https://api.start-hack.5u.ai/openapi
 - Auth-Header: `X-API-Key: <key>` – in `hackloop.py` zentral gesetzt.
 - Timeouts: **10 s** pro Request, max. **2 Retries** mit 1 s Abstand, nur bei Netzwerkfehler/5xx/429 (bei 429 `Retry-After` beachten).
 - Mailbox: Polling `GET /v1/mailbox/messages?since_id=` alle 1,5 s; Senden `POST /v1/mailbox/messages` mit `to`, `subject`, `body`, `in_reply_to`.
-- Portal: `ports` und `brackets` frei; `rates` **rate-limited** → nur über eine Funktion `hackloop.get_rate(...)` mit Rate-Limit-Zähler; `bookings` idempotent über `team_reference`.
+- Portal: `ports` und `brackets` frei; `rates` **rate-limited (10/min, Stand 15:00)**, **eine Airline pro Aufruf** (1–4 Airlines je Lane) → nur über `hackloop.get_rate(origin, destination, airline, weight_kg, volume_cbm) -> dict` mit Rate-Limit-Zähler; `bookings` idempotent über `team_reference`. `app/pricing/portal_sync.py` erwartet zusätzlich `hackloop.get_ports() -> dict` und `hackloop.get_brackets(airline) -> dict` (rohe Antwort, Exception bei Nicht-2xx).
 - LLM: OpenAI-SDK mit `base_url=f"{BASE_URL}/v1/gateway"` und `api_key=HACKLOOP_API_KEY`.
 
 ## 6. Gemeinsame Datenmodelle (Verträge zwischen den Modulen)
@@ -147,8 +147,23 @@ class RateOption:             # Ergebnis aus Sheet, Portal oder Bid – immer gl
     rate_id: str | None       # nur Portal
     valid_until: str | None
     chargeable_kg: float
-    billed_kg: float
+    billed_kg: float          # > chargeable_kg, wenn eine höhere Gewichtsklasse billiger ist
+    fx_eur_per_unit: str | None = None  # verwendeter Kurs, wenn currency != EUR
+
+class Rfq(BaseModel):         # Pydantic (LLM-Output); die Preisrechnung liest nur diese Felder
+    origin: str | None        # IATA; None, wenn nur PLZ
+    pickup_zip: str | None    # gesetzt = Door-to-Port
+    destination: str          # IATA
+    weight_kg: float          # Gesamtgewicht
+    volume_cbm: float = 0.0   # Gesamtvolumen
+    pieces: int | None
+    preference: Literal["cheapest", "fastest"]
+    ready_date: str | None    # ISO-Datum
+    language: str = "en"
+    customer_name: str | None
 ```
+
+Umgesetzt in `app/models.py` (21.11., 15:30).
 
 **Einheiten:** Gewicht in **kg** (float), Volumen in **cbm** (float), Geld als **ganzzahlige Cent** (`*_minor`) bzw. `Decimal`, nie float; gerundet an einer Stelle, Zeiten in **UTC ISO 8601**, Flughäfen als **IATA-Code in Großbuchstaben**, Währungscodes ISO 4217.
 
@@ -256,4 +271,5 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - [ ] Exakte Feldnamen der Mailbox-Objekte (A3 → `context/docs/mail-format.md`)
 - [ ] Erlaubte Modelle im Gateway (`GET /v1/gateway/models`) → `LLM_MODEL` setzen
-- [ ] Rate-Limit pro Minute für `/v1/portal/rates` (B4)
+- [x] Rate-Limit pro Minute für `/v1/portal/rates` (B4): **10**, Header `X-RateLimit-Limit`
+- [ ] Zählt der Sprung in eine höhere Gewichtsklasse als bester Preis? Schalter `use_breakpoints` in `sheet_options()` (Default an); das Portal rechnet nur das angefragte Gewicht

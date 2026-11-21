@@ -6,4 +6,4 @@ Decided 21.11.2026. Details live in the linked docs; this file only points to th
 - **CRM, session model and sessions UI:** [docs/design/aufgabe-c.md](docs/design/aufgabe-c.md).
 - **Session = one customer-started thread.** Mails are mapped to sessions via known mail IDs in `references`; every outgoing mail is stored with `db.record_outgoing()`.
 - **Boundaries:** only `app/hackloop.py` talks to the 5U API, only `app/llm.py` to the gateway, only `app/db.py` writes SQL. UI and agents are coupled only through the database (`events` table, `paused`/`mode` flags).
-- **Pricing:** `app/pricing/` (deterministic, no LLM), tariffs in `data/tariffs.json`. Known debt: `pricing.py` still uses floats for money; switch to integer cents.
+- **Pricing:** `app/pricing/` (deterministic, no LLM): `pricing.py` (sheets, `pick`), `portal_sync.py` (portal rates + `data/portal_lanes.json`), `lanes.py` (sheet/portal/email channel per airline), `reference.py` (carrier list, pickup zones). `Decimal` inside, integer cents in `RateOption`.
