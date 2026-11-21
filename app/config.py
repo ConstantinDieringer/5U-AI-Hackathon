@@ -36,7 +36,7 @@ class Settings:
 
 
 settings = Settings(
-    api_key=_env("HACKLOOP_API_KEY"),
+    api_key=_env("TEAM_API_KEY", _env("HACKLOOP_API_KEY")),  # old name still accepted
     base_url=_env("HACKLOOP_BASE_URL", "https://api.start-hack.5u.ai").rstrip("/"),
     team_mailbox=_env("TEAM_MAILBOX", "austrian-power@hackloop.mail").lower(),
     ratedesk_address=_env("RATEDESK_ADDRESS", "ratedesk@hackloop.mail").lower(),
