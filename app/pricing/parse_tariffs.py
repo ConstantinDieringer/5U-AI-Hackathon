@@ -12,6 +12,8 @@ def num(x):
     return float(m.group().replace(',', '.')) if m else None
 def codes(s): return re.findall(r'\b[A-Z]{3}\b', s)
 def brk(h):
+    # "-45" means "below 45 kg", i.e. the first bracket starts at 0 kg
+    if str(h).strip().startswith('-'): return 0
     m = re.search(r'\d+', str(h)); return int(m.group()) if m else None
 def transit(x):
     m = re.search(r'\d+', str(x)); return int(m.group()) if m else None
@@ -98,7 +100,12 @@ for ln in txt:
     else: sur(A, ln)
 
 # ---------- PDF ----------
-def pdf_lines(f): return subprocess.run(['pdftotext', '-layout', str(kit / f), '-'], capture_output=True, text=True).stdout.splitlines()
+# pdfplumber, not pdftotext: pdftotext -layout output differs between versions
+# (some builds shift values one line down), which silently corrupts the prices.
+def pdf_lines(f):
+    import pdfplumber
+    with pdfplumber.open(kit / f) as pdf:
+        return [ln for pg in pdf.pages for ln in (pg.extract_text() or '').splitlines()]
 
 # Helix: Tabelle
 A = 'Helix Air Freight'; br = [0, 45, 100, 250, 500, 1000, 2000]
