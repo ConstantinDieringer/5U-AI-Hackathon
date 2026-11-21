@@ -154,14 +154,43 @@ _WORDS: dict[str, frozenset[str]] = {
             "saluti",
         ]
     ),
+    # Portuguese scored as Spanish ("para", "por") and got Spanish replies: only words that
+    # Spanish and Italian do not use
+    "pt": frozenset(
+        [
+            "você",
+            "vocês",
+            "obrigado",
+            "obrigada",
+            "não",
+            "uma",
+            "os",
+            "com",
+            "em",
+            "nós",
+            "nosso",
+            "nossa",
+            "olá",
+            "bom",
+            "dia",
+            "cumprimentos",
+            "atenciosamente",
+            "podem",
+            "poderia",
+            "pelo",
+            "pela",
+            "ao",
+            "também",
+            "são",
+            "está",
+        ]
+    ),
 }
 # More Latin-script languages: mostly words that are distinctive for the language, so a mail
-# in one of them does not tie with a neighbour (es/pt, da/nb/sv share a lot).
+# in one of them does not tie with a neighbour (da/nb/sv share a lot). pt is curated above.
 _MORE: dict[str, tuple[str, ...]] = {
     "nl": ("het", "een", "en", "van", "voor", "wij", "jullie", "graag", "niet", "zijn", "bedankt",
            "groeten", "met", "vriendelijke", "kunnen", "zending", "offerte", "ons", "onze"),
-    "pt": ("não", "você", "vocês", "obrigado", "obrigada", "olá", "nós", "uma", "com", "para",
-           "envio", "cotação", "atenciosamente", "podem", "nossa", "nosso", "são", "também"),
     "pl": ("i", "nie", "się", "jest", "dla", "proszę", "dziękuję", "pozdrawiam", "oraz", "nasz",
            "nasza", "czy", "przesyłka", "wycenę", "mogą", "od", "na", "dzień", "dobry"),
     "sv": ("och", "att", "är", "inte", "för", "med", "vi", "ni", "tack", "hälsningar", "vänliga",
