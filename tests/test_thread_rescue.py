@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -468,3 +469,223 @@ def test_new_business_failure_allows_owner_to_replan_without_new_customer_mail(c
     db.set_status(SID, "error", "temporary portal failure")
     _, second, _ = rescue._decision(answer, SID, root, draft, "owner")
     assert first != second and len(calls) == 2
+
+
+def test_explicit_pdf_refusal_never_starts_paid_recovery(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    refusal = dataclasses.replace(
+        answer,
+        id=18101,
+        body="Thank you, but I asked for the offer as a PDF and did not get one "
+        "with your price in it, so we will not go ahead with it.",
+    )
+    ingest(refusal, "customer")
+    calls = model(monkeypatch, plan("continue"))
+    rescue.take_over(refusal, SID)
+    assert calls == []
+    assert db.get_session(SID)["bookings"] == []
+
+
+@pytest.mark.parametrize("extra", ["", " Could you confirm the pickup time?"])
+def test_booking_ack_is_free_but_a_new_question_still_reaches_recovery(case, monkeypatch, extra):
+    _, answer, _ = case
+    add_quote()
+    db.record_booking(
+        SID,
+        booking_reference="BK-TEST",
+        rate_id=None,
+        airline="Fjordline Cargo",
+        price_minor=123456,
+        currency="EUR",
+        status="confirmed",
+    )
+    ack = dataclasses.replace(
+        answer,
+        id=18101,
+        body="Thanks for confirming the booking." + extra,
+    )
+    ingest(ack, "customer")
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(ack, SID)
+    assert len(calls) == (1 if extra else 0)
+
+
+def test_recovery_context_keeps_carrier_evidence_without_duplicate_audit(case):
+    root, answer, draft = case
+    bid = dataclasses.replace(
+        answer, id=18101, sender="carrier@hackloop.mail", body="All in EUR 500"
+    )
+    ingest(bid, "carrier_bid")
+    request = dataclasses.replace(bid, id=18102, sender="team@hackloop.mail", body="Quote request")
+    ingest(request, "bid_request")
+    db.emit("pricing_audit", "Prices calculated", SID, alternatives=["x" * 20_000])
+    db.emit("no_price", "Portal unavailable", SID, level="error", detail="real failure")
+    context, _ = rescue._context(answer, SID, root, draft)
+    assert any(m["body"] == bid.body for m in context["conversation"])
+    assert not any(m["category"] == "bid_request" for m in context["conversation"])
+    assert any(e["message"] == "Portal unavailable" for e in context["events"])
+    assert "x" * 100 not in json.dumps(context)
+
+
+def test_continue_after_quote_reports_no_action_instead_of_success(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    model(monkeypatch, plan("continue", corrections=[], releases=[]))
+    rescue.take_over(answer, SID)
+    events = db.get_session(SID)["events"]
+    assert any(e["kind"] == "thread_rescue_blocked" for e in events)
+    assert not any(e["kind"] == "thread_rescue_step_done" for e in events)
+
+
+@pytest.mark.parametrize("price_pending", [False, True])
+def test_signed_booking_thanks_does_not_hide_an_open_price_approval(
+    case, monkeypatch, price_pending
+):
+    root, answer, _ = case
+    signature = "Sara\nLindqvist Medtech"
+    with db.tx() as c:
+        c.execute(
+            "UPDATE mails SET body=? WHERE id=?",
+            (root.body + "\n\nKind regards,\n\n" + signature, SID),
+        )
+    add_quote()
+    db.record_booking(
+        SID,
+        booking_reference="BK-TEST",
+        rate_id=None,
+        airline="Fjordline Cargo",
+        price_minor=123456,
+        currency="EUR",
+        status="confirmed",
+    )
+    if price_pending:
+        db.set_booking_customer_state(SID, booking.PRICE_ASKED)
+    ack = dataclasses.replace(
+        answer,
+        id=18101,
+        body="Hi Moritz,\n\nThanks for confirming the booking.\n\n" + signature,
+    )
+    ingest(ack, "customer")
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(ack, SID)
+    assert len(calls) == (1 if price_pending else 0)
+
+
+def test_rescue_prompt_keeps_root_latest_mail_and_bounded_size(case, monkeypatch):
+    """Cost: the rescue model sees the root, the latest mails and capped bodies only."""
+    root, answer, draft = case
+    small = dataclasses.replace(
+        rescue.settings, thread_rescue_max_mails=3, thread_rescue_body_chars=600
+    )
+    monkeypatch.setattr(rescue, "settings", small)
+    for n in range(10):
+        filler = dataclasses.replace(
+            answer, id=18200 + n, body=f"Note {n}: " + "pallet details " * 200
+        )
+        ingest(filler, "customer")
+    latest = dataclasses.replace(answer, id=18300, body=ANSWER)
+    ingest(latest, "customer")
+
+    context, evidence = rescue._context(latest, SID, root, draft)
+
+    ids = [row["id"] for row in context["conversation"]]
+    assert ids[0] == SID and ids[-1] == 18300  # root and the current input always present
+    assert len(ids) <= 4  # three latest mails plus the root
+    assert all(len(row["body"]) <= 600 for row in context["conversation"])
+    assert "1804 kg gross" in evidence  # evidence check still sees the full current mail
+
+
+_COST_ENV = ("LLM_RETRY_MODEL", "LLM_RESCUE_MODEL", "THREAD_RESCUE_MAX_CALLS", "COMPOSE_REPAIR")
+
+
+@pytest.mark.skipif(any(os.getenv(n) for n in _COST_ENV), reason="cost settings set in env")
+def test_cost_defaults_avoid_gpt5_and_second_composer_call():
+    from app.config import settings
+
+    assert settings.llm_retry_model == "gpt-5-mini"
+    assert settings.llm_rescue_model == "gpt-5-mini"
+    assert settings.thread_rescue_max_calls == 2
+    assert settings.compose_repair is False
+
+
+def _no_model(monkeypatch):
+    monkeypatch.setattr(
+        rescue.llm, "complete", lambda *a, **k: pytest.fail("rules decide, no model call")
+    )
+
+
+def test_owner_books_a_clear_yes_by_rules_without_a_model_call(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    accepted = dataclasses.replace(answer, id=18101, body="Please book your offer.")
+    ingest(accepted, "customer")
+    db.kv_set(f"rescue.owner.{SID}", "1")
+    _no_model(monkeypatch)
+    booked = []
+    monkeypatch.setattr(booking, "handle_reply", lambda *args: booked.append(args))
+    rescue.take_over(accepted, SID)
+    assert booked == [(accepted, SID)]
+    assert not db.clarification_unhandled_replies()
+
+
+def test_rules_get_one_attempt_then_the_model_owns_the_same_mail(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    accepted = dataclasses.replace(answer, id=18101, body="Please book your offer.")
+    ingest(accepted, "customer")
+    monkeypatch.setattr(booking, "handle_reply", lambda *args: None)  # leaves it unanswered
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(accepted, SID)
+    assert not calls
+    rescue.take_over(accepted, SID)
+    assert len(calls) == 1
+
+
+def test_a_question_about_the_offer_still_reaches_the_model(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    question = dataclasses.replace(answer, id=18101, body="Is the pickup included in the total?")
+    ingest(question, "customer")
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(question, SID)
+    assert len(calls) == 1
+
+
+def test_dangerous_goods_only_gate_is_asked_without_a_model_call(case, monkeypatch):
+    root, answer, draft = case
+    draft.issues = [{"field": "dangerous_goods", "code": "documents_required", "detail": "UN 3480"}]
+    _no_model(monkeypatch)
+    request, unchanged = rescue.recover_request(answer, SID, root, draft)
+    assert request is None and unchanged is draft
+
+
+def test_booking_waiting_for_the_airline_price_is_not_rescued(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    accepted = dataclasses.replace(answer, id=18101, body="Please book your offer.")
+    ingest(accepted, "customer")
+    db.record_booking(
+        SID,
+        booking_reference="BK-1",
+        rate_id="r1",
+        airline="Fjordline Cargo",
+        price_minor=123456,
+        currency="EUR",
+    )
+    db.set_booking_customer_state(SID, booking.AWAITING_AIRLINE)
+    _no_model(monkeypatch)
+    monkeypatch.setattr(booking, "handle_reply", lambda *a: pytest.fail("waiter owns it"))
+    assert rescue._eligible(SID, accepted) is False
+    rescue.take_over(accepted, SID)
+
+
+def test_rescue_prompt_carries_no_voice_profile(case, monkeypatch):
+    from app.mail.voice import customer_voice
+
+    _, answer, _ = case
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(answer, SID)
+    system = calls[0][0][1][0]["content"]
+    assert customer_voice()[:200] not in system
+    assert len(system) < 4000

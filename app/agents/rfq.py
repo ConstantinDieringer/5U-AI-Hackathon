@@ -384,6 +384,9 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
             response_format=RFQ_SCHEMA,
         )
         rfq, error = _parse_extraction(text, mail, session_id)
+    except llm.LlmBudgetError as e:  # budget spent: no retry either, the caller asks or flags
+        log.warning("session %s: extraction skipped: %s", session_id, e)
+        return None
     except openai.APIError as e:  # gateway down or timed out: the retry may still get through
         text, rfq, error = "", None, f"{type(e).__name__}: {e}"
     if rfq is not None:
@@ -982,7 +985,8 @@ def compose_quote_text(
         },
     ]
     last_error: Exception | None = None
-    for attempt in range(2):
+    attempts = 2 if settings.compose_repair else 1  # no repair: checked template instead
+    for attempt in range(attempts):
         raw = ""
         try:
             raw = llm.complete(
@@ -1021,9 +1025,9 @@ def compose_quote_text(
             # the model signs with the team line only; code adds the signer's name above it
             signed = body.rstrip()[: -len(TEAM_LINE)] + SIGNATURE + "\n"
             return _with_cutoff_notice(signed, rfq)
-        except Exception as exc:  # noqa: BLE001 - repair once, then safe fallback
+        except Exception as exc:  # noqa: BLE001 - optional repair (COMPOSE_REPAIR), then fallback
             last_error = exc
-            if attempt == 0:
+            if attempt + 1 < attempts:
                 messages.extend(
                     [
                         {"role": "assistant", "content": raw},

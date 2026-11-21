@@ -23,8 +23,9 @@ ON_DEMAND = {
     "context/ui-context.md": 4_000,
 }
 AREA_BUDGET = 6_000
+CHANGE_FILE_BUDGET = 600  # bytes per context/changes/ file; AI sessions read the newest eight
+CHANGE_FILE_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9][a-z0-9-]*\.md$")
 TRACKER_SECTION_LIMITS = {
-    "Recent Changes": 8,
     "Pending Decisions and Rollouts": 10,
     "Open Questions": 10,
     "Session Notes": 6,
@@ -94,3 +95,21 @@ def test_every_area_has_a_path_rule_that_matches_real_files() -> None:
     areas = {f"context/areas/{a.name}" for a in (ROOT / "context" / "areas").glob("*.md")}
     assert not areas - targets, f"area files without a path rule: {sorted(areas - targets)}"
     assert all((ROOT / t).is_file() for t in targets), "a path rule points to a missing file"
+
+
+def test_tracker_has_no_recent_changes_section() -> None:
+    """Recent changes live in context/changes/, one file per PR, so PRs never collide."""
+    text = (ROOT / "context/progress-tracker.md").read_text(encoding="utf-8")
+    assert not re.search(r"^## Recent Changes", text, flags=re.MULTILINE), (
+        "add a file to context/changes/ instead of a Recent Changes section in the tracker"
+    )
+
+
+def test_change_files_are_named_and_small() -> None:
+    changes = ROOT / "context" / "changes"
+    assert (changes / "README.md").is_file(), "context/changes/README.md describes the format"
+    files = [f for f in changes.iterdir() if f.name != "README.md"]
+    bad_names = sorted(f.name for f in files if not CHANGE_FILE_NAME.match(f.name))
+    assert not bad_names, f"name change files YYYY-MM-DD-HHMM-<branch-slug>.md: {bad_names}"
+    over = {f.name: len(f.read_bytes()) for f in files if len(f.read_bytes()) > CHANGE_FILE_BUDGET}
+    assert not over, f"change file over {CHANGE_FILE_BUDGET} bytes, shorten it: {over}"

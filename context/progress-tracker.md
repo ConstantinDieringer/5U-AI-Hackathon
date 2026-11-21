@@ -1,26 +1,15 @@
 # Progress Tracker
 
 Read when planning or updating, so it stays small (budget enforced by `tests/test_context_budget.py`).
-Current state only: one or two lines per entry, newest first. Subsystem behavior belongs in
-`context/areas/*.md`. When a section exceeds its limit, move the oldest entries verbatim to
-`context/history/progress-log.md` (newest first there too).
+Current state only. **Only the context owner (Moritz) edits this file**, in his own PR.
+Everyone else, AI sessions included, records a change as one new file in `context/changes/`
+(see its README) and never edits this tracker. Subsystem behavior belongs in `context/areas/*.md`.
 
 ## Current State
 
 - Live: Railway runs all agents on `main` (one container, one replica); live rounds every ~6 min.
 - Phase: hardening against the hourly setup changes, improving accuracy and email quality, pitch prep.
 - Owners: A mail/router/RFQ agent Karim · B pricing/tariffs/portal Constantin · C CRM/UI/tracking Moritz.
-
-## Recent Changes (max 8)
-
-- Quote PDF only on customer request (team decision): `QUOTE_PDF_ON_REQUEST` on by default, rule-based detection in `app/mail/pdf_request.py`, also for Notfall-Quotes.
-- Faster context: code standards auto-imported into `CLAUDE.md`, area files auto-loaded by path (`.claude/rules/`), per-area test commands, `slow` marker for replay/full-app tests.
-- Quote PDF (#65): `Angebot_AP-n.pdf`, rendered by code from the priced option (`app/mail/quote_pdf.py`, no LLM, no new dependency). Fault = quote without PDF + error event (`QUOTE_PDF`).
-- Audio recovery (PR #56): Groq first with verified gateway/offline fallbacks. Original session-18673 MP3 reads EUR 358.64 / collection 4 h; live Groq still needs GROQ_API_KEY. Suite 1304 passed/5 skipped; latest focused integration 109 passed/1 skipped. Not deployed.
-- Process guardrails: PR + CI (pytest, secrets scan) instead of direct pushes, read-only `REVIEW_TOKEN` for review agents, #sos on repeated mailbox 429, `python -m app.deploy_check` confirms live. CI run on GitHub pending.
-- Any language, part 2: detection adds nl/pl/sv/da/nb/cs/tr/ro/hu/fi and non-Latin scripts (zh/ja/ko/ru/uk/el/ar/...; RFQ 20150 is Chinese); booking yes/no in those languages incl. CJK; translations keep € amounts verbatim and codes/references next to CJK text. 1359 passed/5 skipped.
-- Round 70: "we won't go ahead" booked. Explicit negated booking intent (incl. contractions, curly apostrophes) now overrides positive verbs; no booking or price-change approval from it.
-- Round 70: French RFQ got an English reply. Request language (ISO code) now reaches composer/repair; FR/ES/IT fallbacks, months, subjects and tracking notices keep the language; unsupported fallback languages fail visibly.
 
 ## Pending Decisions and Rollouts (max 10)
 

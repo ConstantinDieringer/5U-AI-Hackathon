@@ -9,6 +9,7 @@
 - [ ] `python -m pytest -q` lokal grün, CI grün
 - [ ] Keine Secrets im Diff (Keys, Passwörter, Webhook-URLs)
 - [ ] Neue/geänderte Flags mit Default in der PR genannt
+- [ ] Genau eine neue Datei in `context/changes/`, `context/progress-tracker.md` nicht angefasst
 
 ## Merge (nur Push-Verantwortliche/r)
 
