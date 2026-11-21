@@ -3,8 +3,8 @@
 Real bids from live rounds with the trucker the board's best price implies. The board scores
 accuracy = 45 * (1 - |our total - best| / best / 10 %); with each round's air leg, only the
 trucker below reproduces every board value to the hundredth (rounds 21, 22, 25, 26 lost
-7 to 17 points with the min-max choice). TRUCKER_BALANCE=ratio picks it; the default
-`minmax` keeps today's choice.
+7 to 17 points with the min-max choice). TRUCKER_BALANCE=ratio (the default) picks it;
+`minmax` keeps the old choice.
 """
 
 import dataclasses
@@ -160,7 +160,7 @@ def test_ratio_balance_picks_the_trucker_behind_the_best_price(
 
 @pytest.mark.parametrize("round_no", sorted(ROUNDS))
 def test_minmax_keeps_todays_choice(monkeypatch, round_no) -> None:
-    _mode(monkeypatch, "minmax")  # the default (see the fallback test below)
+    _mode(monkeypatch, "minmax")  # the old rule, still selectable
     _, rows, expected = ROUNDS[round_no]
     assert rfq.best_truck(_offers(rows)).carrier.name == MINMAX_DIFFERS.get(
         round_no, expected
@@ -179,13 +179,14 @@ def test_ratio_balance_without_transit_or_zero_transit_stays_safe(monkeypatch) -
 @pytest.mark.parametrize(
     ("raw", "mode"),
     [
-        (None, "minmax"),
+        (None, "ratio"),
         ("ratio", "ratio"),
         (" Ratio ", "ratio"),
-        ("sometimes", "minmax"),
+        ("minmax", "minmax"),
+        ("sometimes", "ratio"),
     ],
 )
-def test_trucker_balance_setting_falls_back_to_minmax(monkeypatch, raw, mode) -> None:
+def test_trucker_balance_setting_falls_back_to_ratio(monkeypatch, raw, mode) -> None:
     from app import config
 
     if raw is None:

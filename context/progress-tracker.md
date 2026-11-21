@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- 50/50 balance now `ratio` by default for trucker AND airline bids (`pricing.most_balanced`, `TRUCKER_BALANCE=minmax` restores the old rule). Min-max tied every 2-bid case 0.5/0.5 and the cheaper bid won the tie. Replay moves rounds 21/22/25/26/31 (trucker only, no air choice changes); 21–26 scored 28–38 accuracy and would hit the board's best price (+56.8). Not verified live; Railway variable must not pin minmax.
 - Round 42 `excluded_airline`: actual offer selected Lagoon but echoed excluded Zephyr in acknowledgement; exact board trigger unverified. Reuse parallel carrier preferences; filter before fan-out cap, pass exclusions to composer/fallback, keep emergency draft and booking consistent, and acknowledge exclusions generically. Combined suite: 544 passed, 4 skipped; production SHA unverified.
 - Approved freight voice implemented: specific openings, grounded thanks/history, I/we, contractions, situational warmth, plain uncertainty and one next step; composer gets a short fastest/cheapest rationale. Full suite 540 passed/4 skipped; 35 relevant tests passed after wording refinements. Synthetic EN/DE probes sent no mail; production activation unverified.
 
@@ -35,7 +36,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Round 35 verification: full offline suite 463 passed, 4 skipped, plus the new replay-failure cleanup test passed; targeted Ruff and diff checks clean. Production audit/SHA and causal price reconciliation remain unavailable.
 
 - Self-delivery departure (`SELF_DELIVERY_RECOVERY`, default false = today): reads the airport from "deliver to Cologne airport (CGN) ourselves", "drop it off at CGN ourselves" or "from CGN to DFW" in the current message and in the answer to our origin question. Round 28 replays as a quote without a question; no stored round changes. Live portal price for round 28 not verified (the manual sheet price 416.16 € was too_high).
-- Trucker balance (`TRUCKER_BALANCE`, default `minmax` = today): `ratio` picks price/cheapest + time/fastest, which reproduces the board's best price on all 11 scored door rounds (minmax: 7). Replay with `ratio` moves only rounds 21/22/25/26, each to the implied best (+56.8 accuracy points there). Not verified live.
+- Trucker balance (`TRUCKER_BALANCE`, superseded: default is now `ratio`): `ratio` picks price/cheapest + time/fastest, which reproduces the board's best price on all 11 scored door rounds (minmax: 7). Replay with `ratio` moves only rounds 21/22/25/26, each to the implied best (+56.8 accuracy points there). Not verified live.
 - Stronger RFQ models: extraction defaults to gpt-5-mini (was nano); failed extraction repair defaults to gpt-5 (was mini), with price accounting. Both passed a synthetic gateway extraction/repair probe; 40 relevant tests pass. Composer stays mini; deployment overrides still take precedence and live rollout is unverified.
 - Startup agent check: `run.py` imports every agent from `app.agents.AGENTS` and logs `agents loaded: ...`; a broken one logs an error, emits `agent_import_failed` (#sos) and does NOT stop the other agents. CI imports every app module. DEPLOY.md has live-round deploy rules. Not verified on Railway; local start with AGENTS_ENABLED=false logged the line.
 - RFQ replay harness (`python -m app.agents.rfq_replay`, `tests/test_rfq_replay.py`): all 27 live rounds through the real flow offline (stored extraction/portal/bids, no network); baseline diff gates option, total, airline, carriers, clarification and mail text. 22/27 match production exactly; rounds 2/12 lack stored data, 18 to 20 now ask for the pickup. Composer output and new portal reads are not replayed.
@@ -133,7 +134,7 @@ Goal: the first accepted quote end to end before any polish.
 8. ~~Start kit contents~~ → 10 sheets (xlsx/pdf/docx/txt/jpg), 29 airlines + 23 truckers in `carrier-list.csv`, zones = 2-digit postcode → FRA/MUC/DUS/HAM/STR/CGN. Still open: trucking price (assumed: trucker bids by email).
 9. How to tell mail started by 5U's agents from other mail.
 10. The exact "fastest" rule, and the formula for the 50/50 price/speed balance among bids.
-    → Truckers: price/cheapest + time/fastest (board fit, rounds 13 to 29). Airline bids: no evidence yet.
+    → Truckers: price/cheapest + time/fastest (board fit, rounds 13 to 29). Airline bids: same rule since 21.11 20:30 (no board evidence yet).
 11. ~~How many carriers to ask and how long to wait~~ → 2–5 carriers, full-score deadline 110 s,
     final deadline 300 s; 15 s are reserved for composing and sending.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
