@@ -31,7 +31,7 @@ def incoming(mid, sender=CUSTOMER, body="Please quote FRA to DEL.", refs=(), day
     )
 
 
-def outgoing(mid, sid, recipient=CUSTOMER, body="Here is your quote: 950,00 €."):
+def outgoing(mid, sid, recipient=CUSTOMER, body="Here is your quote: 950 €."):
     db.record_outgoing(
         mail_id=mid,
         recipient=recipient,
@@ -96,7 +96,7 @@ def test_standard_quote_is_individual_and_receives_grounded_context(monkeypatch)
     sent = []
     body = (
         "Hi Sara,\n\nLovely to hear from you again. For Delhi this time, Test Air can "
-        "take your cargo from FRA to DEL for 1.200,00 € all-in, with two days in transit."
+        "take your cargo from FRA to DEL for 1.200 € all-in, with two days in transit."
         "\n\nIf that works for you, reply here and we can arrange the booking."
         "\n\nYour austrian Power Team"
     )
@@ -111,7 +111,7 @@ def test_standard_quote_is_individual_and_receives_grounded_context(monkeypatch)
     text = rfq.compose_quote_text(request, option(), 120000, None, 10)
     assert "Lovely to hear from you again" in text
     assert [p[0] for p in sent] == ["compose_quote"]
-    assert sent[0][1]["verified_facts"]["exact_all_in_price"] == "1.200,00 €"
+    assert sent[0][1]["verified_facts"]["exact_all_in_price"] == "1.200 €"
     assert sent[0][1]["conversation"]["earlier_messages"][0]["mail_id"] == 1
     event = [e for e in db.events_after(0) if e["kind"] == "personal_reply"][-1]
     assert event["payload"]["referenced_mail_ids"] == [1]
@@ -122,7 +122,7 @@ def test_first_contact_has_no_invented_history_and_dash_keeps_personal_copy(monk
     received = []
     body = (
         "Hi Sara — I looked at your request. Test Air flies FRA to DEL for "
-        "1.200,00 € all-in.\n\nYour austrian Power Team"
+        "1.200 € all-in.\n\nYour austrian Power Team"
     )
 
     def complete(purpose, messages, *args, **kwargs):
@@ -141,7 +141,7 @@ def test_first_contact_has_no_invented_history_and_dash_keeps_personal_copy(monk
 def test_composer_rejects_history_id_not_in_customer_context():
     request = Rfq(origin="FRA", destination="DEL", weight_kg=736)
     with pytest.raises(ValueError, match="reference was not supplied"):
-        rfq._validate_composed(payload("irrelevant", [99]), request, option(), "1.200,00 €", {1})
+        rfq._validate_composed(payload("irrelevant", [99]), request, option(), "1.200 €", {1})
 
 
 def test_extraction_repair_leaves_budget_for_individual_composer(monkeypatch):
@@ -149,7 +149,7 @@ def test_extraction_repair_leaves_budget_for_individual_composer(monkeypatch):
 
     incoming(10)
     request = Rfq(origin="FRA", destination="DEL", weight_kg=736, volume_cbm=6.88)
-    body = "Hello,\n\nTest Air flies FRA to DEL for 1.200,00 € all-in.\n\nYour austrian Power Team"
+    body = "Hello,\n\nTest Air flies FRA to DEL for 1.200 € all-in.\n\nYour austrian Power Team"
     replies = iter(["invalid", request.model_dump_json(), payload(body)])
 
     def create(**kwargs):

@@ -13,11 +13,17 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Strict customer send path and dedicated gpt-5 style reviewer added. Every customer path validates prose before HTTP, records the transmitted version, and rechecks controls after one review. Real reference punctuation remains; whole numbers lose zero fractions. 639 tests pass/4 skip; 31 replay cases retain all facts with 19 text-only updates. Synthetic real-gateway review accepted, 396 input/94 output tokens, estimated $0.001435; no customer mail sent. Public health exposes style/build/model activation.
+
+- Dashboard overflow: fixed recent-request column proportions, bounded chip/subject ellipsis with full tooltips and a card-local scroll region on narrow screens; score labels and verdicts wrap. Browser checks at 1440/1024/390/320 show no page/card overflow. Integrated current main: 621 tests passed, 4 skipped; JS and Python 3.11 syntax checks pass. Production rollout requested.
+
+- Session 12867 hardening: airport names plus `(IATA)` and natural single-code answers resolve deterministically. Remaining RFQ gaps receive an evidence-bound full-thread `LLM_RESCUE_MODEL` pass before the first question or human review.
+- Task 4 LLM cost (no model change): measured 14:52 to 16:14 (nano) about 100 µ$ per accepted quote; estimated at today's defaults about 2,011 µ$ per accepted quote = 39.2 of 40 cost points, composer 66 %. Cheaper setups gain at most +0.2 to +0.5 points; none is proven to give identical extractions (needs live gateway calls), and production `accounting_json` is the missing evidence.
+- Task 5 bonuses: the 3 stored tracking questions (1677, 1850, 2252) replayed offline through today's `tracking.handle` all name the BK reference, where the cargo is and planned departure/arrival (the live replies then failed 2 of 3 checks); a name-only question tying two bookings asks for the reference. Five fallback quote texts collected for review; the live composer text cannot be produced offline.
 - Task 3 edge cases (`tests/test_edge_cases.py`, today pinned first): preferred airline beats the customer's cheapest/fastest and sticks for later RFQs (rule open); USD requests get EUR (rule open); a December ready date gets today's November sheet; unit/separator/dimension-only mails ask; 3 of 4 revision replies book the old offer; all carriers excluded ends silent. New settings, all default false = today: `CUTOFF_QUESTION_NOTICE`, `TARIFF_ON_READY_DATE`, `UNIT_EVIDENCE`, `REVISION_NOT_ACCEPTANCE`, `ALL_EXCLUDED_NOTICE`. Replay unchanged; not verified live.
 - Case 12460 portal outage: reserve slots for eligible portal airlines before speculative bids; 503 fallbacks take priority, healthy results release slots, persisted sends enforce the cap on restart. Full legacy budgets warn instead of silently losing fallbacks; trucking alone remains unquotable. Targeted regression checks cover the outage and complete quote.
 - Case 12460 manual replies: default to the latest customer mail even after carrier replies, show recipient in confirmation, reject customer quotes to carriers, and keep explicit carrier replies out of customer response metrics. Selected-mail support is preserved; a literal JS newline that prevented script parsing is repaired. Local tests only; deployment unverified.
 - Case 12460 verification on integrated main: Python 3.11, 615 passed/4 skipped; changed Python files pass Ruff, full console script passes Node syntax check, customer-first mail selection verified in the local browser. Added 14 regressions for outage capacity, complete quotes, restart caps, pause, exclusions and reply targets; no production rollout or live quote verification.
-
 - Round 48 expired after two origin questions despite explicit DUS answers. Origin clarification now reuses the existing negation/ambiguity-aware free-text parser independently of optional recovery/one-question flags. No question-cap, pricing or deployment setting changes; initial extraction/runtime state remain unverified.
 - Customer presentation: €, full EN/DE months, sentence-based copy without parentheses/field names, short paragraphs across quotes/clarifications/bookings/tracking. Composer repairs leaks and safely formats dates/currency/paragraphs. 575 tests pass/4 skipped; 31 replay records unchanged except 18 quote bodies. No live mail sent; deployment unverified.
 
@@ -166,6 +172,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 21:20: `tests/conftest.py` refuses every 5U and gateway call from tests and fails the test that tries. `test_reply_without_mail_client_is_503` posted to the real mailbox on every pytest run (a real mail with the key from `.env`); it now stubs the send.
 
 - 21.11 20:55: Rounds 47 and 48 unanswered: the mailbox allows one poll per 5 s per team key, extra reads with our key (an analysis session bulk-read the mailbox) gave the live poller 429s, and its backoff doubled to minutes. Fix: a 429 keeps the server's wait and never doubles. Rule: nobody polls the mailbox with the team key except the live system. No webhook subscription exists (GET /v1/mailbox/webhook -> 404), so polling is the only intake.
 

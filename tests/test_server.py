@@ -1,5 +1,7 @@
 """API tests for app/ui/server.py (no 5U calls, no streaming loop)."""
 
+from datetime import UTC
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -29,15 +31,15 @@ def seed():
 
 def test_index_and_lists(client):
     sid = seed()
+    health = client.get("/api/health").json()
+    assert health["email_style_version"] == "strict-customer-prose-v3"
+    assert health["email_reviewer_model"] == "gpt-5"
+    assert "build_revision" in health
     assert client.get("/").status_code == 200
     rows = client.get("/api/sessions").json()
     assert [r["id"] for r in rows] == [sid]
     assert client.get("/api/sessions", params={"q": "nomatch"}).json() == []
-    assert (
-        client.get(f"/api/sessions/{sid}")
-        .json()["mails"][0]["body"]
-        .startswith("<script>")
-    )
+    assert client.get(f"/api/sessions/{sid}").json()["mails"][0]["body"].startswith("<script>")
     assert client.get("/api/sessions/999").status_code == 404
 
 
@@ -51,10 +53,7 @@ def test_actions_and_events(client):
     kinds = [e["kind"] for e in client.get("/api/events", params={"since": 0}).json()]
     assert kinds[0] == "mail_in" and kinds.count("human_action") == 6
     first = client.get("/api/events", params={"since": 0}).json()[0]["id"]
-    assert all(
-        e["id"] > first
-        for e in client.get("/api/events", params={"since": first}).json()
-    )
+    assert all(e["id"] > first for e in client.get("/api/events", params={"since": first}).json())
 
 
 def test_dashboard_shape(client):
@@ -70,7 +69,13 @@ def test_dashboard_shape(client):
     } <= d.keys()
 
 
-def test_reply_without_mail_client_is_503(client):
+def test_reply_without_mail_client_is_503(client, monkeypatch):
+    from app import hackloop
+
+    def refused(*_a, **_k):  # was a real POST to the 5U mailbox (401 with a placeholder key)
+        raise hackloop.HackloopError("POST", "/v1/mailbox/messages", 401, "Unauthorized")
+
+    monkeypatch.setattr(hackloop, "send", refused)
     sid = seed()
     r = client.post(f"/api/sessions/{sid}/reply", json={"text": "Hallo"})
     assert r.status_code in (503, 502)
@@ -89,14 +94,8 @@ def test_basic_auth_when_password_set(client, monkeypatch):
     assert client.get("/api/health").status_code == 200
     good = base64.b64encode(b"team:pw").decode()
     bad = base64.b64encode(b"team:nope").decode()
-    assert (
-        client.get("/api/stats", headers={"Authorization": f"Basic {bad}"}).status_code
-        == 401
-    )
-    assert (
-        client.get("/api/stats", headers={"Authorization": f"Basic {good}"}).status_code
-        == 200
-    )
+    assert client.get("/api/stats", headers={"Authorization": f"Basic {bad}"}).status_code == 401
+    assert client.get("/api/stats", headers={"Authorization": f"Basic {good}"}).status_code == 200
 
 
 def test_crm_won_lost(client):
@@ -129,11 +128,7 @@ def test_crm_won_lost(client):
     )
     db.set_status(lost, "expired")
     d = client.get("/api/crm").json()
-    assert (
-        d["totals"]["won"] == 1
-        and d["totals"]["lost"] == 1
-        and d["booked_minor"] == 10000
-    )
+    assert d["totals"]["won"] == 1 and d["totals"]["lost"] == 1 and d["booked_minor"] == 10000
     a = next(c for c in d["customers"] if c["customer"] == "a@b.example")
     assert a["won"] == 1 and a["booked_minor"] == 10000
     assert d["quotes"][0]["outcome"] == "won"
@@ -141,9 +136,9 @@ def test_crm_won_lost(client):
 
 
 def test_overview_and_attention(client):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     old = (now - timedelta(minutes=30)).isoformat(timespec="seconds")
     sid = db.ingest_mail(
         mail_id=10,
@@ -207,9 +202,7 @@ def test_overview_and_attention(client):
         currency="EUR",
     )
     assert "to_book" not in {a["kind"] for a in client.get("/api/attention").json()}
-    assert (
-        client.get("/api/overview", params={"hours": 0}).json()["current"]["won"] == 1
-    )
+    assert client.get("/api/overview", params={"hours": 0}).json()["current"]["won"] == 1
 
 
 def test_import_db_only_when_agents_disabled(client, monkeypatch, tmp_path):
@@ -241,11 +234,9 @@ def test_import_db_only_when_agents_disabled(client, monkeypatch, tmp_path):
 
 
 def test_status_overview_steps_checks_and_todo(client):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    old = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(
-        timespec="seconds"
-    )
+    old = (datetime.now(UTC) - timedelta(minutes=2)).isoformat(timespec="seconds")
     sid = db.ingest_mail(
         mail_id=20,
         sender="a@b.example",
@@ -306,19 +297,14 @@ def test_status_overview_steps_checks_and_todo(client):
 
     d = client.get("/api/status").json()
     rows = {r["id"]: r for r in d["requests"]}
-    assert (
-        rows[sid]["lane"] == "FRA → JFK"
-        and rows[sid]["steps"]["quote"]["state"] == "ok"
-    )
+    assert rows[sid]["lane"] == "FRA → JFK" and rows[sid]["steps"]["quote"]["state"] == "ok"
     assert rows[sid]["steps"]["board"]["state"] == "ok"
     assert rows[sid]["steps"]["booking"]["state"] == "run"
     assert rows[lost]["steps"]["quote"]["state"] == "bad"
     checks = {c["key"]: c for c in d["checks"]}
     assert checks["quotes"]["value"] == "1 / 2" and checks["quotes"]["level"] == "warn"
     assert checks["price"]["value"] == "1 / 1" and checks["mail"]["level"] == "ok"
-    assert (
-        d["score"]["accepted"] == 1 and d["score"]["cost_pts"] > 39 and d["todo"] == []
-    )
+    assert d["score"]["accepted"] == 1 and d["score"]["cost_pts"] > 39 and d["todo"] == []
 
     # customer says yes, not booked -> to do; after booking it disappears
     db.ingest_mail(
@@ -401,11 +387,7 @@ def test_pricing_history_lists_options_truck_and_verdict(client):
     r = rows[0]
     assert r["origin"] == "FRA" and r["cheapest_air_minor"] == 329838
     assert r["truck"] == {"name": "Hansekogge Trucking", "eur_minor": 21917}
-    assert (
-        r["truck_bids"] == 1
-        and r["verdict"] == "rejected"
-        and r["reason"] == "too_high"
-    )
+    assert r["truck_bids"] == 1 and r["verdict"] == "rejected" and r["reason"] == "too_high"
 
 
 def test_emergency_draft_and_send_records_quote(client, monkeypatch):
@@ -448,9 +430,7 @@ def test_emergency_draft_and_send_records_quote(client, monkeypatch):
     r = client.post(f"/api/sessions/{sid}/reply", json={"text": d["body"], "quote": d})
     assert r.status_code == 200
     s = db.get_session(sid)
-    assert (
-        s["quotes"][0]["total_minor"] == 41616 and s["quotes"][0]["source"] == "manual"
-    )
+    assert s["quotes"][0]["total_minor"] == 41616 and s["quotes"][0]["source"] == "manual"
     assert s["mode"] == "auto"  # handed back so the booking agent books on the yes
 
 

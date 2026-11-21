@@ -22,7 +22,7 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gpt-5-mini"  # stronger extraction default; override with LLM_MODEL
-MAX_CALLS_PER_SESSION = min(4, settings.llm_max_calls_per_session)
+MAX_CALLS_PER_SESSION = min(8, settings.llm_max_calls_per_session)
 PRICES_FILE = Path(__file__).with_name("llm_prices.json")
 
 _client = OpenAI(
@@ -126,7 +126,7 @@ def complete(
     model_name: str | None = None,
 ) -> str:
     """One chat completion through the gateway. Returns the message text and logs the cost.
-    `model_name` overrides LLM_MODEL for this call (the extraction retry uses LLM_RETRY_MODEL)."""
+    `model_name` overrides LLM_MODEL for configured retry, rescue and compose calls."""
     _reserve(session_id)
     name = model_name or model()
     kw: dict[str, Any] = {

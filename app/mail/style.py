@@ -51,6 +51,18 @@ def customer_presentation(text: str, lang: str) -> str:
     """Render literal dates/currency in prose without touching embedded technical IDs."""
     text = re.sub(r"(?<![\w-])EUR(?![\w-])", "€", text)
 
+    def without_zero_fraction(match: re.Match[str]) -> str:
+        # Three zero digits alone can be a thousands group, not a decimal fraction.
+        if len(match[2]) == 3 and not re.search(r"[.,]", match[1]) and match[1] != "0":
+            return match[0]
+        return match[1]
+
+    text = re.sub(
+        r"(?<![\w.,-])(\d+(?:[.,]\d{3})*)[.,](0+)(?![\w.,-])",
+        without_zero_fraction,
+        text,
+    )
+
     def replace_timestamp(match: re.Match[str]) -> str:
         try:
             value = datetime.fromisoformat(match[0])
@@ -79,7 +91,7 @@ def customer_presentation(text: str, lang: str) -> str:
     text = re.sub(r"(?<![\w-])\d{4}-\d{2}-\d{2}(?![\w-])", replace_date, text)
     paragraphs = []
     for paragraph in text.split("\n\n"):
-        if len(paragraph.split()) <= 70:
+        if len(paragraph.split()) <= 45:
             paragraphs.append(paragraph)
             continue
         sentences, start = [], 0
@@ -93,7 +105,7 @@ def customer_presentation(text: str, lang: str) -> str:
         sentences.append(paragraph[start:])
         group = ""
         for sentence in sentences:
-            if group and len((group + " " + sentence).split()) > 55:
+            if group and len((group + " " + sentence).split()) > 40:
                 paragraphs.append(group)
                 group = ""
             group = f"{group} {sentence}".strip()
@@ -119,7 +131,7 @@ def has_customer_presentation_issue(text: str) -> bool:
             text,
             re.IGNORECASE,
         )
-        or any(len(paragraph.split()) > 70 for paragraph in text.split("\n\n"))
+        or any(len(paragraph.split()) > 50 for paragraph in text.split("\n\n"))
     )
 
 
@@ -139,22 +151,22 @@ def amount(minor: int, currency: str = "EUR") -> str:
     """Format integer minor units without float conversion or currency conversion."""
     sign = "-" if minor < 0 else ""
     whole, cents = divmod(abs(minor), 100)
-    number = f"{whole:,}".replace(",", ".") + f",{cents:02d}"
+    number = f"{whole:,}".replace(",", ".") + (f",{cents:02d}" if cents else "")
     return f"{sign}{number} {'€' if currency.upper() == 'EUR' else currency}"
 
 
 _BOOKED_JOKES = {
     "en": (
-        "Your cargo now has a window seat and, unlike us, gets to skip the airport coffee.",
-        "We told the pilot it is precious cargo, so it now officially outranks the in-flight snacks.",
-        "Your shipment is flying business class. We are still waiting for our own upgrade.",
-        "Your boxes will see more of the world this week than we will.",
+        "We will leave the jet lag to the cargo.",
+        "The cargo can handle the sightseeing. We will keep the details organised.",
+        "Your boxes get the adventure. We will keep an eye on the arrangements.",
+        "We will let the cargo do the travelling this time.",
     ),
     "de": (
-        "Ihre Ware hat jetzt einen Fensterplatz und muss, anders als wir, keinen Flughafenkaffee trinken.",
-        "Wir haben dem Piloten gesagt, dass es wertvolle Fracht ist. Damit ist sie offiziell wichtiger als die Bordverpflegung.",
-        "Ihre Sendung fliegt quasi Business Class. Auf unser eigenes Upgrade warten wir noch.",
-        "Ihre Kartons sehen diese Woche mehr von der Welt als wir.",
+        "Den Jetlag überlassen wir der Fracht.",
+        "Die Reiselust überlassen wir den Kartons. Um die Details kümmern wir uns.",
+        "Ihre Kartons bekommen das Abenteuer. Wir behalten die Organisation im Blick.",
+        "Dieses Mal lassen wir die Fracht auf Reisen gehen.",
     ),
 }
 

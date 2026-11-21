@@ -38,6 +38,7 @@ def _trucker_balance() -> str:
 
 @dataclass(frozen=True)
 class Settings:
+    build_revision: str
     api_key: str
     base_url: str
     team_mailbox: str
@@ -45,7 +46,10 @@ class Settings:
     tracking_address: str
     llm_model: str
     llm_retry_model: str
+    llm_rescue_model: str
     llm_compose_model: str
+    llm_review_model: str
+    email_review_enabled: bool
     poll_interval_s: float
     db_path: str
     ui_port: int
@@ -95,6 +99,7 @@ class Settings:
 
 
 settings = Settings(
+    build_revision=_env("RAILWAY_GIT_COMMIT_SHA", _env("BUILD_REVISION", "unknown")),
     api_key=_env("TEAM_API_KEY", _env("HACKLOOP_API_KEY")),  # old name still accepted
     base_url=_env("HACKLOOP_BASE_URL", "https://api.start-hack.5u.ai").rstrip("/"),
     team_mailbox=_env("TEAM_MAILBOX", "austrian-power@hackloop.mail").lower(),
@@ -102,7 +107,10 @@ settings = Settings(
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
     llm_model=_env("LLM_MODEL"),
     llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5"),  # stronger repair when extraction fails
+    llm_rescue_model=_env("LLM_RESCUE_MODEL", "gpt-5"),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
+    llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
+    email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "true").lower() == "true",
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
@@ -143,7 +151,7 @@ settings = Settings(
     all_excluded_notice=_flag("ALL_EXCLUDED_NOTICE"),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)
     clarify_fallback_after_s=float(_env("CLARIFY_FALLBACK_AFTER_S", "45")),
-    llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "4"))),
+    llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "8"))),
     runtime_dir=Path(
         _env(
             "RUNTIME_DIR",

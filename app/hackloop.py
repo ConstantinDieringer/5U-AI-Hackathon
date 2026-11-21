@@ -19,6 +19,7 @@ TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 MAX_RETRIES = 2
 RETRY_PAUSE_S = 1.0
 MAX_RETRY_AFTER_S = 10.0
+MAX_ATTACHMENT_BYTES = 20_000_000
 
 _client = httpx.Client(
     base_url=settings.base_url,
@@ -155,7 +156,42 @@ def get_message(message_id: int) -> dict[str, Any]:
 
 
 def get_attachment(message_id: int, attachment_id: int) -> bytes:
-    return _request("GET", f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}").content
+    method = "GET"
+    path = f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}"
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            with _client.stream(method, path) as resp:
+                retryable = resp.status_code == 429 or (
+                    resp.status_code >= 500 and resp.status_code != 503
+                )
+                if retryable:
+                    if attempt < MAX_RETRIES:
+                        time.sleep(min(MAX_RETRY_AFTER_S, _retry_wait(resp)))
+                        continue
+                    raise HackloopError(method, path, resp.status_code, "retry limit reached")
+                if resp.is_error:
+                    detail = b"".join(resp.iter_bytes())[:300].decode("utf-8", "replace")
+                    raise HackloopError(method, path, resp.status_code, detail)
+                length = resp.headers.get("Content-Length")
+                if length and length.isdecimal() and int(length) > MAX_ATTACHMENT_BYTES:
+                    raise HackloopError(method, path, 413, "attachment exceeds 20 MB")
+                content = bytearray()
+                for chunk in resp.iter_bytes():
+                    if len(content) + len(chunk) > MAX_ATTACHMENT_BYTES:
+                        raise HackloopError(method, path, 413, "attachment exceeds 20 MB")
+                    content.extend(chunk)
+                return bytes(content)
+        except HackloopError:
+            raise
+        except httpx.ConnectError as exc:
+            if attempt == MAX_RETRIES:
+                raise HackloopError(method, path, None, f"connect error: {exc}") from exc
+            time.sleep(RETRY_PAUSE_S)
+        except httpx.TransportError as exc:
+            if attempt == MAX_RETRIES:
+                raise HackloopError(method, path, None, f"transport error: {exc}") from exc
+            time.sleep(RETRY_PAUSE_S)
+    raise HackloopError(method, path, None, "attachment download failed")
 
 
 def send(
@@ -182,6 +218,52 @@ def send(
             references,
         )
     log.info("sent mail %s to %s: %s", sent.get("id"), to, subject[:80])
+    return sent
+
+
+class CustomerSendBlocked(RuntimeError):
+    """Review completed, but current customer controls or the deadline forbid sending."""
+
+
+def send_customer(
+    to: str,
+    subject: str,
+    body: str,
+    in_reply_to: int | None = None,
+    references: list[int] | None = None,
+    session_id: int | None = None,
+    protected_terms: tuple[str, ...] = (),
+    allow_manual: bool = False,
+    deadline_at: float | None = None,
+) -> dict[str, Any]:
+    """All customer replies pass the final prose renderer before transport."""
+    from app import db
+    from app.agents.email_review import review_customer_mail
+    from app.mail.language import detect
+    from app.mail.outgoing import customer_body
+
+    def allowed() -> None:
+        if session_id is not None and (
+            db.is_paused(session_id) or (db.is_manual(session_id) and not allow_manual)
+        ):
+            raise CustomerSendBlocked("Session is paused or under manual control")
+        if deadline_at is not None and time.time() >= deadline_at:
+            raise CustomerSendBlocked("Customer reply deadline has expired")
+
+    allowed()
+    lang = detect(body)
+    rendered = customer_body(body, lang)
+    rendered = customer_body(
+        review_customer_mail(rendered, lang, session_id, protected_terms), lang
+    )
+    allowed()
+    options: dict[str, Any] = {}
+    if in_reply_to is not None:
+        options["in_reply_to"] = in_reply_to
+    if references is not None:
+        options["references"] = references
+    sent = dict(send(to=to, subject=subject, body=rendered, **options))
+    sent["body"] = rendered
     return sent
 
 

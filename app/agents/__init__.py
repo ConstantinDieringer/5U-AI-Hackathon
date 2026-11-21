@@ -3,7 +3,16 @@
 import importlib
 
 # every agent the mail path can reach; tests/test_imports.py keeps this list complete
-AGENTS = ("bids", "booking", "carrier_prefs", "clarification", "rfq", "tariff", "tracking")
+AGENTS = (
+    "bids",
+    "booking",
+    "carrier_prefs",
+    "clarification",
+    "email_review",
+    "rfq",
+    "tariff",
+    "tracking",
+)
 
 
 def check_imports() -> tuple[list[str], dict[str, str]]:

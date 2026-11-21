@@ -16,7 +16,7 @@ def test_dates_currency_and_embedded_identifiers(lang, expected):
     text = customer_presentation(
         "On 2026-11-24 the total is 1.200,00 EUR. BK-2026-11-24 and R-EUR-123 stay.", lang
     )
-    assert expected in text and "1.200,00 €" in text
+    assert expected in text and "1.200 €" in text
     assert "BK-2026-11-24" in text and "R-EUR-123" in text
     assert written_date(date(2026, 11, 24), lang) == expected
     assert not has_customer_presentation_issue(text)
@@ -64,7 +64,7 @@ def test_unfriendly_or_internal_presentation_is_repaired(tmp_path, monkeypatch, 
 
     def complete(purpose, *args, **kwargs):
         calls.append(purpose)
-        body = "Hi Sara,\n\nTest Air flies FRA to DEL for 1.200,00 €.\n\n"
+        body = "Hi Sara,\n\nTest Air flies FRA to DEL for 1.200 €.\n\n"
         body += issue if len(calls) == 1 else "The earliest possible departure is 2026-11-24."
         return json.dumps(
             {
@@ -80,7 +80,7 @@ def test_unfriendly_or_internal_presentation_is_repaired(tmp_path, monkeypatch, 
     monkeypatch.setattr(llm, "complete", complete)
     text = rfq.compose_quote_text(request, option, 120000, None, 1)
     assert calls == ["compose_quote", "compose_quote_repair"]
-    assert "24 November 2026" in text and "1.200,00 €" in text
+    assert "24 November 2026" in text and "1.200 €" in text
     assert not has_customer_presentation_issue(text)
 
 
@@ -122,4 +122,4 @@ def test_templates_use_complete_prose_without_parentheses(lang):
     for variant in range(4):
         text = tracking.answer_text(record, lang, variant=variant, today=date(2026, 11, 21))
         assert not has_customer_presentation_issue(text)
-        assert "1.200,00 €" in text and "70173" in text and "BK-ABC123" in text
+        assert "1.200 €" in text and "70173" in text and "BK-ABC123" in text

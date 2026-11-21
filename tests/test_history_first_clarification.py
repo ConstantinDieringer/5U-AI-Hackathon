@@ -1,6 +1,7 @@
 """History-first recovery and repeated clarification on the unified validation workflow."""
 
 import dataclasses
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -37,6 +38,11 @@ def isolated(tmp_path, monkeypatch):
         clarification,
         "settings",
         dataclasses.replace(clarification.settings, rfq_validation_mode="enforce"),
+    )
+    monkeypatch.setattr(
+        clarification.llm,
+        "complete",
+        lambda *args, **kwargs: json.dumps({"corrections": []}),
     )
 
 
@@ -133,7 +139,7 @@ def test_ambiguous_booking_asks_then_accepts_reply(sent, monkeypatch):
     )
     unclear = mail(3, "I need to think about the timing", sid=1)
     booking.handle_reply(unclear, 1)
-    assert len(sent) == 1 and "confirm whether" in sent[0][0][2]
+    assert len(sent) == 1 and "confirm whether" in sent[0][1]["body"]
     assert db.get_session(1)["bookings"] == []
     answer = mail(5, "Yes, go ahead and book it", sid=1)
     resumed = []

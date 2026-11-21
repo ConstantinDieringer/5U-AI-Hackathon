@@ -63,7 +63,7 @@ def test_composer_cannot_turn_collection_lead_into_road_duration(kind):
         timing_kind=kind,
     )
     body = (
-        "Hello, Air MUC to PVG: 200,00 € all-in. "
+        "Hello, Air MUC to PVG: 200 € all-in. "
         "Road collection to the airport takes five hours.\n\nYour austrian Power Team"
     )
     raw = json.dumps(
@@ -76,10 +76,10 @@ def test_composer_cannot_turn_collection_lead_into_road_duration(kind):
         }
     )
     if kind == "road_transit":
-        assert rfq._validate_composed(raw, request, option, "200,00 €", truck=truck) == body
+        assert rfq._validate_composed(raw, request, option, "200 €", truck=truck) == body
     else:
         with pytest.raises(ValueError, match="not verified road duration"):
-            rfq._validate_composed(raw, request, option, "200,00 €", truck=truck)
+            rfq._validate_composed(raw, request, option, "200 €", truck=truck)
     safe = rfq.quote_text(request, option, 20000, truck, 1)
     assert "a lead time of about 5 hours" in safe
     assert "from your door to the airport" not in safe
@@ -109,7 +109,7 @@ def test_internal_timing_label_repairs_or_falls_back(tmp_path, monkeypatch, repa
         )
         return json.dumps(
             {
-                "body": f"Hello, Air MUC to PVG: 200,00 € all-in. {wording}"
+                "body": f"Hello, Air MUC to PVG: 200 € all-in. {wording}"
                 "\n\nYour austrian Power Team",
                 "answered_questions": [],
                 "unavailable_questions": [],
@@ -122,7 +122,7 @@ def test_internal_timing_label_repairs_or_falls_back(tmp_path, monkeypatch, repa
     text = rfq.compose_quote_text(request, option, 20000, truck, 1)
     assert calls == ["compose_quote", "compose_quote_repair"]
     assert "road_transit" not in text
-    assert text.count("200,00 €") == 1
+    assert text.count("200 €") == 1
     assert "Air" in text and "MUC" in text and "PVG" in text
     if repair_succeeds:
         assert "Road transit takes about five hours" in text

@@ -84,6 +84,10 @@ requirements.txt
 `.env` (nie committen, das Repo ist öffentlich). **Maßgeblich ist `.env.example` im Repo-Root**: alle Variablen mit Standardwert und Kommentar. `TEAM_API_KEY`, UI-Passwort und Webhook-Signing-Secret sind geheim. Das Signing-Secret bleibt in einer privaten Datei auf dem persistenten Volume oder in `MAILBOX_WEBHOOK_SECRET`. Neue Variable = Eintrag in `.env.example` + Standardwert in `app/config.py` im selben Commit.
 
 - Zugriff nur über `from app.config import settings` (z. B. `settings.api_key`).
+- `UI_PASSWORD` ist vor dem Start von `run.py` verpflichtend. Browser-Schreibzugriffe senden
+  `X-Requested-With: XMLHttpRequest`; die Mailbox-Webhook-Route verwendet separat HMAC-SHA256.
+- Eingehende Mail-Anhänge sind nicht vertrauenswürdig: maximal 12 je Mail und 20 MB insgesamt;
+  Downloads werden bei 20 MB pro Datei abgebrochen.
 - Der eigene OpenAI-Key wird **einmalig per curl** im Gateway hinterlegt und steht **nirgends** im Repo oder in `.env`.
 - `.gitignore` enthält mindestens: `.env`, `.venv/`, `__pycache__/`, `data/forwarder.db`, `data/inbox/`, `*.log`.
 
@@ -231,7 +235,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
 - Standard für Extraktion ist `gpt-5-mini`, für die Reparatur `LLM_RETRY_MODEL=gpt-5`. Beide wurden über die Gateway-Modellliste bestätigt. Explizite Umgebungswerte überschreiben diese Defaults weiterhin; Kostenpreise für `gpt-5` sind hinterlegt.
-- **Hartes Limit: max. 4 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Standard ist 4: Extraktion, ggf. Reparatur, individuelle Antwort und ggf. Antwortreparatur. Sichere Textvorlagen bleiben Fehlerfallback.
+- **Hartes Limit: max. 8 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Standard ist 8 für Extraktion/Komposition samt Reparaturen und finale Stilprüfungen. Sichere Textvorlagen und deterministische Versandprüfung bleiben Fehlerfallback.
 - `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, individueller Mailtext ≤ 750).
   `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
@@ -248,14 +252,17 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - `enforce` bepreist nur aktuelle, belegte Angaben. Signaturen und frühere Kundensendungen ersetzen keine Abholadresse; weitergeleitete Betreffe und Historie sind keine aktuellen Streckenangaben.
 - Alle Text-/Tabellen-Anhänge vor dem Pricing abgleichen. Bildseiten werden im vorhandenen Extraktionsaufruf transkribiert (bis 2500 Output-Tokens); kein zusätzlicher Call. Preisberechnung bleibt deterministisch.
 - `rfq_validation` ist eine additive Workflow-Tabelle (keine Änderung des bestehenden sessions-CHECK): Draft, Quellen, offene Punkte, Zustand und Rückfrage-Ausgang. Der API-Sessiondetail liefert `validation`; die UI zeigt den Zustand neben dem bisherigen Sessionstatus.
-- Einmal automatisch im Kundenthread nachfragen; ursprüngliche Deadline beibehalten. Das Scoring-Risiko durch die erste Antwort wurde bewusst akzeptiert. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
-- Rückfrageantworten vor Booking behandeln, nur angefragte Werte übernehmen. Unklare Antwort, bestätigtes Gefahrgut ohne passenden Tarif oder unklarer Versandausgang erfordern manuelle Prüfung. Keine weiteren automatischen Rückfragen.
+- Automatische Rückfragen bleiben im Kundenthread und behalten die ursprüngliche Deadline. Das Scoring-Risiko durch die erste Antwort wurde bewusst akzeptiert. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
+- Rückfrageantworten vor Booking behandeln und nur angefragte Werte übernehmen. Bleiben RFQ-Felder nach deterministischer Auswertung offen, liest `LLM_RESCUE_MODEL` den vollständigen aktuellen Kundenthread vor der ersten Rückfrage beziehungsweise vor einem Human-Handoff. Es darf nur explizit belegte Korrekturen mit einem wörtlichen Beleg liefern; Code prüft Beleg, Feldtyp und vollständigen RFQ erneut. Erst ein weiterhin ungelöster, abgelaufener oder ausdrücklich pausierter/manueller Fall benötigt einen Menschen.
 - Bei Gefahrguthinweisen ausdrücklich Gefahrgutunterlagen (DGD/Versendererklärung und SDS,
   soweit zutreffend) anfragen und Prüfung vor Angebot/Buchung erklären. Eine allgemeine
   Bestätigung der Packliste ist weder Dokumenteneingang noch Transportfreigabe.
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Dedizierter Stilagent `app/agents/email_review.py`: `LLM_REVIEW_MODEL=gpt-5`, `EMAIL_REVIEW_ENABLED=true`, genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens. Kein eigener Versand und keine Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen werden nach dem Review geschützt; bei Fehler/Budgetende bleibt der deterministisch geprüfte Entwurf erhalten. Aufruf und Kosten werden der RFQ zugerechnet. Pause/Handbetrieb und Quote-Deadline werden nach dem Review erneut geprüft.
+
+- Strenge Versanddarstellung: alle Kunden-Sendewege nutzen `hackloop.send_customer`, das den Mailtext unmittelbar vor dem HTTP-Aufruf über `mail/outgoing.py` rendert und prüft. Prosa enthält keine Doppelpunkte, Semikola, Unterstriche, Bindestriche oder Klammern; Referenznummern bleiben zunächst kopierbar. Daten mit ausgeschriebenen Monaten, keine Null-Nachkommastellen, kurze Absätze. Die tatsächlich versandte Fassung wird gespeichert. `/api/health` nennt Stilversion und Build-Revision zur Aktivierungsprüfung. Persönliche Wärme und leichter Humor dürfen keine erfundene Kundentreue, Sonderpreise, Rabatte oder Leistungszusagen behaupten.
 - Bei Portalabfragen Airline-Anfrageplätze für bekannte Portal-Carrier derselben Strecke
   reservieren. Bei HTTP 503 zuerst diese Carrier direkt anfragen, anschließend verbleibende
   Plätze mit anderen Kandidaten füllen. Kunden-Ausschlüsse und negative Streckenbeobachtungen

@@ -247,7 +247,7 @@ def test_round_42_exclusion_holds_now_and_for_the_next_request(world: World) -> 
     trucker = next(a["trucker"] for a in quote["alternatives"] if "trucker" in a)
     assert trucker == "Taunusfracht"
     body = next(m["body"] for m in w.to(MEYER) if m["id"] == quote["mail_id"])
-    assert "Lagoon Isles Airways" in body and "3.390,00 €" in body
+    assert "Lagoon Isles Airways" in body and "3.390 €" in body
     assert "Zephyr" not in body
     assert w.to(ZEPHYR) == []  # never asked for a bid
     assert {LAGOON, HIMALAYA, PAMPERO} <= {m["to"] for m in w.sent}
