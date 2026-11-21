@@ -1,0 +1,7 @@
+{
+  "_note": "USD per 1M tokens, OpenAI list prices (not confirmed by the 5U gateway). Used only when the gateway response carries no cost.",
+  "gpt-5-nano": {"input": 0.05, "output": 0.40},
+  "gpt-5-mini": {"input": 0.25, "output": 2.00},
+  "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+  "gpt-4.1-mini": {"input": 0.40, "output": 1.60}
+}

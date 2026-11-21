@@ -30,7 +30,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## In Progress
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
-- Task A, Karim: A1–A6 done and verified live (see Completed). Now A7 `llm.py`.
+- Task A, Karim: A7 `app/llm.py` (`complete()`, gpt-5-nano, cost in micro-USD → `llm_calls`, max 2 calls/session) + 3 tests; **live call blocked: gateway has no OpenAI key** (`set: false`, chat → 409 `openai_key_missing`).
 - Task B, Constantin: B1–B7 in PR #2 (pricing, portal, lanes, reference, dataset_version); next door-to-port trucking, bid selection, tariff mails.
 
 ## Next Up
@@ -60,7 +60,7 @@ Goal: the first accepted quote end to end before any polish.
 2. ~~Team members and owners~~ → A (mail, router, RFQ agent): Karim · B (pricing, tariffs, portal): Constantin · C (CRM, sessions UI, tracking): Moritz.
 3. Scoring weights: the brief says 45/40/15 and the kickoff deck says 55/30/15. We use the brief's until 5U confirms.
 4. First request arrives 16:00 (kit card). Still open: deadline, start of hourly changes, pitch slot.
-5. Has our OpenAI key been posted to the gateway? Which models does `/v1/gateway/models` allow, and at what cost?
+5. OpenAI key NOT posted (15:50, `GET /v1/gateway/openai-key` → `set: false`). 32 models allowed, no prices. Default gpt-5-nano. Cost uses list prices in `app/llm_prices.json` (unverified).
 6. ~~Portal rate-read cap~~ → 10/min (15:00), one read per airline, 1–4 airlines per lane.
 7. Formats of RFQs, carrier bids, rate desk replies, booking confirmations and tariff mails. Unknown until we see real mail.
 8. ~~Start kit contents~~ → 10 sheets (xlsx/pdf/docx/txt/jpg), 29 airlines + 23 truckers in `carrier-list.csv`, zones = 2-digit postcode → FRA/MUC/DUS/HAM/STR/CGN. Still open: trucking price (assumed: trucker bids by email).
