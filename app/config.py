@@ -43,6 +43,16 @@ def _trucker_balance() -> str:
     return mode
 
 
+def _speech_model() -> str:
+    model = _env("SPEECH_MODEL", "base")
+    if model.endswith(".en"):
+        logging.getLogger(__name__).warning(
+            "Using multilingual %s instead of English-only %s", model[:-3], model
+        )
+        return model[:-3]
+    return model
+
+
 @dataclass(frozen=True)
 class Settings:
     build_revision: str
@@ -62,6 +72,7 @@ class Settings:
     llm_compose_model: str
     llm_review_model: str
     email_review_enabled: bool
+    reply_in_customer_language: bool
     poll_interval_s: float
     db_path: str
     ui_port: int
@@ -163,6 +174,7 @@ settings = Settings(
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",
+    reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
@@ -270,7 +282,7 @@ settings = Settings(
     outbound_duplicate_s=float(_env("OUTBOUND_DUPLICATE_S", "1800")),  # same text again
     # voice messages are transcribed locally (app/mail/speech.py): the gateway refuses audio.
     # Scanned pages and photos go to a vision model via the gateway (empty = LLM_MODEL)
-    speech_model=_env("SPEECH_MODEL", "base.en"),
+    speech_model=_speech_model(),
     speech_model_dir=_env("SPEECH_MODEL_DIR"),  # Docker bakes the model into /opt/whisper
     llm_vision_model=_env("LLM_VISION_MODEL"),
     # false = never spend gateway calls on audio/scan attachments (text files still read)

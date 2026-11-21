@@ -341,6 +341,7 @@ def send_customer(
     if context is not None and not has_notice(rendered):
         raise CustomerStyleError("Required tracking invitation missing from customer mail")
     validate_customer_text(subject)
+    # The shared multilingual boundary already localized and validated this wire text.
     allowed()
     if before_transport is not None:
         try:

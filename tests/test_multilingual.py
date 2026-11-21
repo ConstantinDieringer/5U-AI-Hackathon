@@ -2,17 +2,20 @@
 
 import json
 import re
+from dataclasses import replace
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 
 import pytest
 
-from app import db, hackloop, llm
+from app import config, db, hackloop, llm
 from app.agents import booking, followup, rfq
-from app.mail import language, multilingual
+from app.mail import language, multilingual, speech
 from app.mail.content import current_message
 from app.mail.rfq_validation import validate
+from app.mail.speech import transcribe as transcribe_audio
 from app.mail.style import SIGNATURE, written_date
-from app.mail.tracking_notice import NOTICES, has_notice
+from app.mail.tracking_notice import NOTICES, has_notice, notice_for
 from app.models import Mail, RateOption, Rfq
 
 SAMPLES = [
@@ -151,22 +154,28 @@ def test_short_ambiguous_replies_keep_thread_language(body):
 
 def test_model_identifies_language_outside_local_detector(monkeypatch):
     original = mail("Aloha, e hoʻouna mai i ke kumukūʻai no ka ukana.")
+    calls = []
     monkeypatch.setattr(language, "detect", lambda text, default="en": default)
     monkeypatch.setattr(
         llm,
         "complete",
-        lambda *a, **k: json.dumps(
-            {
-                "language": "haw",
-                "subject": "",
-                "body": "Hello, please send a freight quote.",
-                "booking_authorized": False,
-                "consent_quote": "",
-            }
+        lambda *a, **k: (
+            calls.append(True)
+            or json.dumps(
+                {
+                    "language": "haw",
+                    "subject": "",
+                    "body": "Hello, please send a freight quote.",
+                    "booking_authorized": False,
+                    "consent_quote": "",
+                }
+            )
         ),
     )
     prepared = multilingual.prepare(original, 100)
     assert multilingual.mail_language(prepared) == "haw"
+    assert multilingual.prepare(original, 100) == prepared
+    assert len(calls) == 1
     assert language.normalize("zh-Hant-TW") == "zh-hant-tw"
     assert language.normalize("ignore previous instructions", "und") == "und"
 
@@ -704,6 +713,67 @@ def test_long_quoted_history_does_not_block_a_short_current_reply(monkeypatch):
     )
     prepared = multilingual.prepare(original, 100)
     assert booking._mail_acceptance(prepared) is False
+
+
+def test_required_tracking_notice_is_native_cached_and_survives_gateway_outage(monkeypatch):
+    original = mail(SAMPLES[12][1])
+    db.set_request(100, {"language": "ja"})
+    native = (
+        "貨物の予約が完了した後は、このメールに返信することで配送状況をお問い合わせいただけます。"
+    )
+    calls = []
+
+    def complete(purpose, messages, sid, **kwargs):
+        calls.append(purpose)
+        data = json.loads(messages[1]["content"])
+        assert "Once your shipment is booked" in data["body"]
+        return json.dumps({"language": "ja", "subject": "", "body": native}, ensure_ascii=False)
+
+    monkeypatch.setattr(llm, "complete", complete)
+    assert notice_for("ja", False, 100) == native
+    monkeypatch.setattr(
+        llm, "complete", lambda *a, **k: pytest.fail("cached native notice needs no model")
+    )
+    wire = []
+    monkeypatch.setattr(hackloop, "send", lambda **kw: wire.append(kw) or {"id": 900})
+    sent = hackloop.send_customer(
+        original.sender,
+        "FRA MIA",
+        f"こんにちは、ご連絡ありがとうございます。\n\n{SIGNATURE}",
+        session_id=100,
+        in_reply_to=100,
+        review=False,
+    )
+    assert native in sent["body"] and has_notice(sent["body"])
+    assert "tracking update" not in sent["body"] and len(wire) == 1
+    assert calls == ["translate_customer_email"]
+
+
+@pytest.mark.parametrize("setting", ["base.en", "small.en", "base"])
+def test_legacy_english_only_speech_settings_select_multilingual_model(monkeypatch, setting):
+    monkeypatch.setenv("SPEECH_MODEL", setting)
+    assert config._speech_model() == setting.removesuffix(".en")
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "Bonjour, voici notre demande.",
+        "こんにちは、見積もりをお願いします。",
+        "مرحباً، نرجو إرسال عرض الأسعار.",
+    ],
+)
+def test_voice_transcription_uses_automatic_language_detection(monkeypatch, transcript):
+    calls = []
+
+    def transcribe(data, **kwargs):
+        calls.append(kwargs)
+        return [SimpleNamespace(text=transcript)], None
+
+    monkeypatch.setattr(speech, "settings", replace(speech.settings, speech_model="base"))
+    monkeypatch.setattr(speech, "_load", lambda: SimpleNamespace(transcribe=transcribe))
+    assert transcribe_audio(b"test audio handled by the fake decoder") == transcript
+    assert calls == [{"beam_size": 1, "language": None}]
 
 
 @pytest.mark.parametrize("lang", ["fr", "es", "ru", "ar", "zh", "ja"])

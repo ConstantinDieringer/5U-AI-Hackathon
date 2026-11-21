@@ -97,7 +97,9 @@ def repair(sid: int) -> bool:
             return False
         parent = incoming[-1]
         lang = detect(parent["body"])
-        greeting = "Hallo," if lang == "de" else "Hi,"
+        greeting = {"de": "Hallo,", "fr": "Bonjour,", "es": "Hola,", "it": "Buongiorno,"}.get(
+            lang, "Hi,"
+        )
         body = f"{greeting}\n\n{SIGNATURE}\n"  # shared send boundary inserts the required notice
         db.kv_set("tracking.notice.recovery.last_attempt", f"{sid}:{time.time_ns()}")
         try:

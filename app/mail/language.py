@@ -174,6 +174,10 @@ _WORDS: dict[str, frozenset[str]] = {
             "potreste",
             "cordiali",
             "saluti",
+            "trasporto",
+            "aereo",
+            "spedizione",
+            "richiesta",
         ]
     ),
 }

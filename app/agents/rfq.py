@@ -31,6 +31,8 @@ from app.config import settings
 from app.mail import language, lots, multilingual, parse
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
+from app.mail.quote_locales import COPY as QUOTE_LOCALES
+from app.mail.quote_locales import quote as localized_quote
 from app.mail.rfq_sources import extraction_content, read_sources
 from app.mail.rfq_validation import _SIGNATURE
 from app.mail.router import address
@@ -532,10 +534,12 @@ def _schedule_line(rfq: Rfq, option: RateOption, lang: str, today: date | None) 
 
 _CUTOFF_TERMS = re.compile(
     r"cut[ -]?off|annahmeschluss|anlieferfrist|geschäftsschluss|geschaeftsschluss|"
+    r"heure\s+limite|hora\s+l[ií]mite|orario\s+limite|"
     r"close of business|(?:drop[ -]?off|cargo acceptance)[^.\n!?]{0,80}\b(?:until|before|by)\b",
     re.IGNORECASE,
 )
 _CUTOFF_NOTICES = {
+    **{lang: copy["cutoff"] for lang, copy in QUOTE_LOCALES.items()},
     "en": "The exact cargo acceptance cutoff at the departure airport is not yet confirmed.",
     "de": "Der genaue Annahmeschluss am Abflughafen ist noch nicht bestätigt.",
 }
@@ -578,6 +582,15 @@ def quote_text(
     if option.airline.lower() in rfq.excluded_airlines:
         raise ValueError("selected carrier is excluded by the customer")
     lang = language.base(rfq.language)
+    if lang in QUOTE_LOCALES:
+        return localized_quote(
+            rfq,
+            option,
+            _amount(total_eur_minor, lang),
+            truck,
+            schedule(rfq, option.transit_days, today),
+            _valid(option),
+        )
     name = rfq.customer_name
     if name and has_template_artifacts(name):
         name = None
@@ -800,6 +813,12 @@ def _validate_composed(
     expected_constraints = set(range(len(rfq.service_constraints)))
     if not isinstance(body, str) or not body.strip():
         raise ValueError("empty body")
+    expected_language = (rfq.language or "en").lower().split("-")[0]
+    observed_language = language.detect(
+        body.replace(SIGNATURE, "").replace(TEAM_LINE, ""), default=""
+    )
+    if observed_language and observed_language != expected_language:
+        raise ValueError(f"answer language {observed_language} differs from {expected_language}")
     if has_template_artifacts(body):
         raise ValueError("answer contains an unfilled template field or mail header")
     if has_customer_presentation_issue(body):
@@ -827,8 +846,10 @@ def _validate_composed(
         truck is not None
         and truck.timing_kind != "road_transit"
         and re.search(
-            r"\b(?:road|driving|drive|fahrzeit|transportdauer)\b[^.!?\n]{0,100}\b(?:hours?|stunden)\b"
-            r"|\b(?:hours?|stunden)\b[^.!?\n]{0,100}\b(?:road|driving|drive|fahrzeit|transportdauer)\b",
+            r"\b(?:road|driving|drive|fahrzeit|transportdauer|routier|carretera|strada)\b"
+            r"[^.!?\n]{0,100}\b(?:hours?|stunden|heures?|horas?|ore)\b"
+            r"|\b(?:hours?|stunden|heures?|horas?|ore)\b[^.!?\n]{0,100}"
+            r"\b(?:road|driving|drive|fahrzeit|transportdauer|routier|carretera|strada)\b",
             body,
             re.IGNORECASE,
         )
@@ -880,7 +901,6 @@ def compose_quote_text(
     today: date | None = None,
 ) -> str:
     """Generate and verify a general answer; deterministic copy is always available."""
-    fallback = _fallback_with_coverage(rfq, option, total_eur_minor, truck, session_id, today)
     lang = language.normalize(rfq.language)
     price = _amount(total_eur_minor, lang)
     when = schedule(rfq, option.transit_days, today)
@@ -1015,7 +1035,7 @@ def compose_quote_text(
                     ]
                 )
     log.warning("session %s: using deterministic quote copy (%s)", session_id, last_error)
-    return fallback
+    return _fallback_with_coverage(rfq, option, total_eur_minor, truck, session_id, today)
 
 
 # ---------------------------------------------------------------- flow
@@ -1185,7 +1205,6 @@ def _handle(mail: Mail, sid: int) -> None:
     rfq = _stored_request(sid) or extract_rfq(mail, sid)  # stored = resumed after a restart
     if rfq is None:
         from app.agents import clarification
-        from app.models import RfqDraft
 
         draft = RfqDraft(
             issues=[
@@ -1213,6 +1232,15 @@ def _handle(mail: Mail, sid: int) -> None:
             }
         )
     corrections = (prior or {}).get("draft", {}).get("evidence", {}).get("corrections", {})
+    extracted_language = (
+        rfq.facts.get("language", "en") if isinstance(rfq, RfqDraft) else rfq.language
+    )
+    response_language = conversation_language(mail, sid, extracted_language)
+    rfq = (
+        rfq.model_copy(update={"facts": {**rfq.facts, "language": response_language}})
+        if isinstance(rfq, RfqDraft)
+        else rfq.model_copy(update={"language": response_language})
+    )
     if prior and prior["state"] == "ready":
         cached["texts"] = prior["draft"]["evidence"].get(
             "attachment_texts", cached.get("texts", {})
@@ -1256,13 +1284,7 @@ def _handle(mail: Mail, sid: int) -> None:
                 sid,
             )
     # the LLM guesses the language from names/places (English mail from a German firm -> "de")
-    rfq = rfq.model_copy(
-        update={
-            "language": multilingual.reply_language(
-                mail.sender, sid, None, multilingual.mail_language(mail, rfq.language)
-            )
-        }
-    )
+    rfq = rfq.model_copy(update={"language": conversation_language(mail, sid, rfq.language)})
     if mode != "enforce":
         rfq = locate_pickup(rfq, mail, sid)
         if settings.ask_pickup_zip and needs_pickup_site(rfq, mail):
@@ -1279,8 +1301,6 @@ def _handle(mail: Mail, sid: int) -> None:
 
     origin = resolve_origin(rfq)
     if origin is None:
-        from app.models import RfqDraft
-
         clarification.request(
             mail,
             sid,
@@ -1387,17 +1407,39 @@ def quote_without_answer(sid: int, reason: str, dg_asked: bool = False) -> bool:
     return True
 
 
+def _request_language(mail: Mail, sid: int, default: str) -> str:
+    """Current source prose wins over names, old threads and a short attachment wrapper."""
+    cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}"))
+    original_sources = db.kv_get(f"rfq.original_sources.{sid}")
+    texts = (
+        json.loads(original_sources) if original_sources else cached.get("texts") or {}
+    ).values()
+    metadata = mail.raw.get("_processing_language") or {}
+    current = current_message(metadata.get("original_body", mail.body)).facts
+    evidence = "\n\n".join([current, *(str(text) for text in texts)])
+    return language.detect(evidence, default=multilingual.mail_language(mail, default or "en"))
+
+
+def conversation_language(mail: Mail, sid: int, default: str) -> str:
+    source = _request_language(mail, sid, default)
+    session = db.get_session(sid) or {}
+    incoming = [
+        m
+        for m in session.get("mails", [])
+        if m["direction"] == "in" and address(m.get("sender") or "") == address(mail.sender)
+    ]
+    if not incoming or incoming[-1]["id"] == mail.id:
+        return source
+    return multilingual.reply_language(mail.sender, sid, None, source)
+
+
 def with_stated_origin(request: Rfq, mail: Mail, sid: int) -> Rfq:
     """The request in the mail's language, with a departure only where the request states
     one: self-delivery wording, or the one network airport the current text names."""
     from app.mail.rfq_validation import explicit_delivery_origin
 
     request = request.model_copy(
-        update={
-            "language": multilingual.reply_language(
-                mail.sender, sid, None, multilingual.mail_language(mail, request.language)
-            )
-        }
+        update={"language": conversation_language(mail, sid, request.language)}
     )
     if not request.origin and not request.door_to_port:
         stated = explicit_delivery_origin(mail, request.destination)

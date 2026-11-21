@@ -189,7 +189,8 @@ def _prepare(mail: Mail, sid: int | None, default: str = "und") -> Mail:
         "language_hint": lang,
         "protected_values": {"subject": subject_values, "body": body_values},
     }
-    key = _key("incoming", data, sid)
+    # A newly identified language can change the hint on restart, never the source itself.
+    key = _key("incoming", {k: v for k, v in data.items() if k != "language_hint"}, sid)
     cached = db.kv_get(key)
     result = (
         json.loads(cached)
@@ -321,6 +322,14 @@ def localize(
 
     body = re.sub(r"\b(\d{1,2})\.?\s+([^\W\d_]+)\s+(\d{4})\b", local_date, body)
     dates.extend(re.findall(r"\d{4}年\d{1,2}月\d{1,2}日", body))
+    paragraphs = [p.strip() for p in body.split("\n\n") if p.strip() and p.strip() != SIGNATURE]
+    if all(
+        language.base(language.detect(p, lang)) == language.base(lang)
+        for p in [subject, *paragraphs]
+        if p.strip()
+    ):
+        # Verified native templates can still be sent when the gateway is unavailable.
+        return subject, body
     masked_subject, subject_values = _mask(subject, protected)
     masked_body, body_values = _mask(body, (*protected, *dates))
     data = {

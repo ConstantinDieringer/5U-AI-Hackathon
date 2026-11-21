@@ -10,6 +10,24 @@ from app.mail.style import TEAM_LINE
 
 NOTICES = {
     (
+        "fr",
+        False,
+    ): "Une fois ton envoi réservé, tu peux demander des nouvelles de son suivi en répondant à ce message.",
+    ("fr", True): "Tu peux demander des nouvelles du suivi de ton envoi en répondant à ce message.",
+    (
+        "es",
+        False,
+    ): "Cuando tu envío esté reservado, puedes pedir información de seguimiento respondiendo a este correo.",
+    ("es", True): "Puedes pedir información de seguimiento de tu envío respondiendo a este correo.",
+    (
+        "it",
+        False,
+    ): "Quando la tua spedizione sarà prenotata, puoi chiedere aggiornamenti sul tracciamento rispondendo a questa email.",
+    (
+        "it",
+        True,
+    ): "Puoi chiedere aggiornamenti sul tracciamento della tua spedizione rispondendo a questa email.",
+    (
         "en",
         False,
     ): "Once your shipment is booked, you can ask us for a tracking update by replying to this email.",
@@ -52,7 +70,7 @@ def known_notices() -> list[str]:
 
 def notice_for(lang: str, booked: bool, sid: int | None = None) -> str:
     """A required tracking invitation in any gateway-supported language, cached durably."""
-    if base(lang) in {"en", "de"}:
+    if (base(lang), booked) in NOTICES:
         return NOTICES[(base(lang), booked)]
     key = f"{_LOCALIZED}{normalize(lang)}.{int(booked)}"
     cached = db.kv_get(key)

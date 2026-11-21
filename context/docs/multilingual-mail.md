@@ -15,6 +15,10 @@ foreign attachment texts are translated together in one call; page images still 
 existing extraction model. Local-only replay reads cached translations and never makes a
 gateway call.
 
+Voice input uses the multilingual Whisper `base` model with automatic language detection.
+Docker bakes that model into the image. Legacy `.en` model settings are normalized to their
+multilingual counterpart; deployment must rebuild the image so the matching model is present.
+
 Incoming translations retain negation, conditions, revisions, deferrals, units and dangerous
 goods declarations. A translated booking approval also needs explicit unconditional consent
 and an exact excerpt from the current original message. It still passes the existing booking
@@ -28,6 +32,9 @@ including fixed templates and deterministic fallbacks. The common customer writi
 also governs these translations. Calendar dates use Babel locale formats; prices keep the
 existing EUR and number presentation. Names, references, dates and the team signature remain
 protected. `review=False` skips the style reviewer, but does not skip required translation.
+Existing verified French, Spanish and Italian quote templates are retained; already native
+output needs no additional translation call. The mandatory tracking invitation uses its native
+template or a cached checked translation, which the final gate and recovery worker recognize.
 The reviewer itself and its enable setting are unchanged. Human-authored manual replies use
 the language the operator wrote; emergency draft previews are localized.
 
@@ -35,7 +42,10 @@ Translations use `llm.complete`, the configured compose model and the existing d
 budget. Cache keys bind source content, protected values, language, session and version.
 Typical foreign RFQs need one incoming normalization and one outgoing translation in addition
 to extraction/composition; foreign readable documents add one batch call. This costs tokens
-and time. No additional production instance, subscription or credential is required.
+and time. The first tracking invitation for a language without a fixed template can add one
+translation, cached across sessions separately for conditional and booked wording. No
+additional production instance, subscription or credential is required. The older standalone
+`reply_language` helper remains for compatibility; transport uses only the common boundary.
 
 There is no promise of perfect translation for every human language. Actual coverage depends
 on the gateway model and local detection confidence. Unsupported or unverified translations,
