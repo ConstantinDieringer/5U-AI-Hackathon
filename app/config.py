@@ -73,6 +73,7 @@ class Settings:
     thread_rescue_body_chars: int
     llm_compose_model: str
     compose_repair: bool
+    quote_template_first: bool
     llm_review_model: str
     email_review_enabled: bool
     reply_in_customer_language: bool
@@ -198,6 +199,9 @@ settings = Settings(
     # a second composer call after a failed check doubles the quote's biggest cost; off =
     # the checked deterministic quote copy goes out instead
     compose_repair=_flag("COMPOSE_REPAIR", False),
+    # true = the checked template carries the facts and one small call adds a personal
+    # opening and answers (cheaper than the full composer); false = full composer
+    quote_template_first=_flag("QUOTE_TEMPLATE_FIRST", False),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",
     reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
