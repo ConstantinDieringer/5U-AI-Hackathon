@@ -236,7 +236,7 @@ def test_session_18673_model_refusal_still_produces_trucker_bid(tmp_path, monkey
     monkeypatch.setattr(bids, "_spawn", lambda fn, *a: fn(*a))
     path = tmp_path / "voice-message.mp3"
     path.write_bytes(b"ID3" + b"\0" * 50)
-    monkeypatch.setattr(bids, "_attachment_paths", lambda mail: [path])
+    monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
     mail = Mail(
         18850,
         18673,
@@ -298,7 +298,7 @@ def test_cached_voice_replay_keeps_spoken_evidence_and_does_not_retranscribe(tmp
     path.write_bytes(b"ID3" + b"\0" * 50)
     spoken = "Hi. We can do that for 358 euros and 64 cents. Collection in four hours."
     path.with_name(path.name + documents.TRANSCRIPT_SUFFIX).write_text(spoken, encoding="utf-8")
-    monkeypatch.setattr(bids, "_attachment_paths", lambda mail: [path])
+    monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
     monkeypatch.setattr(
         audio, "transcribe", lambda *a, **kw: pytest.fail("cached voice reprocessed")
     )

@@ -1,10 +1,11 @@
 """Read RFQ evidence. Files are read in code (app/mail/documents.py); page images go to the
 existing extraction call. Voice messages use the audio recognizer chain; transcripts are
-cached next to the file."""
+cached next to the file. Files behind safety-checked links count as attachments
+(app/mail/links.py)."""
 
 import base64
 
-from app.mail import documents
+from app.mail import documents, links
 
 
 def read_sources(mail, *, local_only=False, session_id=None):
@@ -24,6 +25,8 @@ def read_sources(mail, *, local_only=False, session_id=None):
             ]
         else:
             paths = download_attachments(mail) if mail.attachments else []
+        paths += [p for p in links.linked_files(mail, session_id, local_only=local_only)
+                  if p not in paths]  # fmt: skip
     except Exception as exc:  # noqa: BLE001 - missing source evidence blocks this request
         return (
             {},

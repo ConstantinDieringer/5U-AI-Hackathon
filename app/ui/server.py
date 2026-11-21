@@ -410,6 +410,8 @@ def api_health() -> dict[str, Any]:
             "local_enabled": settings.local_audio_enabled,
             "local_model": settings.local_audio_model,
         },
+        "thread_rescue_enabled": settings.thread_rescue_enabled,
+        "thread_rescue_model": settings.llm_rescue_model,
         "llm_max_calls_per_session": settings.llm_max_calls_per_session,
         "phishing_gate_mode": settings.phishing_gate_mode,
         "phishing_gate_llm_mode": settings.phishing_gate_llm_mode,

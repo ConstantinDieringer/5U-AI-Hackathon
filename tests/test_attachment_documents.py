@@ -240,7 +240,7 @@ def bid_mail(body="Please find our offer attached.", attachments=True):
 def test_offer_in_attachment_becomes_bid_without_model(bid_db, monkeypatch, name):
     path = bid_db / name
     path.write_bytes(TEXT_FORMATS[name]())
-    monkeypatch.setattr(bids, "_attachment_paths", lambda mail: [path])
+    monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
     monkeypatch.setattr(llm, "complete", lambda *a, **k: pytest.fail("no model call"))
     bids.on_bid_mail(bid_mail(), 3)
     offer = bids.offers(3)[-1]
@@ -250,7 +250,7 @@ def test_offer_in_attachment_becomes_bid_without_model(bid_db, monkeypatch, name
 def test_voice_offer_is_transcribed(bid_db, monkeypatch):
     path = bid_db / "offer.mp3"
     path.write_bytes(b"ID3\x04\x00" + b"\x00" * 50)
-    monkeypatch.setattr(bids, "_attachment_paths", lambda mail: [path])
+    monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
     seen = []
 
     def complete(purpose, messages, session_id, **kw):
@@ -266,7 +266,7 @@ def test_voice_offer_is_transcribed(bid_db, monkeypatch):
 def test_voice_offer_must_agree_with_mail_text(bid_db, monkeypatch):
     path = bid_db / "offer.mp3"
     path.write_bytes(b"ID3\x04\x00" + b"\x00" * 50)
-    monkeypatch.setattr(bids, "_attachment_paths", lambda mail: [path])
+    monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
     monkeypatch.setattr(llm, "complete", lambda *a, **k: "Our price is EUR 999, 2 days.")
     bids.on_bid_mail(bid_mail(OFFER), 3)
     assert bids.offers(3) == []  # 1234.50 in text vs 999 spoken: never guess
@@ -275,7 +275,7 @@ def test_voice_offer_must_agree_with_mail_text(bid_db, monkeypatch):
 def test_broken_attachment_leaves_bid_unpriced(bid_db, monkeypatch):
     path = bid_db / "offer.exe"
     path.write_bytes(b"MZ" + b"\x00" * 50)
-    monkeypatch.setattr(bids, "_attachment_paths", lambda mail: [path])
+    monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
     bids.on_bid_mail(bid_mail(OFFER), 3)
     assert bids.offers(3) == []
 
@@ -288,7 +288,7 @@ def test_waiting_surcharge_is_not_the_total(bid_db, monkeypatch):
     )
     path = bid_db / "offer.txt"
     path.write_bytes(table.encode())
-    monkeypatch.setattr(bids, "_attachment_paths", lambda mail: [path])
+    monkeypatch.setattr(bids, "_attachment_paths", lambda mail, sid=None: [path])
     bids.on_bid_mail(bid_mail(), 3)
     assert bids.offers(3)[-1].total_eur == Decimal("165.70")
 

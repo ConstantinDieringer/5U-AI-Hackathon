@@ -241,13 +241,21 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
 - Standard für Extraktion ist `gpt-5-mini`, für die Reparatur `LLM_RETRY_MODEL=gpt-5`. Beide wurden über die Gateway-Modellliste bestätigt. Explizite Umgebungswerte überschreiben diese Defaults weiterhin; Kostenpreise für `gpt-5` sind hinterlegt.
-- **Hartes Limit: max. 8 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Standard ist 8 für Extraktion/Komposition samt Reparaturen und finale Stilprüfungen. Sichere Textvorlagen und deterministische Versandprüfung bleiben Fehlerfallback.
+- **Normales Limit: max. 8 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken. Zusätzlich bekommt der ausdrücklich gewünschte Thread-Rettungsagent ein eigenes dauerhaftes Budget von `THREAD_RESCUE_MAX_CALLS=6`; ausgeschöpftes Extraktionsbudget verhindert seine Übernahme nicht. Sämtliche Calls und Kosten bleiben protokolliert. Sichere Textvorlagen und deterministische Versandprüfung bleiben Fehlerfallback.
 - `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, individueller Mailtext ≤ 750).
+  Der strukturierte Thread-Rettungsplan bekommt bis zu 1800 Output-Tokens.
   `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
 - Routing, Preisrechnung, Auswahl und Tariflookup: **kein LLM**.
 - Phishing-Gate: Regeln (Schicht A) laufen vor jeder Aktion. Nur bei „unsure" ein Call `mail_screening` mit `PHISHING_GATE_MODEL` (Standard `gpt-5-nano`), `session_id=None` (zählt nicht gegen das Session-Limit), 2 s Timeout ohne Retry, ≤ 300 Tokens, Mail als begrenzter Datenblock. Fehler oder Timeout = unsure, nie phishing. `PHISHING_GATE_MODE` off|shadow|enforce (Standard enforce, sperrt Regel-Verdikte); `PHISHING_GATE_LLM_MODE` (Standard shadow) begrenzt LLM-Verdikte.
 - Prompts als Konstanten in der jeweiligen Datei, auf Englisch, kurz.
+
+### Übernahme blockierter Threads
+
+- `THREAD_RESCUE_ENABLED=true`: `LLM_RESCUE_MODEL` übernimmt blockierte RFQs und nach `THREAD_RESCUE_AFTER_S=45` liegengebliebene Abläufe. Es entscheidet den nächsten Workflow-Schritt aus Kunden-, Carrier- und eigener Korrespondenz, Anhangauszügen, Prüfproblemen und CRM-Daten. Weitere Kundenantworten im übernommenen Thread gehen wieder an diesen Agenten. Preisrechnung und Carrier-Auswahl bleiben deterministische Werkzeuge.
+- Strukturierte Entscheidungen erlauben vollständige belegte RFQ-Korrektur, ausdrückliche Freigabe überholter semantischer Konflikte/unlesbarer Anhänge, gezielte Rückfrage, Pricing-Wiederanlauf, Angebotsfragen, Booking, Tracking, Warten oder Abschluss. Eine belegte kurze Zustimmung zur aktuellen Quote darf der Rettungsagent an den Buchungsablauf übergeben; Bedingungen, Revisionen, Fragen und ausstehende interne Freigaben bleiben gesperrt. Typen, notwendige Preisfelder, Gefahrgutprüfung, echte Preise, menschliche Pause/Übernahme, Phishing und unklarer Versand sind nicht frei überschreibbar.
+- `thread_rescue_runs(session_id, input_key, state, decision_json, updated_at)` hat den zusammengesetzten Primärschlüssel `(session_id,input_key)`. Entscheidungen werden vor Ausführung gespeichert; ein 90-Sekunden-Lease verhindert doppelte Bearbeitung und erlaubt Neustartfortsetzung. Erfolgreich geplante unveränderte Eingaben bekommen keine neue Modellentscheidung; neue Carrier-Antworten oder Geschäftsfehler erlauben eine neue Bewertung. Modellfehler können nach Lease-Ablauf im Budget erneut versucht werden. Freigaben gelten nur für den geprüften Root, Kundenstand und gespeicherten RFQ und bleiben beim Pricing erhalten.
+- Rettungsrückfragen verwenden das gemeinsame Schreibprofil und den bestehenden dauerhaften Versandpfad. Nach einer neuen Antwort ist eine neue gezielte Frage erlaubt, nie dieselbe Frage ohne neue Antwort. Der ausgeschaltete Stilprüfer bleibt ausgeschaltet.
 
 ### RFQ-Eingangsprüfung und Rückfragen
 

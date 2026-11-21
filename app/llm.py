@@ -135,7 +135,11 @@ def complete(
     """One chat completion through the gateway. Returns the message text and logs the cost.
     `model_name` overrides LLM_MODEL for configured retry, rescue and compose calls.
     `timeout_s` caps the whole call (no retry), for checks that must not delay a mail."""
-    _reserve(session_id)
+    if purpose == "thread_rescue" and session_id is not None:
+        if db.reserve_rescue_call(session_id, settings.thread_rescue_max_calls) is None:
+            raise LlmBudgetError(f"session {session_id} exhausted its thread rescue budget")
+    else:
+        _reserve(session_id)
     name = model_name or model()
     kw: dict[str, Any] = {
         "model": name,
