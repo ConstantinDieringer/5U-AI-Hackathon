@@ -343,6 +343,16 @@ def handle_reply(mail, sid, *, resume=False):
             m := re.search(rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", own, re.IGNORECASE)
         ):
             corrections[field] = m[1].upper()
+    conflicts = {
+        i["field"]
+        for i in draft.issues
+        if i.get("code") == "conflict" and i["field"] in ("weight_kg", "volume_cbm", "pieces")
+    } - corrections.keys()
+    if settings.conflict_source_answer and conflicts:
+        # round 35 (8859): "the attached packing specification is correct" names no number
+        from app.mail.rfq_validation import confirmed_source
+
+        corrections.update(confirmed_source(own, draft, conflicts))
     if settings.clarify_once:
         # free text: "CGN", "Cologne", a ZIP, "gross weight is 85 kg" (round 28's four answers)
         found = free_text_answer(own, asked, draft.facts.get("destination"))
