@@ -17,9 +17,9 @@ from app import db, hackloop
 from app.mail import poller, store, webhook
 from app.ui import server
 
-RAW = json.loads((Path(__file__).parent / "fixtures/poll_ratedesk_reply.json").read_text())[
-    "messages"
-][0]
+RAW = json.loads(
+    (Path(__file__).parent / "fixtures/poll_ratedesk_reply.json").read_text()
+)["messages"][0]
 SECRET = "unit-test-signing-key"
 
 
@@ -34,7 +34,9 @@ def client(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(webhook, "settings", cfg)
     monkeypatch.setattr(
-        server, "settings", dataclasses.replace(server.settings, ui_password="private-ui")
+        server,
+        "settings",
+        dataclasses.replace(server.settings, ui_password="private-ui"),
     )
     monkeypatch.setattr(poller, "_parent", lambda *a: None)
     monkeypatch.setattr(poller, "dispatch", lambda *a: None)
@@ -51,7 +53,9 @@ def signed(event, stamp=None, secret=SECRET):
     timestamp = str(int(time.time()) if stamp is None else stamp)
     sig = (
         "sha256="
-        + hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+        + hmac.new(
+            secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
+        ).hexdigest()
     )
     return body, {"X-Webhook-Timestamp": timestamp, "X-Webhook-Signature": sig}
 
@@ -69,12 +73,18 @@ def test_signed_ping_bypasses_ui_auth_but_not_hmac(client):
 
 @pytest.mark.parametrize("offset", [-301, 61])
 def test_reject_stale_and_future_signatures(client, offset):
-    assert post(client, {"event": "ping"}, stamp=int(time.time()) + offset).status_code == 401
+    assert (
+        post(client, {"event": "ping"}, stamp=int(time.time()) + offset).status_code
+        == 401
+    )
 
 
 def test_raw_body_signature_is_exact(client):
     body, headers = signed({"event": "ping"})
-    assert client.post(webhook.PATH, content=body + b" ", headers=headers).status_code == 401
+    assert (
+        client.post(webhook.PATH, content=body + b" ", headers=headers).status_code
+        == 401
+    )
 
 
 def test_ack_persists_without_processing_or_advancing_cursor(client, monkeypatch):
@@ -86,7 +96,10 @@ def test_ack_persists_without_processing_or_advancing_cursor(client, monkeypatch
     assert r.status_code == 202 and time.monotonic() - start < 5
     assert db.delivery_get(501)["status"] == "pending"
     assert store.get_since_id() == 0
-    assert post(client, {"event": "mail.received", "message": message(501)}).status_code == 202
+    assert (
+        post(client, {"event": "mail.received", "message": message(501)}).status_code
+        == 202
+    )
     assert db.delivery_get(501)["attempts"] == 0
 
 
@@ -99,7 +112,9 @@ def test_bad_message_and_header_id_rejected(client):
     assert db.delivery_get(5) is None
 
 
-def test_no_secret_fails_closed_and_disabled_agents_dont_accept_mail(client, monkeypatch):
+def test_no_secret_fails_closed_and_disabled_agents_dont_accept_mail(
+    client, monkeypatch
+):
     monkeypatch.setattr(
         webhook, "settings", dataclasses.replace(webhook.settings, webhook_secret="")
     )
@@ -107,9 +122,14 @@ def test_no_secret_fails_closed_and_disabled_agents_dont_accept_mail(client, mon
     monkeypatch.setattr(
         webhook,
         "settings",
-        dataclasses.replace(webhook.settings, webhook_secret=SECRET, agents_enabled=False),
+        dataclasses.replace(
+            webhook.settings, webhook_secret=SECRET, agents_enabled=False
+        ),
     )
-    assert post(client, {"event": "mail.received", "message": message(6)}).status_code == 503
+    assert (
+        post(client, {"event": "mail.received", "message": message(6)}).status_code
+        == 503
+    )
     assert post(client, {"event": "ping"}).status_code == 204
 
 
@@ -126,23 +146,38 @@ def test_queue_failure_is_not_acknowledged(client, monkeypatch):
         raise sqlite3.OperationalError("locked")
 
     monkeypatch.setattr(db, "delivery_enqueue", fail)
-    assert post(client, {"event": "mail.received", "message": message(6)}).status_code == 503
+    assert (
+        post(client, {"event": "mail.received", "message": message(6)}).status_code
+        == 503
+    )
 
 
 def test_out_of_order_and_poll_push_overlap_processed_once(client, monkeypatch):
     handled = []
     monkeypatch.setattr(poller, "dispatch", lambda mail, *args: handled.append(mail.id))
-    assert post(client, {"event": "mail.received", "message": message(502)}).status_code == 202
+    assert (
+        post(client, {"event": "mail.received", "message": message(502)}).status_code
+        == 202
+    )
     assert webhook.process_once()
-    assert post(client, {"event": "mail.received", "message": message(501)}).status_code == 202
+    assert (
+        post(client, {"event": "mail.received", "message": message(501)}).status_code
+        == 202
+    )
     monkeypatch.setattr(
         hackloop,
         "poll",
-        lambda *a, **kw: {"messages": [message(501), message(502)], "next_since_id": 502},
+        lambda *a, **kw: {
+            "messages": [message(501), message(502)],
+            "next_since_id": 502,
+        },
     )
     assert poller.poll_once(0) == (502, 2)
     assert handled == [502, 501]
-    assert db.delivery_get(502)["status"] == "done" and db.delivery_get(501)["status"] == "done"
+    assert (
+        db.delivery_get(502)["status"] == "done"
+        and db.delivery_get(501)["status"] == "done"
+    )
 
 
 def test_restart_pending_and_processing_resume(client, monkeypatch):
@@ -182,7 +217,9 @@ def test_concurrent_duplicate_ingestion_returns_one_new(client):
 
     def save():
         results.append(
-            store.save_mail(mail_from_api(message(600)), Category.PORTAL_REPLY, None).is_new
+            store.save_mail(
+                mail_from_api(message(600)), Category.PORTAL_REPLY, None
+            ).is_new
         )
 
     ts = [threading.Thread(target=save) for _ in range(2)]
@@ -237,10 +274,15 @@ def test_mailbox_requests_without_retry_header_use_30_second_wait(client, monkey
 
 
 def test_oversize_event_rejected(client):
-    assert client.post(webhook.PATH, content=b"x" * (webhook.MAX_BYTES + 1)).status_code == 413
+    assert (
+        client.post(webhook.PATH, content=b"x" * (webhook.MAX_BYTES + 1)).status_code
+        == 413
+    )
 
 
-def test_subscribe_stores_secret_privately_and_does_not_print_it(client, monkeypatch, capsys):
+def test_subscribe_stores_secret_privately_and_does_not_print_it(
+    client, monkeypatch, capsys
+):
     from app.mail import webhook_admin
 
     cfg = dataclasses.replace(webhook.settings, webhook_secret="")
@@ -248,7 +290,9 @@ def test_subscribe_stores_secret_privately_and_does_not_print_it(client, monkeyp
     monkeypatch.setattr(webhook, "settings", cfg)
 
     def absent():
-        raise hackloop.HackloopError("GET", "/v1/mailbox/webhook", 404, "not subscribed")
+        raise hackloop.HackloopError(
+            "GET", "/v1/mailbox/webhook", 404, "not subscribed"
+        )
 
     monkeypatch.setattr(hackloop, "webhook_status", absent)
     monkeypatch.setattr(hackloop, "webhook_subscribe", lambda url: {"secret": SECRET})
@@ -263,19 +307,25 @@ def test_existing_subscription_requires_intentional_rotation(client, monkeypatch
     from app.mail import webhook_admin
 
     monkeypatch.setattr(
-        webhook_admin, "settings", dataclasses.replace(webhook.settings, webhook_secret="")
+        webhook_admin,
+        "settings",
+        dataclasses.replace(webhook.settings, webhook_secret=""),
     )
     monkeypatch.setattr(
         hackloop, "webhook_status", lambda: {"url": "https://existing.invalid/hook"}
     )
     monkeypatch.setattr(
-        hackloop, "webhook_subscribe", lambda *a: pytest.fail("rotated existing subscription")
+        hackloop,
+        "webhook_subscribe",
+        lambda *a: pytest.fail("rotated existing subscription"),
     )
     with pytest.raises(ValueError, match="already exists"):
         webhook_admin.subscribe("https://our-host.invalid/hooks/mailbox")
 
 
-def test_subscribe_preserves_once_only_secret_when_activation_fails(client, monkeypatch):
+def test_subscribe_preserves_once_only_secret_when_activation_fails(
+    client, monkeypatch
+):
     from app.mail import webhook_admin
 
     cfg = dataclasses.replace(webhook.settings, webhook_secret="")
@@ -305,7 +355,9 @@ def test_subscribe_timeout_does_not_rotate_again(client, monkeypatch):
     monkeypatch.setattr(
         hackloop,
         "_client",
-        httpx.Client(base_url="https://fake.invalid", transport=httpx.MockTransport(timeout)),
+        httpx.Client(
+            base_url="https://fake.invalid", transport=httpx.MockTransport(timeout)
+        ),
     )
     with pytest.raises(hackloop.HackloopError):
         hackloop.webhook_subscribe("https://our-host.invalid/hooks/mailbox")
@@ -333,7 +385,9 @@ def test_attachment_failure_resumes_after_storage(client, monkeypatch):
 
 def test_poll_cursor_does_not_skip_uncommitted_delivery(client, monkeypatch):
     monkeypatch.setattr(
-        hackloop, "poll", lambda *a, **kw: {"messages": [message(501)], "next_since_id": 501}
+        hackloop,
+        "poll",
+        lambda *a, **kw: {"messages": [message(501)], "next_since_id": 501},
     )
 
     def locked(*args):

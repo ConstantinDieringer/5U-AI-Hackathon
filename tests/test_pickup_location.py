@@ -152,3 +152,19 @@ def test_last_pickup_falls_back_to_zip_in_earlier_mail_text():
     assert (
         db.last_pickup("rheintal-elektronik@hackloop.mail", before_session=937) is None
     )
+
+
+def test_5844_origin_from_text_when_llm_left_it_empty():
+    body = (
+        "Could you quote an all-in price in EUR for the cheapest air freight option to DEL"
+        " (Delhi, IN)?\n\nWe'll deliver the shipment to FRA ourselves. 736 kg gross."
+    )
+    m = mail(
+        5844, "lindqvist-medtech@hackloop.mail", "Air freight quote: FRA–DEL", body
+    )
+    r = agent.locate_origin(Rfq(destination="DEL", weight_kg=736), m, 5844)
+    assert r.origin == "FRA"
+    two = mail(1, "x@y.example", "FRA or MUC to DEL", "either works")
+    assert (
+        agent.locate_origin(Rfq(destination="DEL", weight_kg=1), two, 1).origin is None
+    )

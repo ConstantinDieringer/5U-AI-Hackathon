@@ -82,5 +82,7 @@ def test_both_unusable_gives_none_after_two_calls(mail, monkeypatch) -> None:
 
 
 def test_retry_respects_the_session_budget(mail, monkeypatch) -> None:
-    calls = _stub(monkeypatch, [json.dumps(BAD), rfq.llm.LlmBudgetError("no calls left")])
+    calls = _stub(
+        monkeypatch, [json.dumps(BAD), rfq.llm.LlmBudgetError("no calls left")]
+    )
     assert rfq.extract_rfq(mail, 7) is None and len(calls) == 2

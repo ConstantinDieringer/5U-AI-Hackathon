@@ -18,6 +18,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Mailbox webhooks: HMAC receiver, durable shared queue, exact-ID deduplication, restart handling, safe subscription CLI and polling backoff. 283 tests pass, 1 skipped; changed files pass Ruff and Python 3.11 syntax parsing (tests ran on local Python 3.12). Provider GET returned no subscription; deployment and live push verification remain outstanding.
 
 - History-first follow-up policy implemented on the existing validation lifecycle: unique same-thread facts can resolve gaps without another mail; incomplete replies trigger targeted follow-ups with cumulative corrections. Durable reply ledger/restart replay, sender checks, booking/tracking questions and default enforce mode added. Original deadlines and human controls retained.
+- Slack #sos alerts (`app/ui/alerts.py`, SLACK_SOS_WEBHOOK): no quote possible, expired, 5U verdict not accepted, program errors, 15 min without mail. Once per session and kind, with console link. Needs the webhook set in Railway.
 - Pricing review (round 20 too_high): 5 trucker requests had used every bid slot, so no airline was asked. Truckers now have their own cap (MAX_TRUCKER_BIDS). CRM tab "Preise" lists all options, truck, bids and verdict per RFQ. PRICE_ADJUST_PCT (default 0) is an untested lever.
 - RFQ validation: current-message evidence and attachment checks, additive durable clarification state, one outstanding question at a time, reply routing before booking, deadline/pause/restart protections; `RFQ_VALIDATION_MODE=enforce` is the default, with explicit `shadow` available for diagnostics/rollback.
 - RFQ validation verification: 257 tests passed, 1 existing test skipped; relevant Ruff checks pass. Read-only local replay covered 18 sessions but no stored extractions, so no live extraction accuracy claim or production activation. Integrated the latest API-cost/pickup-note changes; enforce never prices an assumed pickup.
@@ -116,6 +117,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 18:15: Tracking answers are now prose that says where the cargo is (still at the shipper before the ready date, planned departure/arrival from `rfq.schedule`), greet the asker by first name (`app/mail/signature.py`), 4 variants per language, team style kept; tracking sessions end as `answered`. Replayed on real mails 1677/1850/2252; bonus not yet verified on the board. Karim's rules cross-check and last-resort commits are NOT merged: they overlap `rfq_validation`.
 
 - 21.11: Webhook merge integrated main's history-first clarification, tracking reply routing, enforce default and trucker pricing changes; conflicts resolved without reverting them. Combined verification: 292 tests passed, 1 skipped; targeted Ruff checks pass.
 
