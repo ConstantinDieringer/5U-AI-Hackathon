@@ -1,19 +1,23 @@
-# 5U AI Hackathon — START HACK Munich 2026
+# 5U AI Hackathon: Team Austrian Power
 
-We are building a digital air forwarder for the 5U AI challenge: an autonomous system that reads one mailbox, routes every mail, prices air export RFQs (rate sheets, rate portal, carrier bids), quotes, books by rate ID and answers tracking questions.
+A digital air freight forwarder for the 5U AI challenge (START HACK Munich 2026).
 
-**Full challenge context:** [docs/CHALLENGE.md](docs/CHALLENGE.md) — read it before designing or changing anything.
-**Technical spec (binding):** [docs/TECH_SPEC.md](docs/TECH_SPEC.md) — read and follow it before writing any code.
+**Technical spec (binding):** [docs/TECH_SPEC.md](docs/TECH_SPEC.md). Read and follow it before writing any code.
 
-Original PDFs: [docs/5U-AI-challenge-brief.pdf](docs/5U-AI-challenge-brief.pdf), [docs/5U-AI-challenge-deep-dive.pdf](docs/5U-AI-challenge-deep-dive.pdf).
+## Before every task
 
-## Key constraints
+Read all five files in `context/`:
 
-- New RFQ every 6 min, expires after 6 min. Full time points only within 2 min.
-- Quote = one option (cheapest or fastest, as requested), one all-in total with currency, reply in the customer's thread; only the first quote counts.
-- Accepted only within 5 % of the best price. Carrier bids: pick the most balanced (price/speed 50/50).
-- LLM calls only via the 5U gateway (OpenAI models). Cost score is zero at 0.10 USD per quote; a quote with no gateway call earns no cost points.
-- Rate portal is rate limited; rate IDs valid 15 min.
-- Setup changes ~hourly without notice — build tolerant parsers and good logging.
-- Required components: router + up to 3 agents (RFQ/booking, tracking, tariff ingestion), pricing module, CRM with dashboard, sessions UI with streaming and human intervention.
-- Judged also on pitch, UX/design, codebase quality and how human the emails read.
+1. `context/project-overview.md`: what we build, what 5U provides, rules, scoring
+2. `context/code-standards.md`: implementation rules
+3. `context/ui-context.md`: design principles and screens
+4. `context/ai-workflow-rules.md`: workflow, scoping, verification
+5. `context/progress-tracker.md`: current state, next steps, open questions
+
+Follow `context/ai-workflow-rules.md`.
+
+`context/architecture-context.md` does not exist yet. It will be added once the architecture and stack are decided, and from then on it must be read too.
+
+Update `context/progress-tracker.md` after each meaningful change. If an implementation changes scope, standards or architecture, update the relevant context file before continuing.
+
+Challenge sources: [docs/CHALLENGE.md](docs/CHALLENGE.md) and the PDFs in `docs/`.
