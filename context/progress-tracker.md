@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- B merge integration: preserved main's booking/tracking, language/date replies, served-lane refusals and portal next-weight-break optimisation alongside tariff/FX/429/503 hardening; 161 tests pass on the combined code.
+
 - B hardening: durable tariff worker and reusable monthly parsers (text/table + gateway image transcription), atomic runtime data, dataset/board alerts, bounded portal 429 waits and known-carrier 503 fallback.
 - B pricing: explicit expiring EUR/USD conversion for sheets/bids, original amounts and breakpoint audit retained; `python -m app.pricing.audit` joins board evidence. Scorer breakpoint semantics remain unconfirmed; existing default preserved.
 - B verification: 118 tests pass, including isolated full-app startup, 158 kit lanes, monthly reload, replay and 429/503; targeted Ruff checks/formatting pass. No live restart or live image-model extraction performed; authoritative production instance still needs identification.
@@ -38,7 +40,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## In Progress
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
-- Task A, Karim: A1–A8 done. 16:21 PR #5 (Constantin's RFQ agent + bids) merged into main, local `a/rfq-agent` retired; live app now runs main. Next: booking agent, restart resume.
+- Task A, Karim: A1–A8 done. 16:21 PR #5 (Constantin's RFQ agent + bids) merged into main, local `a/rfq-agent` retired; live app now runs main. 16:30 booking agent live (`app/agents/booking.py`): 3 bookings confirmed by the airlines. Next: restart resume for RFQs, tracking agent (C).
 - PR #4 (UI restyle) NOT merged: it conflicts with Moritz's console redesign 299faf2 on main. Moritz + Constantin decide.
 - Task B, Constantin: B1–B7 in PR #2 (pricing, portal, lanes, reference, dataset_version); next door-to-port trucking, bid selection, tariff mails.
 
@@ -91,6 +93,16 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 16:50: Every email-only airline asked so far declined ("We do not serve this lane", 19 mails). `app/pricing/served_lanes.py` keeps each airline's "We fly ..." list (kv, 1 h TTL, backfilled at startup) and we skip airlines that don't fly the lane. A decline now counts as an answer, so we no longer wait the full 100 s for bids that never come.
+
+- 21.11 16:45: Quote now answers "earliest departure and arrival" (ready date, +1 day for door pickup, + transit), de/en, no LLM; test with real mail 1628.
+
+- 21.11 16:45: Tracking questions name no reference ("Weidner Spielwaren GmbH, STR to EZE, 1228 kg, ready on 2026-11-26"). Tracking match now also uses the weight and asks for the BK reference on a tie instead of guessing.
+
+- 21.11 16:35: Tracking agent live (2c5e9dd, not yet seen a real tracking mail). Quote language now from function words (83b6884): the LLM had tagged 3/6 English RFQs as German. Round 6 booked live 26 s after the quote.
+
+- 21.11 16:30: Booking agent live. Board counts round 5 as booked; rounds 2+3 (booked 20 min late, rate re-fetched) show booked=false. Book fast. `kill` alone does not stop run.py while the UI has an SSE client open: use `kill -9` or close the UI first.
 
 - 21.11 16:20: Round 4 (mail 937) lost: LLM gave ICAO origin `EDDL`, Rfq rejected it. Fixed (9b068ab: ICAO→IATA, bad origin dropped when a ZIP is given). Round 2 acceptance (mail 618) not booked: no booking agent yet.
 

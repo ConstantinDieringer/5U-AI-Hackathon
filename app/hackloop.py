@@ -247,6 +247,18 @@ def get_rate(
     return _json_obj(resp)
 
 
+def book(rate_id: str, team_reference: str) -> dict[str, Any]:
+    """Book a portal rate. 201 = booked, 200 = same booking again (idempotent).
+    404/409/410/503 raise HackloopError (status + detail; 503 says how to book by email)."""
+    return _json_obj(
+        _request(
+            "POST",
+            "/v1/portal/bookings",
+            json={"rate_id": rate_id, "team_reference": team_reference},
+        )
+    )
+
+
 # ---------------------------------------------------------------- board
 
 

@@ -40,6 +40,7 @@ class Settings:
     usd_eur_rate: str
     usd_eur_valid_until: str
     use_breakpoints: bool
+    served_lanes_ttl_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -73,4 +74,5 @@ settings = Settings(
     usd_eur_rate=_env("USD_EUR_RATE"),
     usd_eur_valid_until=_env("USD_EUR_VALID_UNTIL"),
     use_breakpoints=_env("USE_BREAKPOINTS", "true").lower() == "true",
+    served_lanes_ttl_s=float(_env("SERVED_LANES_TTL_S", "3600")),
 )

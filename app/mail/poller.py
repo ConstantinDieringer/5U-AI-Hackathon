@@ -86,9 +86,29 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
             name=f"rfq-{session_id}",
             daemon=True,
         ).start()
-    elif category == Category.CARRIER_BID:
-        from app.agents import bids
+    elif category == Category.TRACKING:
+        from app.agents import tracking
 
+        threading.Thread(
+            target=tracking.handle,
+            args=(mail, session_id),
+            name=f"track-{mail.id}",
+            daemon=True,
+        ).start()
+    elif category == Category.CUSTOMER and session_id is not None:
+        from app.agents import booking
+
+        threading.Thread(
+            target=booking.handle_reply,
+            args=(mail, session_id),
+            name=f"book-{session_id}",
+            daemon=True,
+        ).start()
+    elif category == Category.CARRIER_BID:
+        from app.agents import bids, booking
+
+        if booking.on_airline_mail(mail):  # "Booking BK-… confirmed" is not a bid
+            return
         bids.on_bid_mail(mail, session_id)
 
 

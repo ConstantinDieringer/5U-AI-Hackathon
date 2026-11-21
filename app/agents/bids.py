@@ -19,6 +19,7 @@ from decimal import Decimal, InvalidOperation
 from app import db, hackloop
 from app.mail.router import address
 from app.models import Mail, RateOption, Rfq
+from app.pricing import served_lanes
 from app.pricing.pricing import money, to_minor
 from app.pricing.reference import Carrier, carrier_by_email
 
@@ -56,6 +57,7 @@ class Offer:
 class _Request:
     asked: dict[str, Carrier] = field(default_factory=dict)  # email -> carrier
     offers: list[Offer] = field(default_factory=list)
+    declined: set[str] = field(default_factory=set)  # emails that said "we do not serve"
 
 
 _open: dict[int, _Request] = {}
@@ -192,6 +194,18 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
     if sid is None or carrier is None:
         log.warning("bid mail %s: no session or unknown carrier, ignored", mail.id)
         return
+    refusal = served_lanes.parse_refusal(mail.body or "")
+    if refusal is not None:
+        served_lanes.remember(carrier.email, refusal, at=mail.received_at or None)
+        with _cond:
+            _open.setdefault(sid, _Request()).declined.add(carrier.email)
+            _cond.notify_all()
+        db.emit(
+            "bid_declined",
+            f"{carrier.name} fliegt {refusal.lane} nicht ({len(refusal.served)} Lanes gemerkt)",
+            sid,
+        )
+        return
     price = parse_price(mail.body or "")
     if price is None:
         db.emit(
@@ -261,7 +275,8 @@ def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None)
         if until_kinds is not None:
             have = {o.carrier.kind for o in req.offers}
             return until_kinds <= have
-        return len({o.carrier.email for o in req.offers}) >= len(req.asked)
+        answered = {o.carrier.email for o in req.offers} | req.declined
+        return answered >= set(req.asked)
 
     with _cond:
         _cond.wait_for(done, timeout=max(0.0, timeout_s))

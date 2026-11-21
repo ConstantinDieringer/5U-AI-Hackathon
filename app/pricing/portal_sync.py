@@ -27,7 +27,7 @@ from typing import Any
 
 from app.config import settings
 from app.models import RateOption, Rfq
-from app.pricing.pricing import money, resolve_origin, to_minor
+from app.pricing.pricing import chargeable_kg, money, resolve_origin, to_minor
 
 log = logging.getLogger(__name__)
 
@@ -279,21 +279,35 @@ def portal_result(
         schedule_refresh()
         fetch = lambda *args: hackloop.get_rate(*args, deadline=deadline)
     dest = rfq.destination.upper()
-    keys: list[CacheKey] = [
-        (origin, dest, a["code"], float(rfq.weight_kg), float(rfq.volume_cbm))
-        for a in portal_airlines(origin, dest)
-    ]
+    weight, volume = float(rfq.weight_kg), float(rfq.volume_cbm)
+    keys: list[CacheKey] = []
+    for a in portal_airlines(origin, dest):
+        keys.append((origin, dest, a["code"], weight, volume))
+        nb = next_break(a["code"], chargeable_kg(weight, volume))
+        if nb is not None and settings.use_breakpoints:  # next break can be cheaper
+            keys.append((origin, dest, a["code"], nb, volume))
     if not keys:
         return result
     with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL, len(keys))) as pool:
         results = list(pool.map(lambda k: _one_rate(fetch, k, result), keys))
-    result.options = [r for r in results if r is not None]
-    # A detected version transition is picked up on the next request's background refresh.
+    best: dict[str, RateOption] = {}  # per airline the cheaper of exact weight / next break
+    for r in results:
+        if r is not None and (
+            r.airline not in best or r.total_eur_minor < best[r.airline].total_eur_minor
+        ):
+            best[r.airline] = r
+    result.options = list(best.values())
     return result
 
 
 def portal_options(rfq: Rfq, fetch: RateFetcher | None = None) -> list[RateOption]:
     return portal_result(rfq, fetch).options
+
+
+def next_break(code: str, chargeable: Decimal) -> float | None:
+    """The airline's lowest weight break above the chargeable weight (portal brackets)."""
+    above = [b for b in load_portal_lanes().get("brackets", {}).get(code, []) if b > chargeable]
+    return float(min(above)) if above else None
 
 
 if __name__ == "__main__":

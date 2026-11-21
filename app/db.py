@@ -592,6 +592,17 @@ def list_unassigned(limit: int = 100) -> list[dict[str, Any]]:
     )
 
 
+def incoming_mails_containing(text: str, limit: int = 1000) -> list[dict[str, Any]]:
+    """Incoming mails whose body contains `text` (case-insensitive), oldest first."""
+    return _rows(
+        conn().execute(
+            "SELECT id, sender, body, received_at FROM mails"
+            " WHERE direction = 'in' AND instr(lower(body), lower(?)) > 0 ORDER BY id LIMIT ?",
+            (text, limit),
+        )
+    )
+
+
 def set_status(session_id: int, status: str, reason: str | None = None) -> None:
     with tx() as c:
         c.execute(
@@ -853,6 +864,25 @@ def update_booking_status(reference: str, status: str) -> int | None:
             )
         _emit(c, Ev.BOOKED, f"Buchung {reference}: {status}", r["session_id"])
         return int(r["session_id"])
+
+
+def tracking_records() -> list[dict[str, Any]]:
+    """Every booking with what the tracking agent may tell: customer, subject, the request
+    (JSON) and the first quote (route, transit days). Newest first."""
+    rows = _rows(
+        conn().execute(
+            "SELECT b.session_id, b.team_reference, b.booking_reference, b.rate_id, b.airline,"
+            " b.price_minor, b.currency, b.status, b.created_at AS booked_at, b.updated_at,"
+            " s.customer, s.subject, s.request_json,"
+            " q.origin, q.destination, q.transit_days"
+            " FROM bookings b JOIN sessions s ON s.id = b.session_id"
+            " LEFT JOIN quotes q ON q.id = (SELECT MIN(id) FROM quotes WHERE session_id = s.id)"
+            " ORDER BY b.created_at DESC"
+        )
+    )
+    for r in rows:
+        r["request"] = json.loads(r.pop("request_json")) if r.get("request_json") else {}
+    return rows
 
 
 def find_booking(
