@@ -256,6 +256,8 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Kundenmails: Euro als €, keine Klammerzusätze oder internen Feld-/Spaltennamen. Termine mit ausgeschriebenem Monatsnamen (`24. November 2026` / `24 November 2026`), kurze Absätze und freundliche vollständige Sätze. Composer-Ausgaben werden auf diese Darstellung geprüft und bei Verstößen repariert; Angebots-, Rückfrage-, Buchungs- und Trackingvorlagen berücksichtigen dieselben Regeln. API-/CRM-Werte und technische IDs bleiben unverändert.
+
 - Gespeicherte kundenbezogene Carrier-Ausschlüsse gelten für Carrier-Anfragen, Auswahl,
   Notfallentwurf und Buchung. Ausgeschlossene Carrier werden vor dem Anfrage-Limit entfernt.
   Angebote nennen den ausgewählten Carrier; angewandte Ausschlüsse bei Bedarf allgemein
