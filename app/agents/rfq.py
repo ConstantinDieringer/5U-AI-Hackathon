@@ -28,7 +28,7 @@ from app import db, hackloop, llm
 from app.agents import bids
 from app.config import settings
 from app.mail import language, lots, parse
-from app.mail.style import SIGNATURE, amount
+from app.mail.style import SIGNATURE, amount, has_template_artifacts
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
@@ -302,6 +302,8 @@ def quote_text(
     """The quote mail: one all-in total with its currency, in the customer's language."""
     lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
     name = rfq.customer_name
+    if name and has_template_artifacts(name):
+        name = None
     price = _amount(total_eur_minor, lang)
     days = option.transit_days
     valid = _valid(option)
@@ -373,6 +375,10 @@ COMPOSE_PROMPT = (
     "Use € for euros and the supplied number format. Never use dash punctuation or dash lists; "
     "write routes with to/nach. Keep hyphens inside IDs and dates. End with a blank line and "
     "exactly Your austrian Power Team, with no other sign-off or complimentary close. "
+    "Return only the email body, never a Subject/Betreff/From/To header. Never include template "
+    "placeholders such as [Your Name], [Your Company], {company}, or <name>. If a name is "
+    "unknown, use a generic greeting. The sender is Your austrian Power Team; do not invent "
+    "a sender name or company. "
     "Answer every indexed customer question when the facts support it; otherwise explicitly say "
     "that detail is not yet available. Do not promise services absent from the facts. Return JSON "
     "with question and constraint coverage lists; each pair of index lists must together cover "
@@ -456,6 +462,12 @@ def compose_quote_text(
     when = schedule(rfq, option.transit_days, today)
     facts = {
         "language": lang,
+        "sender_signature": SIGNATURE,
+        "customer_name": (
+            rfq.customer_name
+            if rfq.customer_name and not has_template_artifacts(rfq.customer_name)
+            else None
+        ),
         "exact_all_in_price": price,
         "origin": option.origin,
         "destination": option.destination,
@@ -501,6 +513,8 @@ def compose_quote_text(
         expected_constraints = set(range(len(rfq.service_constraints)))
         if not isinstance(body, str) or not body.strip():
             raise ValueError("empty body")
+        if has_template_artifacts(body):
+            raise ValueError("answer contains an unfilled template field or mail header")
         coverage_lists = (
             answered,
             unavailable,

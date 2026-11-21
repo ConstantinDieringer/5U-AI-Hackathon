@@ -25,7 +25,7 @@ from app import db, hackloop
 from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
-from app.mail.style import SIGNATURE, amount
+from app.mail.style import SIGNATURE, amount, has_template_artifacts
 from app.models import Mail
 from app.pricing.pricing import to_minor
 from app.pricing.reference import airline_email
@@ -166,6 +166,8 @@ def _book_by_email(sid: int, quote: dict[str, Any], request: dict[str, Any], to:
 
 
 def _confirmation(lang: str, name: str | None, quote: dict[str, Any], booking_ref: str) -> str:
+    if name and has_template_artifacts(name):
+        name = None
     price = amount(quote["total_minor"], quote["currency"])
     connector = "nach" if lang == "de" else "to"
     route = f"{quote['origin']} {connector} {quote['destination']}"

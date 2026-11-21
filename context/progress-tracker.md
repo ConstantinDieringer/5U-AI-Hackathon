@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Mail template guard: generated RFQ bodies reject unfilled placeholders and embedded mail headers, falling back to verified copy; placeholder customer names use a generic greeting. Observed live mail 3495 still used pre-style-fix output, so production rollout requires confirmation.
 - Mail style: quotes, booking confirmations/requests, carrier bids and tracking replies use `€`, no dash punctuation/lists, and only `Your austrian Power Team` as sign-off. Shared integer-cent formatter; API currency codes and reference IDs unchanged.
 - RFQ optimisation: questions/constraints survive extraction with one repair attempt; fact-bounded
   responses enforce one EUR total and complete coverage. Carrier fan-out is capped at 5, incomplete
