@@ -120,7 +120,9 @@ def _reserve(session_id: int | None) -> None:
     if session_id is None:
         return
     if db.reserve_llm_call(session_id, MAX_CALLS_PER_SESSION) is None:
-        raise LlmBudgetError(f"session {session_id} already made {MAX_CALLS_PER_SESSION} LLM calls")
+        raise LlmBudgetError(
+            f"session {session_id} already made {MAX_CALLS_PER_SESSION} LLM calls"
+        )
 
 
 def complete(
@@ -141,7 +143,9 @@ def complete(
         "max_completion_tokens": max_tokens,
     }
     if _is_reasoning(name):
-        kw["reasoning_effort"] = "minimal"  # reasoning usage still counts within output tokens
+        kw["reasoning_effort"] = (
+            "minimal"  # reasoning usage still counts within output tokens
+        )
     else:
         kw["temperature"] = 0
     if response_format is not None:

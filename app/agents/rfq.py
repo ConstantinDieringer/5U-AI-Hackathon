@@ -28,7 +28,7 @@ from app import db, hackloop, llm
 from app.agents import bids
 from app.config import settings
 from app.mail import language, lots, parse
-from app.mail.style import SIGNATURE, amount, has_template_artifacts
+from app.mail.style import SIGNATURE, TEAM_LINE, amount, has_template_artifacts
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
@@ -518,22 +518,9 @@ def _fallback_with_coverage(
     variant: int,
     today: date | None,
 ) -> str:
-    body = quote_text(rfq, option, total_eur_minor, truck, variant, today)
-    if not rfq.customer_questions and not rfq.service_constraints:
-        return body
-    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
-    if lang == "de":
-        note = (
-            "Für alle angefragten Details, die oben nicht ausdrücklich bestätigt sind, "
-            "liegen uns noch keine verifizierten Angaben vor."
-        )
-    else:
-        note = (
-            "Verified information is not yet available for any requested detail that is not "
-            "explicitly confirmed above."
-        )
-    closing = f"\n\n{SIGNATURE}"
-    return body.replace(closing, f"\n\n{note}{closing}", 1)
+    # no generic "verified information is not yet available" line: it reads like a bot and
+    # the quote itself already states every verified fact
+    return quote_text(rfq, option, total_eur_minor, truck, variant, today)
 
 
 def with_pickup_note(body: str, rfq: Rfq) -> str:
@@ -578,7 +565,7 @@ def compose_quote_text(
     when = schedule(rfq, option.transit_days, today)
     facts = {
         "language": lang,
-        "sender_signature": SIGNATURE,
+        "sender_signature": TEAM_LINE,
         "customer_name": (
             rfq.customer_name
             if rfq.customer_name and not has_template_artifacts(rfq.customer_name)
@@ -654,8 +641,8 @@ def compose_quote_text(
         if body.count(price) != 1 or body.count("€") != 1 or "EUR" in body.upper():
             raise ValueError("answer must contain exactly the verified EUR total")
         if (
-            not body.rstrip().endswith(f"\n\n{SIGNATURE}")
-            or body.count(SIGNATURE) != 1
+            not body.rstrip().endswith(f"\n\n{TEAM_LINE}")
+            or body.count(TEAM_LINE) != 1
             or re.search(r"[–—]|\s-\s|(?m:^-\s)", body)
             or re.search(
                 r"best regards|kind regards|viele gr[üu]ße|thank you,",
@@ -664,7 +651,8 @@ def compose_quote_text(
             )
         ):
             raise ValueError("answer does not follow the team mail style")
-        return body.rstrip() + "\n"
+        # the model signs with the team line only; code adds the signer's name above it
+        return body.rstrip()[: -len(TEAM_LINE)] + SIGNATURE + "\n"
     except Exception as e:  # noqa: BLE001 - quote has a safe deterministic fallback
         log.warning("session %s: using deterministic quote copy (%s)", session_id, e)
         return fallback

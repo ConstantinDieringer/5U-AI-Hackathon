@@ -245,7 +245,9 @@ def init_db(path: str | None = None) -> None:
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     with tx() as migration:
-        columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
+        columns = {
+            row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")
+        }
         if "accounting_json" not in columns:
             migration.execute("ALTER TABLE llm_calls ADD COLUMN accounting_json TEXT")
     remap_unassigned()
@@ -1210,7 +1212,9 @@ def record_llm_call(
 
 def session_llm_usage(session_id: int) -> dict[str, Any]:
     calls = _rows(
-        conn().execute("SELECT * FROM llm_calls WHERE session_id = ? ORDER BY id", (session_id,))
+        conn().execute(
+            "SELECT * FROM llm_calls WHERE session_id = ? ORDER BY id", (session_id,)
+        )
     )
     incomplete = 0
     for call in calls:
@@ -1224,7 +1228,9 @@ def session_llm_usage(session_id: int) -> dict[str, Any]:
         "input_tokens": sum(c["prompt_tokens"] or 0 for c in calls),
         "output_tokens": sum(c["completion_tokens"] or 0 for c in calls),
         "known_cost_micro_usd": sum(c["cost_micro_usd"] for c in calls),
-        "total_micro_usd": None if incomplete else sum(c["cost_micro_usd"] for c in calls),
+        "total_micro_usd": None
+        if incomplete
+        else sum(c["cost_micro_usd"] for c in calls),
         "incomplete_calls": incomplete,
         "legacy_calls": sum(c["accounting"] is None for c in calls),
     }

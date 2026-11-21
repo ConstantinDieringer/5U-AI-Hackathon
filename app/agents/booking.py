@@ -25,7 +25,7 @@ from app import db, hackloop
 from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
-from app.mail.style import SIGNATURE, amount, has_template_artifacts
+from app.mail.style import SIGNATURE, amount, booked_joke, has_template_artifacts
 from app.models import Mail
 from app.pricing.pricing import to_minor
 from app.pricing.reference import airline_email
@@ -186,6 +186,7 @@ def _confirmation(
             f"Buchungsnummer: {booking_ref}\n"
             f"Strecke: {route} mit {quote['airline']}\n"
             f"Preis: {price} all-in\n\n"
+            f"{booked_joke('de', booking_ref)}\n\n"
             "Wir melden uns, sobald es Neuigkeiten gibt. Bei Fragen zum Status "
             "antworten Sie einfach auf diese Mail.\n\n"
             f"{SIGNATURE}\n"
@@ -196,6 +197,7 @@ def _confirmation(
         f"Booking reference: {booking_ref}\n"
         f"Route: {route} with {quote['airline']}\n"
         f"Price: {price} all-in\n\n"
+        f"{booked_joke('en', booking_ref)}\n\n"
         "We'll keep you posted. If you have any questions about the status, just reply "
         "to this mail.\n\n"
         f"{SIGNATURE}\n"

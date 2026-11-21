@@ -288,12 +288,9 @@ def test_composer_requires_question_coverage_and_one_verified_total(
             }
         ),
     )
-    assert (
-        rfq.compose_quote_text(
-            request, option, 320358, None, 7, today=datetime(2026, 11, 21).date()
-        )
-        == body
-    )
+    assert rfq.compose_quote_text(
+        request, option, 320358, None, 7, today=datetime(2026, 11, 21).date()
+    ) == body.replace("Your austrian Power Team", "Moritz\nYour austrian Power Team")
 
     monkeypatch.setattr(
         rfq.llm,
@@ -310,7 +307,7 @@ def test_composer_requires_question_coverage_and_one_verified_total(
     )
     fallback = rfq.compose_quote_text(request, option, 320358, None, 7)
     assert _amounts(fallback) == ["3.203,58 €"]
-    assert "not yet available" in fallback
+    assert "not yet available" not in fallback
 
 
 # ---------------------------------------------------------------- whole flow
