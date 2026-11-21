@@ -13,6 +13,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Pre-booking answers (`PREBOOK_ANSWER`, default off, PR open): a reply to our quote that only asks about the quoted option (round 54 style) is answered from the stored quote with a go-ahead question and never booked; rules only, no LLM review, shares `FOLLOWUP_MAX` with the nudges; "book the faster one instead" after it never books. Reply replay: stored replies identical off/on, 19/19 injected round-54 questions answered and booked on the next yes, 0 worse. Not verified live.
+- Round 60 cause not provable without its thread. Strongest offline lead: "Yes", "Ja", "OK", "I confirm", "That works" are `unclear` today (same clarification twice, then silence, never booked) although our nudge asks for "a short yes"; a question containing "not"/"nicht" counts as a decline. Yes rule unchanged pending a decision.
+
 - Round 56 customer will check whether booking can proceed: current keyword rule still returned acceptance. The shared consent guard now also recognizes pending EN/DE internal approval checks; positive past checks followed by an explicit booking order remain valid. Existing booking/price-change flows reuse it; no live booking triggered.
 
 - Strict customer prose v4 closes the unchecked all-excluded notice and subject paths, including followups without an LLM review. Independent final assertions reject punctuation, including Unicode/HTML variants, and unresolved EUR/numeric dates/zero fractions; transmitted subject/body are stored, reply IDs retain threading. Reviewer acceptance instructions tightened. Integrated Python 3.11 suite: 742 passed/4 skipped; wire tests include a misbehaving reviewer and failed renderer. Existing v3 deployment verified active; v4 rollout pending.

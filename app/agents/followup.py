@@ -153,8 +153,14 @@ def _due_offer(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
     replies = [m for m in after_quote if m["direction"] == "in"]
     if any(booking._DECLINE.search(booking.own_text(str(m["body"] or ""))) for m in replies):
         return None  # explicit decline: never nudge again ("not sure yet" is no decline)
+    from app.agents import prebook
+
     sent = sum(1 for m in conv if m["direction"] == "out" and m.get("category") == CATEGORY)
-    if sent >= settings.followup_max:
+    # our answers to pre-booking questions share the cap: never more than FOLLOWUP_MAX mails
+    answers = sum(
+        1 for m in conv if m["direction"] == "out" and m.get("category") == prebook.CATEGORY
+    )
+    if sent + answers >= settings.followup_max:
         return None
     last = conv[-1]
     if last["direction"] == "in" and booking.is_acceptance(str(last["body"] or "")) is True:
