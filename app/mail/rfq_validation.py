@@ -14,6 +14,14 @@ _PICKUP = re.compile(
     r"arrange.{0,30}(?:truck|pickup|collection)|including truck pickup|pickup is|pick.?up from|from our (?:site|warehouse|plant)|abholung|vorlauf",
     re.IGNORECASE,
 )
+# the customer brings the goods to the airport: "no need to arrange pickup" must not count as
+# a pickup request (round 7237 asked for a ZIP four times although Weidner self-delivered)
+_NO_PICKUP = re.compile(
+    r"no need (?:for|to arrange) (?:a |any )?(?:pick.?up|truck|collection)|no pick.?up|without pick.?up"
+    r"|(?:deliver|bring|drop|tender)[^\n.!?]{0,80}\b(?:ourselves|myself)\b|keine abholung"
+    r"|selbst (?:zum|an den) flughafen|(?:liefern|bringen)[^\n.!?]{0,80}\bselbst\b",
+    re.IGNORECASE,
+)
 _SIGNATURE = re.compile(
     r"\n\s*(?:best greetings|cheers|regards|thanks a lot|mit freundlichen|viele gr|many greetings)",
     re.IGNORECASE,
@@ -114,7 +122,7 @@ def validate(
     data["pickup_city"] = None
     data["pickup_assumed"] = False
     combined = "\n".join(sources.values())
-    pickup = bool(_PICKUP.search(active))
+    pickup = bool(_PICKUP.search(active)) and not _NO_PICKUP.search(active)
     zip_match = re.search(r"\b(?:D-)?(\d{5})\b", active)
     current_area = find_area(active) if pickup else None
     attachment_shipper_cities = set()
