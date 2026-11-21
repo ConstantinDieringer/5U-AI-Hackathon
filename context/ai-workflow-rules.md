@@ -2,66 +2,41 @@
 
 ## Approach
 
-Build incrementally and spec-driven. The context files say what to build, how to build it, and where progress stands. Implement against them, and do not infer or invent behavior from scratch.
+Build incrementally and spec-driven. Implement against the context files; do not infer or invent behavior from scratch.
 
-## Context Files
+## Context Loading
 
-- These files are read on every prompt, so keep each one short. Record an outcome in one or two lines, never as a test log.
-- Until `architecture-context.md` exists, do not pick a stack, a framework, a library or a folder structure on your own: ask.
+- Read only what the task needs: the always-read core plus the matching rows of the routing table in `CLAUDE.md`.
+- Prefer `grep` over full reads for TECH_SPEC, design docs, research notes and `context/history/`.
+- When code and docs disagree, the code plus `app/config.py` describe the actual state; fix the doc (or add an open question) in the same change.
+
+## Context Hygiene (keeps every task fast)
+
+- Always-read files have byte budgets in `tests/test_context_budget.py`; a change that exceeds them must move content out, not raise the budget.
+- Progress tracker: current state only, one or two lines per entry, section limits as stated in the file. Overflow moves verbatim to `context/history/progress-log.md`.
+- Area files describe current behavior, not how we got there. Replace outdated lines instead of appending; history goes to `context/history/`.
+- Never paste test logs, replay tables or round-by-round narratives into context files; put them in the commit or PR.
 
 ## Scoping Rules
 
-- Work on one feature unit or subsystem at a time.
-- Prefer small, verifiable increments over large speculative changes.
-- Do not combine unrelated system boundaries in one step.
-
-## When To Split Work
-
-Split a step if it combines:
-
-- mail ingestion and pricing logic
-- the pricing engine and LLM prompts
-- a background worker and the UI
-- more than one external integration (mailbox, portal, gateway)
-- behavior that the context files do not clearly define
-
-If a change cannot be verified end to end quickly, the scope is too broad, so split it.
+- Work on one feature unit or subsystem at a time; prefer small, verifiable increments.
+- Split a step if it combines: mail ingestion and pricing logic; the pricing engine and LLM prompts; a background worker and the UI; more than one external integration; behavior the context files do not clearly define.
+- If a change cannot be verified end to end quickly, the scope is too broad.
 
 ## Handling Missing Requirements
 
-For missing or seriously unclear information that prevents continuing a live mail workflow, first inspect earlier customer mail in the same shipment thread and the CRM. Reuse only unambiguous facts for that shipment; never copy another shipment's cargo or infer booking consent from an old approval. If the gap remains, ask the relevant person a specific question in the existing thread before abandoning the workflow. Persist the question, continue from the reply and ask again if the new answer is still incomplete. Never repeat a question without a new incoming answer. Pause/manual control, explicit rejection, delivery uncertainty and the original challenge deadline remain authoritative.
-
 - Do not invent product behavior that the context files do not define.
-- If a requirement is ambiguous, resolve it in the relevant context file before implementing.
-- If a requirement is missing, add it as an open question in `progress-tracker.md` before continuing.
+- Ambiguous requirement: resolve it in the relevant area file before implementing.
+- Missing requirement: add an open question to `progress-tracker.md` before continuing.
+- Live mail workflows follow the history-first clarification policy in `context/areas/rfq.md`.
 
 ## Verification
 
-- Verify each unit end to end against the real mailbox or portal when possible.
+- Verify each unit end to end against the real mailbox or portal when possible; behavior changes run the replay (`python -m app.agents.rfq_replay`).
 - Note in one line what was not verified.
-
-## When Quotes Start Failing
-
-The setup changes about once an hour, without notice. When quotes fail:
-
-1. Check our logs and the leaderboard first (`GET /v1/board/me` gives the verdict and reason code for each request).
-2. Find what changed.
-3. Fix the root cause.
-4. Note the change in the Session Notes of `progress-tracker.md`.
-
-## Keeping Docs In Sync
-
-Update the relevant context file whenever the implementation changes any of these:
-
-- system architecture or boundaries
-- storage decisions
-- code conventions or standards
-- feature scope
-
-The progress tracker must show the actual state of the implementation, not the intended state.
 
 ## Before Moving To The Next Unit
 
 1. The current unit works end to end within its scope.
-2. No rule in `code-standards.md` or `project-overview.md` was violated.
-3. `progress-tracker.md` reflects the completed work.
+2. No rule in `code-standards.md` or the touched area file was violated.
+3. `progress-tracker.md` and the touched area file reflect the completed work.
