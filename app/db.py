@@ -1670,6 +1670,404 @@ def overview(hours: int = 6) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------- status board (Übersicht)
+
+CHECK_WINDOW = timedelta(hours=2)
+DECLINE_MARK = (
+    "Kundenantwort (Absage)"  # emitted by agents/booking.py on a customer "no"
+)
+
+
+def _level(ok: bool, warn: bool) -> str:
+    return "ok" if ok else ("warn" if warn else "bad")
+
+
+def _board_by_session(c: sqlite3.Connection) -> dict[int, dict[str, Any]]:
+    out: dict[int, dict[str, Any]] = {}
+    for r in _rows(
+        c.execute(
+            "SELECT session_id, verdict, reason, raw_json FROM board_results"
+            " WHERE session_id IS NOT NULL ORDER BY fetched_at"
+        )
+    ):
+        raw = json.loads(r["raw_json"]) if r["raw_json"] else {}
+        out[r["session_id"]] = {
+            "verdict": r["verdict"],
+            "reason": r["reason"],
+            "booked": bool(raw.get("booked")),
+        }
+    return out
+
+
+def _rfq_rows(
+    c: sqlite3.Connection, since: str | None, limit: int | None
+) -> list[dict[str, Any]]:
+    """One row per customer request with the outcome of every step (Quote → 5U → Buchung)."""
+    q = (
+        "SELECT s.id, s.customer, s.subject, s.status, s.paused, s.mode, s.request_json,"
+        " s.created_at, s.deadline_at, s.first_reply_at,"
+        " (SELECT total_minor FROM quotes WHERE session_id = s.id ORDER BY id LIMIT 1) AS quote_minor,"
+        " (SELECT currency FROM quotes WHERE session_id = s.id ORDER BY id LIMIT 1) AS quote_currency,"
+        " (SELECT airline FROM quotes WHERE session_id = s.id ORDER BY id LIMIT 1) AS airline,"
+        " (SELECT COALESCE(SUM(cost_micro_usd),0) FROM llm_calls WHERE session_id = s.id) AS cost,"
+        " (SELECT booking_reference FROM bookings WHERE session_id = s.id AND status != 'failed'"
+        "  ORDER BY id LIMIT 1) AS booking_reference,"
+        " (SELECT message FROM events WHERE session_id = s.id AND level != 'info'"
+        "  AND kind != 'board_verdict' ORDER BY id DESC LIMIT 1) AS last_problem,"
+        " EXISTS (SELECT 1 FROM events WHERE session_id = s.id AND message LIKE ?) AS declined,"
+        " EXISTS (SELECT 1 FROM mails m WHERE m.session_id = s.id AND m.direction = 'in'"
+        "  AND m.category = 'customer' AND s.first_reply_at IS NOT NULL"
+        "  AND m.received_at >= s.first_reply_at) AS customer_replied"
+        " FROM sessions s WHERE s.kind = 'rfq'"
+    )
+    args: list[Any] = [DECLINE_MARK + "%"]
+    if since:
+        q += " AND s.created_at >= ?"
+        args.append(since)
+    q += " ORDER BY s.created_at DESC"
+    if limit:
+        q += f" LIMIT {int(limit)}"
+    board = _board_by_session(c)
+    now_dt = datetime.now(UTC)
+    rows = []
+    for r in _rows(c.execute(q, args)):
+        req = json.loads(r.pop("request_json") or "null") or {}
+        created, first = _ts(r["created_at"]), _ts(r["first_reply_at"])
+        deadline = _ts(r["deadline_at"])
+        b = board.get(r["id"], {})
+        response_s = (first - created).total_seconds() if first and created else None
+        if first:
+            quote = {
+                "state": "ok" if (response_s or 0) <= 360 else "warn",
+                "label": secs_label(response_s),
+            }
+        elif r["status"] in ("new", "pricing") and deadline and deadline > now_dt:
+            quote = {"state": "run", "label": "läuft"}
+        else:
+            quote = {"state": "bad", "label": r["last_problem"] or "keine Quote"}
+        v = b.get("verdict")
+        if v == "accepted":
+            five = {"state": "ok", "label": "akzeptiert"}
+        elif v in (None, "open", "pending"):
+            five = {
+                "state": "run" if first else "none",
+                "label": "offen" if first else "–",
+            }
+        else:
+            five = {
+                "state": "bad",
+                "label": v + (f" ({b['reason']})" if b.get("reason") else ""),
+            }
+        if r["booking_reference"] or b.get("booked"):
+            book = {"state": "ok", "label": r["booking_reference"] or "gebucht"}
+        elif r["declined"]:
+            book = {"state": "none", "label": "Kunde lehnt ab"}
+        elif r["customer_replied"]:
+            book = {"state": "bad", "label": "Antwort, nicht gebucht"}
+        elif v not in (None, "open", "pending", "accepted"):
+            book = {"state": "none", "label": "–"}
+        elif first and now_dt - first > timedelta(minutes=30):
+            book = {"state": "none", "label": "keine Zusage"}
+        elif first:
+            book = {"state": "run", "label": "wartet auf Kunde"}
+        else:
+            book = {"state": "none", "label": "–"}
+        lane = " → ".join(x for x in (req.get("origin"), req.get("destination")) if x)
+        rows.append(
+            {
+                **{
+                    k: r[k]
+                    for k in (
+                        "id",
+                        "customer",
+                        "subject",
+                        "status",
+                        "created_at",
+                        "quote_minor",
+                        "quote_currency",
+                        "airline",
+                        "cost",
+                    )
+                },
+                "lane": lane,
+                "weight_kg": req.get("weight_kg"),
+                "response_s": response_s,
+                "deadline_at": r["deadline_at"],
+                "paused": r["paused"],
+                "mode": r["mode"],
+                "steps": {"quote": quote, "board": five, "booking": book},
+                "verdict": v,
+                "declined": bool(r["declined"]),
+                "customer_replied": bool(r["customer_replied"]),
+                "booked": book["state"] == "ok",
+            }
+        )
+    return rows
+
+
+def secs_label(s: float | None) -> str:
+    if s is None:
+        return "–"
+    return f"{round(s)} s" if s < 60 else f"{int(s // 60)}:{round(s % 60):02d} min"
+
+
+def status_overview() -> dict[str, Any]:
+    """Übersicht: does each part of the pipeline work right now (last 2 h), the score
+    estimate since start, the latest requests step by step, and what a human must do."""
+    c = conn()
+    now_dt = datetime.now(UTC)
+    since = (now_dt - CHECK_WINDOW).isoformat(timespec="seconds")
+    recent = _rfq_rows(c, since, None)
+    every = _rfq_rows(c, None, None)
+    checks: list[dict[str, Any]] = []
+
+    last_in = _one(
+        c.execute("SELECT MAX(received_at) AS t FROM mails WHERE direction = 'in'")
+    )
+    age = (
+        (now_dt - _ts(last_in["t"])).total_seconds() / 60
+        if last_in and last_in["t"]
+        else None
+    )
+    checks.append(
+        {
+            "key": "mail",
+            "name": "Mail-Abruf",
+            "level": "bad" if age is None else _level(age <= 8, age <= 15),
+            "value": "keine Mail" if age is None else f"vor {int(age)} min",
+            "hint": "Alle 6 min kommt eine RFQ. Länger still heißt: Poller steht oder Server ist aus.",
+        }
+    )
+
+    done = [r for r in recent if r["steps"]["quote"]["state"] != "run"]
+    quoted = [r for r in done if r["steps"]["quote"]["state"] in ("ok", "warn")]
+    missed = len(done) - len(quoted)
+    checks.append(
+        {
+            "key": "quotes",
+            "name": "Anfragen beantwortet",
+            "level": "ok" if not done else _level(missed == 0, missed <= 1),
+            "value": f"{len(quoted)} / {len(done)}" if done else "–",
+            "hint": "RFQs der letzten 2 h mit Quote vor Ablauf. Jede verpasste ist verloren.",
+        }
+    )
+
+    resp = [r["response_s"] for r in recent if r["response_s"] is not None]
+    avg_resp = sum(resp) / len(resp) if resp else None
+    checks.append(
+        {
+            "key": "speed",
+            "name": "Antwortzeit",
+            "level": "ok"
+            if avg_resp is None
+            else _level(avg_resp <= 120, avg_resp <= 240),
+            "value": secs_label(avg_resp),
+            "hint": "Ø bis zur Quote. ≤ 2 min volle 15 Zeitpunkte, ab 6 min null.",
+        }
+    )
+
+    rated = [r for r in recent if r["verdict"] not in (None, "open", "pending")]
+    acc = sum(1 for r in rated if r["verdict"] == "accepted")
+    checks.append(
+        {
+            "key": "price",
+            "name": "5U akzeptiert",
+            "level": "ok"
+            if not rated
+            else _level(acc == len(rated), acc / len(rated) >= 0.6),
+            "value": f"{acc} / {len(rated)}" if rated else "–",
+            "hint": "Urteil vom Leaderboard. too_high = Preis > 5 % über Bestpreis, no answer = nichts gesendet.",
+        }
+    )
+
+    costs = [
+        r["cost"] for r in recent if r["steps"]["quote"]["state"] in ("ok", "warn")
+    ]
+    avg_cost = sum(costs) / len(costs) if costs else None
+    checks.append(
+        {
+            "key": "cost",
+            "name": "LLM-Kosten je Quote",
+            "level": "ok"
+            if avg_cost is None
+            else _level(avg_cost <= 2000, avg_cost <= 10000),
+            "value": "–" if avg_cost is None else f"${avg_cost / 1e6:.4f}",
+            "hint": "0 $ = 40 Punkte, 0,10 $ = 0. Mindestens ein Gateway-Call pro Quote nötig.",
+        }
+    )
+
+    pending_book = [r for r in recent if r["steps"]["booking"]["state"] == "bad"]
+    booked = sum(1 for r in recent if r["booked"])
+    checks.append(
+        {
+            "key": "booking",
+            "name": "Buchungen",
+            "level": _level(not pending_book, False),
+            "value": f"{booked} gebucht"
+            + (f", {len(pending_book)} offen" if pending_book else ""),
+            "hint": "Kunde hat zugesagt → Buchung per Rate-ID. Offen = Zusage ohne Buchung.",
+        }
+    )
+
+    trk = _rows(
+        c.execute(
+            "SELECT s.id, EXISTS (SELECT 1 FROM mails m WHERE m.session_id = s.id AND m.direction = 'out')"
+            " AS answered, EXISTS (SELECT 1 FROM events e WHERE e.session_id = s.id"
+            " AND e.message LIKE '%keine Buchung gefunden%') AS not_found"
+            " FROM sessions s WHERE s.kind = 'tracking' AND s.created_at >= ?",
+            (since,),
+        )
+    )
+    unanswered = sum(1 for t in trk if not t["answered"])
+    not_found = sum(1 for t in trk if t["not_found"])
+    checks.append(
+        {
+            "key": "tracking",
+            "name": "Tracking-Antworten",
+            "level": "ok"
+            if not trk
+            else _level(unanswered == 0 and not_found == 0, unanswered == 0),
+            "value": f"{len(trk) - unanswered} / {len(trk)}"
+            + (f", {not_found} ohne Treffer" if not_found else "")
+            if trk
+            else "–",
+            "hint": "Antwort aus unserem CRM. Ohne Treffer = keine passende Buchung gefunden, Rückfrage gesendet.",
+        }
+    )
+
+    bids = {
+        r["kind"]: r["n"]
+        for r in _rows(
+            c.execute(
+                "SELECT kind, COUNT(*) AS n FROM events WHERE kind IN ('bid_received','bid_unreadable',"
+                "'bid_declined') AND created_at >= ? GROUP BY kind",
+                (since,),
+            )
+        )
+    }
+    got, bad_bids = bids.get("bid_received", 0), bids.get("bid_unreadable", 0)
+    checks.append(
+        {
+            "key": "bids",
+            "name": "Carrier-Gebote gelesen",
+            "level": "ok"
+            if not (got + bad_bids)
+            else _level(bad_bids == 0, got >= bad_bids),
+            "value": f"{got} / {got + bad_bids}" if got + bad_bids else "–",
+            "hint": "Gebote mit erkanntem Preis. Nicht gelesen sind oft Absagen „lane not served“.",
+        }
+    )
+
+    errors = _rows(
+        c.execute(
+            "SELECT message FROM events WHERE level = 'error' AND kind NOT IN ('board_verdict','warn')"
+            " AND created_at >= ? ORDER BY id DESC",
+            (since,),
+        )
+    )
+    unassigned = _one(
+        c.execute(
+            "SELECT COUNT(*) AS n FROM mails WHERE session_id IS NULL AND direction = 'in'"
+            " AND received_at >= ?",
+            (since,),
+        )
+    )["n"]
+    checks.append(
+        {
+            "key": "errors",
+            "name": "Fehler · unzugeordnet",
+            "level": _level(not errors and not unassigned, not errors),
+            "value": f"{len(errors)} · {unassigned}",
+            "hint": (
+                errors[0]["message"][:120]
+                if errors
+                else "Programmfehler im Log und Mails, die keiner Session zugeordnet werden konnten."
+            ),
+        }
+    )
+
+    # score since start: points per accepted quote (price 45 is only known as accepted y/n)
+    all_rated = [r for r in every if r["verdict"] not in (None, "open", "pending")]
+    accepted = [r for r in all_rated if r["verdict"] == "accepted"]
+    acc_resp = [r["response_s"] for r in accepted if r["response_s"] is not None]
+    acc_cost = [r["cost"] for r in accepted]
+    t_avg = sum(acc_resp) / len(acc_resp) if acc_resp else None
+    c_avg = sum(acc_cost) / len(acc_cost) if acc_cost else None
+    time_pts = (
+        None
+        if t_avg is None
+        else (15 if t_avg <= 120 else 0 if t_avg >= 360 else 15 * (360 - t_avg) / 240)
+    )
+    cost_pts = None if c_avg is None else max(0.0, 40 * (1 - c_avg / 100000))
+    verdicts: dict[str, int] = {}
+    for r in all_rated:
+        verdicts[r["verdict"]] = verdicts.get(r["verdict"], 0) + 1
+
+    todo = []
+    for r in every:
+        st = r["steps"]
+        if r["paused"] or r["mode"] == "manual":
+            if st["quote"]["state"] == "run" or (
+                r["mode"] == "manual" and not r["response_s"]
+            ):
+                todo.append(
+                    {
+                        **_todo(r),
+                        "reason": "pausiert / übernommen – antworte selbst",
+                        "tone": "orange",
+                    }
+                )
+        elif st["quote"]["state"] == "run" and r["deadline_at"]:
+            left = (_ts(r["deadline_at"]) - now_dt).total_seconds()
+            if left < 120:
+                todo.append(
+                    {
+                        **_todo(r),
+                        "reason": f"noch {int(max(left, 0))} s, keine Quote",
+                        "tone": "red",
+                    }
+                )
+        if st["booking"]["state"] == "bad":
+            todo.append(
+                {
+                    **_todo(r),
+                    "reason": "Kunde hat geantwortet, nicht gebucht",
+                    "tone": "blue",
+                }
+            )
+
+    return {
+        "checks": checks,
+        "window_hours": int(CHECK_WINDOW.total_seconds() // 3600),
+        "score": {
+            "rfqs": len(every),
+            "rated": len(all_rated),
+            "accepted": len(accepted),
+            "verdicts": verdicts,
+            "time_pts": time_pts,
+            "cost_pts": cost_pts,
+            "avg_response_s": t_avg,
+            "avg_cost_micro_usd": c_avg,
+            "per_quote": None
+            if time_pts is None or cost_pts is None
+            else 45 + time_pts + cost_pts,
+            "booked": sum(1 for r in every if r["booked"]),
+        },
+        "requests": every[:12],
+        "todo": todo,
+        "global_pause": is_global_paused(),
+    }
+
+
+def _todo(r: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "session_id": r["id"],
+        "subject": r["subject"],
+        "customer": r["customer"],
+        "lane": r["lane"],
+    }
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     init_db()

@@ -33,7 +33,11 @@ def test_index_and_lists(client):
     rows = client.get("/api/sessions").json()
     assert [r["id"] for r in rows] == [sid]
     assert client.get("/api/sessions", params={"q": "nomatch"}).json() == []
-    assert client.get(f"/api/sessions/{sid}").json()["mails"][0]["body"].startswith("<script>")
+    assert (
+        client.get(f"/api/sessions/{sid}")
+        .json()["mails"][0]["body"]
+        .startswith("<script>")
+    )
     assert client.get("/api/sessions/999").status_code == 404
 
 
@@ -47,7 +51,10 @@ def test_actions_and_events(client):
     kinds = [e["kind"] for e in client.get("/api/events", params={"since": 0}).json()]
     assert kinds[0] == "mail_in" and kinds.count("human_action") == 6
     first = client.get("/api/events", params={"since": 0}).json()[0]["id"]
-    assert all(e["id"] > first for e in client.get("/api/events", params={"since": first}).json())
+    assert all(
+        e["id"] > first
+        for e in client.get("/api/events", params={"since": first}).json()
+    )
 
 
 def test_dashboard_shape(client):
@@ -74,14 +81,22 @@ def test_basic_auth_when_password_set(client, monkeypatch):
     import dataclasses
 
     monkeypatch.setattr(
-        server, "settings", dataclasses.replace(server.settings, ui_user="team", ui_password="pw")
+        server,
+        "settings",
+        dataclasses.replace(server.settings, ui_user="team", ui_password="pw"),
     )
     assert client.get("/api/stats").status_code == 401
     assert client.get("/api/health").status_code == 200
     good = base64.b64encode(b"team:pw").decode()
     bad = base64.b64encode(b"team:nope").decode()
-    assert client.get("/api/stats", headers={"Authorization": f"Basic {bad}"}).status_code == 401
-    assert client.get("/api/stats", headers={"Authorization": f"Basic {good}"}).status_code == 200
+    assert (
+        client.get("/api/stats", headers={"Authorization": f"Basic {bad}"}).status_code
+        == 401
+    )
+    assert (
+        client.get("/api/stats", headers={"Authorization": f"Basic {good}"}).status_code
+        == 200
+    )
 
 
 def test_crm_won_lost(client):
@@ -105,11 +120,20 @@ def test_crm_won_lost(client):
         currency="EUR",
     )
     lost = db.ingest_mail(
-        mail_id=2, sender="c@d.example", recipient=TEAM, subject="RFQ 2", body="b", category="rfq"
+        mail_id=2,
+        sender="c@d.example",
+        recipient=TEAM,
+        subject="RFQ 2",
+        body="b",
+        category="rfq",
     )
     db.set_status(lost, "expired")
     d = client.get("/api/crm").json()
-    assert d["totals"]["won"] == 1 and d["totals"]["lost"] == 1 and d["booked_minor"] == 10000
+    assert (
+        d["totals"]["won"] == 1
+        and d["totals"]["lost"] == 1
+        and d["booked_minor"] == 10000
+    )
     a = next(c for c in d["customers"] if c["customer"] == "a@b.example")
     assert a["won"] == 1 and a["booked_minor"] == 10000
     assert d["quotes"][0]["outcome"] == "won"
@@ -183,7 +207,9 @@ def test_overview_and_attention(client):
         currency="EUR",
     )
     assert "to_book" not in {a["kind"] for a in client.get("/api/attention").json()}
-    assert client.get("/api/overview", params={"hours": 0}).json()["current"]["won"] == 1
+    assert (
+        client.get("/api/overview", params={"hours": 0}).json()["current"]["won"] == 1
+    )
 
 
 def test_import_db_only_when_agents_disabled(client, monkeypatch, tmp_path):
@@ -193,7 +219,12 @@ def test_import_db_only_when_agents_disabled(client, monkeypatch, tmp_path):
     src = tmp_path / "src.db"
     db.init_db(str(src))
     sid = db.ingest_mail(
-        mail_id=77, sender="x@y.example", recipient=TEAM, subject="RFQ", body="b", category="rfq"
+        mail_id=77,
+        sender="x@y.example",
+        recipient=TEAM,
+        subject="RFQ",
+        body="b",
+        category="rfq",
     )
     db.kv_set("mail.next_since_id", "77")
     sqlite3.connect(src).execute("PRAGMA wal_checkpoint(TRUNCATE)").close()
@@ -207,3 +238,107 @@ def test_import_db_only_when_agents_disabled(client, monkeypatch, tmp_path):
     r = client.post("/api/admin/import-db", content=data).json()
     assert r["counts"]["sessions"] == 1 and r["since_id"] == "77"
     assert db.get_session(sid)["customer"] == "x@y.example"
+
+
+def test_status_overview_steps_checks_and_todo(client):
+    from datetime import datetime, timedelta, timezone
+
+    old = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(
+        timespec="seconds"
+    )
+    sid = db.ingest_mail(
+        mail_id=20,
+        sender="a@b.example",
+        recipient=TEAM,
+        subject="RFQ A",
+        body="b",
+        category="rfq",
+        received_at=old,
+    )
+    db.set_request(sid, {"origin": "FRA", "destination": "JFK", "weight_kg": 40})
+    db.claim_quote_send(sid)
+    db.record_llm_call(
+        sid,
+        purpose="x",
+        model="m",
+        prompt_tokens=1,
+        completion_tokens=1,
+        cost_micro_usd=500,
+        latency_ms=1,
+    )
+    db.record_quote(
+        sid,
+        total_minor=10000,
+        currency="EUR",
+        airline="X",
+        origin="FRA",
+        destination="JFK",
+        transit_days=2,
+        source="portal",
+    )
+    db.record_outgoing(
+        mail_id=21,
+        recipient="a@b.example",
+        subject="Re: RFQ A",
+        body="q",
+        category="quote",
+        session_id=sid,
+    )
+    db.save_board_result(
+        round_id="1",
+        verdict="accepted",
+        reason=None,
+        points=None,
+        raw={"booked": False},
+        session_id=sid,
+    )
+    # a second request that expired without a quote
+    lost = db.ingest_mail(
+        mail_id=30,
+        sender="c@d.example",
+        recipient=TEAM,
+        subject="RFQ B",
+        body="b",
+        category="rfq",
+        received_at=old,
+    )
+    db.set_status(lost, "expired", "Deadline abgelaufen ohne Quote")
+
+    d = client.get("/api/status").json()
+    rows = {r["id"]: r for r in d["requests"]}
+    assert (
+        rows[sid]["lane"] == "FRA → JFK"
+        and rows[sid]["steps"]["quote"]["state"] == "ok"
+    )
+    assert rows[sid]["steps"]["board"]["state"] == "ok"
+    assert rows[sid]["steps"]["booking"]["state"] == "run"
+    assert rows[lost]["steps"]["quote"]["state"] == "bad"
+    checks = {c["key"]: c for c in d["checks"]}
+    assert checks["quotes"]["value"] == "1 / 2" and checks["quotes"]["level"] == "warn"
+    assert checks["price"]["value"] == "1 / 1" and checks["mail"]["level"] == "ok"
+    assert (
+        d["score"]["accepted"] == 1 and d["score"]["cost_pts"] > 39 and d["todo"] == []
+    )
+
+    # customer says yes, not booked -> to do; after booking it disappears
+    db.ingest_mail(
+        mail_id=22,
+        sender="a@b.example",
+        recipient=TEAM,
+        subject="Re: RFQ A",
+        body="yes please book",
+        category="customer",
+        references=[20, 21],
+        in_reply_to=21,
+    )
+    assert [t["session_id"] for t in client.get("/api/status").json()["todo"]] == [sid]
+    db.record_booking(
+        sid,
+        booking_reference="BK-1",
+        rate_id="R-1",
+        airline="X",
+        price_minor=10000,
+        currency="EUR",
+    )
+    d = client.get("/api/status").json()
+    assert d["todo"] == [] and {r["id"]: r for r in d["requests"]}[sid]["booked"]

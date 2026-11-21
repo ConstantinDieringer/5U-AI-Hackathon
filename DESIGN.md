@@ -92,7 +92,7 @@ monochrome `--ink-2`, active `--blue`.
 Screens
 | Screen | Question | Grid |
 |---|---|---|
-| Übersicht (default) | How are we doing? | hero KPI (span 6) + 2 KPIs (span 3) · area chart (span 8) + rings (span 4) · attention (span 4) + activity table (span 8) |
+| Übersicht (default) | What works, what does not, what must a human do? | Systemcheck: 9 traffic-light tiles per pipeline part, last 2 h (span 8) + Zu tun, only rescuable sessions (span 4) · Letzte Anfragen: one row per RFQ with step chips Quote → 5U → Buchung (span 8) + Punkte: Ø points per accepted quote with cost/time bars (span 4). No charts, no range selector. |
 | Live | What needs me now? | session list card (span 4) + session detail (span 8) |
 | CRM | Who did we quote, win, lose? | 4 KPIs · table card with segmented tabs · customer drawer |
 
