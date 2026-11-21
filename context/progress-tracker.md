@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Combined customer-email voice skill from Humanize Writing/Humanizer, pinned sources/MIT notices and shared runtime profile. Composer and repairs load it directly, retaining factual/style guards. Skill validation, 468 tests and synthetic EN/DE gateway probes pass; no customer mail sent or production rollout verified.
+
 - Round 35 rejected: XLSX labels serialized as `Total gross weight (kg): | 1751` were ignored by the numeric gate despite conflicting mail weight 2644. Accept combined table separators for weight/volume/pieces; preserve explicit conflict clarification and customer corrections. Exact production pricing cause remains unverified.
 - Replay cleanup closes the final thread-local SQLite connection before removing temporary databases on Windows, including error paths; production database handles in other threads are untouched.
 - Round 35 verification: full offline suite 463 passed, 4 skipped, plus the new replay-failure cleanup test passed; targeted Ruff and diff checks clean. Production audit/SHA and causal price reconciliation remain unavailable.
