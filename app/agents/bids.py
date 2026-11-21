@@ -42,7 +42,7 @@ _DAYS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*(?:business\s+|working\s+|calendar\s+)?(?:days?|tage?n?)\b",
     re.IGNORECASE,
 )
-_HOURS = re.compile(r"(\d+)\s*(?:h|hours?|stunden)\b", re.IGNORECASE)
+_HOURS = re.compile(r"(\d+)\s*(?:h|hrs?|hours?|stunden|std)\b", re.IGNORECASE)
 _TOTAL_HINT = re.compile(r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE)
 
 
@@ -100,7 +100,7 @@ def parse_price(text: str) -> tuple[Decimal, str] | None:
     """The quoted price and its currency. Prefers an amount on a line naming a total/price;
     among several such amounts the largest (an all-in total beats its components)."""
     best: tuple[int, Decimal, str] | None = None
-    for line in text.splitlines():
+    for line in text.translate(_SPACES).splitlines():
         hint = 1 if _TOTAL_HINT.search(line) else 0
         for m in _AMOUNT.finditer(line):
             num = _number(m.group("num1") or m.group("num2") or "")
@@ -122,46 +122,162 @@ def parse_transit_days(text: str) -> float | None:
     return int(h.group(1)) / 24 if h else None
 
 
-def document_price(text: str) -> tuple[Decimal, str] | None:
-    """An explicit total, not the largest component or an incidental surcharge."""
-    currencies = {
-        {"€": "EUR", "$": "USD"}.get(m.upper(), m.upper())
-        for m in re.findall(r"\bEUR\b|\bUSD\b|€|\$", text, re.IGNORECASE)
-    }
-    found: set[tuple[Decimal, str]] = set()
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        label = re.match(
-            r"\s*(?:(?:grand\s+)?total|gesamt(?:preis|betrag|summe)?)\b"
-            r"(?:\s*,?\s*all[- ]?in\b)?\s*[:|=]?\s*",
-            line,
-            re.IGNORECASE,
-        )
-        if not label:
-            label = re.match(
-                r"\s*(?:(?:our|unser)\s+)?(?:all[- ]?in\s+)?(?:price|preis)\b"
-                r".{0,60}?(?:\bis\b|\bist\b|\bbeträgt\b|:|\|)\s*",
-                line,
-                re.IGNORECASE,
-            )
-        if not label:
-            continue
-        tail = line[label.end() :].strip()
-        if not tail and index + 1 < len(lines):
-            tail = lines[index + 1].strip()
-        amount = _AMOUNT.match(tail)
-        if amount:
-            raw = amount.group("num1") or amount.group("num2") or ""
-            cur = (amount.group("cur1") or amount.group("cur2") or "").upper()
-            cur = {"€": "EUR", "$": "USD"}.get(cur, cur)
-        elif re.fullmatch(_MONEY, tail) and len(currencies) == 1:
-            raw, cur = tail, next(iter(currencies))
-        else:
-            continue
-        num = _number(raw)
-        if num is not None and num > 0:
-            found.add((money(num), cur))
+_SPACES = str.maketrans({"\u00a0": " ", "\u202f": " ", "\u2009": " ", "\u2007": " "})
+_CURRENCY = {"€": "EUR", "$": "USD"}
+# Labels of a document's final amount. Optional words between label and amount (amount, due,
+# (EUR), incl. fuel, all-in, netto ...) may not contain digits. Sub-totals never match.
+_TOTAL_LABEL = re.compile(
+    r"^(?:(?:grand|net|overall|final|end)\s*[- ]?\s*)?"
+    r"(?:total|sum|summe|gesamt(?:preis|betrag|summe|kosten)?|endpreis|endbetrag|"
+    r"amount\s+due|to\s+pay|zu\s+zahlen)\b(?P<rest>[^\d]{0,60}?)[:=|]?\s*"
+    r"(?=(?:(?:EUR|USD|€|\$)\s*)?\d|$)",
+    re.IGNORECASE,
+)
+_PRICE_LABEL = re.compile(
+    r"^(?:(?:our|unser(?:e|)?|the|der|das)\s+)?(?:all[- ]?in\s+|total\s+)?"
+    r"(?:price|preis|rate|offer|angebot|quote|quotation|charge)\b"
+    r"(?P<rest>[^\d]{0,60}?)(?:\bis\b|\bist\b|\bbeträgt\b|\bliegt\s+bei\b|:|\||=)\s*",
+    re.IGNORECASE,
+)
+_REFERENCE = re.compile(
+    r"\b(?:no|nr|number|nummer|ref(?:erence|erenz)?|id|date|datum|valid|gültig)\b|#",
+    re.IGNORECASE,
+)
+_NOT_TOTAL = re.compile(
+    r"sub[- ]?total|zwischen|\bweight\b|gewicht|volume|volumen|\bpieces?\b|stück|colli|"
+    r"\bkg\b|cbm|\bm3\b",
+    re.IGNORECASE,
+)
+_PER_UNIT = re.compile(
+    r"\bper\b|\bpro\b|\bje\b|/\s*(?:kg|h|hr|hour|std|stunde|piece|pc|shipment)\b|\beach\b",
+    re.IGNORECASE,
+)
+_EXCLUDED = re.compile(
+    r"not\s+(?:part|included|incl)|nicht\s+(?:im|enthalten|inkl)|exclud|optional|extra|"
+    r"additional|zusätzlich|zuzüglich|\bzzgl|surcharge\s+if|if\s+(?:required|applicable|needed)|"
+    r"falls|wait(?:ing)?|warte|storage|lager|demurrage|cancell?ation|storno|discount|rabatt",
+    re.IGNORECASE,
+)
+
+
+def _cells(line: str) -> list[str]:
+    """Table cells of one line; empty and repeated (merged) cells dropped."""
+    out: list[str] = []
+    for cell in (c.strip() for c in line.split("|")):
+        if cell and (not out or out[-1] != cell):
+            out.append(cell)
+    return out
+
+
+def _money_at(text: str, currency: str | None) -> tuple[Decimal, str] | None:
+    """The amount that `text` starts with (currency before or after it, or the given one)."""
+    text = text.strip()
+    m = _AMOUNT.match(text)
+    if m:
+        raw = m.group("num1") or m.group("num2") or ""
+        cur = (m.group("cur1") or m.group("cur2") or "").upper()
+        rest = text[m.end() :]
+    else:
+        n = re.match(_MONEY, text)
+        if not n or not currency:
+            return None
+        raw, cur, rest = n.group(0), currency, text[n.end() :]
+    if re.match(r"\s*(?:kg|cbm|m3|pcs|pieces?|h\b|hours?|days?|tage?|%)", rest, re.IGNORECASE):
+        return None  # a weight, duration or percentage, not money
+    num = _number(raw)
+    if num is None or num <= 0:
+        return None
+    return money(num), _CURRENCY.get(cur, cur)
+
+
+def _label_currency(rest: str) -> str | None:
+    found = {_CURRENCY.get(c.upper(), c.upper()) for c in re.findall(r"EUR|USD|€|\$", rest, re.IGNORECASE)}
     return next(iter(found)) if len(found) == 1 else None
+
+
+def document_price(text: str) -> tuple[Decimal, str] | None:
+    """An explicit total, not the largest component or an incidental surcharge.
+
+    Tier 1: lines labelled as the total (Total, Total amount, Total (EUR), Grand total,
+    Gesamtpreis (netto), Summe, Total due, ...). Tier 2, only without any total line: lines
+    labelled as the price/offer. Per-unit rates (per kg, /h), excluded or optional charges
+    (waiting time, not included, extra, surcharge if) and sub-totals never count. The value
+    stands after the label or alone in the next line. Its currency is written with it, in
+    the label ("Total (EUR)"), in a column header, or is the document's only currency.
+    Several different amounts in the deciding tier: no price (never guess)."""
+    lines = [" | ".join(_cells(line)) for line in text.translate(_SPACES).splitlines()]
+    lines = [line for line in lines if line]
+    found = {
+        c for m in re.findall(r"\bEUR\b|\bUSD\b|€|\$", "\n".join(lines), re.IGNORECASE)
+        if (c := _CURRENCY.get(m.upper(), m.upper()))
+    }
+    only = next(iter(found)) if len(found) == 1 else None
+    header: str | None = None
+    tiers: tuple[set, set] = (set(), set())
+    for index, line in enumerate(lines):
+        if re.search(r"\((?:EUR|USD|€|\$)\)|\bin\s+(?:EUR|USD)\b", line, re.IGNORECASE) and not re.search(
+            r"\d", re.sub(r"\((?:EUR|USD)\)", "", line)
+        ):
+            header = _label_currency(line)  # a column header such as "Amount (EUR)"
+        for tier, pattern in enumerate((_TOTAL_LABEL, _PRICE_LABEL)):
+            label = pattern.match(line)
+            if not label:
+                continue
+            rest = label.group("rest") or ""
+            context = line[: label.end()]
+            if tier == 0 and _NOT_TOTAL.search(context):
+                break
+            if _PER_UNIT.search(line) or _EXCLUDED.search(line):
+                break
+            if tier == 1 and _REFERENCE.search(context):
+                break  # "Offer No: 12345", "Quotation number: 4711"
+            currency = _label_currency(rest) or header or only
+            tail = line[label.end() :].strip().lstrip("|:= ").strip()
+            if not tail and index + 1 < len(lines):
+                tail = lines[index + 1].strip()  # value in the next row
+                if not re.fullmatch(rf"(?:EUR|USD|€|\$)?\s*{_MONEY}\s*(?:EUR|USD|€|\$)?", tail, re.IGNORECASE):
+                    break
+            # a price line (tier 2) needs its currency written next to the amount
+            amount = _money_at(tail, currency if tier == 0 else None)
+            if amount is not None:
+                tiers[tier].add(amount)
+            break
+    deciding = tiers[0] or tiers[1]
+    return next(iter(deciding)) if len(deciding) == 1 else None
+
+
+_WORD_NUMBERS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+    "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "fourteen": 14, "twenty-four": 24,
+    "forty-eight": 48, "eins": 1, "ein": 1, "einem": 1, "einen": 1, "zwei": 2, "drei": 3,
+    "vier": 4, "fünf": 5, "sechs": 6, "sieben": 7, "acht": 8, "neun": 9, "zehn": 10,
+    "zwölf": 12, "vierundzwanzig": 24, "achtundvierzig": 48,
+}  # fmt: skip
+_WORD_DURATION = re.compile(
+    r"\b(" + "|".join(sorted(_WORD_NUMBERS, key=len, reverse=True)) + r")\s+"
+    r"(?=(?:business\s+|working\s+|calendar\s+)?(?:days?|tage?n?|h\b|hrs?|hours?|stunden|std))",
+    re.IGNORECASE,
+)
+_TIMING_LINE = re.compile(
+    r"transit|lead\s*time|collect|pick\s*-?up|abhol|laufzeit|transitzeit|fahrzeit|"
+    r"transportdauer|delivery|lieferzeit|flight|flug|within|innerhalb|departure|ready",
+    re.IGNORECASE,
+)
+_NOT_TIMING = re.compile(
+    r"valid|gültig|payment|zahlung|storage|lager|free\s+time|wait|warte|cancel|storno",
+    re.IGNORECASE,
+)
+
+
+def document_timing(text: str) -> str:
+    """The line holding the offer's duration (transit or collection lead), with number words
+    written as digits; never a validity, payment or storage period. Empty if none."""
+    lines = [_WORD_DURATION.sub(lambda m: f"{_WORD_NUMBERS[m.group(1).lower()]} ", line)
+             for line in text.translate(_SPACES).splitlines()]  # fmt: skip
+    timed = [line for line in lines if (_DAYS.search(line) or _HOURS.search(line))]
+    usable = [line for line in timed if not _NOT_TIMING.search(line)]
+    preferred = [line for line in usable if _TIMING_LINE.search(line)]
+    return (preferred or usable or [""])[0]
 
 
 def _bid_evidence(
@@ -177,7 +293,7 @@ def _bid_evidence(
         price = document_price(text)
         if price is None:
             return body, None, f"{name}: no unambiguous explicit total"
-        evidence.append((text, price))
+        evidence.append((document_timing(text), price))
     for name, text in spoken:
         price = parse_price(text)
         if price is None:
