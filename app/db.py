@@ -198,6 +198,13 @@ CREATE TABLE IF NOT EXISTS clarification_answers (
  mail_id INTEGER NOT NULL,
  PRIMARY KEY(session_id, mail_id)
 );
+CREATE TABLE IF NOT EXISTS clarification_followups (
+ session_id INTEGER PRIMARY KEY REFERENCES sessions(id),
+ reply_mail_id INTEGER NOT NULL REFERENCES mails(id),
+ due_at TEXT NOT NULL,
+ state TEXT NOT NULL DEFAULT 'pending',
+ updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tariff_jobs (
   mail_id INTEGER PRIMARY KEY,
   raw_json TEXT NOT NULL,
@@ -502,10 +509,40 @@ def validation_save(sid: int, state: str, draft: dict, root: dict) -> None:
             "draft_json=excluded.draft_json,updated_at=excluded.updated_at",
             (sid, state, _json(draft), _json(root), now()),
         )
+        if state != "awaiting_clarification":
+            c.execute(
+                "UPDATE clarification_followups SET state='cancelled',updated_at=? "
+                "WHERE session_id=? AND state='pending'",
+                (now(), sid),
+            )
+
+
+def _clarification_limit(c: sqlite3.Connection, sid: int) -> bool:
+    count = c.execute(
+        "SELECT COUNT(*) FROM mails WHERE session_id=? AND direction='out' "
+        "AND category='clarification'",
+        (sid,),
+    ).fetchone()[0]
+    if count < 2:
+        return False
+    c.execute(
+        "UPDATE rfq_validation SET state='manual_review',updated_at=? WHERE session_id=?",
+        (now(), sid),
+    )
+    _emit(
+        c,
+        "clarification_loop",
+        "Weitere Rückfrage unterdrückt: Session braucht einen Menschen",
+        sid,
+        level="error",
+    )
+    return True
 
 
 def clarification_claim(sid: int) -> bool:
     with tx() as c:
+        if _clarification_limit(c, sid):
+            return False
         return (
             c.execute(
                 "UPDATE rfq_validation SET send_state='sending',updated_at=? "
@@ -523,6 +560,11 @@ def clarification_sent(sid: int, state: str, mail_id: int | None = None) -> None
         c.execute(
             "UPDATE rfq_validation SET send_state=?,sent_mail_id=?,updated_at=? WHERE session_id=?",
             (state, mail_id, now(), sid),
+        )
+        c.execute(
+            "UPDATE clarification_followups SET state=?,updated_at=? "
+            "WHERE session_id=? AND state='sending'",
+            (state, now(), sid),
         )
 
 
@@ -547,7 +589,7 @@ def clarification_reply_claim(sid: int, mid: int) -> bool:
         if row["sent_mail_id"] is not None and mid <= row["sent_mail_id"]:
             return False
         c.execute("INSERT INTO clarification_answers VALUES (?,?)", (sid, mid))
-        return (
+        claimed = (
             c.execute(
                 "UPDATE rfq_validation SET reply_mail_id=?,state='resolving',updated_at=? "
                 "WHERE session_id=? AND state='awaiting_clarification' AND send_state IN ('sent','unknown') "
@@ -556,6 +598,91 @@ def clarification_reply_claim(sid: int, mid: int) -> bool:
             ).rowcount
             == 1
         )
+        if claimed:
+            c.execute(
+                "UPDATE clarification_followups SET state='cancelled',updated_at=? "
+                "WHERE session_id=? AND state='pending'",
+                (now(), sid),
+            )
+        return claimed
+
+
+def clarification_wait(sid: int, mid: int, draft: dict, due_at: str) -> None:
+    """Keep the question open without resending it; schedule at most one follow-up."""
+    with tx() as c:
+        c.execute(
+            "UPDATE rfq_validation SET state='awaiting_clarification',send_state='sent',"
+            "reply_mail_id=NULL,draft_json=?,updated_at=? WHERE session_id=?",
+            (_json(draft), now(), sid),
+        )
+        c.execute(
+            "INSERT INTO clarification_followups(session_id,reply_mail_id,due_at,updated_at) "
+            "VALUES(?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET reply_mail_id=excluded.reply_mail_id,"
+            "due_at=excluded.due_at,state='pending',updated_at=excluded.updated_at "
+            "WHERE clarification_followups.state IN ('pending','cancelled')",
+            (sid, mid, due_at, now()),
+        )
+        _emit(c, "clarification_waiting", "Kunde prüft Angaben; gezielte Nachfrage vorgemerkt", sid)
+
+
+def clarification_followups_due(at: str) -> list[dict[str, Any]]:
+    return _rows(
+        conn().execute(
+            "SELECT m.* FROM clarification_followups f JOIN mails m ON m.id=f.reply_mail_id "
+            "WHERE f.state='pending' AND julianday(f.due_at)<=julianday(?)",
+            (at,),
+        )
+    )
+
+
+def clarification_followup_claim(sid: int, mid: int, at: str) -> bool:
+    """The last stored customer reply, send claim and timer are checked in one transaction."""
+    with tx() as c:
+        pending = c.execute(
+            "SELECT 1 FROM clarification_followups f JOIN rfq_validation v USING(session_id) "
+            "JOIN sessions s ON s.id=f.session_id WHERE f.session_id=? AND f.reply_mail_id=? "
+            "AND f.state='pending' AND julianday(f.due_at)<=julianday(?) "
+            "AND v.state='awaiting_clarification' AND v.send_state='sent' "
+            "AND s.paused=0 AND s.mode='auto' AND s.status NOT IN ('expired','lost','error') "
+            "AND NOT EXISTS(SELECT 1 FROM kv WHERE key='global_pause' AND value='1')",
+            (sid, mid, at),
+        ).fetchone()
+        if not pending:
+            return False
+        # A response may be stored while its agent has not run yet. Let that agent handle it.
+        newer_mail = c.execute(
+            "SELECT 1 FROM mails WHERE session_id=? AND id>? AND direction='in' "
+            "AND category IN ('rfq','customer','tracking')",
+            (sid, mid),
+        ).fetchone()
+        queued_reply = c.execute(
+            "SELECT 1 FROM mail_delivery d JOIN json_each(d.raw_json,'$.references') r "
+            "JOIN mails m ON m.id=r.value WHERE d.mail_id>? AND m.session_id=? "
+            "AND LOWER(json_extract(d.raw_json,'$.from'))="
+            "LOWER((SELECT sender FROM mails WHERE id=?)) LIMIT 1",
+            (mid, sid, mid),
+        ).fetchone()
+        if newer_mail or queued_reply:
+            c.execute(
+                "UPDATE clarification_followups SET state='cancelled',updated_at=? WHERE session_id=?",
+                (now(), sid),
+            )
+            return False
+        if _clarification_limit(c, sid):
+            c.execute(
+                "UPDATE clarification_followups SET state='cancelled',updated_at=? WHERE session_id=?",
+                (now(), sid),
+            )
+            return False
+        c.execute(
+            "UPDATE clarification_followups SET state='sending',updated_at=? WHERE session_id=?",
+            (now(), sid),
+        )
+        c.execute(
+            "UPDATE rfq_validation SET send_state='sending',updated_at=? WHERE session_id=?",
+            (now(), sid),
+        )
+        return True
 
 
 def clarification_reopen(sid: int, draft: dict, root: dict | None = None) -> None:

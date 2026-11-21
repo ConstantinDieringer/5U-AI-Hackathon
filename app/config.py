@@ -75,6 +75,7 @@ class Settings:
     use_breakpoints: bool
     served_lanes_ttl_s: float
     rfq_validation_mode: str
+    clarification_followup_s: float
     webhook_secret: str
     webhook_secret_file: Path
     webhook_poll_interval_s: float
@@ -133,6 +134,7 @@ settings = Settings(
     use_breakpoints=_env("USE_BREAKPOINTS", "true").lower() == "true",
     served_lanes_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))),
     rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "enforce"),
+    clarification_followup_s=max(1.0, float(_env("CLARIFICATION_FOLLOWUP_S", "15"))),
     webhook_secret=_env("MAILBOX_WEBHOOK_SECRET"),
     webhook_secret_file=Path(
         _env(

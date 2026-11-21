@@ -244,12 +244,12 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   Satzformen (`gross weight is ...`, `volume of ...`); diese benötigen keine erneute Kundenbestätigung.
   Serialisierte Tabellenzeilen dürfen kombinierte Label-/Spaltentrenner (`: |`) enthalten;
   Abweichungen zwischen aktuellen Mail- und Anhangtotalen erfordern weiter eine Klärung.
-- `RFQ_VALIDATION_MODE=shadow` ist der Standard: Prüfprobleme als Events erfassen, keine neuen automatischen Rückfragen. Erst nach Replay und Abnahme `enforce` aktivieren.
+- `RFQ_VALIDATION_MODE=enforce` ist der Standard; explizites `shadow` bleibt als Diagnose-/Rollback-Option erhalten. Shadow-RFQs ohne gesondert blockierende Rückfrage erzeugen keine automatischen Nachfragen.
 - `enforce` bepreist nur aktuelle, belegte Angaben. Signaturen und frühere Kundensendungen ersetzen keine Abholadresse; weitergeleitete Betreffe und Historie sind keine aktuellen Streckenangaben.
 - Alle Text-/Tabellen-Anhänge vor dem Pricing abgleichen. Bildseiten werden im vorhandenen Extraktionsaufruf transkribiert (bis 2500 Output-Tokens); kein zusätzlicher Call. Preisberechnung bleibt deterministisch.
 - `rfq_validation` ist eine additive Workflow-Tabelle (keine Änderung des bestehenden sessions-CHECK): Draft, Quellen, offene Punkte, Zustand und Rückfrage-Ausgang. Der API-Sessiondetail liefert `validation`; die UI zeigt den Zustand neben dem bisherigen Sessionstatus.
-- Einmal automatisch im Kundenthread nachfragen; ursprüngliche Deadline beibehalten. Das Scoring-Risiko durch die erste Antwort wurde bewusst akzeptiert. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
-- Rückfrageantworten vor Booking behandeln, nur angefragte Werte übernehmen. Unklare Antwort, bestätigtes Gefahrgut ohne passenden Tarif oder unklarer Versandausgang erfordern manuelle Prüfung. Keine weiteren automatischen Rückfragen.
+- Maximal zwei automatische Rückfragen pro Thread; ursprüngliche Deadline beibehalten. Sagt der Kunde, er müsse nachsehen, bleibt die Frage offen: nach 15 s (`CLARIFICATION_FOLLOWUP_S`) ohne neuere Antwort einmal umformuliert nachfragen. Timer und Versand-Claim liegen in `clarification_followups` und überleben Neustarts; neuere Kundenantworten (auch in der Eingangsqueue), Pause, manuelle Übernahme, Fristablauf und unklarer Versand verhindern weitere Sendungen. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
+- Rückfrageantworten vor Booking behandeln, nur angefragte Werte übernehmen. Restlücken gezielt nachfragen; nach dem Zwei-Fragen-Limit manuell prüfen. Die Ankündigung, DG-Dokumente erst nachzusehen, gilt nicht als Dokumenteneingang. Bestätigtes Gefahrgut ohne passenden Tarif oder unklarer Versandausgang erfordern manuelle Prüfung.
 - Bei Gefahrguthinweisen ausdrücklich Gefahrgutunterlagen (DGD/Versendererklärung und SDS,
   soweit zutreffend) anfragen und Prüfung vor Angebot/Buchung erklären. Eine allgemeine
   Bestätigung der Packliste ist weder Dokumenteneingang noch Transportfreigabe.

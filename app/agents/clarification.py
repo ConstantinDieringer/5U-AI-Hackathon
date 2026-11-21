@@ -1,10 +1,10 @@
-"""One durable clarification per RFQ. A clarification is never a quote or acceptance."""
+"""Durable clarification workflow with one reformulated follow-up to a holding reply."""
 
 from __future__ import annotations
 
 import dataclasses
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app import db, hackloop
 from app.config import settings
@@ -21,9 +21,15 @@ def expired(sid):
     return not session or datetime.fromisoformat(session["deadline_at"]) <= datetime.now(UTC)
 
 
-def text_for(draft, lang):
+def text_for(draft, lang, *, follow_up=False):
     if draft.evidence.get("question_en"):
         question = draft.evidence["question_de" if lang == "de" else "question_en"]
+        if follow_up:
+            question = (
+                "Damit klar ist, welche Angabe wir noch brauchen: "
+                if lang == "de"
+                else "To clarify the point we still need your help with: "
+            ) + question
         return f"{'Guten Tag' if lang == 'de' else 'Hello'},\n\n{question}\n\n{SIGNATURE}\n"
     fields = sorted({i["field"] for i in draft.issues})
     en = {
@@ -55,46 +61,75 @@ def text_for(draft, lang):
         dg = draft.evidence.get("dangerous_goods") or {}
         what = dg.get("declared") or ", ".join(dg.get("un_numbers") or []) or None
         rest = [labels[f] for f in fields if f != "dangerous_goods"]
+        if follow_up:
+            cargo = f" ({what})" if what else ""
+            if lang == "de":
+                more = f" Außerdem fehlt uns noch {' und '.join(rest)}." if rest else ""
+                return (
+                    f"Guten Tag,\n\nich möchte kurz präzisieren, welche Unterlagen uns fehlen. "
+                    f"Bitte schicken Sie uns die Gefahrgutdokumente für diese Sendung{cargo}: "
+                    "die Shipper's Declaration for Dangerous Goods (DGD) und das "
+                    "Sicherheitsdatenblatt (SDS), soweit für die Sendung zutreffend. "
+                    "Falls ein Dokument nicht zutrifft, geben Sie uns bitte kurz Bescheid. "
+                    f"Hängen Sie die Unterlagen bitte an Ihre Antwort in diesem Thread an.{more} "
+                    f"Damit können wir die Prüfung für das Angebot fortsetzen.\n\n{SIGNATURE}\n"
+                )
+            more = f" We also still need {' and '.join(rest)}." if rest else ""
+            return (
+                f"Hello,\n\nLet me clarify which documents we're missing. Please attach the "
+                f"dangerous goods documents for this shipment{cargo}: the Shipper's Declaration "
+                "for Dangerous Goods (DGD) and the safety data sheet (SDS), where applicable "
+                "to this shipment. If a document doesn't apply, please let us know. "
+                f"Please attach the documents to your reply in this thread.{more} "
+                f"We can then continue reviewing your request for a quote.\n\n{SIGNATURE}\n"
+            )
         if lang == "de":
             line = (
-                f"Laut Ihren Unterlagen ist die Sendung Gefahrgut ({what}). " if what else
-                "Laut Ihren Unterlagen ist die Sendung Gefahrgut. "
+                f"Laut Ihren Unterlagen ist die Sendung Gefahrgut ({what}). "
+                if what
+                else "Laut Ihren Unterlagen ist die Sendung Gefahrgut. "
             ) + (
-                "Bevor wir ein Angebot machen können, brauchen wir dafür die Gefahrgutdokumente: "
-                "die Shipper's Declaration for Dangerous Goods und das Sicherheitsdatenblatt (SDS)."
+                "Bitte schicken Sie uns die Gefahrgutdokumente: "
+                "die Shipper's Declaration for Dangerous Goods (DGD) und das Sicherheitsdatenblatt (SDS), soweit zutreffend."
             )
+            if not what:
+                line += " Bitte nennen Sie auch die UN-Nummer und Gefahrgutklasse."
             more = f" Außerdem brauchen wir noch {' und '.join(rest)}." if rest else ""
             return (
                 f"Guten Tag,\n\ndanke für Ihre Anfrage. {line}{more} Schicken Sie uns die "
-                f"Unterlagen einfach hier im Thread, dann melden wir uns gleich mit dem "
-                f"Angebot.\n\n{SIGNATURE}\n"
+                "Unterlagen bitte hier im Thread. Wir müssen die Unterlagen und die "
+                "Transporteignung prüfen, bevor wir ein Angebot abgeben oder buchen."
+                f"\n\n{SIGNATURE}\n"
             )
         line = (
-            f"Your documents show the shipment is dangerous goods ({what}). " if what else
-            "Your documents show the shipment is dangerous goods. "
+            f"Your documents show the shipment is dangerous goods ({what}). "
+            if what
+            else "Your documents show the shipment is dangerous goods. "
         ) + (
-            "Before we can quote we need the dangerous goods documents: the Shipper's "
-            "Declaration for Dangerous Goods and the safety data sheet (SDS)."
+            "Please send us the dangerous goods documents: the Shipper's "
+            "Declaration for Dangerous Goods (DGD) and the safety data sheet (SDS), where applicable."
         )
+        if not what:
+            line += " Please also include the UN number and class."
         more = f" We also need {' and '.join(rest)}." if rest else ""
         return (
-            f"Hello,\n\nthanks for your request. {line}{more} Just send them over in this "
-            f"thread and we'll come back with the quote right away.\n\n{SIGNATURE}\n"
+            f"Hello,\n\nthanks for your request. {line}{more} Please attach them to your reply "
+            "in this thread. We need to review the documents and transport suitability "
+            f"before we can quote or book this shipment.\n\n{SIGNATURE}\n"
         )
     items = [labels[f] for f in fields]
     joiner = " und " if lang == "de" else " and "
     wanted = items[0] if len(items) == 1 else ", ".join(items[:-1]) + joiner + items[-1]
-    if "dangerous_goods" in fields:
+    if follow_up:
         if lang == "de":
             return (
-                "Guten Tag,\n\nbitte schicken Sie uns noch "
-                f"{wanted}. Wir prüfen die Unterlagen und die Eignung des Transports, "
-                "bevor wir ein Angebot abgeben oder buchen.\n\n"
-                f"{SIGNATURE}\n"
+                f"Guten Tag,\n\nkonkret fehlt uns noch {wanted}. Können Sie uns diese Angabe "
+                "bitte direkt in Ihrer Antwort schicken? Damit können wir die Prüfung für "
+                f"das Angebot fortsetzen.\n\n{SIGNATURE}\n"
             )
         return (
-            f"Hello,\n\nPlease send us {wanted}. We need to review the documents and "
-            "transport suitability before we can quote or book this shipment.\n\n"
+            f"Hello,\n\nThe detail we're still missing is {wanted}. Could you include it "
+            "directly in your reply? This will let us continue working on your quote.\n\n"
             f"{SIGNATURE}\n"
         )
     # one short human paragraph, no bullet list; the labels in brackets stay so the reply
@@ -115,9 +150,7 @@ def text_for(draft, lang):
 def recover_history(mail, sid, draft):
     """Only fill missing fields from this customer's same shipment thread, never conflicts."""
     history = db.customer_mail_history(sid, mail.sender, mail.id)
-    db.emit(
-        "history_checked", f"{len(history)} frühere Kundenmails im Thread geprüft", sid
-    )
+    db.emit("history_checked", f"{len(history)} frühere Kundenmails im Thread geprüft", sid)
     missing = {
         i["field"]
         for i in draft.issues
@@ -131,9 +164,7 @@ def recover_history(mail, sid, draft):
             ("origin", "origin|departure|abflug"),
             ("destination", "destination|ziel"),
         ):
-            match = re.search(
-                rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", text, re.IGNORECASE
-            )
+            match = re.search(rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", text, re.IGNORECASE)
             if match:
                 facts[field] = match[1].upper()
         if match := re.search(
@@ -169,6 +200,12 @@ def recover_history(mail, sid, draft):
 
 
 def request(mail, sid, draft):
+    if (
+        draft.evidence.get("workflow", "rfq") == "rfq"
+        and settings.rfq_validation_mode != "enforce"
+        and not draft.evidence.get("blocking_clarification")
+    ):
+        return
     if draft.evidence.get("workflow", "rfq") == "rfq":
         recovered, draft = recover_history(mail, sid, draft)
         if recovered is not None and not draft.issues:
@@ -199,22 +236,11 @@ def request(mail, sid, draft):
         return
     if db.is_paused(sid) or db.is_manual(sid) or not db.clarification_claim(sid):
         return
-    # hard cap: at most two clarifications per thread (one follow-up for a partial answer).
-    # More is a loop (round 7237 sent four identical ones); alert a human instead.
-    asked = db.conn().execute(
-        "SELECT COUNT(*) FROM mails WHERE session_id = ? AND direction = 'out'"
-        " AND category = 'clarification'",
-        (sid,),
-    ).fetchone()[0]
-    if asked >= 2:
-        db.emit(
-            "clarification_loop",
-            "Weitere Rückfrage unterdrückt: Session braucht einen Menschen",
-            sid,
-            level="error",
-        )
-        return
-    body = text_for(draft, detect(current_message(mail.body).text))
+    _send_question(mail, sid, draft)
+
+
+def _send_question(mail, sid, draft, *, follow_up=False):
+    body = text_for(draft, detect(current_message(mail.body).text), follow_up=follow_up)
     try:
         sent = hackloop.send(mail.sender, mail.subject, body, in_reply_to=mail.id)
     except Exception:  # noqa: BLE001 - send outcome must be treated as unknown, never retried
@@ -239,6 +265,45 @@ def request(mail, sid, draft):
         references=[*mail.references, mail.id],
         raw=sent,
     )
+
+
+_HOLDING = re.compile(
+    r"\b(?:need|have) to (?:check|look|confirm|discuss)|\b(?:will|i'll|we'll) (?:check|look|confirm|discuss)"
+    r"|get back to you|come back to you|\b(?:checking|looking into)\b|look into (?:that|this)"
+    r"|muss.{0,35}(?:prüfen|nachsehen|nachschauen|klären|abklären|besprechen)"
+    r"|(?:werde|werden|wir).{0,35}(?:prüfen|nachsehen|nachschauen|klären|besprechen)"
+    r"|melde.{0,20}(?:zurück|wieder)|melden.{0,20}(?:zurück|wieder)",
+    re.IGNORECASE,
+)
+
+
+def _holding_reply(mail):
+    return not mail.attachments and bool(_HOLDING.search(current_message(mail.body).facts))
+
+
+def _wait_for_customer(mail, sid, draft):
+    due = datetime.fromisoformat(mail.received_at) + timedelta(
+        seconds=settings.clarification_followup_s
+    )
+    db.clarification_wait(sid, mail.id, draft.model_dump(mode="json"), due.isoformat())
+
+
+def follow_up_due():
+    at = datetime.now(UTC).isoformat()
+    for saved in db.clarification_followups_due(at):
+        sid = saved["session_id"]
+        row = db.validation_get(sid)
+        draft = RfqDraft.model_validate(row["draft"])
+        if draft.evidence.get("workflow", "rfq") == "rfq":
+            if expired(sid):
+                db.validation_save(sid, "expired", row["draft"], {})
+                continue
+            if settings.rfq_validation_mode != "enforce" and not draft.evidence.get(
+                "blocking_clarification"
+            ):
+                continue
+        if db.clarification_followup_claim(sid, saved["id"], at):
+            _send_question(_stored_mail(saved), sid, draft, follow_up=True)
 
 
 def ask(mail, sid, workflow, en, de):
@@ -291,7 +356,22 @@ def handle_reply(mail, sid, *, resume=False):
     if db.is_paused(sid) or db.is_manual(sid):
         db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
         return True
+    if re.search(
+        r"(?:do not|don't|please stop).{0,25}(?:follow.?up|remind|email|contact)"
+        r"|(?:keine|nicht).{0,25}(?:nachfrag|erinner|kontaktier)",
+        current_message(mail.body).facts,
+        re.IGNORECASE,
+    ):
+        db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
+        return True
     if workflow != "rfq":
+        if _holding_reply(mail) and not re.search(
+            r"\bBK-[A-Z0-9]+\b|\b(?:yes|ja)\b|go ahead|bitte buchen",
+            current_message(mail.body).facts,
+            re.IGNORECASE,
+        ):
+            _wait_for_customer(mail, sid, draft)
+            return True
         db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})
         if workflow == "booking":
             from app.agents import booking
@@ -305,9 +385,7 @@ def handle_reply(mail, sid, *, resume=False):
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
-    corrections.update(
-        {k: float(v) for k, v in numeric_facts(own).items() if k in asked}
-    )
+    corrections.update({k: float(v) for k, v in numeric_facts(own).items() if k in asked})
     if "lots" in asked:
         from app.mail.lots import parse_lots
 
@@ -334,11 +412,14 @@ def handle_reply(mail, sid, *, resume=False):
     # the customer sends (or says they attached) the DG documents
     if "dangerous_goods" in asked and (
         mail.attachments
-        or re.search(
-            r"declaration|\bDGD\b|\bM?SDS\b|safety data sheet|dangerous goods (?:documents|docs)"
-            r"|attached|anbei|im anhang|sicherheitsdatenblatt|gefahrgutdokument",
-            own,
-            re.IGNORECASE,
+        or (
+            not _holding_reply(mail)
+            and re.search(
+                r"declaration|\bDGD\b|\bM?SDS\b|safety data sheet|dangerous goods (?:documents|docs)"
+                r"|attached|anbei|im anhang|sicherheitsdatenblatt|gefahrgutdokument",
+                own,
+                re.IGNORECASE,
+            )
         )
     ):
         corrections["dangerous_goods"] = "dg_documents_received"
@@ -373,6 +454,9 @@ def handle_reply(mail, sid, *, resume=False):
     if draft.evidence.get("blocking_clarification"):
         checked.evidence["blocking_clarification"] = True
     if checked.issues or rfq is None:
+        if _holding_reply(mail):
+            _wait_for_customer(mail, sid, checked)
+            return True
         db.clarification_reopen(sid, checked.model_dump(mode="json"))
         request(mail, sid, checked)
         return True
@@ -404,9 +488,7 @@ def catch_up():
                 sid,
                 level="error",
             )
-        elif row["draft"].get("evidence", {}).get(
-            "workflow", "rfq"
-        ) != "rfq" or not expired(sid):
+        elif row["draft"].get("evidence", {}).get("workflow", "rfq") != "rfq" or not expired(sid):
             request(Mail(**row["root"]), sid, RfqDraft.model_validate(row["draft"]))
 
 
@@ -447,5 +529,6 @@ def run(stop):
                         item["session_id"],
                         RfqDraft.model_validate(row["draft"]),
                     )
+            follow_up_due()
         except Exception:
             logging.getLogger(__name__).exception("Clarification worker failed")

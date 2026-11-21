@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Holding replies: persist a 15-second wait and one reformulated follow-up, with explicit DG document names and known UN/class. New replies (including queued pushes), pause/manual controls, expiry and ambiguous sends prevent reminders; two-clarification cap retained. Isolated regression suite: 501 passed, 4 skipped; live deployment not performed.
+
 - Setup change ~18:50: RFQs with SLI/packing-spec attachments declaring dangerous goods (UN3481 class 9). 5U rejects quotes without asking for DG documents (reason dg_docs_missing). Clarification now names the UN entry and asks for the Shipper's Declaration + SDS; documents or "attached" in the reply clear it. A ZIP in the mail beats the shipper city in the document.
 - Round 39 rejected `dg_docs_missing`: gate identified DG, but its questions omitted an explicit document request. EN/DE DG clarification now asks for applicable DG documents and review before quoting/booking; generic packing-list confirmation does not release the existing gate. 481 tests passed, 4 skipped; later non-template quote source and production deployment unverified.
 
