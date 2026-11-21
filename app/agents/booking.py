@@ -381,6 +381,7 @@ def catch_up() -> None:
             for m in full["mails"]
             if m["direction"] == "in"
             and m["id"] > quote_mail
+            and m.get("category") != "phishing"  # quarantined: never acted on
             and address(str(m["sender"] or "")) == address(str(full.get("customer") or ""))
         ]
         if not replies:

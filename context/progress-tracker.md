@@ -13,6 +13,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Phishing gate (`app/mail/screening.py`) in `poller.handle` before tariff queueing, downloads and dispatch; send backstop, catch-up/history filters, UI release in "Zu tun". Real set (175 genuine, 2 live phishing): 0 false blocks, 2/2 caught by rules alone, 0 sent to the LLM; replay unchanged.
+- Defaults `PHISHING_GATE_MODE=enforce`, `PHISHING_GATE_LLM_MODE=shadow` (gpt-5-nano, off session budget, 2 s). Not verified: live gateway call, live round, browser render. Rollback: mode `off` in `app/config.py`.
+
 - Strict customer send path and dedicated gpt-5 style reviewer added. Every customer path validates prose before HTTP, records the transmitted version, and rechecks controls after one review. Real reference punctuation remains; whole numbers lose zero fractions. 639 tests pass/4 skip; 31 replay cases retain all facts with 19 text-only updates. Synthetic real-gateway review accepted, 396 input/94 output tokens, estimated $0.001435; no customer mail sent. Public health exposes style/build/model activation.
 
 - Dashboard overflow: fixed recent-request column proportions, bounded chip/subject ellipsis with full tooltips and a card-local scroll region on narrow screens; score labels and verdicts wrap. Browser checks at 1440/1024/390/320 show no page/card overflow. Integrated current main: 621 tests passed, 4 skipped; JS and Python 3.11 syntax checks pass. Production rollout requested.

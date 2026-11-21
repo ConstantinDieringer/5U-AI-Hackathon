@@ -119,6 +119,9 @@ table.list { width: 100%; border-collapse: collapse; }
 .attn-item .ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex: none; }
 .attn-item .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attn-item .d { font-size: 12px; color: var(--ink-2); }
+.attn-item.quarantine { align-items: center; }
+.attn-item .d.why { color: var(--ink-3); }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
 
 /* ---------- overview: checks, score, steps ---------- */
 .checks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -407,16 +410,28 @@ async function loadOverview() {
         el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Anfrage"), el("th", {}, "Quote"), el("th", {}, "5U"), el("th", {}, "Buchung"))), el("tbody", {}, ...rows))) : emptyState("inbox", "Noch keine Anfragen."),
     el("div", { class: "legend", style: "margin-top:14px" }, ...[["#34C759", "erledigt"], ["#007AFF", "läuft / wartet"], ["#FF9500", "knapp"], ["#FF3B30", "verloren / Fehler"]].map(([c, l]) => el("span", {}, el("i", { style: "background:" + c }), l))));
 
-  // 4. Zu tun: only what a human can still change
+  // 4. Zu tun: only what a human can still change; quarantined mails first
+  const quarantine = d.quarantine || [], open = d.todo.length + quarantine.length;
+  const qItems = quarantine.map((q) => el("div", { class: "attn-item quarantine", onclick: q.session_id ? () => select(q.session_id) : null },
+    el("span", { class: "ic", style: "background:var(--red-tint);color:var(--red)" }, icon("stop")),
+    el("div", { style: "min-width:0;flex:1" }, el("div", { class: "t", title: q.subject || "" }, q.subject || "Mail " + q.mail_id),
+      el("div", { class: "d" }, "Phishing-Verdacht, nicht beantwortet · " + (q.sender || "").replace("@hackloop.mail", "")),
+      el("div", { class: "d why" }, (q.reasons || []).map((r) => r.split(":")[0].replace(/_/g, " ")).join(" · "))),
+    el("button", { class: "btn sm", title: "Kein Phishing: normale Verarbeitung starten, Absender in diesem Thread vertrauen", onclick: (ev) => { ev.stopPropagation(); releaseMail(q.mail_id, ev.currentTarget); } }, icon("undo"), "Freigeben")));
   const todo = card("s4",
-    head("Zu tun", "Nur was ein Mensch jetzt noch retten kann.", el("span", { class: "aside badge-s " + (d.todo.length ? "orange" : "green") }, String(d.todo.length))),
-    d.todo.length ? el("div", {}, ...d.todo.map((t) => el("div", { class: "attn-item", onclick: () => select(t.session_id) },
+    head("Zu tun", "Nur was ein Mensch jetzt noch retten kann.", el("span", { class: "aside badge-s " + (quarantine.length ? "red" : d.todo.length ? "orange" : "green") }, String(open))),
+    open ? el("div", {}, ...qItems, ...d.todo.map((t) => el("div", { class: "attn-item", onclick: () => select(t.session_id) },
       el("span", { class: "ic", style: `background:var(--${t.tone}-tint);color:var(--${t.tone})` }, icon(t.tone === "blue" ? "box" : "alert")),
       el("div", { style: "min-width:0" }, el("div", { class: "t" }, t.lane || t.subject || "Session " + t.session_id), el("div", { class: "d" }, t.reason + " · " + (t.customer || "").replace("@hackloop.mail", ""))))))
       : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts zu tun. Der Agent arbeitet allein."));
 
   $("#overview").replaceChildren(checks, todo, reqs, score);
-  $("#attn-badge").textContent = d.todo.length || "";
+  $("#attn-badge").textContent = open || "";
+}
+async function releaseMail(id, btn) {
+  btn.disabled = true;
+  try { const r = await post(`/api/mails/${id}/release`); if (r.session_id) select(r.session_id); else loadOverview(); }
+  catch (e) { btn.disabled = false; btn.title = "Freigabe fehlgeschlagen: " + e.message; }
 }
 
 // ---------- LIVE ----------
@@ -482,7 +497,7 @@ function costCard(s) {
 const mailAddress = (value) => { const text = (value || "").trim(); return (text.match(/<([^<>]+)>/)?.[1] || text).toLowerCase(); };
 const isCustomerMail = (mail, session) => Boolean(mailAddress(session.customer)) && mailAddress(mail.sender) === mailAddress(session.customer);
 function replyMails(session) {
-  const incoming = session.mails.filter((mail) => mail.direction === "in").slice().reverse();
+  const incoming = session.mails.filter((mail) => mail.direction === "in" && mail.category !== "phishing").slice().reverse();
   return [...incoming.filter((mail) => isCustomerMail(mail, session)), ...incoming.filter((mail) => !isCustomerMail(mail, session))];
 }
 function renderDetail() {

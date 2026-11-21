@@ -194,6 +194,10 @@ def get_attachment(message_id: int, attachment_id: int) -> bytes:
     raise HackloopError(method, path, None, "attachment download failed")
 
 
+class QuarantinedReply(RuntimeError):
+    """A reply to a mail the phishing gate quarantined; a person must release it first."""
+
+
 def send(
     to: str,
     subject: str,
@@ -209,6 +213,10 @@ def send(
     """
     payload: dict[str, Any] = {"to": to, "subject": subject, "body": body}
     if in_reply_to is not None:
+        from app import db
+
+        if db.reply_blocked(in_reply_to):  # last line of the phishing gate, for every sender
+            raise QuarantinedReply(f"mail {in_reply_to} is quarantined as phishing")
         payload["in_reply_to"] = in_reply_to
     sent = _json_obj(_request("POST", "/v1/mailbox/messages", safe=False, json=payload))
     if references and sent.get("references") != [*references]:

@@ -257,6 +257,9 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     """Human reply in the customer's thread. Takes the session over first."""
     s = _require(session_id)
     incoming = [m for m in s["mails"] if m["direction"] == "in"]
+    if body.mail_id is not None and db.reply_blocked(body.mail_id):
+        raise HTTPException(409, "mail is quarantined as phishing: release it first")
+    incoming = [m for m in incoming if m.get("category") != "phishing"]
     if not incoming:
         raise HTTPException(409, "no incoming mail to reply to")
     customer = address(s.get("customer") or "")
@@ -340,6 +343,25 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     return {"ok": True, "mail_id": sent_id}
 
 
+@app.get("/api/quarantine")
+def api_quarantine() -> list[dict[str, Any]]:
+    """Mails the phishing gate blocked and nobody has released yet."""
+    return db.quarantined()
+
+
+@app.post("/api/mails/{mail_id}/release")
+def api_release(mail_id: int) -> dict[str, Any]:
+    """Release a quarantined mail: the normal flow runs, the sender is trusted in its thread."""
+    from app.mail import poller
+
+    try:
+        return poller.release(mail_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except (RuntimeError, TypeError, ValueError) as e:
+        raise HTTPException(409, str(e)) from e
+
+
 MAX_DB_BYTES = 500 * 1024 * 1024
 
 
@@ -368,5 +390,7 @@ def api_health() -> dict[str, Any]:
         "email_reviewer_model": settings.llm_review_model,
         "email_review_enabled": settings.email_review_enabled,
         "llm_max_calls_per_session": settings.llm_max_calls_per_session,
+        "phishing_gate_mode": settings.phishing_gate_mode,
+        "phishing_gate_llm_mode": settings.phishing_gate_llm_mode,
         "last_event": (db.events_after(0, limit=1) or [{}])[0].get("id"),
     }

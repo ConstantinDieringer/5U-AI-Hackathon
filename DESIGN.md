@@ -97,7 +97,7 @@ must shrink to the available card width; score labels and verdict badges wrap wi
 Screens
 | Screen | Question | Grid |
 |---|---|---|
-| Übersicht (default) | What works, what does not, what must a human do? | Systemcheck: 9 traffic-light tiles per pipeline part, last 2 h (span 8) + Zu tun, only rescuable sessions (span 4) · Letzte Anfragen: one row per RFQ with step chips Quote → 5U → Buchung (span 8) + Punkte: Ø points per accepted quote with cost/time bars (span 4). No charts, no range selector. |
+| Übersicht (default) | What works, what does not, what must a human do? | Systemcheck: 9 traffic-light tiles per pipeline part, last 2 h (span 8) + Zu tun, only rescuable sessions plus quarantined phishing mails first (red stop icon, reasons, one "Freigeben" button) (span 4) · Letzte Anfragen: one row per RFQ with step chips Quote → 5U → Buchung (span 8) + Punkte: Ø points per accepted quote with cost/time bars (span 4). No charts, no range selector. |
 | Live | What needs me now? | session list card (span 4) + session detail (span 8) |
 | CRM | Who did we quote, win, lose? | 4 KPIs · table card with segmented tabs · customer drawer |
 
