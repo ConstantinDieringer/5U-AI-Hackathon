@@ -158,6 +158,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 20:55: Rounds 47 and 48 unanswered: the mailbox allows one poll per 5 s per team key, extra reads with our key (an analysis session bulk-read the mailbox) gave the live poller 429s, and its backoff doubled to minutes. Fix: a 429 keeps the server's wait and never doubles. Rule: nobody polls the mailbox with the team key except the live system. No webhook subscription exists (GET /v1/mailbox/webhook -> 404), so polling is the only intake.
+
 - 21.11 20:35: Carrier exclusions hardened (`carrier_prefs.parse`): two-letter codes ("ZS") and short names ("Zephyr Steppe") count, a negation only reaches its own clause ("we do not mind ..., but we prefer X" no longer bans X), "no objection to X" refuses nothing, country codes in brackets are ignored. Offline tests only; no live round with an exclusion since.
 
 - 21.11 19:30: Board fit: accuracy = 45 × (1 − |ours − best| / best / 10 %), quoting below best costs too. Rounds 2 and 27 lost on the air leg: the best price billed the next weight break (Solace 2000 kg, Meridian 1000 kg). Round 2 is fixed by the portal next-break check; the 503 → email-bid path (27) has no break check yet.
