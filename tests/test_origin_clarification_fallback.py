@@ -17,7 +17,7 @@ BODY = (
 )
 
 
-def setup_mail(tmp_path, monkeypatch, mode, body=BODY):
+def setup_mail(tmp_path, monkeypatch, mode, body=BODY, subject="Air freight quote: FRA–DEL"):
     db.init_db(str(tmp_path / "origin.db"))
     config = dataclasses.replace(rfq.settings, rfq_validation_mode=mode)
     monkeypatch.setattr(rfq, "settings", config)
@@ -28,7 +28,7 @@ def setup_mail(tmp_path, monkeypatch, mode, body=BODY):
         1,
         "lindqvist-medtech@hackloop.mail",
         "austrian-power@hackloop.mail",
-        "Air freight quote: FRA–DEL",
+        subject,
         body,
         ts,
     )
@@ -84,7 +84,10 @@ def test_no_historical_or_ambiguous_airport_is_invented():
 @pytest.mark.parametrize("mode", ["shadow", "enforce"])
 def test_missing_origin_asks_and_reply_resumes_even_in_shadow(tmp_path, monkeypatch, mode):
     body = "Please quote to DEL. Gross weight: 736 kg. Volume: 6.88 cbm. Pieces: 11."
-    m, _ = setup_mail(tmp_path, monkeypatch, mode, body)
+    m, _ = setup_mail(tmp_path, monkeypatch, mode, body, subject="Air freight quote to DEL")
+    monkeypatch.setattr(
+        rfq, "_bid_carriers", lambda *args: pytest.fail("Missing origin must ask before pricing")
+    )
     sent = []
     monkeypatch.setattr(
         clarification.hackloop, "send", lambda *a, **kw: sent.append((a, kw)) or {"id": 2}

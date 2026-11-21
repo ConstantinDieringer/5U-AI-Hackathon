@@ -183,19 +183,16 @@ def locate_origin(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
     if rfq.origin or rfq.door_to_port:
         return rfq
     network = set(pickup_zones().values())
-    text = f"{mail.subject or ''}\n{_clean(mail.body)}"
+    current = current_message(mail.body, mail.subject)
+    text = f"{current.subject}\n{current.facts}"
     found = {c for c in re.findall(r"\b[A-Z]{3}\b", text) if c in network}
     low = text.lower()
-    found |= {
-        code for city, code in _NETWORK_CITY.items() if re.search(rf"\b{city}\b", low)
-    }
+    found |= {code for city, code in _NETWORK_CITY.items() if re.search(rf"\b{city}\b", low)}
     found.discard((rfq.destination or "").upper())
     if len(found) != 1:
         return rfq
     origin = found.pop()
-    db.emit(
-        "origin_from_text", f"Abflughafen aus dem Text: {origin}", sid, level="warn"
-    )
+    db.emit("origin_from_text", f"Abflughafen aus dem Text: {origin}", sid, level="warn")
     return rfq.model_copy(update={"origin": origin})
 
 
