@@ -178,7 +178,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 # ---------------------------------------------------------------- connection
 
 _local = threading.local()
-_db_path: str = os.getenv("DB_PATH", "data/forwarder.db")
+_db_path: str = os.getenv("DB_PATH") or "data/forwarder.db"  # empty value -> default
 _generation = 0  # bumped by init_db so threads reopen after a path change (tests)
 
 
