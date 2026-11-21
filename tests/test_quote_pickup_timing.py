@@ -1,5 +1,6 @@
 """Truck lead time is separate from flight transit and a confirmed collection slot."""
 
+import json
 from decimal import Decimal
 
 import pytest
@@ -33,3 +34,58 @@ def test_airport_delivery_does_not_invent_pickup():
     option = RateOption("Air", "CGN", "SGN", 2, 10000, "EUR", 10000, "sheet")
     body = rfq.quote_text(request, option, 10000, None, 0)
     assert "pickup time" not in body and "Abholtermin" not in body
+
+
+@pytest.mark.parametrize(
+    "text,kind",
+    [
+        (
+            "We can pick up within 5 hours of the freight being ready.",
+            "collection_lead",
+        ),
+        ("Transit time from pickup: 30 hours.", "road_transit"),
+        ("Fahrzeit: 6 Stunden.", "road_transit"),
+        ("Abholung innerhalb von 8 Stunden.", "collection_lead"),
+        ("Estimated lead: 11 hours.", "unspecified"),
+        ("Pickup within 5 hours. Transit time is 30 hours.", "collection_lead"),
+    ],
+)
+def test_duration_meaning_follows_the_selected_duration(text, kind):
+    assert bids.timing_kind(text) == kind
+
+
+@pytest.mark.parametrize("kind", ["collection_lead", "unspecified", "road_transit"])
+def test_composer_cannot_turn_collection_lead_into_road_duration(kind):
+    request = Rfq(pickup_zip="93721", destination="PVG", weight_kg=540)
+    option = RateOption("Air", "MUC", "PVG", 3, 10000, "EUR", 10000, "sheet")
+    truck = bids.Offer(
+        bids.Carrier("T", "trucker", "t@example.com", ("93",)),
+        Decimal(100),
+        5 / 24,
+        1,
+        timing_kind=kind,
+    )
+    body = (
+        "Hello, Air MUC to PVG: 200,00 € all-in. "
+        "Road collection to the airport takes five hours.\n\nYour austrian Power Team"
+    )
+    raw = json.dumps(
+        {
+            "body": body,
+            "answered_questions": [],
+            "unavailable_questions": [],
+            "addressed_constraints": [],
+            "unavailable_constraints": [],
+        }
+    )
+    if kind == "road_transit":
+        assert (
+            rfq._validate_composed(raw, request, option, "200,00 €", truck=truck)
+            == body
+        )
+    else:
+        with pytest.raises(ValueError, match="not verified road duration"):
+            rfq._validate_composed(raw, request, option, "200,00 €", truck=truck)
+    safe = rfq.quote_text(request, option, 20000, truck, 1)
+    assert "a lead time of about 5 hours" in safe
+    assert "from your door to the airport" not in safe

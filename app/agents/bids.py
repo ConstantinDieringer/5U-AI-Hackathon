@@ -54,6 +54,7 @@ class Offer:
     fx_rate: str | None = None
     fx_source: str | None = None
     fx_valid_until: str | None = None
+    timing_kind: str = "unspecified"
 
 
 @dataclass
@@ -119,6 +120,22 @@ def parse_transit_days(text: str) -> float | None:
         return float(m.group(1).replace(",", "."))
     h = _HOURS.search(text)
     return int(h.group(1)) / 24 if h else None
+
+
+def timing_kind(text: str) -> str:
+    """Interpret only the clause containing the same duration used by the bid parser."""
+    match = _DAYS.search(text) or _HOURS.search(text)
+    if not match:
+        return "unspecified"
+    start = (
+        max(text.rfind(mark, 0, match.start()) for mark in ("\n", ".", "!", "?")) + 1
+    )
+    clause = text[start : match.end()].lower()
+    road = bool(re.search(r"transit time|driving|fahrzeit|transportdauer", clause))
+    collection = bool(re.search(r"pickup|pick up|collect|abhol", clause)) and not road
+    return (
+        "road_transit" if road else "collection_lead" if collection else "unspecified"
+    )
 
 
 # ---------------------------------------------------------------- requests
@@ -281,6 +298,7 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
         str(fx),
         fx_source,
         fx_expiry,
+        timing_kind(mail.body or ""),
     )
     with _cond:
         _open.setdefault(sid, _Request()).offers.append(offer)
