@@ -84,6 +84,10 @@ class Settings:
     revision_not_acceptance: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
+    rfq_watchdog: bool
+    rfq_watchdog_after_s: float
+    rfq_interval_s: float
+    deploy_gate_margin_s: float
     llm_max_calls_per_session: int
     runtime_dir: Path
     usd_eur_rate: str
@@ -171,6 +175,13 @@ settings = Settings(
     all_excluded_notice=_flag("ALL_EXCLUDED_NOTICE", True),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)
     clarify_fallback_after_s=float(_env("CLARIFY_FALLBACK_AFTER_S", "45")),
+    # RFQ_WATCHDOG: an RFQ still without our quote this long after it arrived gets the best
+    # quote real prices allow (app/agents/watchdog.py); never a second quote, never paused
+    rfq_watchdog=_env("RFQ_WATCHDOG", "false").lower() == "true",
+    rfq_watchdog_after_s=max(30.0, float(_env("RFQ_WATCHDOG_AFTER_S", "200"))),
+    # deploy gate: RFQs arrive about every 6 min 4 s; the phase is read from real arrivals
+    rfq_interval_s=max(60.0, float(_env("RFQ_INTERVAL_S", "364"))),
+    deploy_gate_margin_s=max(0.0, float(_env("DEPLOY_GATE_MARGIN_S", "90"))),
     llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "8"))),
     runtime_dir=Path(
         _env(
