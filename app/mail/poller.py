@@ -1,8 +1,8 @@
 """Poll loop: fetch new mail, route it, store it once, download attachments.
 
 Guarantees
-- Each mail is processed at most once: it is inserted first and processed only if new.
-- `next_since_id` is saved after every mail, so a restart resumes where it stopped.
+- Each mail is queued durably by exact ID, shared with signed webhook deliveries.
+- The cursor advances only after enqueue commits, independently of agent processing.
 - An error in one mail is logged (and shown in the UI) and the loop goes on.
 """
 
@@ -13,7 +13,7 @@ import re
 import threading
 from pathlib import Path
 
-from app import hackloop
+from app import db, hackloop
 from app.config import settings
 from app.mail import parse, router, store
 from app.models import Category, Mail
@@ -31,9 +31,7 @@ def _parent(in_reply_to: int | None) -> Mail | None:
     try:
         return parse.mail_from_api(hackloop.get_message(in_reply_to))
     except (hackloop.HackloopError, parse.MailFormatError) as e:
-        log.warning(
-            "parent mail %s not readable (%s); routing by sender only", in_reply_to, e
-        )
+        log.warning("parent mail %s not readable (%s); routing by sender only", in_reply_to, e)
         return None
 
 
@@ -56,7 +54,7 @@ def download_attachments(mail: Mail) -> list[Path]:
     return paths
 
 
-def handle(raw: dict) -> None:
+def handle(raw: dict, *, recover: bool = False) -> None:
     """Route, store and (if new) process one mail from the poll response."""
     mail = parse.mail_from_api(raw)
     in_reply_to = parse.in_reply_to(raw)
@@ -66,15 +64,15 @@ def handle(raw: dict) -> None:
 
         tariff.enqueue(mail)
     saved = store.save_mail(mail, category, in_reply_to)
-    if not saved.is_new:
+    if not saved.is_new and not recover:
         log.info("mail %s already stored, skipped", mail.id)
         return
+    db.delivery_state(mail.id, "stored")
     files = [] if category == Category.TARIFF else download_attachments(mail)
     note = f", {len(files)} attachment(s) saved" if files else ""
-    log.info(
-        "mail %s from %s -> %s (%s)%s", mail.id, mail.sender, category.value, rule, note
-    )
+    log.info("mail %s from %s -> %s (%s)%s", mail.id, mail.sender, category.value, rule, note)
     store.emit("routed", f"Routed as {category.value} ({rule}){note}", saved.session_id)
+    db.delivery_state(mail.id, "dispatching")
     dispatch(mail, category, saved.session_id)
 
 
@@ -91,11 +89,17 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
             daemon=True,
         ).start()
     elif category == Category.TRACKING:
-        from app.agents import tracking
+        from app.agents import clarification, tracking
+
+        def tracking_reply():
+            pending = db.validation_get(session_id) if session_id is not None else None
+            workflow = (pending or {}).get("draft", {}).get("evidence", {}).get("workflow")
+            if workflow == "tracking" and clarification.handle_reply(mail, session_id):
+                return
+            tracking.handle(mail, session_id)
 
         threading.Thread(
-            target=tracking.handle,
-            args=(mail, session_id),
+            target=tracking_reply,
             name=f"track-{mail.id}",
             daemon=True,
         ).start()
@@ -121,25 +125,23 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
 
 def poll_once(since_id: int) -> tuple[int, int]:
     """One poll call. Returns (new since_id, number of mails in the batch)."""
+    from app.mail import webhook
+
     batch = hackloop.poll(since_id, limit=POLL_LIMIT)
     messages = parse.messages(batch)
     for raw in messages:
         mail_id = parse.message_id(raw)
-        try:
-            handle(raw)
-        except Exception as e:
-            log.exception("mail %s failed", mail_id)
-            store.emit(
-                "error",
-                f"Mail {mail_id} failed: {type(e).__name__}: {e}",
-                level="error",
-            )
+        webhook.enqueue(raw, "poll")
         since_id = max(since_id, mail_id)
         store.set_since_id(since_id)
     next_id = parse.next_since_id(batch)
     if next_id is not None and next_id > since_id:
         since_id = next_id
         store.set_since_id(since_id)
+    # Also drain here for poll-only callers; the concurrent worker uses the same atomic claims.
+    for _ in range(POLL_LIMIT):
+        if not webhook.process_once():
+            break
     return since_id, len(messages)
 
 
@@ -148,14 +150,22 @@ def run(stop: threading.Event | None = None) -> None:
     stop = stop or threading.Event()
     store.init()
     since_id = store.get_since_id()
-    log.info(
-        "poller started at since_id=%s, every %.1fs", since_id, settings.poll_interval_s
-    )
+    log.info("poller started at since_id=%s, every %.1fs", since_id, settings.poll_interval_s)
+    backoff = 0.0
     while not stop.is_set():
-        count = 0
+        from app.mail.webhook import signing_secret
+
+        delay = max(
+            settings.poll_interval_s, settings.webhook_poll_interval_s if signing_secret() else 5.0
+        )
         try:
-            since_id, count = poll_once(since_id)
+            since_id, _ = poll_once(since_id)
+            backoff = 0
+        except hackloop.HackloopError as exc:
+            backoff = min(300, max(30, backoff * 2))
+            delay = max(delay, backoff, getattr(exc, "retry_after", 0))
+            log.warning("mailbox poll failed (%s), next attempt in %.1fs", exc.status, delay)
         except Exception:
             log.exception("poll failed")
-        if count < POLL_LIMIT:  # a full batch means more is waiting: poll again at once
-            stop.wait(settings.poll_interval_s)
+            delay = max(delay, 30)
+        stop.wait(delay)  # full batches also respect the mailbox rate limit

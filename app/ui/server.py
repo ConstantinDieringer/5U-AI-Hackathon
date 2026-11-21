@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from app import db
 from app.config import settings
+from app.mail import webhook
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
@@ -38,7 +39,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Austrian Power · Forwarder", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
-PUBLIC_PATHS = {"/api/health"}  # for the platform health check
+PUBLIC_PATHS = {"/api/health", webhook.PATH}  # health check or separate mandatory HMAC auth
+app.add_api_route(webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False)
 
 
 @app.middleware("http")
@@ -57,9 +59,7 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
             pw, settings.ui_password
         ):
             return await call_next(request)
-    return Response(
-        status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'}
-    )
+    return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'})
 
 
 @app.get("/", include_in_schema=False)
@@ -218,9 +218,7 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     try:
         from app import hackloop  # owned by task A; may not exist yet
     except ImportError as e:
-        raise HTTPException(
-            503, "mail client (app/hackloop.py) not available yet"
-        ) from e
+        raise HTTPException(503, "mail client (app/hackloop.py) not available yet") from e
 
     db.takeover(session_id)
     subject = parent["subject"] or ""

@@ -562,11 +562,7 @@ def with_pickup_note(body: str, rfq: Rfq) -> str:
             "Schicken Sie uns kurz die genaue Abholadresse, dann bestätigen wir den Preis."
         )
     else:
-        where = (
-            f"postal code {rfq.pickup_zip}"
-            if rfq.pickup_zip
-            else f"the {rfq.pickup_city} area"
-        )
+        where = f"postal code {rfq.pickup_zip}" if rfq.pickup_zip else f"the {rfq.pickup_city} area"
         note = (
             f"Your mail did not mention the pickup address, so we priced pickup in {where}. "
             "Just send us the exact address and we will confirm the price."
@@ -791,6 +787,9 @@ def handle_rfq(mail: Mail, session_id: int) -> None:
 
 def _handle(mail: Mail, sid: int) -> None:
     t0 = _received(mail)
+    session = db.get_session(sid)
+    if session:
+        t0 = min(t0, datetime.fromisoformat(session["created_at"]).timestamp())
     age = time.time() - t0
     if age > TOO_OLD_S:
         db.emit(
@@ -807,7 +806,16 @@ def _handle(mail: Mail, sid: int) -> None:
         mail, sid
     )  # stored = resumed after a restart
     if rfq is None:
-        db.set_status(sid, "error", "Anfrage nicht lesbar")
+        from app.agents import clarification
+        from app.models import RfqDraft
+
+        draft = RfqDraft(
+            issues=[
+                {"field": field, "code": "missing"}
+                for field in ("origin", "destination", "weight_kg", "volume_cbm")
+            ]
+        )
+        clarification.request(mail, sid, draft)
         return
     from app.agents import clarification
     from app.mail.rfq_validation import validate

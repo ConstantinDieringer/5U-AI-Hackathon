@@ -32,7 +32,7 @@ RFQ in → route → price → quote → customer accepts → book by rate ID �
 - **Start kit** (`https://api.start-hack.5u.ai/kit/start-kit.zip`): 10 airline rate sheets in mixed formats, a carrier list with the email addresses of airlines and truckers, and the pickup zones. Some airlines appear only in the sheets and others only on the portal.
 - **API:** the base URL is `https://api.start-hack.5u.ai`, with Swagger at `/docs` and the spec at `/openapi.json`. One team key covers the mailbox, portal and gateway. Send it as the `X-API-Key` header (or `Authorization: Bearer`). The key is kept out of the repo.
 - **Mailbox** (one per team; every mail in and out is logged):
-  - `GET /v1/mailbox/messages?since_id=&limit=`: poll, oldest first, at most 200 per call. Pass `next_since_id` on the next call. There is no push; poll every 1–2 s. `references` holds the thread's IDs from the first mail down to the parent.
+  - Signed webhooks are available via `PUT /v1/mailbox/webhook`; our receiver is `/hooks/mailbox`. Persist then acknowledge within 5 s, process in the background. `GET /v1/mailbox/messages?since_id=&limit=` remains the fallback, oldest first, at most 200 per call. Pass `next_since_id` on the next call; rate limits now apply to polling. `references` holds the thread's IDs from the first mail down to the parent.
   - `POST /v1/mailbox/messages` with `{to, subject, body, in_reply_to, attachments}`: send or reply. Limit: 60 mails/min. We may write only to customers, the carrier-list addresses, `ratedesk@hackloop.mail` and `tracking@hackloop.mail` (anything else gets 422).
   - `GET /v1/mailbox/messages/{id}` reads one mail, and `GET /v1/mailbox/messages/{id}/attachments/{attachment_id}` downloads an attachment.
 - **Rate portal**, three ways in:
