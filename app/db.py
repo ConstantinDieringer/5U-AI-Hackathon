@@ -1046,6 +1046,98 @@ def dashboard(limit: int = 50) -> dict[str, Any]:
     }
 
 
+WON = ("accepted", "booked", "confirmed")
+LOST = ("lost", "expired", "error")
+
+
+def crm(limit: int = 200) -> dict[str, Any]:
+    """CRM view: KPIs, customers with won/lost, quote history, bookings."""
+    c = conn()
+    won = ",".join(f"'{s}'" for s in WON)
+    lost = ",".join(f"'{s}'" for s in LOST)
+    customers = _rows(
+        c.execute(
+            f"""
+            SELECT s.customer,
+                   COUNT(*) AS requests,
+                   SUM(CASE WHEN s.first_reply_at IS NOT NULL THEN 1 ELSE 0 END) AS quoted,
+                   SUM(CASE WHEN s.status IN ({won}) THEN 1 ELSE 0 END) AS won,
+                   SUM(CASE WHEN s.status IN ({lost}) THEN 1 ELSE 0 END) AS lost,
+                   SUM(CASE WHEN s.status IN ('new','pricing','quoted') THEN 1 ELSE 0 END) AS open,
+                   (SELECT COALESCE(SUM(b.price_minor),0) FROM bookings b
+                     JOIN sessions s2 ON s2.id = b.session_id
+                     WHERE s2.customer = s.customer AND b.status != 'failed') AS booked_minor,
+                   MAX(s.updated_at) AS last_contact
+            FROM sessions s WHERE s.kind = 'rfq' AND s.customer IS NOT NULL
+            GROUP BY s.customer ORDER BY last_contact DESC LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+    quotes = _rows(
+        c.execute(
+            f"""
+            SELECT q.session_id, s.customer, s.subject, q.airline, q.origin, q.destination,
+                   q.total_minor, q.currency, q.transit_days, q.source, q.sent_at, s.status,
+                   CASE WHEN s.status IN ({won}) THEN 'won'
+                        WHEN s.status IN ({lost}) THEN 'lost' ELSE 'open' END AS outcome,
+                   (SELECT verdict FROM board_results br WHERE br.session_id = q.session_id
+                     ORDER BY br.fetched_at DESC LIMIT 1) AS verdict
+            FROM quotes q JOIN sessions s ON s.id = q.session_id
+            WHERE q.id IN (SELECT MIN(id) FROM quotes GROUP BY session_id)
+            ORDER BY q.sent_at DESC LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+    bookings = _rows(
+        c.execute(
+            "SELECT b.*, s.customer, s.subject FROM bookings b"
+            " JOIN sessions s ON s.id = b.session_id ORDER BY b.created_at DESC LIMIT ?",
+            (limit,),
+        )
+    )
+    totals = (
+        _one(
+            c.execute(
+                f"""
+            SELECT COUNT(*) AS requests,
+                   SUM(CASE WHEN first_reply_at IS NOT NULL THEN 1 ELSE 0 END) AS quoted,
+                   SUM(CASE WHEN status IN ({won}) THEN 1 ELSE 0 END) AS won,
+                   SUM(CASE WHEN status IN ({lost}) THEN 1 ELSE 0 END) AS lost,
+                   COUNT(DISTINCT customer) AS customers
+            FROM sessions WHERE kind = 'rfq'
+            """
+            )
+        )
+        or {}
+    )
+    booked = _one(
+        c.execute("SELECT COALESCE(SUM(price_minor),0) AS v FROM bookings WHERE status != 'failed'")
+    )
+    return {
+        "totals": {k: (v or 0) for k, v in totals.items()},
+        "booked_minor": booked["v"] if booked else 0,
+        "customers": customers,
+        "quotes": quotes,
+        "bookings": bookings,
+    }
+
+
+def customer_sessions(customer: str) -> list[dict[str, Any]]:
+    rows = _rows(
+        conn().execute(
+            "SELECT s.id, s.kind, s.subject, s.status, s.created_at, s.first_reply_at,"
+            " (SELECT total_minor FROM quotes q WHERE q.session_id = s.id ORDER BY q.id LIMIT 1)"
+            " AS quote_total_minor,"
+            " (SELECT currency FROM quotes q WHERE q.session_id = s.id ORDER BY q.id LIMIT 1)"
+            " AS quote_currency FROM sessions s WHERE s.customer = ? ORDER BY s.created_at DESC",
+            (customer,),
+        )
+    )
+    return rows
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     init_db()

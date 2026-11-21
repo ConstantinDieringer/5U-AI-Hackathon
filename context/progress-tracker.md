@@ -18,6 +18,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`.
 - Task B, Constantin, pricing: parser fix (first break 0 kg, PDFs via pdfplumber), `RateOption` in cents, `sheet_options`/`pick`, portal rates + lane snapshot (114 lanes, 15 airlines), lane index, reference data; `app/models.py` (Rfq validated); portal airlines fetched in parallel, snapshot auto-refresh; 35 pricing tests green.
 - Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
+- UI v2 + online prep: `DESIGN.md` (tokens/components), UI redesigned into Live · CRM (customers, won/lost, quotes, bookings, drawer) · Leistung; `/api/crm`; Basic auth; `Dockerfile` + `railway.json` + `DEPLOY.md`. Docker build not tested locally (no daemon).
 - C3+C4 done: `app/ui/server.py` (REST, SSE via `fastapi.sse`, actions), `static/index.html` (sessions + dashboard, dark), `watchers.py` (deadline, board sync), `demo.py` (seed `data/demo.db`); 20 tests green, checked in a real browser.
 - C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11. 
 - A1 repo setup; fresh clone installs `requirements.txt` (Python 3.11).

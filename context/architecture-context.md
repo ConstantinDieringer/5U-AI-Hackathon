@@ -7,3 +7,5 @@ Decided 21.11.2026. Details live in the linked docs; this file only points to th
 - **Session = one customer-started thread.** Mails are mapped to sessions via known mail IDs in `references`; every outgoing mail is stored with `db.record_outgoing()`.
 - **Boundaries:** only `app/hackloop.py` talks to the 5U API, only `app/llm.py` to the gateway, only `app/db.py` writes SQL. UI and agents are coupled only through the database (`events` table, `paused`/`mode` flags).
 - **Pricing:** `app/pricing/` (deterministic, no LLM): `pricing.py` (sheets, `pick`), `portal_sync.py` (portal rates + `data/portal_lanes.json`), `lanes.py` (sheet/portal/email channel per airline), `reference.py` (carrier list, pickup zones). `Decimal` inside, integer cents in `RateOption`.
+- **Hosting:** one container on Railway (`Dockerfile`, `railway.json`, guide in `DEPLOY.md`), SQLite on a volume at `/data`, one replica only. UI behind HTTP Basic auth (`UI_USER`/`UI_PASSWORD`).
+- **UI design:** tokens and components in `DESIGN.md` (v0.1, provisional); screens Live · CRM · Leistung.

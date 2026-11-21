@@ -32,6 +32,8 @@ class Settings:
     carrier_list: Path
     board_sync_every_s: float
     deadline_check_every_s: float
+    ui_user: str
+    ui_password: str
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -46,10 +48,12 @@ settings = Settings(
     llm_model=_env("LLM_MODEL"),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
-    ui_port=int(_env("UI_PORT", "8000")),
+    ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
     log_level=_env("LOG_LEVEL", "INFO"),
-    inbox_dir=ROOT / "data" / "inbox",
+    inbox_dir=Path(_env("INBOX_DIR", str(ROOT / "data" / "inbox"))),
     carrier_list=ROOT / "data" / "start-kit" / "carrier-list.csv",
     board_sync_every_s=float(_env("BOARD_SYNC_EVERY_S", "60")),
     deadline_check_every_s=float(_env("DEADLINE_CHECK_EVERY_S", "10")),
+    ui_user=_env("UI_USER", "team"),
+    ui_password=_env("UI_PASSWORD"),  # set it whenever the UI is reachable from the internet
 )

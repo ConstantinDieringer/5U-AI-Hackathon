@@ -67,3 +67,50 @@ def test_reply_without_mail_client_is_503(client):
     sid = seed()
     r = client.post(f"/api/sessions/{sid}/reply", json={"text": "Hallo"})
     assert r.status_code in (503, 502)
+
+
+def test_basic_auth_when_password_set(client, monkeypatch):
+    import base64
+    import dataclasses
+
+    monkeypatch.setattr(
+        server, "settings", dataclasses.replace(server.settings, ui_user="team", ui_password="pw")
+    )
+    assert client.get("/api/stats").status_code == 401
+    assert client.get("/api/health").status_code == 200
+    good = base64.b64encode(b"team:pw").decode()
+    bad = base64.b64encode(b"team:nope").decode()
+    assert client.get("/api/stats", headers={"Authorization": f"Basic {bad}"}).status_code == 401
+    assert client.get("/api/stats", headers={"Authorization": f"Basic {good}"}).status_code == 200
+
+
+def test_crm_won_lost(client):
+    sid = seed()
+    db.record_quote(
+        sid,
+        total_minor=10000,
+        currency="EUR",
+        airline="X",
+        origin="FRA",
+        destination="DFW",
+        transit_days=2,
+        source="sheet",
+    )
+    db.record_booking(
+        sid,
+        booking_reference="BK-1",
+        rate_id="R-12345678",
+        airline="X",
+        price_minor=10000,
+        currency="EUR",
+    )
+    lost = db.ingest_mail(
+        mail_id=2, sender="c@d.example", recipient=TEAM, subject="RFQ 2", body="b", category="rfq"
+    )
+    db.set_status(lost, "expired")
+    d = client.get("/api/crm").json()
+    assert d["totals"]["won"] == 1 and d["totals"]["lost"] == 1 and d["booked_minor"] == 10000
+    a = next(c for c in d["customers"] if c["customer"] == "a@b.example")
+    assert a["won"] == 1 and a["booked_minor"] == 10000
+    assert d["quotes"][0]["outcome"] == "won"
+    assert client.get("/api/customers/a@b.example/sessions").json()[0]["id"] == sid
