@@ -27,18 +27,26 @@ ROUND_28 = (
     "Klaus Weidner\nWeidner Spielwaren GmbH, Nuremberg"
 )
 ANSWERS = [  # the customer's four real answers to our origin question
-    "Hi Moritz,\n\nThanks for getting back to me! We’ll drop the shipment off at CGN "
-    "ourselves, so there’s no pickup ZIP. Can you quote it from CGN to DFW on that basis?\n\n"
-    "Cheers,\nKlaus Weidner",
-    "Hi Moritz,\n\nThanks for getting back to me! We’ll deliver the shipment directly to CGN "
-    "ourselves, so there’s no pickup ZIP. Can you quote it from CGN to DFW on that basis?\n\n"
-    "Cheers,\nKlaus Weidner",
-    "Hi Moritz,\n\nThanks for getting back to me! There’s no pickup ZIP, as we’ll drop the "
-    "shipment off at CGN ourselves. Could you quote it from CGN to DFW on that basis?\n\n"
-    "Cheers,\nKlaus Weidner",
-    "Hi Moritz,\n\nThanks for getting back to me! There’s no pickup ZIP—we’ll drop the "
-    "shipment off at CGN ourselves. Could you quote it from CGN to DFW on that basis?\n\n"
-    "Cheers,\nKlaus Weidner",
+    (
+        "Hi Moritz,\n\nThanks for getting back to me! We’ll drop the shipment off at CGN "
+        "ourselves, so there’s no pickup ZIP. Can you quote it from CGN to DFW on that basis?\n\n"
+        "Cheers,\nKlaus Weidner"
+    ),
+    (
+        "Hi Moritz,\n\nThanks for getting back to me! We’ll deliver the shipment directly to CGN "
+        "ourselves, so there’s no pickup ZIP. Can you quote it from CGN to DFW on that basis?\n\n"
+        "Cheers,\nKlaus Weidner"
+    ),
+    (
+        "Hi Moritz,\n\nThanks for getting back to me! There’s no pickup ZIP, as we’ll drop the "
+        "shipment off at CGN ourselves. Could you quote it from CGN to DFW on that basis?\n\n"
+        "Cheers,\nKlaus Weidner"
+    ),
+    (
+        "Hi Moritz,\n\nThanks for getting back to me! There’s no pickup ZIP—we’ll drop the "
+        "shipment off at CGN ourselves. Could you quote it from CGN to DFW on that basis?\n\n"
+        "Cheers,\nKlaus Weidner"
+    ),
 ]
 FACTS = {  # what the extraction returned in round 28: no origin, no pickup
     "origin": None,
@@ -116,9 +124,11 @@ def test_every_real_answer_names_the_departure(recovery, answer) -> None:
         ("Please quote from AMS to DFW, we deliver to AMS ourselves.", "DFW"),
         # an old forwarded request is history, not the current shipment
         (
-            "Please quote 300 kg to DFW, pickup details follow.\n\n"
-            "-----Original Message-----\nFrom: x\nPlease quote from FRA to DFW, "
-            "we deliver to FRA ourselves.",
+            (
+                "Please quote 300 kg to DFW, pickup details follow.\n\n"
+                "-----Original Message-----\nFrom: x\nPlease quote from FRA to DFW, "
+                "we deliver to FRA ourselves."
+            ),
             "DFW",
         ),
     ],
