@@ -25,7 +25,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## In Progress
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
-- Task A, Karim: A1 repo setup (folders per TECH_SPEC §3, requirements, .env.example). `hackloop.py` not in repo yet; `portal_options()` (B) is untested live until `get_rate/get_ports/get_brackets` exist.
+- Task A, Karim: **blocked on the team API key** (`.env` empty, `GET /v1/me` → 401). Branch `a/mail-intake`, offline-tested only:
+  - A2 `config.py`, `hackloop.py` (me/poll/get_message/get_attachment/send/get_board_me + get_ports/get_brackets/get_rate for B). Not verified live.
+  - A4 `mail/poller.py`, `mail/store.py` (adapter to db.py), `mail/parse.py` (sender/timestamp/list key wait for A3). A5 `mail/router.py` + 10 tests green. A6 `run.py` written, not run.
 - Task B, Constantin: B1–B7 in PR #2 (pricing, portal, lanes, reference, dataset_version); next door-to-port trucking, bid selection, tariff mails.
 
 ## Next Up
@@ -64,6 +66,8 @@ Goal: the first accepted quote end to end before any polish.
 11. How many carriers to ask and how long to wait for bids within the 2-minute target.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
 13. ~~What one UI session is~~ → one customer-started thread (see design C).
+15. For C (A): `db.ingest_mail` doesn't say if the mail was new. Please return `(session_id, is_new)` or add `save_mail(...) -> bool`; until then `mail/store.py` uses a kv high-water mark.
+16. (A) `POST /v1/mailbox/messages` has no `references` field (openapi). Assumed: the server builds the thread from `in_reply_to`; verify in A3.
 14. 4 airlines (Zephyr, Himalaya Bridge, Lagoon Isles, Pampero) serve only ASU/KTM/PPT/TNR/ULN, on neither sheet nor portal: email bids only.
 
 ## Architecture Decisions

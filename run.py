@@ -1,1 +1,51 @@
-"""Entry point: `python run.py` starts the mail poller (and the UI once it exists)."""
+"""Start everything: `python run.py` (from the repo root).
+
+- mail poller in a daemon thread
+- C's background watchers (deadline, board sync) in daemon threads
+- C's UI server (FastAPI) via uvicorn in the main thread
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+
+from app.config import settings  # loads .env first (db.py reads DB_PATH on import)
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=settings.log_level,
+        format="%(asctime)s %(levelname)s %(name)s [%(threadName)s] %(message)s",
+    )
+    log = logging.getLogger("run")
+
+    from app import db
+    from app.mail import poller
+
+    db.init_db()
+    stop = threading.Event()
+    threading.Thread(target=poller.run, args=(stop,), name="poller", daemon=True).start()
+
+    try:
+        from app.ui import server, watchers
+    except ImportError as e:
+        log.warning("UI not available (%s): running the poller only", e)
+        try:
+            stop.wait()
+        except KeyboardInterrupt:
+            stop.set()
+        return
+
+    import uvicorn
+
+    watchers.start()
+    log.info("UI on http://localhost:%s", settings.ui_port)
+    try:
+        uvicorn.run(server.app, host="0.0.0.0", port=settings.ui_port, log_level="warning")
+    finally:
+        stop.set()
+
+
+if __name__ == "__main__":
+    main()
