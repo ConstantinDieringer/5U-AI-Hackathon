@@ -39,3 +39,11 @@ The jury judges UX and design, and the pitch will show the UI, so the UI is a sc
 ### Tariff View
 
 - The ingested tariffs per airline, held as structured prices.
+
+## Current Behavior
+
+- Screens: Übersicht (Systemcheck lights, step chips, "Zu tun", Punkte) · Live · CRM (customers, won/lost, quotes, bookings, "Preise") · Leistung. Server `app/ui/server.py`, page `app/ui/static/index.html`.
+- Manual replies default to the latest incoming customer mail; carrier mails stay explicitly selectable. Customer quotes to other recipients are rejected before send; the confirmation names the recipient. Only customer responses set `first_reply_at`.
+- Notfall-Quote (`POST /api/sessions/{id}/draft`, `app/ui/drafts.py`) computes a quote from stored data and hands back to the agent after sending.
+- Deploy light in the top bar (`/api/deploy-gate`); attention list `GET /api/attention`.
+- Mail content is rendered only via `textContent`; JSON fields are snake_case.

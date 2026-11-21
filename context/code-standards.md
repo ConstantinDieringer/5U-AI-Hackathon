@@ -32,13 +32,11 @@
 
 ## Mail Handling
 
-- Blocking gaps: history/CRM first, then a persisted threaded clarification. Resume from the customer's response; incomplete responses produce another targeted question rather than a silent stop. Historical conflicts are not guessed, and approvals must be current and explicit.
-- Customer body and subject use no colons, semicolons, underscores, dash punctuation or parentheses, including Unicode/HTML equivalents. Routes use `to`/`nach`; whole euro totals use `1.475 €`, nonzero cents remain. The team sign-off is `Your austrian Power Team`. Only true reference numbers retain original punctuation; dates use written months. Reply IDs preserve threading. Stored/API currency codes remain unchanged.
-- Customer prose uses full month names in dates, short paragraphs and friendly complete sentences. No parentheses or backend field/enum/column names in customer-facing wording; literal references remain intact.
 - Processing is idempotent by message ID: handling the same mail twice has no extra effect.
-- Reply in the customer's thread (`in_reply_to`).
-- Never send a second quote in a thread.
+- Reply in the customer's thread (`in_reply_to`). Never send a second quote in a thread.
 - Ignore mail that 5U's agents did not start.
+- Blocking gaps: history/CRM first, then a persisted threaded clarification (`context/areas/rfq.md`). Approvals must be current and explicit.
+- Customer-facing text follows the hard style rules in `context/areas/customer-email.md`.
 - Time budget: aim for under 2 minutes from request to quote. The hard limit is 6.
 
 ## External APIs

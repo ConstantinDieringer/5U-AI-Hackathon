@@ -4,6 +4,8 @@
 Wer davon abweichen will, ändert zuerst diese Datei (kurz im Team ansagen), dann den Code.
 Repo: `ConstantinDieringer/5U-AI-Hackathon` · Ablage: `context/docs/TECH_SPEC.md` · Stand: 21.11.2026, 18:00
 
+**Section index (read only the section your change touches):** §1 language/runtime · §2 libraries · §3 folder structure · §4 config/secrets · §5 external interfaces · §6 data models · §7 database · §8 LLM rules, thread rescue, RFQ validation · §8a RFQ answer contract, booking consent, tracking notice, deploy light · §9 logging · §10 UI/internal API · §11 git · §12 tests · §13 AI assistants · §14 open items.
+
 ---
 
 ## 1. Sprache & Laufzeit
@@ -420,7 +422,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 13. Für KI-Assistenten (Claude etc.)
 
-- Diese Datei vor jeder Code-Änderung lesen und einhalten.
+- Vor einer Code-Änderung den betroffenen Abschnitt dieser Datei lesen (Index oben) und einhalten; Einstieg und Kontext-Routing: `CLAUDE.md`.
 - Keine neuen Abhängigkeiten, Sprachen oder Frameworks einführen.
 - Keine API-Felder raten: `context/docs/mail-format.md` und `openapi.json` sind die Quelle.
 - Keine Secrets in Code, Logs oder Chats.
