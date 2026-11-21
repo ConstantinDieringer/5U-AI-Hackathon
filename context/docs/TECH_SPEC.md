@@ -230,6 +230,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
+- Standard für Extraktion ist `gpt-5-mini`, für die Reparatur `LLM_RETRY_MODEL=gpt-5`. Beide wurden über die Gateway-Modellliste bestätigt. Explizite Umgebungswerte überschreiben diese Defaults weiterhin; Kostenpreise für `gpt-5` sind hinterlegt.
 - **Hartes Limit: max. 4 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Standard ist 4: Extraktion, ggf. Reparatur, individuelle Antwort und ggf. Antwortreparatur. Sichere Textvorlagen bleiben Fehlerfallback.
 - `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, individueller Mailtext ≤ 750).
   `temperature=0` für strukturierte Outputs.

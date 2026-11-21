@@ -36,6 +36,7 @@ def test_cost_is_integer_micro_usd() -> None:
     # 1000 * 0.05 + 500 * 0.40 = 250 micro-USD
     assert llm.cost_micro_usd("gpt-5-nano", 1000, 500) == 250
     assert llm.cost_micro_usd("gpt-5-nano-2025-08-07", 1000, 500) == 250
+    assert llm.cost_micro_usd("gpt-5-2025-08-07", 1000, 500) == 6250
     assert llm.cost_micro_usd("unknown-model", 1000, 500) == 0
 
 

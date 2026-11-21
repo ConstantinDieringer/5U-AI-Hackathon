@@ -21,7 +21,7 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gpt-5-nano"  # cheapest allowed model by list price; override with LLM_MODEL
+DEFAULT_MODEL = "gpt-5-mini"  # stronger extraction default; override with LLM_MODEL
 MAX_CALLS_PER_SESSION = min(4, settings.llm_max_calls_per_session)
 PRICES_FILE = Path(__file__).with_name("llm_prices.json")
 
