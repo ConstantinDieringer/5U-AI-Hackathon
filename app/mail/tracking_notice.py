@@ -3,6 +3,8 @@
 import re
 from typing import Any
 
+from app import db
+from app.mail.language import base, normalize
 from app.mail.router import address
 from app.mail.style import TEAM_LINE
 
@@ -59,11 +61,34 @@ _LEGACY = re.compile(
     re.IGNORECASE,
 )
 
+_LOCALIZED = "tracking.notice.localized.v1."
+
+
+def known_notices() -> list[str]:
+    return [*NOTICES.values(), *db.kv_values(_LOCALIZED)]
+
+
+def notice_for(lang: str, booked: bool, sid: int | None = None) -> str:
+    """A required tracking invitation in any gateway-supported language, cached durably."""
+    if (base(lang), booked) in NOTICES:
+        return NOTICES[(base(lang), booked)]
+    key = f"{_LOCALIZED}{normalize(lang)}.{int(booked)}"
+    cached = db.kv_get(key)
+    if cached:
+        return cached
+    from app.mail.multilingual import localize
+    from app.mail.outgoing import customer_body
+
+    _, translated = localize("", NOTICES[("en", booked)], lang, sid)
+    translated = " ".join(customer_body(translated, lang).split())
+    db.kv_set(key, translated)
+    return translated
+
 
 def has_notice(body: str) -> bool:
     """Recognize an actionable invitation, including valid older confirmations."""
     plain = " ".join(body.split())
-    return bool(_LEGACY.search(plain) or any(n in plain for n in NOTICES.values()))
+    return bool(_LEGACY.search(plain) or any(n in plain for n in known_notices()))
 
 
 def customer_context(session: dict[str, Any] | None, recipient: str) -> bool | None:
@@ -80,15 +105,18 @@ def customer_context(session: dict[str, Any] | None, recipient: str) -> bool | N
     )
 
 
-def ensure_notice(body: str, lang: str, booked: bool) -> str:
+def ensure_notice(body: str, lang: str, booked: bool, *, notice: str | None = None) -> str:
     """Insert one required paragraph before the signature, after any model editing."""
-    language = lang.lower().split("-")[0]
-    if (language, booked) not in NOTICES:
-        language = "en"
+    language = base(lang)
     if language == "de" and re.search(r"\b(?:Sie|Ihnen|Ihre|Ihr)\b", body):
         language = "de_formal"
-    for notice in NOTICES.values():
-        body = body.replace(notice, "")
+    required = (
+        NOTICES[(language, booked)]
+        if language == "de_formal"
+        else (notice or notice_for(lang, booked))
+    )
+    for previous in known_notices():
+        body = body.replace(previous, "")
     body = _LEGACY.sub("", body)
     parts = [p.strip() for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
     position = len(parts)
@@ -100,5 +128,5 @@ def ensure_notice(body: str, lang: str, booked: bool) -> str:
             re.IGNORECASE,
         ):
             position -= 1
-    parts.insert(position, NOTICES[(language, booked)])
+    parts.insert(position, required)
     return "\n\n".join(parts) + "\n"

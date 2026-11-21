@@ -11,8 +11,8 @@ from decimal import Decimal, InvalidOperation
 
 from app import db, hackloop, llm
 from app.config import settings
+from app.mail import multilingual
 from app.mail.content import current_message
-from app.mail.language import detect
 from app.mail.rfq_validation import (
     _SIGNATURE,
     explicit_delivery_origin,
@@ -476,10 +476,16 @@ def request(mail, sid, draft):
         return
     if not db.clarification_claim(sid):
         return
-    body = text_for(draft, detect(current_message(mail.body).text))
+    lang = multilingual.mail_language(mail, draft.facts.get("language") or "en")
+    body = text_for(draft, lang)
     try:
         sent = hackloop.send_customer(
-            mail.sender, mail.subject, body, in_reply_to=mail.id, session_id=sid
+            mail.sender,
+            mail.subject,
+            body,
+            in_reply_to=mail.id,
+            session_id=sid,
+            language_code=lang,
         )
         body = sent["body"]
     except hackloop.CustomerSendBlocked:
@@ -700,6 +706,8 @@ def ask(mail, sid, workflow, en, de):
 
 def answer_draft(mail, sid, root, draft):
     """Apply the shared deterministic customer-answer rules without dispatch or sending."""
+    mail = multilingual.prepare(mail, sid, draft.facts.get("language") or "und")
+    root = multilingual.prepare(root, sid, draft.facts.get("language") or "und")
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))

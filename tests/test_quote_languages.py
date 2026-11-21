@@ -158,7 +158,11 @@ def test_unknown_template_still_quotes_in_english_for_send_translation(monkeypat
     # (app/mail/reply_language.py), with a warn event when that is not safe
     monkeypatch.setattr(rfq.llm, "complete", lambda *a, **k: "invalid json")
     body = rfq.compose_quote_text(request("ja"), option(), 202000, None, 1)
-    assert detect(body) == "en"
+    monkeypatch.setattr(hackloop, "send", lambda **kw: pytest.fail("untranslated fallback sent"))
+    with pytest.raises(hackloop.CustomerSendBlocked):
+        hackloop.send_customer(
+            "customer@hackloop.mail", "DUS to SYD", body, language_code="ja", review=False
+        )
 
 
 @pytest.mark.parametrize(

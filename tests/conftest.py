@@ -13,7 +13,7 @@ import pytest
 from openai import OpenAI
 
 from app import hackloop, llm
-from app.agents import booking, email_review
+from app.agents import bid_reader, booking, consent_check, email_review
 from app.mail import audio, guard, speech
 
 
@@ -34,6 +34,9 @@ def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         raise ValueError("no speech model in tests")
 
     monkeypatch.setattr(speech, "transcribe", no_model)
+    # model second opinions answer "nothing found" unless a test installs its own reading
+    monkeypatch.setattr(bid_reader, "read", lambda *_a, **_k: None)
+    monkeypatch.setattr(consent_check, "classify", lambda *_a, **_k: "unclear")
     refused: list[str] = []
 
     def refuse(request: httpx.Request) -> httpx.Response:
