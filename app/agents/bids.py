@@ -15,8 +15,10 @@ import re
 import threading
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 from app import config, db, hackloop
+from app.mail import documents
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RateOption, Rfq
@@ -72,6 +74,8 @@ class _Request:
 
 _open: dict[int, _Request] = {}
 _cond = threading.Condition()
+_transcriptions: dict[int, int] = {}  # session -> model calls spent on bid attachments
+MAX_BID_TRANSCRIPTIONS = 5  # one per carrier at most (MAX_BID_CARRIERS default 5)
 
 
 # ---------------------------------------------------------------- parsing
@@ -274,14 +278,104 @@ def session_of(mail: Mail, session_id: int | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _attachment_paths(mail: Mail) -> list[Path]:
+    """The bid's saved attachments. The poller already downloaded them; a mail rebuilt from
+    the db after a restart has no attachment list, so its inbox folder is read instead."""
+    if mail.attachments:
+        from app.mail.poller import download_attachments
+
+        return download_attachments(mail)
+    return documents.inbox_files(config.settings.inbox_dir / str(mail.id))
+
+
+def _spawn(fn, *args) -> None:  # tests replace this with a direct call
+    threading.Thread(target=fn, args=args, name=f"bid-doc-{args[0].id}", daemon=True).start()
+
+
 def on_bid_mail(mail: Mail, session_id: int | None) -> None:
-    """Called by the poller for every CARRIER_BID mail."""
+    """Called by the poller for every CARRIER_BID mail. Offers may come in the mail text or
+    in an attachment (PDF, Word, Excel, scan, voice message, ...)."""
     sid = session_of(mail, session_id)
     carrier = carrier_by_email(address(mail.sender))
     if sid is None or carrier is None:
         log.warning("bid mail %s: no session or unknown carrier, ignored", mail.id)
         return
-    refusal = served_lanes.parse_refusal(mail.body or "")
+    body = mail.body or ""
+    try:
+        paths = _attachment_paths(mail)
+    except Exception as exc:  # noqa: BLE001 - the mail text may still hold the offer
+        log.warning("bid mail %s: attachments not downloaded: %s", mail.id, exc)
+        db.emit("bid_unreadable", f"Gebot von {carrier.name}: Anhang nicht geladen", sid,
+                level="warn")  # fmt: skip
+        paths = []
+    if not paths:
+        _evaluate(mail, sid, carrier, body)
+        return
+    docs, pending = [], []
+    for path in paths:
+        try:
+            doc = documents.read(path)
+        except Exception as exc:  # noqa: BLE001 - one bad file must not hide the others
+            db.emit(
+                "bid_unreadable",
+                f"Gebot von {carrier.name}: Anhang {path.name} nicht lesbar ({str(exc)[:80]})",
+                sid,
+                level="warn",
+            )
+            continue
+        (pending if doc.needs_model else docs).append((path, doc))
+    text = "\n\n".join([body] + [f"[{p.name}]\n{d.text}" for p, d in docs if d.text.strip()])
+    # a model call only when the readable part holds neither a price nor a refusal
+    if pending and (parse_price(text) is None and served_lanes.parse_refusal(text) is None):
+        if config.settings.attachment_transcription:
+            _spawn(_transcribe_then_evaluate, mail, sid, carrier, text, pending)
+            return
+        db.emit("bid_unreadable", f"Gebot von {carrier.name}: nur Audio/Scan, "
+                "Transkription aus (ATTACHMENT_TRANSCRIPTION)", sid, level="warn")  # fmt: skip
+    _evaluate(mail, sid, carrier, text)
+
+
+def _transcribe_then_evaluate(
+    mail: Mail, sid: int, carrier: Carrier, text: str, pending: list
+) -> None:
+    """Runs in its own thread: a gateway call must not hold up the mail loop. The calls do
+    not use the session's LLM budget (5 voice bids would leave none for extraction and the
+    quote mail); MAX_BID_TRANSCRIPTIONS per session bounds their cost instead."""
+    parts = [text]
+    for path, doc in pending:
+        try:
+            if documents.cached_transcript(path) is None:
+                with _cond:
+                    used = _transcriptions.get(sid, 0)
+                    if used >= MAX_BID_TRANSCRIPTIONS:
+                        raise RuntimeError(f"{used} bid attachments already transcribed")
+                    _transcriptions[sid] = used + 1
+            transcript = documents.transcribe(doc, None, f"bid_attachment s{sid}", path)
+        except Exception as exc:  # noqa: BLE001 - budget, gateway or model refusal
+            log.warning("bid mail %s: %s not transcribed: %s", mail.id, path.name, exc)
+            db.emit(
+                "bid_unreadable",
+                f"Gebot von {carrier.name}: {path.name} nicht transkribiert ({str(exc)[:80]})",
+                sid,
+                level="warn",
+            )
+            continue
+        db.emit(
+            "bid_transcribed",
+            f"Gebot von {carrier.name}: {path.name} gelesen ({doc.kind.lstrip('.')})",
+            sid,
+            transcript=transcript[:2000],
+        )
+        parts.append(f"[{path.name}]\n{transcript}")
+    try:
+        _evaluate(mail, sid, carrier, "\n\n".join(parts))
+    except Exception:  # never fail silently
+        log.exception("bid mail %s: evaluation failed", mail.id)
+
+
+def _evaluate(mail: Mail, sid: int, carrier: Carrier, text: str) -> None:
+    """Turn the bid text (mail + readable attachments) into a refusal or an offer."""
+    refusal = served_lanes.parse_refusal(text)
     if refusal is not None:
         served_lanes.remember(carrier.email, refusal, at=mail.received_at or None)
         with _cond:
@@ -293,7 +387,7 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
             sid,
         )
         return
-    price = parse_price(mail.body or "")
+    price = parse_price(text)
     if price is None:
         db.emit(
             "bid_unreadable",
@@ -318,14 +412,14 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
     offer = Offer(
         carrier,
         money(amount * fx),
-        parse_transit_days(mail.body or ""),
+        parse_transit_days(text),
         mail.id,
         amount,
         currency,
         str(fx),
         fx_source,
         fx_expiry,
-        timing_kind(mail.body or ""),
+        timing_kind(text),
         float(billed[1]) if (billed := _BILLED.search(mail.subject or "")) else None,
     )
     with _cond:

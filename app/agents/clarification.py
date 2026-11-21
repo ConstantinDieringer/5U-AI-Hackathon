@@ -603,7 +603,7 @@ def handle_reply(mail, sid, *, resume=False):
     if "attachments" in asked and mail.attachments:
         from app.mail.rfq_sources import read_sources
 
-        texts, media, problems = read_sources(mail)
+        texts, media, problems = read_sources(mail, session_id=sid)
         if not problems and not media:
             draft.evidence["attachment_texts"] = texts
             draft.issues = [i for i in draft.issues if i["field"] != "attachments"]
