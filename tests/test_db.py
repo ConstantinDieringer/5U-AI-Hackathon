@@ -1,7 +1,7 @@
 """Tests for app/db.py. No real 5U calls. Run: python -m pytest -q"""
 
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -232,7 +232,7 @@ def test_air_price_migration_preserves_legacy_quotes(tmp_path):
 
 
 def test_expire_overdue():
-    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(
+    old = (datetime.now(UTC) - timedelta(minutes=10)).isoformat(
         timespec="seconds"
     )
     sid = rfq(received_at=old)
@@ -241,7 +241,7 @@ def test_expire_overdue():
 
 
 def test_list_sessions_attention_first():
-    old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(
+    old = (datetime.now(UTC) - timedelta(minutes=5)).isoformat(
         timespec="seconds"
     )
     calm = rfq(1)

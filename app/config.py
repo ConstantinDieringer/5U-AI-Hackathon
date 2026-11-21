@@ -64,6 +64,7 @@ class Settings:
     email_review_enabled: bool
     reply_in_customer_language: bool
     quote_pdf: bool
+    quote_pdf_on_request: bool
     poll_interval_s: float
     db_path: str
     ui_port: int
@@ -81,6 +82,8 @@ class Settings:
     quote_full_score_deadline_s: float
     quote_final_deadline_s: float
     min_bid_carriers: int
+    bid_quorum: int
+    bid_grace_s: float
     max_bid_carriers: int
     max_trucker_bids: int
     price_adjust_pct: float
@@ -175,6 +178,8 @@ settings = Settings(
     reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
     # 5U wants the quote as a PDF attachment: built by code from the priced option, no LLM
     quote_pdf=_flag("QUOTE_PDF", True),
+    # team decision 22.11.: the PDF goes out only when the customer asks for it
+    quote_pdf_on_request=_flag("QUOTE_PDF_ON_REQUEST", True),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
@@ -196,6 +201,10 @@ settings = Settings(
     ),
     quote_final_deadline_s=float(_env("QUOTE_FINAL_DEADLINE_S", _env("BID_MAX_WAIT_S", "300"))),
     min_bid_carriers=max(0, int(_env("MIN_BID_CARRIERS", "2"))),
+    # bids.wait stops early once BID_QUORUM carriers answered and BID_GRACE_S passed without a
+    # further reply; 0 = wait for every carrier as before
+    bid_quorum=max(1, int(_env("BID_QUORUM", "2"))),
+    bid_grace_s=max(0.0, float(_env("BID_GRACE_S", "0"))),
     max_bid_carriers=max(1, int(_env("MAX_BID_CARRIERS", "5"))),  # airline bid requests
     # truckers get their own slots: in round 20 five truckers left no slot for airline bids
     max_trucker_bids=max(0, int(_env("MAX_TRUCKER_BIDS", "5"))),
