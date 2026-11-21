@@ -222,9 +222,6 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8. LLM-Regeln
 
-- Standardangebote ohne zusätzliche Kundenfragen/Servicebedingungen verwenden direkt die geprüften Textvorlagen. Vollständig erkannte, aktuelle Standardformate ohne Anhänge werden lokal ausgelesen und mit einem kurzen strukturierten Gateway-Check bestätigt (Scoring verlangt mindestens einen Aufruf). Unbekannte Klauseln oder abgelehnte Checks nutzen die normale Extraktion innerhalb desselben Zweierbudgets.
-- `LLM_PROMPT_CACHE=true` setzt stabile Routing-Keys aus Modell, Zweck, Systempräfix und Output-Schema, ohne Kundendaten/Session-ID. Automatisches Provider-Caching bleibt maßgeblich; keine Auffülltokens, Warmup-Calls oder Antwortwiederverwendung. Bei expliziter Ablehnung des optionalen Parameters einmal ohne ihn weiterarbeiten; Usage/Cached-Input-Abrechnung bleibt unverändert.
-
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
 - **Hartes Limit: max. 2 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Nach einer Extraktionsreparatur wird der Antworttext deterministisch erstellt.

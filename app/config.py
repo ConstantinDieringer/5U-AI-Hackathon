@@ -25,7 +25,6 @@ class Settings:
     tracking_address: str
     llm_model: str
     llm_retry_model: str
-    llm_prompt_cache: bool
     poll_interval_s: float
     db_path: str
     ui_port: int
@@ -70,7 +69,6 @@ settings = Settings(
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
     llm_model=_env("LLM_MODEL"),
     llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5-mini"),  # 2nd try when extraction fails
-    llm_prompt_cache=_env("LLM_PROMPT_CACHE", "true").lower() == "true",
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
