@@ -88,12 +88,25 @@ _REVISION = re.compile(
     re.IGNORECASE,
 )
 
+_PREBOOK_QUESTION = re.compile(
+    r"\bbefore\s+(?:(?:we|i|you)\s+(?:book|proceed|accept|approve)\b|"
+    r"booking\b|proceeding\b)"
+    r"|\b(?:can|could|may|should)\s+(?:we|i)\s+(?:book|proceed|accept)\b"
+    r"|\b(?:book|proceed|accept)\b[^.!?\n]{0,100}\b(?:if|once)\b"
+    r"|\b(?:if|once)\b[^.!?\n]{0,100}\b(?:book|proceed|accept)\b"
+    r"|\b(?:bevor|ehe)\b[^.!?\n]{0,80}\b(?:buchen|bestätigen|freigeben)\b"
+    r"|\b(?:buchen|bestätigen|freigeben)\b[^.!?\n]{0,80}\b(?:wenn|falls)\b",
+    re.IGNORECASE,
+)
+
 
 def is_acceptance(body: str) -> bool | None:
     """True = accepts, False = declines, None = unclear (left to a human)."""
     text = own_text(body)
     if _DECLINE.search(text):
         return False
+    if _PREBOOK_QUESTION.search(text):
+        return None  # mentioning booking in a question/condition is not consent
     if config.settings.revision_not_acceptance and _REVISION.search(text):
         return None
     yes, no = bool(_YES.search(text)), bool(_NO.search(text))
