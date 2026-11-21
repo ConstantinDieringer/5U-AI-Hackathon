@@ -74,6 +74,11 @@ def main() -> None:
     from app.agents import followup
 
     threading.Thread(target=followup.run, args=(stop,), name="followups", daemon=True).start()
+    from app.agents import tracking_notice
+
+    threading.Thread(
+        target=tracking_notice.run, args=(stop,), name="tracking-notices", daemon=True
+    ).start()
     from app.agents import tariff
 
     db.queue_stored_tariffs()
