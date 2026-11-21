@@ -10,7 +10,12 @@ from app import db, hackloop
 from app.config import settings
 from app.mail.content import current_message
 from app.mail.language import detect
-from app.mail.rfq_validation import explicit_delivery_origin, numeric_facts, validate
+from app.mail.rfq_validation import (
+    _SIGNATURE,
+    explicit_delivery_origin,
+    numeric_facts,
+    validate,
+)
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RfqDraft
@@ -99,6 +104,12 @@ def recover_history(mail, sid, draft):
             re.IGNORECASE,
         ):
             facts["pickup_zip"] = match[1]
+        elif settings.ask_pickup_zip:
+            # "pickup from our site in 61391" earlier in this thread: the same shipment; a
+            # ZIP in the signature is the company address, not the pickup site
+            body = _SIGNATURE.split(text, 1)[0]
+            if len(zips := set(re.findall(r"\b(?:D-)?(\d{5})\b", body))) == 1:
+                facts["pickup_zip"] = zips.pop()
         for field in missing & facts.keys():
             observed[field].add(facts[field])
     corrections = dict(draft.evidence.get("corrections", {}))

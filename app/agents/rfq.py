@@ -31,6 +31,7 @@ from app.mail import language, lots, parse
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.rfq_sources import extraction_content, read_sources
+from app.mail.rfq_validation import _SIGNATURE
 from app.mail.style import SIGNATURE, TEAM_LINE, amount, has_template_artifacts
 from app.models import Mail, RateOption, Rfq, RfqDraft
 from app.pricing import served_lanes
@@ -207,6 +208,8 @@ def locate_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
     text = _clean(mail.body)
     if not _WANTS_PICKUP.search(text) or _SELF_DELIVERY.search(text):
         return rfq
+    if settings.ask_pickup_zip:
+        return _stated_pickup(rfq, mail, sid)
     area = find_area(text)
     if area:
         db.emit(
@@ -227,6 +230,66 @@ def locate_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
         key = "pickup_zip" if last[:1].isdigit() else "pickup_city"
         return rfq.model_copy(update={key: last, "pickup_assumed": True})
     return rfq
+
+
+_ZIP = re.compile(r"\b(?:D-)?(\d{5})\b")
+
+
+def _stated_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
+    """ASK_PICKUP_ZIP: only a site the customer named for this shipment counts: an area in the
+    current text (signature cut off), else a ZIP or area in earlier customer mail of this
+    thread. The customer's other shipments are never used (Weidner sent 61391, 41007 and
+    72379; round 20 priced 61391 from an older request and lost too_high)."""
+    area = find_area(_SIGNATURE.split(_clean(mail.body), 1)[0])
+    source = "aus der Mail"
+    update: dict[str, str] = {"pickup_city": area} if area else {}
+    if not update:
+        zips: set[str] = set()
+        areas: set[str] = set()
+        for row in db.customer_mail_history(sid, mail.sender, mail.id):
+            text = _SIGNATURE.split(current_message(row["body"] or "").facts, 1)[0]
+            zips |= {z for z in _ZIP.findall(text) if pickup_zones().get(z[:2])}
+            if (found := find_area(text)) is not None:
+                areas.add(found)
+        if len(zips) == 1:
+            update = {"pickup_zip": zips.pop()}
+        elif not zips and len(areas) == 1:
+            update = {"pickup_city": areas.pop()}
+        source = "frühere Mail in diesem Thread"
+    if not update:
+        return rfq
+    where = next(iter(update.values()))
+    db.emit("pickup_assumed", f"Abholort ohne PLZ: {where} ({source})", sid, level="warn")
+    return rfq.model_copy(update={**update, "pickup_assumed": "pickup_city" in update})
+
+
+def needs_pickup_site(rfq: Rfq, mail: Mail) -> bool:
+    """A door-to-port request that still names no pickup site (ASK_PICKUP_ZIP asks for it)."""
+    text = _clean(mail.body)
+    wants = _WANTS_PICKUP.search(text) and not _SELF_DELIVERY.search(text)
+    return bool(wants) and not (rfq.pickup_zip or rfq.pickup_city)
+
+
+def ask_pickup_zip(mail: Mail, sid: int, rfq: Rfq) -> None:
+    """One question for the pickup ZIP instead of a quote from a guessed airport."""
+    from app.agents import clarification
+
+    db.emit("pickup_missing", "Abholung ohne PLZ/Ort: frage nach der PLZ", sid, level="warn")
+    clarification.request(
+        mail,
+        sid,
+        RfqDraft(
+            facts=rfq.model_dump(),
+            evidence={"blocking_clarification": True},
+            issues=[
+                {
+                    "field": "pickup_zip",
+                    "code": "missing",
+                    "detail": "Pickup postal code is required",
+                }
+            ],
+        ),
+    )
 
 
 def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
@@ -1090,6 +1153,9 @@ def _handle(mail: Mail, sid: int) -> None:
     rfq = rfq.model_copy(update={"language": language.detect(mail.body)})
     if mode != "enforce":
         rfq = locate_pickup(rfq, mail, sid)
+        if settings.ask_pickup_zip and needs_pickup_site(rfq, mail):
+            ask_pickup_zip(mail, sid, rfq)
+            return
     rfq = locate_origin(rfq, mail, sid)
     db.set_request(sid, rfq.model_dump())
     db.emit(
