@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Mail style: quotes, booking confirmations/requests, carrier bids and tracking replies use `€`, no dash punctuation/lists, and only `Your austrian Power Team` as sign-off. Shared integer-cent formatter; API currency codes and reference IDs unchanged.
 - RFQ optimisation: questions/constraints survive extraction with one repair attempt; fact-bounded
   responses enforce one EUR total and complete coverage. Carrier fan-out is capped at 5, incomplete
   door quotes are blocked, recent RFQs resume after restart; 169 tests pass.

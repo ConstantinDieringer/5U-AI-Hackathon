@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import logging
 import re
-from decimal import Decimal
 from typing import Any
 
 from app import db, hackloop
 from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
+from app.mail.style import SIGNATURE, amount
 from app.models import Mail
 
 log = logging.getLogger(__name__)
@@ -40,20 +40,14 @@ def is_status_question(body: str) -> bool:
 
 def _name_tokens(customer: str) -> set[str]:
     local = address(customer).split("@")[0]
-    return {
-        t
-        for t in re.split(r"[^a-z0-9]+", local.lower())
-        if len(t) >= 4 and t not in _STOP
-    }
+    return {t for t in re.split(r"[^a-z0-9]+", local.lower()) if len(t) >= 4 and t not in _STOP}
 
 
 def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The booking the mail asks about, or None."""
     for m in _BK.finditer(text):
         ref = m.group(0).upper()
-        hit = next(
-            (r for r in records if (r["booking_reference"] or "").upper() == ref), None
-        )
+        hit = next((r for r in records if (r["booking_reference"] or "").upper() == ref), None)
         if hit:
             return hit
     for m in _AP.finditer(text):
@@ -113,19 +107,12 @@ def _weight(text: str) -> float | None:
         return None
 
 
-def _de_amount(minor: int) -> str:
-    return (
-        f"{Decimal(minor) / 100:,.2f}".replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
-
-
 def answer_text(r: dict[str, Any], lang: str) -> str:
     req = r.get("request") or {}
     ref = r["booking_reference"] or r["team_reference"]
+    connector = "nach" if lang == "de" else "to"
     route = (
-        f"{r['origin']} – {r['destination']}"
+        f"{r['origin']} {connector} {r['destination']}"
         if r.get("origin")
         else r.get("subject") or ""
     )
@@ -145,22 +132,20 @@ def answer_text(r: dict[str, Any], lang: str) -> str:
             "",
             f"hier der aktuelle Stand zur Sendung {ref}:",
             "",
-            f"- Status: {status}",
-            f"- Strecke: {route} mit {r['airline']}",
+            f"Status: {status}",
+            f"Strecke: {route} mit {r['airline']}",
         ]
         if weight:
-            lines.append(f"- Gewicht: {float(weight):g} kg")
+            lines.append(f"Gewicht: {float(weight):g} kg")
         if pickup:
-            lines.append(f"- Abholung in {pickup}, Lkw zum Abflughafen {r['origin']}")
+            lines.append(f"Abholung in {pickup}, Lkw zum Abflughafen {r['origin']}")
         if ready:
-            lines.append(f"- Abholbereit ab: {ready}")
+            lines.append(f"Abholbereit ab: {ready}")
         if days is not None:
-            lines.append(f"- Laufzeit: ca. {days} Tage ab Abflug")
+            lines.append(f"Laufzeit: ca. {days} Tage ab Abflug")
         if r.get("price_minor"):
-            lines.append(
-                f"- Preis: {_de_amount(r['price_minor'])} {r['currency']} all-in"
-            )
-        lines += ["", "Viele Grüße", "Austrian Power Forwarding"]
+            lines.append(f"Preis: {amount(r['price_minor'], r['currency'])} all-in")
+        lines += ["", SIGNATURE]
         return "\n".join(lines)
     status = (
         "booked and confirmed by the airline"
@@ -172,22 +157,20 @@ def answer_text(r: dict[str, Any], lang: str) -> str:
         "",
         f"here is the current status of shipment {ref}:",
         "",
-        f"- Status: {status}",
-        f"- Route: {route} with {r['airline']}",
+        f"Status: {status}",
+        f"Route: {route} with {r['airline']}",
     ]
     if weight:
-        lines.append(f"- Weight: {float(weight):g} kg")
+        lines.append(f"Weight: {float(weight):g} kg")
     if pickup:
-        lines.append(f"- Pickup at {pickup}, trucked to {r['origin']} airport")
+        lines.append(f"Pickup at {pickup}, trucked to {r['origin']} airport")
     if ready:
-        lines.append(f"- Ready for pickup: {ready}")
+        lines.append(f"Ready for pickup: {ready}")
     if days is not None:
-        lines.append(f"- Transit time: about {days} days from departure")
+        lines.append(f"Transit time: about {days} days from departure")
     if r.get("price_minor"):
-        lines.append(
-            f"- Price: {Decimal(r['price_minor']) / 100:,.2f} {r['currency']} all-in"
-        )
-    lines += ["", "Best regards,", "Austrian Power Forwarding"]
+        lines.append(f"Price: {amount(r['price_minor'], r['currency'])} all-in")
+    lines += ["", SIGNATURE]
     return "\n".join(lines)
 
 
@@ -196,19 +179,17 @@ def _not_found_text(lang: str) -> str:
         return (
             "Guten Tag,\n\nzu Ihrer Anfrage finden wir leider keine gebuchte Sendung. "
             "Könnten Sie uns die Buchungsnummer (BK-…) oder unsere Referenz (AP-…) "
-            "nennen? Dann melden wir uns sofort.\n\nViele Grüße\nAustrian Power Forwarding"
+            f"nennen? Dann melden wir uns sofort.\n\n{SIGNATURE}"
         )
     return (
         "Hello,\n\nwe couldn't find a booked shipment for your request. Could you send us "
         "the booking reference (BK-…) or our reference (AP-…)? We'll get back to you right "
-        "away.\n\nBest regards,\nAustrian Power Forwarding"
+        f"away.\n\n{SIGNATURE}"
     )
 
 
 def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None:
-    if session_id is not None and (
-        db.is_paused(session_id) or db.is_manual(session_id)
-    ):
+    if session_id is not None and (db.is_paused(session_id) or db.is_manual(session_id)):
         db.emit(
             db.Ev.WARN,
             "Tracking-Antwort nicht gesendet: Session pausiert/manuell",
@@ -216,11 +197,7 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None
         )
         return
     to = address(mail.sender)
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(to, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -235,9 +212,7 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None
     )
 
 
-def handle(
-    mail: Mail, session_id: int | None, booked_session: int | None = None
-) -> None:
+def handle(mail: Mail, session_id: int | None, booked_session: int | None = None) -> None:
     """Answer one tracking question. `booked_session` is set when a customer asks in the
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:

@@ -18,6 +18,7 @@ from decimal import Decimal, InvalidOperation
 
 from app import db, hackloop
 from app.mail.router import address
+from app.mail.style import SIGNATURE
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
 from app.pricing.pricing import money, to_minor
@@ -37,9 +38,7 @@ _DAYS = re.compile(
     re.IGNORECASE,
 )
 _HOURS = re.compile(r"(\d+)\s*(?:h|hours?|stunden)\b", re.IGNORECASE)
-_TOTAL_HINT = re.compile(
-    r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE
-)
+_TOTAL_HINT = re.compile(r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -59,9 +58,7 @@ class Offer:
 class _Request:
     asked: dict[str, Carrier] = field(default_factory=dict)  # email -> carrier
     offers: list[Offer] = field(default_factory=list)
-    declined: set[str] = field(
-        default_factory=set
-    )  # emails that said "we do not serve"
+    declined: set[str] = field(default_factory=set)  # emails that said "we do not serve"
 
 
 _open: dict[int, _Request] = {}
@@ -81,11 +78,7 @@ def _number(raw: str) -> Decimal | None:
         )
     elif "," in s:
         head, _, tail = s.rpartition(",")
-        s = (
-            f"{head.replace(',', '')}.{tail}"
-            if len(tail) in (1, 2)
-            else s.replace(",", "")
-        )
+        s = f"{head.replace(',', '')}.{tail}" if len(tail) in (1, 2) else s.replace(",", "")
     elif s.count(".") > 1 or (s.count(".") == 1 and len(s.rpartition(".")[2]) == 3):
         s = s.replace(".", "")  # 1.234 / 1.234.567 = thousands
     try:
@@ -127,7 +120,7 @@ def _subject(session_id: int, rfq: Rfq, origin: str, kind: str) -> str:
     load = f"{rfq.weight_kg:g} kg / {rfq.volume_cbm:g} cbm"
     if kind == "trucker":
         return f"[AP-{session_id}] Pickup {rfq.pickup_zip} to {origin} airport, {load}"
-    return f"[AP-{session_id}] Air freight {origin}-{rfq.destination}, {load}"
+    return f"[AP-{session_id}] Air freight {origin} to {rfq.destination}, {load}"
 
 
 def _body(rfq: Rfq, origin: str, kind: str) -> str:
@@ -143,8 +136,8 @@ def _body(rfq: Rfq, origin: str, kind: str) -> str:
     return (
         f"Hello,\n\n{what}\n"
         f"Shipment: {pieces}{rfq.weight_kg:g} kg gross, {rfq.volume_cbm:g} cbm.\n{ready}\n"
-        "Please reply with your all-in price in EUR and the transit time in days.\n\n"
-        "Thank you,\nAustrian Power Forwarding\n"
+        "Please reply with your all-in price in € and the transit time in days.\n\n"
+        f"{SIGNATURE}\n"
     )
 
 
@@ -302,9 +295,7 @@ def offers(session_id: int) -> list[Offer]:
         return list(req.offers) if req else []
 
 
-def wait(
-    session_id: int, timeout_s: float, until_kinds: set[str] | None = None
-) -> list[Offer]:
+def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None) -> list[Offer]:
     """Block until every asked carrier answered (or, with `until_kinds`, until at least one
     offer of each kind is in), or the timeout passes. Returns the offers so far."""
 
@@ -337,9 +328,7 @@ def close(session_id: int) -> None:
 # ---------------------------------------------------------------- conversion
 
 
-def airline_option(
-    offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float
-) -> RateOption:
+def airline_option(offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float) -> RateOption:
     total = to_minor(offer.total_eur)
     days = offer.transit_days if offer.transit_days is not None else 99
     return RateOption(
@@ -347,9 +336,7 @@ def airline_option(
         origin=origin,
         destination=rfq.destination,
         transit_days=round(days),
-        total_minor=to_minor(offer.original_amount)
-        if offer.original_amount is not None
-        else total,
+        total_minor=to_minor(offer.original_amount) if offer.original_amount is not None else total,
         currency=offer.currency,
         total_eur_minor=total,
         source="bid",
