@@ -16,6 +16,7 @@ AGENTS = (
     "tracking",
     "tracking_notice",
     "watchdog",
+    "rescue",
 )
 
 

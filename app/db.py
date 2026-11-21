@@ -206,6 +206,14 @@ CREATE TABLE IF NOT EXISTS clarification_answers (
  mail_id INTEGER NOT NULL,
  PRIMARY KEY(session_id, mail_id)
 );
+CREATE TABLE IF NOT EXISTS thread_rescue_runs (
+ session_id INTEGER NOT NULL REFERENCES sessions(id),
+ input_key TEXT NOT NULL,
+ state TEXT NOT NULL,
+ decision_json TEXT,
+ updated_at TEXT NOT NULL,
+ PRIMARY KEY(session_id,input_key)
+);
 CREATE TABLE IF NOT EXISTS tariff_jobs (
   mail_id INTEGER PRIMARY KEY,
   raw_json TEXT NOT NULL,
@@ -1625,6 +1633,87 @@ def find_booking(
     return None
 
 
+def rescue_run(sid: int, key: str) -> dict[str, Any] | None:
+    row = _one(
+        conn().execute(
+            "SELECT * FROM thread_rescue_runs WHERE session_id=? AND input_key=?", (sid, key)
+        )
+    )
+    if row:
+        row["decision"] = json.loads(row.pop("decision_json") or "null")
+    return row
+
+
+def rescue_candidates(before: str) -> list[dict[str, Any]]:
+    """Latest unanswered customer input or unquoted RFQ, after the supervisor grace time."""
+    return _rows(
+        conn().execute(
+            "SELECT m.*,s.id AS session_id FROM sessions s JOIN mails m ON m.id=("
+            "SELECT MAX(i.id) FROM mails i WHERE i.session_id=s.id AND i.direction='in' "
+            "AND i.category IN ('rfq','customer','tracking') AND i.sender=s.customer) "
+            "JOIN mails root ON root.id=s.id WHERE root.category='rfq' "
+            "AND s.mode='auto' AND s.paused=0 AND m.received_at<=? "
+            "AND (NOT EXISTS(SELECT 1 FROM quotes q WHERE q.session_id=s.id) "
+            "OR (NOT EXISTS(SELECT 1 FROM mails o WHERE o.session_id=s.id AND o.direction='out' "
+            "AND o.in_reply_to=m.id) AND m.id<>s.id)) "
+            "AND NOT EXISTS(SELECT 1 FROM mails o WHERE o.session_id=s.id AND o.direction='out' "
+            "AND o.category IN ('manual_reply','notice')) ORDER BY m.received_at LIMIT 100",
+            (before,),
+        )
+    )
+
+
+def rescue_answer_seen(sid: int, mid: int) -> None:
+    """The owner consumes replies so the legacy clarification worker cannot race it."""
+    with tx() as c:
+        c.execute("INSERT OR IGNORE INTO clarification_answers VALUES (?,?)", (sid, mid))
+
+
+def claim_rescue_run(sid: int, key: str) -> bool:
+    """A lease allows a stopped process to resume a persisted plan, never a second worker."""
+    stale = (datetime.now(UTC) - timedelta(seconds=90)).isoformat()
+    with tx() as c:
+        if c.execute(
+            "SELECT 1 FROM thread_rescue_runs WHERE session_id=? AND input_key<>? "
+            "AND state IN ('running','planned','failed') AND updated_at>=?",
+            (sid, key, stale),
+        ).fetchone():
+            return False
+        return (
+            c.execute(
+                "INSERT INTO thread_rescue_runs VALUES (?,?,'running',NULL,?) "
+                "ON CONFLICT(session_id,input_key) DO UPDATE SET state='running',updated_at=excluded.updated_at "
+                "WHERE thread_rescue_runs.state IN ('running','planned','failed') "
+                "AND thread_rescue_runs.updated_at<?",
+                (sid, key, now(), stale),
+            ).rowcount
+            == 1
+        )
+
+
+def save_rescue_run(sid: int, key: str, state: str, decision: dict | None = None) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE thread_rescue_runs SET state=?,decision_json=COALESCE(?,decision_json),"
+            "updated_at=? WHERE session_id=? AND input_key=?",
+            (state, _json(decision), now(), sid, key),
+        )
+
+
+def reserve_rescue_call(sid: int, limit: int) -> int | None:
+    key = f"thread_rescue_calls:{sid}"
+    with tx() as c:
+        row = _one(c.execute("SELECT value FROM kv WHERE key=?", (key,)))
+        count = int(row["value"]) if row else 0
+        if count >= limit:
+            return None
+        c.execute(
+            "INSERT INTO kv VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, str(count + 1)),
+        )
+    return count + 1
+
+
 def reserve_llm_call(session_id: int, limit: int) -> int | None:
     """Count one more gateway call for the session, persisted so a restart cannot reset it.
     Returns the new count, or None if the session already made `limit` calls. Calls logged in
@@ -1634,7 +1723,7 @@ def reserve_llm_call(session_id: int, limit: int) -> int | None:
         kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (key,)))
         logged = _one(
             c.execute(
-                "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ?",
+                "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose<>'thread_rescue'",
                 (session_id,),
             )
         )
@@ -2038,7 +2127,10 @@ def llm_calls_used(session_id: int) -> int:
     c = conn()
     kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (f"llm_calls:{session_id}",)))
     logged = _one(
-        c.execute("SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ?", (session_id,))
+        c.execute(
+            "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose<>'thread_rescue'",
+            (session_id,),
+        )
     )
     return max(int(kv["value"]) if kv else 0, int(logged["n"]) if logged else 0)
 

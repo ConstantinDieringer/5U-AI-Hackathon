@@ -244,6 +244,10 @@ def rescue_with_model(
     mail: Mail, sid: int, root: Mail, draft: RfqDraft
 ) -> tuple[Rfq | None, RfqDraft]:
     """Use the stronger model, then accept only evidence-bound deterministically valid facts."""
+    if settings.thread_rescue_enabled:
+        from app.agents import rescue
+
+        return rescue.recover_request(mail, sid, root, draft)
     asked = {issue["field"] for issue in draft.issues}
     allowed = set(_RESCUE_FIELDS) & asked
     if "lots" in asked:
@@ -427,8 +431,10 @@ def request(mail, sid, draft):
         return
     if db.is_paused(sid) or db.is_manual(sid):
         return
-    asked = _questions_sent(sid)
-    if settings.clarify_once and asked and draft.evidence.get("workflow", "rfq") == "rfq":
+    workflow = draft.evidence.get("workflow", "rfq")
+    asked = _questions_sent(sid, workflow)
+    rescue_question = draft.evidence.get("rescue_question_mail_id") == mail.id
+    if settings.clarify_once and asked and workflow == "rfq" and not rescue_question:
         # CLARIFY_ONCE: never a second question (round 28 asked four times). The answer did not
         # resolve it: quote from real prices if they allow, else stop for a person.
         from app.agents import rfq
@@ -442,20 +448,31 @@ def request(mail, sid, draft):
         if not rfq.quote_without_answer(sid, "Antwort unbrauchbar"):
             db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
         return
-    if not db.clarification_claim(sid):
-        return
-    # hard cap: at most two clarifications per thread (one follow-up for a partial answer).
-    # More is a loop (round 7237 sent four identical ones); alert a human instead.
-    if asked >= 2:
-        db.emit(
-            "clarification_loop",
-            "Weitere Rückfrage unterdrückt: Session braucht einen Menschen",
-            sid,
-            level="error",
-        )
-        if settings.clarify_cap_resolve and draft.evidence.get("workflow", "rfq") == "rfq":
+    # hard cap: at most two clarifications per workflow in a thread (one follow-up for a partial
+    # answer). More is a loop (round 7237 sent four identical ones); alert a human instead.
+    # Counted per workflow: an RFQ question must not use up the booking agent's questions.
+    if asked >= 2 and not rescue_question:
+        if workflow == "rfq":
+            db.emit(
+                "clarification_loop",
+                "Weitere Rückfrage unterdrückt: Session braucht einen Menschen",
+                sid,
+                level="error",
+            )
+        else:
+            # booking/tracking: the customer is still deciding, no round is lost; the
+            # follow-up agent and the attention list cover it, no #sos alarm
+            db.emit(
+                "clarification_loop",
+                f"Weitere Rückfrage ({workflow}) unterdrückt: bitte manuell prüfen",
+                sid,
+                level="warn",
+            )
+        if settings.clarify_cap_resolve and workflow == "rfq":
             db.clarification_sent(sid, "capped")  # no send follows; not an unknown outcome
             resolve_at_cap(mail, sid, draft)
+        return
+    if not db.clarification_claim(sid):
         return
     body = text_for(draft, detect(current_message(mail.body).text))
     try:
@@ -488,7 +505,12 @@ def request(mail, sid, draft):
         references=[*mail.references, mail.id],
         raw=sent,
     )
-    if draft.evidence.get("workflow", "rfq") == "rfq":
+    if workflow != "rfq":
+        try:
+            _count_other_workflow(sid, workflow)
+        except Exception:  # bookkeeping after a completed send must not fail it
+            log.exception("session %s: could not count the %s question", sid, workflow)
+    if workflow == "rfq":
         try:  # which items our questions covered (CLARIFY_CAP_RESOLVE: was DG asked?)
             db.kv_set(
                 f"clarify.asked.{sid}",
@@ -614,8 +636,34 @@ def resolve_at_cap(mail: Mail, sid: int, draft: RfqDraft) -> None:
     db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
 
 
-def _questions_sent(sid):
-    return (
+def _other_workflow_counts(sid: int) -> dict[str, int]:
+    """Questions sent per non-RFQ workflow (booking, tracking) in this thread."""
+    try:
+        raw = json.loads(db.kv_get(f"clarify.sent.{sid}") or "{}")
+    except ValueError:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): int(v) for k, v in raw.items() if isinstance(v, int) and v > 0}
+
+
+def _count_other_workflow(sid: int, workflow: str) -> None:
+    counts = _other_workflow_counts(sid)
+    counts[workflow] = counts.get(workflow, 0) + 1
+    db.kv_set(f"clarify.sent.{sid}", json.dumps(counts, sort_keys=True))
+
+
+def _questions_sent(sid: int, workflow: str = "rfq") -> int:
+    """Clarification questions this workflow already sent in the thread.
+
+    All workflows store their questions as category 'clarification'. Booking and tracking
+    questions are counted separately, so the RFQ count is the rest. Without this split one
+    RFQ question plus one booking question hit the cap of two and every further hesitant
+    customer reply raised `clarification_loop`."""
+    others = _other_workflow_counts(sid)
+    if workflow != "rfq":
+        return others.get(workflow, 0)
+    total = (
         db.conn()
         .execute(
             "SELECT COUNT(*) FROM mails WHERE session_id = ? AND direction = 'out'"
@@ -624,6 +672,7 @@ def _questions_sent(sid):
         )
         .fetchone()[0]
     )
+    return max(0, total - sum(others.values()))
 
 
 def ask(mail, sid, workflow, en, de):
@@ -647,46 +696,8 @@ def ask(mail, sid, workflow, en, de):
     return True
 
 
-def handle_reply(mail, sid, *, resume=False):
-    row = db.validation_get(sid)
-    if not row or row["state"] not in (
-        "awaiting_clarification",
-        "resolving",
-        "manual_review",
-    ):
-        return False
-    session = db.get_session(sid)
-    if not session or address(session.get("customer") or "") != address(mail.sender):
-        return True
-    workflow = row["draft"].get("evidence", {}).get("workflow", "rfq")
-    if (
-        workflow == "rfq"
-        and settings.rfq_validation_mode != "enforce"
-        and not row["draft"].get("evidence", {}).get("blocking_clarification")
-    ):
-        db.validation_save(sid, "manual_review", row["draft"], {})
-        return True
-    resuming = resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
-    if not resuming and not db.clarification_reply_claim(sid, mail.id):
-        return True
-    draft = RfqDraft.model_validate(row["draft"])
-    if workflow == "rfq" and expired(sid):
-        db.validation_save(sid, "expired", draft.model_dump(mode="json"), {})
-        return True
-    if db.is_paused(sid) or db.is_manual(sid):
-        db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
-        return True
-    if workflow != "rfq":
-        db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})
-        if workflow == "booking":
-            from app.agents import booking
-
-            booking.handle_reply(mail, sid)
-        else:
-            from app.agents import tracking
-
-            tracking.handle(mail, sid)
-        return True
+def answer_draft(mail, sid, root, draft):
+    """Apply the shared deterministic customer-answer rules without dispatch or sending."""
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
@@ -774,7 +785,6 @@ def handle_reply(mail, sid, *, resume=False):
         if not problems and not media:
             draft.evidence["attachment_texts"] = texts
             draft.issues = [i for i in draft.issues if i["field"] != "attachments"]
-    root = Mail(**row["root"])
     old_texts = draft.evidence.get("attachment_texts", {})
     # Revalidate the original shipment with only explicit answers to the requested fields.
     remaining = [i for i in draft.issues if i["field"] == "attachments"]
@@ -787,6 +797,51 @@ def handle_reply(mail, sid, *, resume=False):
     for key in ("blocking_clarification", "rescue_before_clarification"):
         if key in draft.evidence:
             checked.evidence[key] = draft.evidence[key]
+    return rfq, checked
+
+
+def handle_reply(mail, sid, *, resume=False):
+    row = db.validation_get(sid)
+    if not row or row["state"] not in (
+        "awaiting_clarification",
+        "resolving",
+        "manual_review",
+    ):
+        return False
+    session = db.get_session(sid)
+    if not session or address(session.get("customer") or "") != address(mail.sender):
+        return True
+    workflow = row["draft"].get("evidence", {}).get("workflow", "rfq")
+    if (
+        workflow == "rfq"
+        and settings.rfq_validation_mode != "enforce"
+        and not row["draft"].get("evidence", {}).get("blocking_clarification")
+    ):
+        db.validation_save(sid, "manual_review", row["draft"], {})
+        return True
+    resuming = resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
+    if not resuming and not db.clarification_reply_claim(sid, mail.id):
+        return True
+    draft = RfqDraft.model_validate(row["draft"])
+    if workflow == "rfq" and expired(sid):
+        db.validation_save(sid, "expired", draft.model_dump(mode="json"), {})
+        return True
+    if db.is_paused(sid) or db.is_manual(sid):
+        db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
+        return True
+    if workflow != "rfq":
+        db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})
+        if workflow == "booking":
+            from app.agents import booking
+
+            booking.handle_reply(mail, sid)
+        else:
+            from app.agents import tracking
+
+            tracking.handle(mail, sid)
+        return True
+    root = Mail(**row["root"])
+    rfq, checked = answer_draft(mail, sid, root, draft)
     if checked.issues or rfq is None:
         rescued, checked = rescue_with_model(mail, sid, root, checked)
         if rescued is not None:
@@ -808,15 +863,23 @@ def handle_reply(mail, sid, *, resume=False):
 
 
 def catch_up():
+    from app.agents import rescue
+
     for saved in db.clarification_unhandled_replies():
-        handle_reply(_stored_mail(saved), saved["session_id"])
+        if rescue.is_owner(saved["session_id"]):
+            rescue.take_over(_stored_mail(saved), saved["session_id"])
+        else:
+            handle_reply(_stored_mail(saved), saved["session_id"])
     for pending in db.validation_pending():
         sid = pending["session_id"]
         row = db.validation_get(sid)
         if row["state"] == "resolving":
             saved = db.validation_reply(sid)
             if saved:
-                handle_reply(_stored_mail(saved), sid, resume=True)
+                if rescue.is_owner(sid):
+                    rescue.take_over(_stored_mail(saved), sid)
+                else:
+                    handle_reply(_stored_mail(saved), sid, resume=True)
             else:
                 db.validation_save(sid, "manual_review", row["draft"], {})
         elif row["send_state"] == "sending":
@@ -856,10 +919,15 @@ def run(stop):
     """Resume a pending clarification after UI unpause; never touch an in-flight send."""
     import logging
 
+    from app.agents import rescue
+
     while not stop.wait(1):
         try:
             for saved in db.clarification_unhandled_replies():
-                handle_reply(_stored_mail(saved), saved["session_id"])
+                if rescue.is_owner(saved["session_id"]):
+                    rescue.take_over(_stored_mail(saved), saved["session_id"])
+                else:
+                    handle_reply(_stored_mail(saved), saved["session_id"])
             for item in db.validation_pending():
                 row = db.validation_get(item["session_id"])
                 if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":

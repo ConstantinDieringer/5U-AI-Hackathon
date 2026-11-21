@@ -13,7 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
-- Writer tone: the composer's shared profile now asks for a close, cheerful best-friend voice throughout each mail, including first contact without invented history. German defaults to du unless formal address is explicitly requested. Latest main's subject rules, separate reviewer and factual/send controls preserved. Integrated full suite passes on Python 3.11 and 3.12: 1104 passed, 5 skipped; no manual live sends.
+- Carrier document totals hardened (PR, `bids.document_price` / `document_timing`): 18 offer layouts x 5 formats (txt, pipe table, PDF, DOCX paragraphs, DOCX table) replay exact. Tier 1 total labels with qualifiers (Total amount, Total (EUR), Gesamtpreis (netto), Summe, Total due, incl. fuel), value in the next row, column-header currency, empty/merged table cells, NBSP thousands. Tier 2 price labels only without a total line and only with the currency at the amount. Never: per-unit rates, waiting/optional/excluded charges, sub-totals, offer/reference numbers, two different totals. Duration from the transit/collection line, never validity/payment/storage; number words. Before: 32/90 layouts and three silent wrong values (0.07 EUR per-kg rate as total, 1.00 EUR from NBSP thousands, 7-day validity as transit).
 - Round 64 carrier documents additionally use `Total, all-in` and adjacent label/value rows. Explicit totals now support those ordinary table layouts without scanning past an unrelated row; all four observed document totals replay correctly. Production no-answer cause remains unverified beyond the already reproduced body-only bid gap.
 - Pre-booking answers (`PREBOOK_ANSWER`, default off, PR open): a reply to our quote that only asks about the quoted option (round 54 style) is answered from the stored quote with a go-ahead question and never booked; rules only, no LLM review, shares `FOLLOWUP_MAX` with the nudges; "book the faster one instead" after it never books. Reply replay: stored replies identical off/on, 19/19 injected round-54 questions answered and booked on the next yes, 0 worse. Not verified live.
 - Round 60 cause not provable without its thread. Strongest offline lead: "Yes", "Ja", "OK", "I confirm", "That works" are `unclear` today (same clarification twice, then silence, never booked) although our nudge asks for "a short yes"; a question containing "not"/"nicht" counts as a decline. Yes rule unchanged pending a decision.
@@ -199,6 +199,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 23:05: "Weitere Rückfrage unterdrückt" fired far too often: the two-question cap counted RFQ, booking and tracking questions together (all `category='clarification'`), so one RFQ question plus one "shall we book?" question capped the thread. Now counted per workflow (`clarify.sent.<sid>` in kv); booking/tracking at the cap is a warning, not an error/#sos. Offline tests only.
 
 - 21.11 21:40: Rounds 54/55 accepted but not booked (customer stalled, no follow-up). New `app/agents/followup.py`: template nudge in the thread 30 s after our last unanswered mail (`FOLLOWUP_AFTER_S`), for the offer (max 3, within 900 s) and for clarification questions before the quote (max 3, before the RFQ deadline). No LLM, price never restated; stops on yes/explicit no/booking/pause/manual. Offline tests only.
 
