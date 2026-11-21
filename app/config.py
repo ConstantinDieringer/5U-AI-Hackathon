@@ -271,8 +271,9 @@ settings = Settings(
     prebook_answer=_env("PREBOOK_ANSWER", "false").lower() in ("1", "true", "yes", "on"),
     # phishing gate: off | shadow (classify and log, block nothing) | enforce
     phishing_gate_mode=_env("PHISHING_GATE_MODE", "enforce").lower(),
-    # what an LLM-only verdict may do; it never does more than PHISHING_GATE_MODE allows
-    phishing_gate_llm_mode=_env("PHISHING_GATE_LLM_MODE", "shadow").lower(),
+    # what an LLM-only verdict may do; it never does more than PHISHING_GATE_MODE allows.
+    # off = no model call: in shadow the verdict can never block, so the call only costs
+    phishing_gate_llm_mode=_env("PHISHING_GATE_LLM_MODE", "off").lower(),
     phishing_gate_model=_env("PHISHING_GATE_MODEL", "gpt-5-nano"),
     # mail guard (app/mail/guard.py): empty/automatic mail, RFQ floods, outgoing mail loops
     mail_guard_enabled=_env("MAIL_GUARD_ENABLED", "true").lower() != "false",

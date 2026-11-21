@@ -384,6 +384,9 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
             response_format=RFQ_SCHEMA,
         )
         rfq, error = _parse_extraction(text, mail, session_id)
+    except llm.LlmBudgetError as e:  # budget spent: no retry either, the caller asks or flags
+        log.warning("session %s: extraction skipped: %s", session_id, e)
+        return None
     except openai.APIError as e:  # gateway down or timed out: the retry may still get through
         text, rfq, error = "", None, f"{type(e).__name__}: {e}"
     if rfq is not None:
