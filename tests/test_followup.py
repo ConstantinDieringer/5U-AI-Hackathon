@@ -195,3 +195,58 @@ def test_not_sure_yet_is_no_decline(monkeypatch) -> None:
     _reply(SID + 5, "Not sure yet, I need to check with my manager.", age_s=32)
     followup.tick()
     assert len(api.sent) == 1
+
+
+def _asked(question_age_s: float, rfq_age_s: float = 90) -> None:
+    db.ingest_mail(
+        mail_id=SID,
+        sender=CUSTOMER,
+        recipient=TEAM,
+        subject="Fastest to DEL",
+        body="quote please",
+        category="rfq",
+        received_at=_iso(rfq_age_s),
+    )
+    db.set_request(SID, {"destination": "DEL", "customer_name": "Anna", "language": "de"})
+    db.validation_save(SID, "awaiting_clarification", {}, {})
+    db.record_outgoing(
+        mail_id=SID + 1,
+        recipient=CUSTOMER,
+        subject="Re: Fastest to DEL",
+        body="Von wo holen wir ab?",
+        category="clarification",
+        session_id=SID,
+        sender=TEAM,
+        in_reply_to=SID,
+        sent_at=_iso(question_age_s),
+    )
+
+
+def test_unanswered_question_gets_nudge(monkeypatch) -> None:
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    _asked(question_age_s=31)
+    followup.tick()
+    assert len(api.sent) == 1
+    assert "my question below" in api.sent[0]["body"] and api.sent[0]["in_reply_to"] == SID
+    s = db.get_session(SID)
+    assert s["mails"][-1]["category"] == followup.CATEGORY_QUESTION
+
+
+def test_question_not_nudged_when_answered_or_too_early(monkeypatch) -> None:
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    _asked(question_age_s=20)
+    followup.tick()
+    assert api.sent == []
+    _reply(SID + 5, "Abholung in 22842.", age_s=1)
+    s = db.get_session(SID)
+    assert followup.due(s, datetime.now(UTC) + timedelta(seconds=60)) is None
+
+
+def test_question_not_nudged_after_rfq_deadline(monkeypatch) -> None:
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    _asked(question_age_s=60, rfq_age_s=400)  # past the 6 min deadline
+    followup.tick()
+    assert api.sent == []

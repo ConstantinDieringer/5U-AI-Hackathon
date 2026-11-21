@@ -175,7 +175,7 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
-- 21.11 21:35: Rounds 54/55 accepted but not booked (customer stalled, no follow-up). New `app/agents/followup.py`: template nudge in the thread 30 s after our last mail (`FOLLOWUP_AFTER_S`), max 3, within 900 s of the quote, no LLM, price never restated; stops on yes/explicit no/booking/pause/manual. Offline tests only.
+- 21.11 21:40: Rounds 54/55 accepted but not booked (customer stalled, no follow-up). New `app/agents/followup.py`: template nudge in the thread 30 s after our last unanswered mail (`FOLLOWUP_AFTER_S`), for the offer (max 3, within 900 s) and for clarification questions before the quote (max 3, before the RFQ deadline). No LLM, price never restated; stops on yes/explicit no/booking/pause/manual. Offline tests only.
 
 - 21.11 21:45: Price changes at booking are now live in the setup (rounds 49/50, airline confirms +10 % over the portal rate). Whether the scorer wants the question before or after booking is not published; we book on yes, then ask before confirming. Tracking still reports `bookings.price_minor` (air only on portal door quotes), not `customer_total_minor`.
 
