@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
-- **Hartes Limit: max. 2 LLM-Calls pro Thread** (Extraktion + Antworttext). Ein dritter Call wirft eine Exception.
+- **Hartes Limit: max. 2 LLM-Calls pro Thread** (Extraktion + Antworttext bzw. ein Extraktions-Retry mit `LLM_RETRY_MODEL`, wenn die erste Antwort unbrauchbar ist). Ein dritter Call wirft eine Exception.
 - `max_tokens` immer setzen (Extraktion ≤ 200, Mailtext ≤ 250). `temperature=0` für Extraktion.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
 - Routing, Preisrechnung, Auswahl und Tariflookup: **kein LLM**.

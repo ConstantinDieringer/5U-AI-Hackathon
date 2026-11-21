@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import openai
 from pydantic import ValidationError
 
 from app import db, hackloop, llm
@@ -107,20 +108,51 @@ def _clean(body: str) -> str:
 
 
 def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
-    """One gateway call. None if the mail is not a usable air freight request."""
-    text = llm.complete(
-        "extract_rfq",
-        [
-            {"role": "system", "content": EXTRACT_PROMPT},
-            {
-                "role": "user",
-                "content": f"Subject: {mail.subject}\n\n{_clean(mail.body)}",
-            },
-        ],
+    """One gateway call; if its answer is unusable, one retry with LLM_RETRY_MODEL (the 2nd and
+    last call of the session budget). None if neither gives a usable air freight request."""
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": EXTRACT_PROMPT},
+        {"role": "user", "content": f"Subject: {mail.subject}\n\n{_clean(mail.body)}"},
+    ]
+    try:
+        text = llm.complete(
+            "extract_rfq", messages, session_id, max_tokens=200, response_format=RFQ_SCHEMA
+        )
+        rfq, error = _parse_extraction(text, mail, session_id)
+    except openai.APIError as e:  # gateway down or timed out: the retry may still get through
+        text, rfq, error = "", None, f"{type(e).__name__}: {e}"
+    if rfq is not None:
+        return rfq
+
+    retry_model = settings.llm_retry_model
+    db.emit(
+        "extract_retry",
+        f"Extraktion unbrauchbar ({error[:120]}), zweiter Versuch mit {retry_model}",
         session_id,
-        max_tokens=200,
-        response_format=RFQ_SCHEMA,
+        level="warn",
     )
+    feedback = (
+        f"Your previous answer was not usable: {error[:300]}\n"
+        "weight_kg and volume_cbm must be > 0: add up every lot and piece (count x each)."
+    )
+    try:
+        text = llm.complete(
+            "extract_rfq_retry",
+            [*messages, {"role": "assistant", "content": text}, {"role": "user", "content": feedback}],
+            session_id,
+            max_tokens=200,
+            response_format=RFQ_SCHEMA,
+            model_name=retry_model,
+        )
+    except (openai.APIError, llm.LlmBudgetError) as e:
+        log.warning("session %s: extraction retry failed: %s", session_id, e)
+        return None
+    rfq, _ = _parse_extraction(text, mail, session_id)
+    return rfq
+
+
+def _parse_extraction(text: str, mail: Mail, session_id: int) -> tuple[Rfq | None, str]:
+    """Validated Rfq from the LLM answer (lot sums from code win), or None plus the error."""
     try:
         data = json.loads(text)
         totals = lots.parse_lots(_clean(mail.body))
@@ -133,12 +165,12 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
                 f"{totals.lots} Lots: {totals.weight_kg:.1f} kg, {totals.volume_cbm:.4f} cbm",
                 session_id,
             )
-        return Rfq.model_validate(data)
+        return Rfq.model_validate(data), ""
     except (json.JSONDecodeError, ValidationError) as e:
         log.warning(
             "session %s: extraction not usable (%s): %r", session_id, e, text[:300]
         )
-        return None
+        return None, str(e).replace("\n", " ")
 
 
 # ---------------------------------------------------------------- 4. choose

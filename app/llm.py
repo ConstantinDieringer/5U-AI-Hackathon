@@ -82,10 +82,12 @@ def complete(
     session_id: int | None,
     max_tokens: int = 200,
     response_format: dict[str, Any] | None = None,
+    model_name: str | None = None,
 ) -> str:
-    """One chat completion through the gateway. Returns the message text and logs the cost."""
+    """One chat completion through the gateway. Returns the message text and logs the cost.
+    `model_name` overrides LLM_MODEL for this call (the extraction retry uses LLM_RETRY_MODEL)."""
     _reserve(session_id)
-    name = model()
+    name = model_name or model()
     kw: dict[str, Any] = {"model": name, "messages": messages, "max_completion_tokens": max_tokens}
     if _is_reasoning(name):
         kw["reasoning_effort"] = "minimal"  # no hidden reasoning tokens: cheaper and faster
