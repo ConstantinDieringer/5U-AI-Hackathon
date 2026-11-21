@@ -25,7 +25,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.config import settings
@@ -186,7 +186,7 @@ _generation = 0  # bumped by init_db so threads reopen after a path change (test
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _parse(ts: str) -> datetime:
@@ -354,7 +354,7 @@ def _session_by_subject(c: sqlite3.Connection, subject: str, body: str) -> int |
     stripped = _RE_PREFIX.sub("", subject or "").strip()
     if stripped:
         candidates.append(stripped)
-    since = (datetime.now(timezone.utc) - SUBJECT_MATCH_WINDOW).isoformat(timespec="seconds")
+    since = (datetime.now(UTC) - SUBJECT_MATCH_WINDOW).isoformat(timespec="seconds")
     for cand in candidates:
         r = _one(
             c.execute(
@@ -847,6 +847,25 @@ def update_booking_status(reference: str, status: str) -> int | None:
             )
         _emit(c, Ev.BOOKED, f"Buchung {reference}: {status}", r["session_id"])
         return int(r["session_id"])
+
+
+def tracking_records() -> list[dict[str, Any]]:
+    """Every booking with what the tracking agent may tell: customer, subject, the request
+    (JSON) and the first quote (route, transit days). Newest first."""
+    rows = _rows(
+        conn().execute(
+            "SELECT b.session_id, b.team_reference, b.booking_reference, b.rate_id, b.airline,"
+            " b.price_minor, b.currency, b.status, b.created_at AS booked_at, b.updated_at,"
+            " s.customer, s.subject, s.request_json,"
+            " q.origin, q.destination, q.transit_days"
+            " FROM bookings b JOIN sessions s ON s.id = b.session_id"
+            " LEFT JOIN quotes q ON q.id = (SELECT MIN(id) FROM quotes WHERE session_id = s.id)"
+            " ORDER BY b.created_at DESC"
+        )
+    )
+    for r in rows:
+        r["request"] = json.loads(r.pop("request_json")) if r.get("request_json") else {}
+    return rows
 
 
 def find_booking(

@@ -86,6 +86,15 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
             name=f"rfq-{session_id}",
             daemon=True,
         ).start()
+    elif category == Category.TRACKING:
+        from app.agents import tracking
+
+        threading.Thread(
+            target=tracking.handle,
+            args=(mail, session_id),
+            name=f"track-{mail.id}",
+            daemon=True,
+        ).start()
     elif category == Category.CUSTOMER and session_id is not None:
         from app.agents import booking
 

@@ -242,7 +242,12 @@ def _handle(mail: Mail, sid: int) -> None:
     if not s or not s.get("quotes"):
         return
     if any(b["status"] in ("booked", "confirmed") for b in s.get("bookings", [])):
-        log.info("session %s already booked, reply %s ignored", sid, mail.id)
+        from app.agents import tracking
+
+        if tracking.is_status_question(mail.body):  # "where is it?" in their own thread
+            tracking.handle(mail, sid, booked_session=sid)
+        else:
+            log.info("session %s already booked, reply %s ignored", sid, mail.id)
         return
     verdict = is_acceptance(mail.body)
     if verdict is not True:
