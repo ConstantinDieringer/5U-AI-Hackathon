@@ -123,6 +123,9 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
         bids.on_bid_mail(mail, session_id)
 
 
+RATE_LIMIT_RETRY_S = 6.0  # just over the mailbox limit of one poll per 5 s
+
+
 def poll_once(since_id: int) -> tuple[int, int]:
     """One poll call. Returns (new since_id, number of mails in the batch)."""
     from app.mail import webhook
@@ -162,8 +165,15 @@ def run(stop: threading.Event | None = None) -> None:
             since_id, _ = poll_once(since_id)
             backoff = 0
         except hackloop.HackloopError as exc:
-            backoff = min(300, max(30, backoff * 2))
-            delay = max(delay, backoff, getattr(exc, "retry_after", 0))
+            if exc.status == 429:
+                # Rate limit (one poll per 5 s per team key): another reader of our mailbox
+                # used the slot. Try again soon and never grow the wait: an RFQ lives 6 min,
+                # and a doubling backoff slept through rounds 47 and 48.
+                backoff = 0
+                delay = max(delay, getattr(exc, "retry_after", RATE_LIMIT_RETRY_S))
+            else:
+                backoff = min(300, max(30, backoff * 2))
+                delay = max(delay, backoff, getattr(exc, "retry_after", 0))
             log.warning("mailbox poll failed (%s), next attempt in %.1fs", exc.status, delay)
         except Exception:
             log.exception("poll failed")

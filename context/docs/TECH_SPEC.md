@@ -161,6 +161,12 @@ Umgesetzt in `app/models.py` (21.11., 15:30).
 
 ## 7. Datenbank (SQLite, `app/db.py`)
 
+`quotes.air_total_minor` und `quotes.air_currency` speichern den gewählten Luftfrachtpreis
+in Originalwährung getrennt vom EUR-Kundengesamtpreis (inklusive Truck/Preisanpassung).
+Additive nullable Migration: Buchungsmails an Airlines verwenden ausschließlich diese
+eingefrorene Komponente. Bei Altangeboten ohne Komponente wird kein Preis behauptet;
+Kundenangebote und Kundenbestätigungen behalten ihren Gesamtpreis.
+
 `clarification_answers(session_id,mail_id)` ergänzt den bestehenden `rfq_validation`-Ablauf als Antwort-Ledger. Es verhindert Replay-Duplikate über mehrere Rückfragerunden. Fehlende Felder werden zunächst anhand eindeutiger Kundenmails desselben Threads geprüft; Konflikte bleiben rückfragepflichtig. Teilantworten werden kumuliert, bei Restlücken wird die nächste Frage gespeichert und versendet. Neustart/Worker verarbeiten bereits gespeicherte, noch nicht zugeordnete Antworten. Unklare Buchungszusagen und nicht zuordenbares Tracking nutzen denselben Ablauf mit getrenntem Workflow-Typ. Keine Fristverlängerung und kein neues Quote-Claim durch Rückfragen. `RFQ_VALIDATION_MODE` ist standardmäßig `enforce`; explizites `shadow` bleibt als Diagnose-/Rollback-Option erhalten.
 
 `llm_calls.accounting_json` speichert abwärtskompatibel Usage-Details, Modellpreise und Kostenkomponenten pro Call. Migration ergänzt die nullable Spalte beim Start. `/api/sessions/{id}` ergänzt `llm_usage` mit Calls und RFQ-Summen. Cached Input wird abgezogen und separat bepreist; Reasoning bleibt Teil des Outputs. Historische Kosten bleiben erhalten, unbekannte Preise/Usage werden als unvollständig angezeigt. Preise sind USD-Schätzungen, keine bestätigten Gateway-Rechnungsbeträge.
@@ -224,8 +230,9 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
-- **Hartes Limit: max. 3 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Der dritte Call ist nur für einen evidenzgebundenen Rescue-Pass oder die bestehende Antwortreparatur vorgesehen. Nach ausgeschöpftem Budget wird deterministisch weitergearbeitet.
-- `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, Mailtext ≤ 500).
+- Standard für Extraktion ist `gpt-5-mini`, für die Reparatur `LLM_RETRY_MODEL=gpt-5`. Beide wurden über die Gateway-Modellliste bestätigt. Explizite Umgebungswerte überschreiben diese Defaults weiterhin; Kostenpreise für `gpt-5` sind hinterlegt.
+- **Hartes Limit: max. 4 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken, nicht erhöhen. Standard ist 4: Extraktion, ggf. Reparatur, evidenzgebundener Rescue bei ungeklärten RFQ-Feldern und individuelle Antwort bzw. Antwortreparatur. Sichere Textvorlagen bleiben Fehlerfallback.
+- `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, individueller Mailtext ≤ 750).
   `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
 - Routing, Preisrechnung, Auswahl und Tariflookup: **kein LLM**.
@@ -235,20 +242,53 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Belegte numerische Totale unterstützen sowohl Labels (`Gross weight: ...`) als auch klare
   Satzformen (`gross weight is ...`, `volume of ...`); diese benötigen keine erneute Kundenbestätigung.
+  Serialisierte Tabellenzeilen dürfen kombinierte Label-/Spaltentrenner (`: |`) enthalten;
+  Abweichungen zwischen aktuellen Mail- und Anhangtotalen erfordern weiter eine Klärung.
 - `RFQ_VALIDATION_MODE=shadow` ist der Standard: Prüfprobleme als Events erfassen, keine neuen automatischen Rückfragen. Erst nach Replay und Abnahme `enforce` aktivieren.
 - `enforce` bepreist nur aktuelle, belegte Angaben. Signaturen und frühere Kundensendungen ersetzen keine Abholadresse; weitergeleitete Betreffe und Historie sind keine aktuellen Streckenangaben.
 - Alle Text-/Tabellen-Anhänge vor dem Pricing abgleichen. Bildseiten werden im vorhandenen Extraktionsaufruf transkribiert (bis 2500 Output-Tokens); kein zusätzlicher Call. Preisberechnung bleibt deterministisch.
 - `rfq_validation` ist eine additive Workflow-Tabelle (keine Änderung des bestehenden sessions-CHECK): Draft, Quellen, offene Punkte, Zustand und Rückfrage-Ausgang. Der API-Sessiondetail liefert `validation`; die UI zeigt den Zustand neben dem bisherigen Sessionstatus.
 - Automatische Rückfragen bleiben im Kundenthread und behalten die ursprüngliche Deadline. Das Scoring-Risiko durch die erste Antwort wurde bewusst akzeptiert. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
-- Rückfrageantworten vor Booking behandeln und nur angefragte Werte übernehmen. Bleiben RFQ-Felder nach deterministischer Auswertung offen, liest `LLM_RESCUE_MODEL` den vollständigen aktuellen Kundenthread. Es darf nur explizit belegte Korrekturen mit einem wörtlichen Beleg liefern; Code prüft Beleg, Feldtyp und den vollständigen RFQ erneut. Erst ein weiterhin ungelöster, abgelaufener oder ausdrücklich pausierter/manueller Fall benötigt einen Menschen. Eine identische Frage wird nicht ohne eine neue Kundenmail wiederholt.
+- Rückfrageantworten vor Booking behandeln und nur angefragte Werte übernehmen. Bleiben RFQ-Felder nach deterministischer Auswertung offen, liest `LLM_RESCUE_MODEL` den vollständigen aktuellen Kundenthread vor der ersten Rückfrage beziehungsweise vor einem Human-Handoff. Es darf nur explizit belegte Korrekturen mit einem wörtlichen Beleg liefern; Code prüft Beleg, Feldtyp und vollständigen RFQ erneut. Erst ein weiterhin ungelöster, abgelaufener oder ausdrücklich pausierter/manueller Fall benötigt einen Menschen.
+- Bei Gefahrguthinweisen ausdrücklich Gefahrgutunterlagen (DGD/Versendererklärung und SDS,
+  soweit zutreffend) anfragen und Prüfung vor Angebot/Buchung erklären. Eine allgemeine
+  Bestätigung der Packliste ist weder Dokumenteneingang noch Transportfreigabe.
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Kundenmails: Euro als €, keine Klammerzusätze oder internen Feld-/Spaltennamen. Termine mit ausgeschriebenem Monatsnamen (`24. November 2026` / `24 November 2026`), kurze Absätze und freundliche vollständige Sätze. Composer-Ausgaben werden auf diese Darstellung geprüft und bei Verstößen repariert; Angebots-, Rückfrage-, Buchungs- und Trackingvorlagen berücksichtigen dieselben Regeln. API-/CRM-Werte und technische IDs bleiben unverändert.
+
+- Gespeicherte kundenbezogene Carrier-Ausschlüsse gelten für Carrier-Anfragen, Auswahl,
+  Notfallentwurf und Buchung. Ausgeschlossene Carrier werden vor dem Anfrage-Limit entfernt.
+  Angebote nennen den ausgewählten Carrier; angewandte Ausschlüsse bei Bedarf allgemein
+  bestätigen, ohne ausgeschlossene Namen im Angebot erneut zu nennen. Ein Composer-Fallback
+  darf keinen ausgeschlossenen Carrier anbieten.
+
+- Gemeinsames Schreibprofil: `app/mail/customer_voice.md` kombiniert auf Kundenmails zugeschnittene Regeln aus Humanize Writing und Humanizer. Der Composer lädt diese lokale Datei als Systemanweisung; `.agents/skills/customer-email-voice/SKILL.md` verweist für künftige Agenten darauf. Quellen sind auf Commit-SHAs fixiert, MIT-Hinweise liegen beim Skill. Keine Laufzeitdownloads, kein zusätzlicher LLM-Aufruf und keine neue Abhängigkeit.
+- Freigegebene Frachtmail-Stimme: konkreter Einstieg, belegter Gesprächsbezug, Dank für echte Klärungen, kurze Auswahlbegründung, Preis im Fließtext, natürliches I/we und Kontraktionen, klare Unsicherheit, situationsgerechte Wärme und ein passender nächster Schritt. Formulierungsbeispiele sind Orientierung, keine festen Vorlagen. Der Composer erhält den tatsächlichen Auswahlgrund (Luftlaufzeit bzw. Luftpreis unter geprüften Optionen), ohne neue Preis-/Terminentscheidung.
+
+- Eine Cargo-Annahmefrist ist derzeit keine belegte Angebotsinformation. Composer-Ausgaben
+  dürfen weder Abflug-/Bereitschaftsdatum noch Tarifgültigkeit als Cutoff ausgeben.
+  Angefragte Annahmefristen werden auch im deterministischen Fallback ausdrücklich als
+  unbestätigt beantwortet; freie Annahmefrist-Zusagen lösen Reparatur/Fallback aus.
+
+- Jede Quote verwendet wieder den individuellen Composer, auch bei Standardanfragen. Kein lokaler Standardparser und kein zusätzlicher Mini-Prüfaufruf. Qualität und persönliche Ansprache haben Vorrang vor dem zuletzt eingeführten Sparpfad.
+- `LLM_COMPOSE_MODEL` ist unabhängig vom Extraktionsmodell und standardmäßig `gpt-5-mini`; die Extraktion bleibt bei `LLM_MODEL`. Der Composer erhält bis zu 750 Output-Tokens für ausformulierte Antworten.
+- Der Composer erhält die aktuelle Kundenmail sowie begrenzte frühere Korrespondenz mit exakt demselben Kunden. Eine frühere Unterhaltung darf kurz und konkret aufgegriffen werden; keine erfundene Vertrautheit. Historische Sendungsdaten, Preise und Zusagen ersetzen niemals aktuelle verifizierte Fakten. Mailtexte sind Daten, keine Anweisungen.
+
 - Door-Angebote nennen die gemeldete Trucker-Vorlaufzeit, sofern vorhanden, und kennzeichnen
   einen nicht bestätigten Abholslot ausdrücklich als offen; Luftlaufzeit ist keine Abholbestätigung.
+  Trucker-Abholvorlauf und Straßentransit bleiben getrennt: nur eine ausdrücklich als Transit/Fahrzeit
+  belegte Dauer darf als Fahrtdauer formuliert werden. Unklare Angaben bleiben allgemeiner Vorlauf;
+  Preise, Carrier-Balance und bestehende Terminauswahl werden dadurch nicht verändert.
+  Interne Timing-Feldnamen und Enum-Werte dürfen nicht in Kundentexte gelangen;
+  solche Ausgaben durchlaufen die vorhandene Reparatur und gegebenenfalls den Fallback.
 - Aktuelle Sendungsangaben haben Vorrang vor Betreff und zitierter Mailhistorie. Bei einem
   neuen Sendungsblock werden alte weitergeleitete Angaben aus der Extraktion/Lot-Summe entfernt;
   reine Weiterleitungen bleiben lesbar. Fehlende Abholorte dürfen nicht aus alten Betreffs geraten werden.
+- Direkte Antworten auf eine offene Abflughafenfrage werden unabhängig von optionalen
+  Recovery-/Einmal-Rückfrage-Schaltern mit dem vorhandenen Freitextparser ausgewertet;
+  verneinte, historische, mehrdeutige und reine Zielflughafenangaben ergeben keinen Abflugort.
 - Die Extraktion bewahrt neben den Preisfeldern alle expliziten Kundenfragen und
   Servicebedingungen. Schlägt die Pydantic-Validierung fehl, ist genau ein Reparatur-Call
   mit demselben Schema erlaubt.

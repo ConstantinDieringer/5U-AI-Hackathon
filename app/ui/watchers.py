@@ -139,6 +139,13 @@ def _match_session(r: dict[str, Any]) -> int | None:
 def start() -> None:
     for target in (deadline_loop, board_loop):
         threading.Thread(target=target, name=target.__name__, daemon=True).start()
+    from app.agents import carrier_prefs
     from app.ui import alerts
 
+    try:
+        n = carrier_prefs.backfill()
+        if n:
+            log.info("carrier preferences restored from stored mails: %d", n)
+    except Exception:
+        log.exception("carrier preference backfill")
     alerts.start()  # Slack #sos, only with SLACK_SOS_WEBHOOK

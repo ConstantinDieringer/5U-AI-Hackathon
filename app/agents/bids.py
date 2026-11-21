@@ -16,17 +16,20 @@ import threading
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
-from app import db, hackloop
+from app import config, db, hackloop
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
-from app.pricing.pricing import money, to_minor
+from app.pricing.lanes import airlines_for
+from app.pricing.portal_sync import next_break
+from app.pricing.pricing import chargeable_kg, money, to_minor
 from app.pricing.reference import Carrier, carrier_by_email
 
 log = logging.getLogger(__name__)
 
 TAG = re.compile(r"\[AP-(\d+)\]")
+_BILLED = re.compile(r"billed at (\d+(?:\.\d+)?) kg", re.IGNORECASE)
 _MONEY = r"(?:\d{1,3}(?:[ ,.'’]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
 _AMOUNT = re.compile(
     rf"(?:(?P<cur1>EUR|USD|€|\$)\s*(?P<num1>{_MONEY}))"
@@ -54,6 +57,8 @@ class Offer:
     fx_rate: str | None = None
     fx_source: str | None = None
     fx_valid_until: str | None = None
+    timing_kind: str = "unspecified"
+    billed_kg: float | None = None  # set for a reply to our next-weight-break request
 
 
 @dataclass
@@ -121,19 +126,52 @@ def parse_transit_days(text: str) -> float | None:
     return int(h.group(1)) / 24 if h else None
 
 
+def timing_kind(text: str) -> str:
+    """Interpret only the clause containing the same duration used by the bid parser."""
+    match = _DAYS.search(text) or _HOURS.search(text)
+    if not match:
+        return "unspecified"
+    start = (
+        max(text.rfind(mark, 0, match.start()) for mark in ("\n", ".", "!", "?")) + 1
+    )
+    clause = text[start : match.end()].lower()
+    road = bool(re.search(r"transit time|driving|fahrzeit|transportdauer", clause))
+    collection = bool(re.search(r"pickup|pick up|collect|abhol", clause)) and not road
+    return (
+        "road_transit" if road else "collection_lead" if collection else "unspecified"
+    )
+
+
 # ---------------------------------------------------------------- requests
 
 
-def _subject(session_id: int, rfq: Rfq, origin: str, kind: str) -> str:
+def _subject(
+    session_id: int, rfq: Rfq, origin: str, kind: str, billed: float | None = None
+) -> str:
     load = f"{rfq.weight_kg:g} kg / {rfq.volume_cbm:g} cbm"
     if kind == "trucker":
         return (
             f"[AP-{session_id}] Pickup {rfq.pickup_label} to {origin} airport, {load}"
         )
-    return f"[AP-{session_id}] Air freight {origin} to {rfq.destination}, {load}"
+    extra = f", billed at {billed:g} kg" if billed else ""
+    return f"[AP-{session_id}] Air freight {origin} to {rfq.destination}, {load}{extra}"
 
 
-def _body(rfq: Rfq, origin: str, kind: str) -> str:
+def _next_break(carrier: Carrier, rfq: Rfq, origin: str) -> float | None:
+    """BID_NEXT_BREAK: the airline's next portal weight break above the chargeable weight. The
+    scorer prices the cheaper of exact weight and next break (round 27: Meridian billed 859 kg
+    at 3.35 €/kg, the board's best was 1000 kg at 2.84 €/kg). Email-only airlines have no
+    known brackets."""
+    if carrier.kind != "airline":
+        return None
+    code = next(
+        (a.code for a in airlines_for(origin, rfq.destination) if a.email == carrier.email),
+        None,
+    )
+    return next_break(code, chargeable_kg(rfq.weight_kg, rfq.volume_cbm)) if code else None
+
+
+def _body(rfq: Rfq, origin: str, kind: str, billed: float | None = None) -> str:
     pieces = f"{rfq.pieces} pieces, " if rfq.pieces else ""
     ready = f"Ready for pickup: {rfq.ready_date}.\n" if rfq.ready_date else ""
     if kind == "trucker":
@@ -147,7 +185,9 @@ def _body(rfq: Rfq, origin: str, kind: str) -> str:
         what = f"Please quote air freight from {origin} to {rfq.destination}."
     return (
         f"Hello,\n\n{what}\n"
-        f"Shipment: {pieces}{rfq.weight_kg:g} kg gross, {rfq.volume_cbm:g} cbm.\n{ready}\n"
+        f"Shipment: {pieces}{rfq.weight_kg:g} kg gross, {rfq.volume_cbm:g} cbm.\n{ready}"
+        + (f"Please quote it billed at {billed:g} kg, your next weight break.\n" if billed else "")
+        + "\n"
         "Please reply with your all-in price in € and the transit time in days.\n\n"
         f"{SIGNATURE}\n"
     )
@@ -171,27 +211,31 @@ def request(session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier]) -> 
             if c.email.lower() in already_sent:
                 req.asked[c.email] = c
                 continue
-        subject, body = (
-            _subject(session_id, rfq, origin, c.kind),
-            _body(rfq, origin, c.kind),
-        )
-        try:
-            out = hackloop.send(c.email, subject, body)
-        except Exception as e:  # noqa: BLE001 - one carrier must not stop the others
-            log.warning("bid request to %s failed: %s", c.email, e)
-            continue
-        db.record_outgoing(
-            mail_id=int(out["id"]),
-            recipient=c.email,
-            subject=subject,
-            body=body,
-            category="bid_request",
-            session_id=session_id,
-            raw=out,
-        )
-        with _cond:
-            req.asked[c.email] = c
-        sent += 1
+        billing = [None]
+        if config.settings.bid_next_break and (nb := _next_break(c, rfq, origin)):
+            billing.append(nb)
+        for billed in billing:
+            subject, body = (
+                _subject(session_id, rfq, origin, c.kind, billed),
+                _body(rfq, origin, c.kind, billed),
+            )
+            try:
+                out = hackloop.send(c.email, subject, body)
+            except Exception as e:  # noqa: BLE001 - one carrier must not stop the others
+                log.warning("bid request to %s failed: %s", c.email, e)
+                continue
+            db.record_outgoing(
+                mail_id=int(out["id"]),
+                recipient=c.email,
+                subject=subject,
+                body=body,
+                category="bid_request",
+                session_id=session_id,
+                raw=out,
+            )
+            with _cond:
+                req.asked[c.email] = c
+            sent += 1
     if sent:
         db.emit("bid_request", f"Gebote angefragt bei {sent} Carrier(n)", session_id)
     return sent
@@ -281,6 +325,8 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
         str(fx),
         fx_source,
         fx_expiry,
+        timing_kind(mail.body or ""),
+        float(billed[1]) if (billed := _BILLED.search(mail.subject or "")) else None,
     )
     with _cond:
         _open.setdefault(sid, _Request()).offers.append(offer)
@@ -362,7 +408,7 @@ def airline_option(
         total_eur_minor=total,
         source="bid",
         chargeable_kg=chargeable_kg,
-        billed_kg=chargeable_kg,
+        billed_kg=offer.billed_kg or chargeable_kg,
         fx_eur_per_unit=offer.fx_rate,
         fx_source=offer.fx_source,
         fx_valid_until=offer.fx_valid_until,

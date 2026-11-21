@@ -21,10 +21,8 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = (
-    "gpt-5-nano"  # cheapest allowed model by list price; override with LLM_MODEL
-)
-MAX_CALLS_PER_SESSION = min(3, settings.llm_max_calls_per_session)
+DEFAULT_MODEL = "gpt-5-mini"  # stronger extraction default; override with LLM_MODEL
+MAX_CALLS_PER_SESSION = min(4, settings.llm_max_calls_per_session)
 PRICES_FILE = Path(__file__).with_name("llm_prices.json")
 
 _client = OpenAI(
@@ -56,11 +54,7 @@ def cost_micro_usd(name: str, prompt_tokens: int, completion_tokens: int) -> int
     """List-price cost in micro-USD (1 USD = 1 000 000), rounded once, here."""
     prices = _prices()
     price = prices.get(name) or next(  # dated names like gpt-5-nano-2025-08-07
-        (
-            v
-            for k, v in sorted(prices.items(), key=lambda kv: -len(kv[0]))
-            if name.startswith(k)
-        ),
+        (v for k, v in sorted(prices.items(), key=lambda kv: -len(kv[0])) if name.startswith(k)),
         None,
     )
     if price is None:
@@ -120,9 +114,7 @@ def _reserve(session_id: int | None) -> None:
     if session_id is None:
         return
     if db.reserve_llm_call(session_id, MAX_CALLS_PER_SESSION) is None:
-        raise LlmBudgetError(
-            f"session {session_id} already made {MAX_CALLS_PER_SESSION} LLM calls"
-        )
+        raise LlmBudgetError(f"session {session_id} already made {MAX_CALLS_PER_SESSION} LLM calls")
 
 
 def complete(
@@ -134,7 +126,7 @@ def complete(
     model_name: str | None = None,
 ) -> str:
     """One chat completion through the gateway. Returns the message text and logs the cost.
-    `model_name` overrides LLM_MODEL for this call (retry/rescue models are configured)."""
+    `model_name` overrides LLM_MODEL for configured retry, rescue and compose calls."""
     _reserve(session_id)
     name = model_name or model()
     kw: dict[str, Any] = {
@@ -143,9 +135,7 @@ def complete(
         "max_completion_tokens": max_tokens,
     }
     if _is_reasoning(name):
-        kw["reasoning_effort"] = (
-            "minimal"  # reasoning usage still counts within output tokens
-        )
+        kw["reasoning_effort"] = "minimal"  # reasoning usage still counts within output tokens
     else:
         kw["temperature"] = 0
     if response_format is not None:

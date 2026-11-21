@@ -88,6 +88,7 @@ class Rfq(BaseModel):
     customer_name: str | None = None
     customer_questions: list[str] = Field(default_factory=list, max_length=5)
     service_constraints: list[str] = Field(default_factory=list, max_length=10)
+    excluded_airlines: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod

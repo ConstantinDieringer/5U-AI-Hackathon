@@ -1,0 +1,995 @@
+[
+ {
+  "session_id": 265,
+  "round_no": 1,
+  "outcome": "no_quote",
+  "status": "error",
+  "request": {
+   "airport": "CGN",
+   "destination": "ORD",
+   "pickup_zip": "51447",
+   "weight_kg": 676.0,
+   "volume_cbm": 5.79,
+   "preference": "fastest"
+  },
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [
+   "bodenseefracht@hackloop.mail",
+   "borealis-freight-airways@hackloop.mail",
+   "elbflug-air-freight@hackloop.mail",
+   "elbkante-logistik@hackloop.mail",
+   "helix-air-freight@hackloop.mail",
+   "maintal-transport-logistik@hackloop.mail",
+   "nova-atlas-cargo@hackloop.mail",
+   "orion-cargo-air@hackloop.mail",
+   "westfalenroute@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "no_price",
+   "status"
+  ],
+  "notes": [
+   "carrier_without_stored_reply"
+  ],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 421,
+  "round_no": 2,
+  "outcome": "no_quote",
+  "status": "error",
+  "request": {
+   "airport": "FRA",
+   "destination": "JFK",
+   "pickup_zip": "61018",
+   "weight_kg": 1233.0,
+   "volume_cbm": 10.78,
+   "preference": "fastest"
+  },
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [
+   "bodenseefracht@hackloop.mail",
+   "cobalt-skylift@hackloop.mail",
+   "fjordline-air-cargo@hackloop.mail",
+   "hansekogge-trucking@hackloop.mail",
+   "ibisair-cargo@hackloop.mail",
+   "nordlicht-haulage@hackloop.mail",
+   "quetzal-air-freight@hackloop.mail",
+   "spessart-spedition@hackloop.mail",
+   "ultraviolet-air-freight@hackloop.mail",
+   "westfalenroute@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "no_trucking",
+   "status"
+  ],
+  "notes": [
+   "carrier_without_stored_reply"
+  ],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 731,
+  "round_no": 3,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "DUS",
+   "destination": "JFK",
+   "pickup_zip": null,
+   "weight_kg": 1540.0,
+   "volume_cbm": 5.9,
+   "preference": "fastest"
+  },
+  "airline": "Fjordline Air Cargo",
+  "trucker": null,
+  "source": "portal",
+  "route": "DUS-JFK",
+  "transit_days": 3,
+  "total_minor": 369600,
+  "carriers_asked": [
+   "ibisair-cargo@hackloop.mail",
+   "polaris-air-logistics@hackloop.mail",
+   "quetzal-air-freight@hackloop.mail",
+   "solace-air-cargo@hackloop.mail",
+   "wayzata-air-cargo@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [
+   "carrier_without_stored_reply"
+  ],
+  "network_blocked": 0,
+  "quote_body": "Hi Tobias,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from DUS to JFK for an all-in total of 3.696,00 €.\nIt flies with Fjordline Air Cargo, transit time 3 days from departure.\n\nEarliest departure from DUS is 27 November 2026, arriving in JFK on 30 November 2026.\nThe rate can be booked until 15:28 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 937,
+  "round_no": 4,
+  "outcome": "no_quote",
+  "status": "error",
+  "request": {
+   "airport": "CGN",
+   "destination": "ORD",
+   "pickup_zip": "51896",
+   "weight_kg": 679.0,
+   "volume_cbm": 4.19,
+   "preference": "cheapest"
+  },
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [
+   "bodenseefracht@hackloop.mail",
+   "borealis-freight-airways@hackloop.mail",
+   "elbflug-air-freight@hackloop.mail",
+   "elbkante-logistik@hackloop.mail",
+   "helix-air-freight@hackloop.mail",
+   "maintal-transport-logistik@hackloop.mail",
+   "nova-atlas-cargo@hackloop.mail",
+   "orion-cargo-air@hackloop.mail",
+   "westfalenroute@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "no_price",
+   "status"
+  ],
+  "notes": [
+   "carrier_without_stored_reply"
+  ],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 1223,
+  "round_no": 5,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "STR",
+   "destination": "EZE",
+   "pickup_zip": null,
+   "weight_kg": 1228.0,
+   "volume_cbm": 5.37,
+   "preference": "fastest"
+  },
+  "airline": "Fjordline Air Cargo",
+  "trucker": null,
+  "source": "portal",
+  "route": "STR-EZE",
+  "transit_days": 4,
+  "total_minor": 440852,
+  "carriers_asked": [
+   "cobalt-skylift@hackloop.mail",
+   "danube-wings-cargo@hackloop.mail",
+   "juniper-cargo-lines@hackloop.mail",
+   "meridian-freightways@hackloop.mail",
+   "quetzal-air-freight@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Klaus,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from STR to EZE for an all-in total of 4.408,52 €.\nIt flies with Fjordline Air Cargo, transit time 4 days from departure.\n\nEarliest departure from STR is 26 November 2026, arriving in EZE on 30 November 2026.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 1460,
+  "round_no": 6,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "DUS",
+   "destination": "KUL",
+   "pickup_zip": null,
+   "weight_kg": 1549.0,
+   "volume_cbm": 8.26,
+   "preference": "cheapest"
+  },
+  "airline": "Fjordline Air Cargo",
+  "trucker": null,
+  "source": "portal",
+  "route": "DUS-KUL",
+  "transit_days": 5,
+  "total_minor": 394995,
+  "carriers_asked": [
+   "orion-cargo-air@hackloop.mail",
+   "polaris-air-logistics@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Jonas,\n\nthanks for your request, happy to help.\n\nWe can offer air freight from DUS to KUL for an all-in total of 3.949,95 €.\nIt flies with Fjordline Air Cargo, transit time 5 days from departure.\n\nEarliest departure from DUS is 26 November 2026, arriving in KUL on 1 December 2026.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 1628,
+  "round_no": 7,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "MUC",
+   "destination": "LAX",
+   "pickup_zip": null,
+   "weight_kg": 998.0,
+   "volume_cbm": 2.39,
+   "preference": "fastest"
+  },
+  "airline": "Fjordline Air Cargo",
+  "trucker": null,
+  "source": "portal",
+  "route": "MUC-LAX",
+  "transit_days": 3,
+  "total_minor": 320358,
+  "carriers_asked": [
+   "aurelia-air-cargo@hackloop.mail",
+   "gannet-airways@hackloop.mail",
+   "helix-air-freight@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Deniz,\n\nthanks for your request, happy to help.\n\nWe can offer air freight from MUC to LAX for an all-in total of 3.203,58 €.\nIt flies with Fjordline Air Cargo, transit time 3 days from departure.\n\nEarliest departure from MUC is 29 November 2026, arriving in LAX on 2 December 2026.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 1834,
+  "round_no": 8,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "MUC",
+   "destination": "CAI",
+   "pickup_zip": null,
+   "weight_kg": 486.0,
+   "volume_cbm": 2.62,
+   "preference": "cheapest"
+  },
+  "airline": "Borealis Freight Airways",
+  "trucker": null,
+  "source": "portal",
+  "route": "MUC-CAI",
+  "transit_days": 4,
+  "total_minor": 147500,
+  "carriers_asked": [
+   "kestrel-airways@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Mira,\n\nthanks for your request, happy to help.\n\nWe can offer air freight from MUC to CAI for an all-in total of 1.475,00 €.\nIt flies with Borealis Freight Airways, transit time 4 days from departure.\n\nEarliest departure from MUC is 24 November 2026, arriving in CAI on 28 November 2026.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 1967,
+  "round_no": 9,
+  "outcome": "no_quote",
+  "status": "error",
+  "request": {
+   "airport": "FRA",
+   "destination": "LOS",
+   "pickup_zip": "36627",
+   "weight_kg": 1952.0,
+   "volume_cbm": 4.6768,
+   "preference": "cheapest"
+  },
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [
+   "bodenseefracht@hackloop.mail",
+   "domblick-kurierdienst@hackloop.mail",
+   "elbflug-air-freight@hackloop.mail",
+   "vega-skyfreight@hackloop.mail",
+   "vogelsberg-haulage@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "no_price",
+   "status"
+  ],
+  "notes": [
+   "carrier_without_stored_reply"
+  ],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 2256,
+  "round_no": 10,
+  "outcome": "no_quote",
+  "status": "error",
+  "request": {
+   "airport": "FRA",
+   "destination": "GRU",
+   "pickup_zip": "61391",
+   "weight_kg": 715.0,
+   "volume_cbm": 2.65,
+   "preference": "cheapest"
+  },
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [
+   "bodenseefracht@hackloop.mail",
+   "fjordline-air-cargo@hackloop.mail",
+   "hansekogge-trucking@hackloop.mail",
+   "ibisair-cargo@hackloop.mail",
+   "nordlicht-haulage@hackloop.mail",
+   "solace-air-cargo@hackloop.mail",
+   "spessart-spedition@hackloop.mail",
+   "westfalenroute@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "no_price",
+   "portal_warning",
+   "status"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 2530,
+  "round_no": 11,
+  "outcome": "no_quote",
+  "status": "error",
+  "request": {
+   "airport": "HAM",
+   "destination": "YYZ",
+   "pickup_zip": "21663",
+   "weight_kg": 855.0,
+   "volume_cbm": 3.74,
+   "preference": "cheapest"
+  },
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [
+   "domblick-kurierdienst@hackloop.mail",
+   "maintal-transport-logistik@hackloop.mail",
+   "odenwald-cargo@hackloop.mail",
+   "riverbend-airlines-cargo@hackloop.mail",
+   "spessart-spedition@hackloop.mail",
+   "vega-skyfreight@hackloop.mail",
+   "waldrand-transporte@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "no_price",
+   "status"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 2819,
+  "round_no": 12,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "FRA",
+   "destination": "DOH",
+   "pickup_zip": null,
+   "weight_kg": 102.0,
+   "volume_cbm": 0.49,
+   "preference": "cheapest"
+  },
+  "airline": "Wayzata Air Cargo",
+  "trucker": null,
+  "source": "sheet",
+  "route": "FRA-DOH",
+  "transit_days": 1,
+  "total_minor": 36720,
+  "carriers_asked": [],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hello,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from FRA to DOH for an all-in total of 367,20 €.\nIt flies with Wayzata Air Cargo, transit time 1 day from departure.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 2967,
+  "round_no": 13,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "HAM",
+   "destination": "DEL",
+   "pickup_zip": "24983",
+   "weight_kg": 1619.0,
+   "volume_cbm": 7.66,
+   "preference": "cheapest"
+  },
+  "airline": "Borealis Freight Airways",
+  "trucker": "Hansekogge Trucking",
+  "source": "portal",
+  "route": "HAM-DEL",
+  "transit_days": 5,
+  "total_minor": 295382,
+  "carriers_asked": [
+   "alpenblick-logistik@hackloop.mail",
+   "flinkwagen-logistik@hackloop.mail",
+   "hansekogge-trucking@hackloop.mail",
+   "maintal-transport-logistik@hackloop.mail",
+   "neckarstrom-kurier@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Tobias,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from HAM to DEL, including pickup at 24983 and trucking to HAM airport for an all-in total of 2.953,82 €.\nIt flies with Borealis Freight Airways, transit time 5 days from departure.\n\nEarliest departure from HAM is 29 November 2026, arriving in DEL on 4 December 2026.\n\nThe trucker reports a lead time of about 19 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 16:33 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 3317,
+  "round_no": 14,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "DUS",
+   "destination": "PEK",
+   "pickup_zip": "42401",
+   "weight_kg": 1081.0,
+   "volume_cbm": 8.03,
+   "preference": "cheapest"
+  },
+  "airline": "Gannet Airways",
+  "trucker": "Westfalenroute",
+  "source": "portal",
+  "route": "DUS-PEK",
+  "transit_days": 5,
+  "total_minor": 332560,
+  "carriers_asked": [
+   "rheinufer-spedition@hackloop.mail",
+   "schwabenbote-transporte@hackloop.mail",
+   "spessart-spedition@hackloop.mail",
+   "westfalenroute@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Petra,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from DUS to PEK, including pickup at 42401 and trucking to DUS airport for an all-in total of 3.325,60 €.\nIt flies with Gannet Airways, transit time 5 days from departure.\n\nEarliest departure from DUS is 28 November 2026, arriving in PEK on 3 December 2026.\n\nThe trucker reports a lead time of about 4 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 16:35 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 3627,
+  "round_no": 15,
+  "outcome": "clarification",
+  "status": "pricing",
+  "request": null,
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [],
+  "clarifications_sent": 1,
+  "open_issues": [
+   "origin",
+   "pickup_zip"
+  ],
+  "warnings": [
+   "validation_blocked",
+   "validation_result"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 3930,
+  "round_no": 16,
+  "outcome": "clarification",
+  "status": "pricing",
+  "request": null,
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [],
+  "clarifications_sent": 1,
+  "open_issues": [
+   "pickup_zip"
+  ],
+  "warnings": [
+   "validation_blocked",
+   "validation_result"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 4127,
+  "round_no": 17,
+  "outcome": "clarification",
+  "status": "pricing",
+  "request": null,
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [],
+  "clarifications_sent": 1,
+  "open_issues": [
+   "pickup_zip"
+  ],
+  "warnings": [
+   "validation_blocked",
+   "validation_result"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 4363,
+  "round_no": 18,
+  "outcome": "clarification",
+  "status": "pricing",
+  "request": null,
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [],
+  "clarifications_sent": 1,
+  "open_issues": [
+   "pickup_zip"
+  ],
+  "warnings": [
+   "validation_blocked",
+   "validation_result"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 4639,
+  "round_no": 19,
+  "outcome": "clarification",
+  "status": "pricing",
+  "request": null,
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [],
+  "clarifications_sent": 1,
+  "open_issues": [
+   "pickup_zip"
+  ],
+  "warnings": [
+   "validation_blocked",
+   "validation_result"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 4919,
+  "round_no": 20,
+  "outcome": "clarification",
+  "status": "pricing",
+  "request": null,
+  "airline": null,
+  "trucker": null,
+  "source": null,
+  "route": null,
+  "transit_days": null,
+  "total_minor": null,
+  "carriers_asked": [],
+  "clarifications_sent": 1,
+  "open_issues": [
+   "pickup_zip"
+  ],
+  "warnings": [
+   "validation_blocked",
+   "validation_result"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": null
+ },
+ {
+  "session_id": 5243,
+  "round_no": 21,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "HAM",
+   "destination": "EZE",
+   "pickup_zip": "28261",
+   "weight_kg": 676.0,
+   "volume_cbm": 3.44,
+   "preference": "fastest"
+  },
+  "airline": "Meridian Freightways",
+  "trucker": "Schwabenbote Transporte",
+  "source": "portal",
+  "route": "HAM-EZE",
+  "transit_days": 3,
+  "total_minor": 247048,
+  "carriers_asked": [
+   "nova-atlas-cargo@hackloop.mail",
+   "schwabenbote-transporte@hackloop.mail",
+   "spessart-spedition@hackloop.mail",
+   "waldrand-transporte@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [
+   "carrier_without_stored_reply"
+  ],
+  "network_blocked": 0,
+  "quote_body": "Hi Deniz,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from HAM to EZE, including pickup at 28261 and trucking to HAM airport for an all-in total of 2.470,48 €.\nIt flies with Meridian Freightways, transit time 3 days from departure.\n\nEarliest departure from HAM is 27 November 2026, arriving in EZE on 30 November 2026.\n\nThe trucker reports a lead time of about 12 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:17 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 5523,
+  "round_no": 22,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "CGN",
+   "destination": "SGN",
+   "pickup_zip": "53088",
+   "weight_kg": 1403.0,
+   "volume_cbm": 13.44,
+   "preference": "fastest"
+  },
+  "airline": "Juniper Cargo Lines",
+  "trucker": "Sternmeile Logistik",
+  "source": "portal",
+  "route": "CGN-SGN",
+  "transit_days": 2,
+  "total_minor": 763701,
+  "carriers_asked": [
+   "nova-atlas-cargo@hackloop.mail",
+   "ruhrpott-express@hackloop.mail",
+   "spessart-spedition@hackloop.mail",
+   "sternmeile-logistik@hackloop.mail",
+   "yellowtail-air-freight@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [
+   "carrier_without_stored_reply"
+  ],
+  "network_blocked": 0,
+  "quote_body": "Hi Tobias,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from CGN to SGN, including pickup at 53088 and trucking to CGN airport for an all-in total of 7.637,01 €.\nIt flies with Juniper Cargo Lines, transit time 2 days from departure.\n\nEarliest departure from CGN is 29 November 2026, arriving in SGN on 1 December 2026.\n\nThe trucker reports a lead time of about 11 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:23 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 5844,
+  "round_no": 23,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "FRA",
+   "destination": "DEL",
+   "pickup_zip": null,
+   "weight_kg": 736.0,
+   "volume_cbm": 6.88,
+   "preference": "cheapest"
+  },
+  "airline": "Meridian Freightways",
+  "trucker": null,
+  "source": "portal",
+  "route": "FRA-DEL",
+  "transit_days": 4,
+  "total_minor": 198770,
+  "carriers_asked": [],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Sara,\n\nthanks for your request, happy to help.\n\nWe can offer air freight from FRA to DEL for an all-in total of 1.987,70 €.\nIt flies with Meridian Freightways, transit time 4 days from departure.\n\nEarliest departure from FRA is 24 November 2026, arriving in DEL on 28 November 2026.\nThe rate can be booked until 17:32 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 6055,
+  "round_no": 24,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "DUS",
+   "destination": "ATL",
+   "pickup_zip": "41007",
+   "weight_kg": 1754.0,
+   "volume_cbm": 6.83,
+   "preference": "fastest"
+  },
+  "airline": "Riverbend Airlines Cargo",
+  "trucker": "Ruhrpott Express",
+  "source": "portal",
+  "route": "DUS-ATL",
+  "transit_days": 2,
+  "total_minor": 450002,
+  "carriers_asked": [
+   "odenwald-cargo@hackloop.mail",
+   "ruhrpott-express@hackloop.mail",
+   "vogelsberg-haulage@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Klaus,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from DUS to ATL, including pickup at 41007 and trucking to DUS airport for an all-in total of 4.500,02 €.\nIt flies with Riverbend Airlines Cargo, transit time 2 days from departure.\n\nEarliest departure from DUS is 26 November 2026, arriving in ATL on 28 November 2026.\n\nThe trucker reports a lead time of about 11 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:36 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 6322,
+  "round_no": 25,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "STR",
+   "destination": "EZE",
+   "pickup_zip": "70498",
+   "weight_kg": 544.0,
+   "volume_cbm": 1.86,
+   "preference": "fastest"
+  },
+  "airline": "Fjordline Air Cargo",
+  "trucker": "Spessart Spedition",
+  "source": "portal",
+  "route": "STR-EZE",
+  "transit_days": 4,
+  "total_minor": 254248,
+  "carriers_asked": [
+   "isarwelle-spedition@hackloop.mail",
+   "nordlicht-haulage@hackloop.mail",
+   "rheinufer-spedition@hackloop.mail",
+   "spessart-spedition@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Jonas,\n\nthanks for your request, happy to help.\n\nWe can offer air freight from STR to EZE, including pickup at 70498 and trucking to STR airport for an all-in total of 2.542,48 €.\nIt flies with Fjordline Air Cargo, transit time 4 days from departure.\n\nEarliest departure from STR is 29 November 2026, arriving in EZE on 3 December 2026.\n\nThe trucker reports a lead time of about 9 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:41 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 6629,
+  "round_no": 26,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "MUC",
+   "destination": "BKK",
+   "pickup_zip": "81617",
+   "weight_kg": 1708.0,
+   "volume_cbm": 5.32,
+   "preference": "fastest"
+  },
+  "airline": "Nova Atlas Cargo",
+  "trucker": "Sternmeile Logistik",
+  "source": "portal",
+  "route": "MUC-BKK",
+  "transit_days": 2,
+  "total_minor": 543480,
+  "carriers_asked": [
+   "alpenblick-logistik@hackloop.mail",
+   "kranich-kurier@hackloop.mail",
+   "neckarstrom-kurier@hackloop.mail",
+   "sternmeile-logistik@hackloop.mail",
+   "yellowtail-air-freight@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Tobias,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from MUC to BKK, including pickup at 81617 and trucking to MUC airport for an all-in total of 5.434,80 €.\nIt flies with Nova Atlas Cargo, transit time 2 days from departure.\n\nEarliest departure from MUC is 29 November 2026, arriving in BKK on 1 December 2026.\n\nThe trucker reports a lead time of about 4 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:47 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 6882,
+  "round_no": 27,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "HAM",
+   "destination": "EZE",
+   "pickup_zip": "24489",
+   "weight_kg": 859.0,
+   "volume_cbm": 3.5,
+   "preference": "fastest"
+  },
+  "airline": "Meridian Freightways",
+  "trucker": "Hansekogge Trucking",
+  "source": "bid",
+  "route": "HAM-EZE",
+  "transit_days": 3,
+  "total_minor": 301837,
+  "carriers_asked": [
+   "alpenblick-logistik@hackloop.mail",
+   "flinkwagen-logistik@hackloop.mail",
+   "hansekogge-trucking@hackloop.mail",
+   "maintal-transport-logistik@hackloop.mail",
+   "meridian-freightways@hackloop.mail",
+   "neckarstrom-kurier@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "portal_warning"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Jonas,\n\nthanks for your request, happy to help.\n\nWe can offer air freight from HAM to EZE, including pickup at 24489 and trucking to HAM airport for an all-in total of 3.018,37 €.\nIt flies with Meridian Freightways, transit time 3 days from departure.\n\nEarliest departure from HAM is 27 November 2026, arriving in EZE on 30 November 2026.\n\nThe trucker reports a lead time of about 19 hours, and we'll confirm the exact pickup time once it's booked.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 7237,
+  "round_no": 28,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "CGN",
+   "destination": "DFW",
+   "pickup_zip": null,
+   "weight_kg": 85.0,
+   "volume_cbm": 0.7,
+   "preference": "cheapest"
+  },
+  "airline": "Ultraviolet Air Freight",
+  "trucker": null,
+  "source": "portal",
+  "route": "CGN-DFW",
+  "transit_days": 4,
+  "total_minor": 39045,
+  "carriers_asked": [],
+  "clarifications_sent": 1,
+  "open_issues": [],
+  "warnings": [
+   "validation_blocked",
+   "validation_result"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Klaus,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from CGN to DFW for an all-in total of 390,45 €.\nIt flies with Ultraviolet Air Freight, transit time 4 days from departure.\n\nEarliest departure from CGN is 27 November 2026, arriving in DFW on 1 December 2026.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 7448,
+  "round_no": 29,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "FRA",
+   "destination": "PVG",
+   "pickup_zip": "63198",
+   "weight_kg": 1225.0,
+   "volume_cbm": 4.62,
+   "preference": "cheapest"
+  },
+  "airline": "Nova Atlas Cargo",
+  "trucker": "Westfalenroute",
+  "source": "bid",
+  "route": "FRA-PVG",
+  "transit_days": 4,
+  "total_minor": 361650,
+  "carriers_asked": [
+   "domblick-kurierdienst@hackloop.mail",
+   "nova-atlas-cargo@hackloop.mail",
+   "westfalenroute@hackloop.mail",
+   "xenon-cargo-airlines@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [
+   "portal_warning"
+  ],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Anna,\n\nthanks for your request, happy to help.\n\nWe can offer air freight from FRA to PVG, including pickup at 63198 and trucking to FRA airport for an all-in total of 3.616,50 €.\nIt flies with Nova Atlas Cargo, transit time 4 days from departure.\n\nEarliest departure from FRA is 26 November 2026, arriving in PVG on 30 November 2026.\n\nThe trucker reports a lead time of about 30 hours, and we'll confirm the exact pickup time once it's booked.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 7696,
+  "round_no": 30,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "MUC",
+   "destination": "PVG",
+   "pickup_zip": null,
+   "weight_kg": 134.0,
+   "volume_cbm": 0.77,
+   "preference": "fastest"
+  },
+  "airline": "Meridian Freightways",
+  "trucker": null,
+  "source": "portal",
+  "route": "MUC-PVG",
+  "transit_days": 3,
+  "total_minor": 53466,
+  "carriers_asked": [],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Petra,\n\nthanks for your request, happy to help.\n\nWe can offer air freight from MUC to PVG for an all-in total of 534,66 €.\nIt flies with Meridian Freightways, transit time 3 days from departure.\n\nEarliest departure from MUC is 28 November 2026, arriving in PVG on 1 December 2026.\nThe rate can be booked until 18:12 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nThe exact cargo acceptance cutoff at the departure airport is not yet confirmed.\n\nMoritz\nYour austrian Power Team\n"
+ },
+ {
+  "session_id": 7885,
+  "round_no": 31,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "STR",
+   "destination": "BOM",
+   "pickup_zip": "72379",
+   "weight_kg": 100.0,
+   "volume_cbm": 0.87,
+   "preference": "cheapest"
+  },
+  "airline": "Ibisair Cargo",
+  "trucker": "Alpenblick Logistik",
+  "source": "portal",
+  "route": "STR-BOM",
+  "transit_days": 6,
+  "total_minor": 63260,
+  "carriers_asked": [
+   "alpenblick-logistik@hackloop.mail",
+   "hansekogge-trucking@hackloop.mail"
+  ],
+  "clarifications_sent": 0,
+  "open_issues": [],
+  "warnings": [],
+  "notes": [],
+  "network_blocked": 0,
+  "quote_body": "Hi Klaus,\n\nthank you for reaching out, here is our offer.\n\nWe can offer air freight from STR to BOM, including pickup at 72379 and trucking to STR airport for an all-in total of 632,60 €.\nIt flies with Ibisair Cargo, transit time 6 days from departure.\n\nEarliest departure from STR is 25 November 2026, arriving in BOM on 1 December 2026.\n\nThe trucker reports a lead time of about 9 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 18:18 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+ }
+]

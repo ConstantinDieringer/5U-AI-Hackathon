@@ -3,6 +3,7 @@
 import re
 from decimal import Decimal
 
+from app import config
 from app.mail.content import current_message
 from app.mail.lots import parse_lots
 from app.models import Rfq, RfqDraft
@@ -12,6 +13,14 @@ VERSION = 1
 _NUM = r"\d+(?:[.,]\d+)?"
 _PICKUP = re.compile(
     r"arrange.{0,30}(?:truck|pickup|collection)|including truck pickup|pickup is|pick.?up from|from our (?:site|warehouse|plant)|abholung|vorlauf",
+    re.IGNORECASE,
+)
+# the customer brings the goods to the airport: "no need to arrange pickup" must not count as
+# a pickup request (round 7237 asked for a ZIP four times although Weidner self-delivered)
+_NO_PICKUP = re.compile(
+    r"no need (?:for|to arrange) (?:a |any )?(?:pick.?up|truck|collection)|no pick.?up|without pick.?up"
+    r"|(?:deliver|bring|drop|tender)[^\n.!?]{0,80}\b(?:ourselves|myself)\b|keine abholung"
+    r"|selbst (?:zum|an den) flughafen|(?:liefern|bringen)[^\n.!?]{0,80}\bselbst\b",
     re.IGNORECASE,
 )
 _SIGNATURE = re.compile(
@@ -26,107 +35,203 @@ _ALIASES = {
     "CGN": "Cologne|Köln|EDDK",
     "STR": "Stuttgart|EDDS",
 }
-_IATA = re.compile(r"\b[A-Z]{3}\b", re.IGNORECASE)
-_ROUTE = re.compile(r"\b([A-Z]{3})\s*(?:to|nach|[-–—>])\s*([A-Z]{3})\b", re.IGNORECASE)
-_SELF_DELIVERY = re.compile(
-    r"\b(?:deliver|bring|tender|drop\s*off|liefern|bringen|anliefern)\b"
-    r"[^\n.!?]{0,160}\b(?:ourselves|myself|selbst)\b",
-    re.IGNORECASE,
-)
-
-
-def supported_origin_codes(text: str, destination: str | None = None) -> set[str]:
-    """Supported German export airports explicitly present in current customer text."""
-    supported = set(pickup_zones().values())
-    found = {code.upper() for code in _IATA.findall(text) if code.upper() in supported}
-    if destination:
-        found.discard(destination.upper())
-    return found
 
 
 def explicit_delivery_origin(mail, destination):
-    """Recover one explicit airport-to-airport origin from the current request, never history.
+    """Recover a single supported self-delivery airport from current words, never history.
 
-    The airport code may follow a city name (``Düsseldorf Airport (DUS)``) or live in a
-    route-like subject (``DUS to BOM``); requiring it immediately after ``to`` caused 12867.
+    The IATA code may follow an airport name (``Düsseldorf Airport (DUS)``); it need not
+    immediately follow the word ``to``.
     """
-    current = current_message(mail.body, mail.subject)
-    active = current.facts
-    combined = f"{current.subject}\n{active}"
+    active = current_message(mail.body).facts
     supported = set(pickup_zones().values())
-    destination = (destination or "").upper()
-    body_airports = supported_origin_codes(active, destination)
-    if len(body_airports) > 1:
-        return None
-    route_origins = {
-        origin.upper()
-        for origin, target in _ROUTE.findall(combined)
-        if origin.upper() in supported
-        and origin.upper() != destination
-        and (not destination or target.upper() == destination)
-    }
-    if len(route_origins) == 1 and (
-        not body_airports or route_origins == body_airports
-    ):
-        return next(iter(route_origins))
-    if not _SELF_DELIVERY.search(active):
-        return None
-    return next(iter(body_airports)) if len(body_airports) == 1 else None
-
-
-def requested_airport_corrections(
-    text: str,
-    asked: set[str],
-    *,
-    origin: str | None = None,
-    destination: str | None = None,
-) -> dict[str, str]:
-    """Read natural airport answers only for fields the customer was asked to clarify."""
-    result: dict[str, str] = {}
-    origin = (origin or "").upper() or None
-    destination = (destination or "").upper() or None
-    routes = [(left.upper(), right.upper()) for left, right in _ROUTE.findall(text)]
-    if "origin" in asked:
-        candidates = supported_origin_codes(text, destination)
-        candidates |= {
-            left
-            for left, right in routes
-            if left in set(pickup_zones().values())
-            and left != destination
-            and (not destination or right == destination)
-        }
-        if len(candidates) == 1:
-            result["origin"] = next(iter(candidates))
-    if "destination" in asked:
-        labelled = re.search(
-            r"\b(?:destination|arrival)(?:\s+airport)?(?:\s+code)?\b"
-            r"[^\n.!?]{0,30}?\b([A-Z]{3})\b",
-            text,
+    if config.settings.self_delivery_recovery:
+        airports = _stated_departures(active, destination, supported)
+    else:  # today's rule (round 5844); it reads "the str" as STR and ignores a "not"
+        pattern = re.compile(
+            r"\b(?:deliver|bring|tender|liefern|bringen)\b[^\n.!?]{0,120}?"
+            r"\b(?:to|nach|zum)\s+(?:the\s+)?([A-Z]{3})\b"
+            r"[^\n.!?]{0,60}?\b(?:ourselves|myself|selbst)\b",
             re.IGNORECASE,
         )
-        candidates = {labelled[1].upper()} if labelled else set()
-        candidates |= {right for left, right in routes if not origin or left == origin}
-        if asked == {"destination"} and not candidates:
-            candidates = {code.upper() for code in _IATA.findall(text)}
-            if origin:
-                candidates.discard(origin)
-        if len(candidates) == 1:
-            result["destination"] = next(iter(candidates))
-    return result
+        airports = {
+            code.upper()
+            for match in pattern.finditer(active)
+            for code in re.findall(r"\b[A-Z]{3}\b", match[0], re.IGNORECASE)
+            if code.upper() in supported
+        }
+    return next(iter(airports)) if len(airports) == 1 and destination not in airports else None
+
+
+# "we'll deliver the goods to Cologne airport (CGN) ourselves", "drop the shipment off at CGN
+# ourselves" (round 28): the airport may be a city name, a code in brackets, or follow "at"
+_SELF_DELIVERY = re.compile(
+    r"\b(?:deliver|bring|drop|tender|take|liefern|bringen)\b[^\n.!?]{0,120}?"
+    r"\b(?:to|at|nach|zum|an)\b[^\n.!?]{0,60}?\b(?:ourselves|myself|selbst)\b",
+    re.IGNORECASE,
+)
+# German word order puts "selbst" before the place: "Wir liefern die Ware selbst nach
+# Frankfurt an", "bringen sie selbst zum Flughafen München"
+_SELF_DELIVERY_DE = re.compile(
+    r"\b(?:liefern|bringen)\b[^\n.!?]{0,80}?\bselbst\b[^\n.!?]{0,20}?"
+    r"\b(?:nach|zum|zur|an den|an)\s+[^\n.!?,;]{0,40}",
+    re.IGNORECASE,
+)
+# "the cheapest option from CGN to DFW": codes in capitals only, so words never count
+_ROUTE = re.compile(r"\bfrom\s+([A-Z]{3})\s+(?:to|nach)\s+([A-Z]{3})\b")
+# a negation in the clause before the verb, or between verb and "selbst" in German
+_NEGATION = re.compile(
+    r"\b(?:not|don['’]t|do not|cannot|can['’]t|won['’]t|nicht|kein|keine)\b", re.IGNORECASE
+)
+_CLAUSE_START = re.compile(r"[.!?;:\n,—–]")
+
+
+def _negated(text, match):
+    """True when "We do not deliver to FRA ourselves" or "liefern nicht selbst" negates it."""
+    clause = _CLAUSE_START.split(text[: match.start()])[-1]
+    return bool(_NEGATION.search(clause) or _NEGATION.search(match[0]))
+
+
+def no_pickup(active):
+    """The customer brings the goods to the airport. SELF_DELIVERY_RECOVERY skips negated
+    wording: "We do not deliver to FRA ourselves, please arrange pickup" wants a pickup."""
+    if not config.settings.self_delivery_recovery:
+        return bool(_NO_PICKUP.search(active))
+    return self_delivers(active)
+
+
+def self_delivers(text):
+    """No pickup wanted, negated self-delivery sentences excluded."""
+    return any(
+        re.match(r"(?:no|without|keine)\b", m[0], re.IGNORECASE) or not _negated(text, m)
+        for m in _NO_PICKUP.finditer(text)
+    )
+
+
+_KG = re.compile(rf"({_NUM})\s*(?:kgs?|kilograms?|kilogramm)\b", re.IGNORECASE)
+
+
+def free_text_answer(text, asked, destination):
+    """CLARIFY_ONCE: what a customer's free-text answer states for the fields we asked about.
+    A bare airport code ("CGN", capitals only) or airport city ("Cologne"), a 5-digit ZIP in a
+    supported zone, an area name for a pickup, a single "N kg" for the weight. Negated clauses
+    never count, the destination is never a departure, and two candidates are no answer."""
+    body = _SIGNATURE.split(text, 1)[0]
+    supported = set(pickup_zones().values())
+    codes, cities = set(), set()
+    for clause in re.split(r"[.!?;\n]", body):
+        if _NEGATION.search(clause):
+            continue
+        if re.search(
+            r"\b(?:last time|previously|used to|usually|normally|letztes mal|früher|normalerweise)\b",
+            clause,
+            re.IGNORECASE,
+        ):
+            continue  # historical/usual airports do not answer the current shipment question
+        codes |= {c for c in re.findall(r"\b[A-Z]{3}\b", clause) if c in supported}
+        cities |= {
+            code
+            for code, names in _ALIASES.items()
+            if re.search(rf"\b(?:{names})\b", clause, re.IGNORECASE)
+        }
+    codes.discard(destination)
+    cities.discard(destination)
+    zips = {z for z in re.findall(r"\b(?:D-)?(\d{5})\b", body) if origin_for_zip(z)}
+    # "51147 Köln-Porz" is an address: the ZIP wins over the city in it
+    airports = codes | (set() if zips else cities)
+    found = {}
+    if "origin" in asked:
+        if not codes and len(zips) == 1:
+            found["pickup_zip"] = next(iter(zips))  # the zone fixes the airport
+        elif len(airports) == 1:
+            found["origin"] = next(iter(airports))
+    if "pickup_zip" in asked:
+        if len(zips) == 1:
+            found["pickup_zip"] = next(iter(zips))
+        elif not zips and self_delivers(body) and len(airports) == 1:
+            # round 28 answers to a ZIP question: "no pickup ZIP, we'll drop it at CGN ourselves"
+            found.update(origin=next(iter(airports)), no_pickup=True)
+        elif not zips and (area := find_area(body)):
+            found["pickup_city"] = area
+    if "weight_kg" in asked and len(weights := set(_KG.findall(body))) == 1:
+        found["weight_kg"] = float(next(iter(weights)).replace(",", "."))
+    return found
+
+
+_SOURCE = {
+    "attachment": r"attach\w*|packing\s+(?:spec\w*|list)|spec\w*\s+sheet|anhang|packliste",
+    "body": r"(?:my|our|the)\s+(?:e-?mail|message|request)|meine[rn]?\s+mail|unsere[rn]?\s+mail",
+}
+_CORRECT = (
+    r"(?:is|are|was|were|ist|sind)\s+(?:the\s+)?(?:correct|right|accurate|valid|binding"
+    r"|richtig|korrekt|maßgeblich|gültig)\b|\bstimm(?:t|en)\b"
+)
+
+
+def confirmed_source(text, draft, fields):
+    """CONFLICT_SOURCE_ANSWER: the answer to a mail/attachment conflict names the source that is
+    right ("the attached packing specification is correct", rounds 33 to 35) instead of a
+    number. Returns the confirmed source's value for each conflicting field. Nothing when the
+    answer names both sources, negates the statement, or the attachments disagree."""
+    body = _SIGNATURE.split(text, 1)[0]
+    named = set()
+    for clause in re.split(r"[.!?;,\n]|\b(?:but|aber)\b", body):
+        if _NEGATION.search(clause) or re.search(
+            r"\b(?:incorrect|wrong|falsch)\b", clause, re.IGNORECASE
+        ):
+            continue
+        for source, words in _SOURCE.items():
+            if re.search(rf"(?:{words})\b.{{0,60}}?(?:{_CORRECT})", clause, re.IGNORECASE):
+                named.add(source)
+    if len(named) != 1:
+        return {}
+    source = next(iter(named))
+    found = {}
+    for field in fields:
+        observations = (draft.evidence.get(field) or {}).get("observations") or []
+        values = {
+            Decimal(str(value))
+            for name, value in observations
+            if (name == "body") == (source == "body") and name != "customer_correction"
+        }
+        if len(values) == 1:
+            value = next(iter(values))
+            found[field] = int(value) if field == "pieces" else float(value)
+    return found
+
+
+def _stated_departures(active, destination, supported):
+    """Departure airports the current message states itself (SELF_DELIVERY_RECOVERY).
+    Codes count in capitals only and negated sentences never count."""
+    found = set()
+    for pattern in (_SELF_DELIVERY, _SELF_DELIVERY_DE):
+        for match in pattern.finditer(active):
+            if _negated(active, match):
+                continue
+            found |= {c for c in re.findall(r"\b[A-Z]{3}\b", match[0]) if c in supported}
+            found |= {
+                code
+                for code, names in _ALIASES.items()
+                if code in supported and re.search(rf"\b(?:{names})\b", match[0], re.IGNORECASE)
+            }
+    found |= {
+        origin for origin, to in _ROUTE.findall(active) if origin in supported and to == destination
+    }
+    return found
 
 
 def numeric_facts(text):
     result = {}
     patterns = {
         "weight_kg": [
-            rf"(?:total\s+)?gross weight\s*(?:\(kg\))?\s*(?:(?:of|is)\s+)?[:|]?\s*({_NUM})",
+            rf"(?:total\s+)?gross weight\s*(?:\(kg\))?\s*(?:(?:of|is)\s+)?(?:[:|]\s*)*({_NUM})",
             rf"({_NUM})\s*kg\s+gross",
         ],
         "volume_cbm": [
-            rf"(?:total\s+)?volume\s*(?:\(cbm\))?\s*(?:(?:of|is)\s+)?[:|]?\s*({_NUM})",
+            rf"(?:total\s+)?volume\s*(?:\(cbm\))?\s*(?:(?:of|is)\s+)?(?:[:|]\s*)*({_NUM})",
             rf"({_NUM})\s*(?:cbm|m3|m³)\b",
         ],
-        "pieces": [r"(?:total\s+)?pieces\s*[:|]\s*(\d+)", r"\b(\d+)\s+pieces\b"],
+        "pieces": [r"(?:total\s+)?pieces\s*(?:[:|]\s*)+(\d+)", r"\b(\d+)\s+pieces\b"],
     }
     for field, patterns_ in patterns.items():
         for pattern in patterns_:
@@ -150,16 +255,10 @@ def numeric_facts(text):
     return result
 
 
-def validate(
-    mail, candidate, attachments=None, attachment_issues=None, corrections=None
-):
+def validate(mail, candidate, attachments=None, attachment_issues=None, corrections=None):
     current = current_message(mail.body, mail.subject)
     active = _SIGNATURE.split(current.facts, 1)[0]
-    data = (
-        candidate.facts.copy()
-        if isinstance(candidate, RfqDraft)
-        else candidate.model_dump()
-    )
+    data = candidate.facts.copy() if isinstance(candidate, RfqDraft) else candidate.model_dump()
     issues = list(attachment_issues or [])
     evidence = {}
     corrections = corrections or {}
@@ -178,7 +277,9 @@ def validate(
     data["pickup_city"] = None
     data["pickup_assumed"] = False
     combined = "\n".join(sources.values())
-    pickup = bool(_PICKUP.search(active))
+    pickup = bool(_PICKUP.search(active)) and not no_pickup(active)
+    if corrections.get("no_pickup"):  # the answer to our ZIP question says they self-deliver
+        pickup = False
     zip_match = re.search(r"\b(?:D-)?(\d{5})\b", active)
     current_area = find_area(active) if pickup else None
     attachment_shipper_cities = set()
@@ -189,16 +290,19 @@ def validate(
         parts = [part.strip() for part in match[1].lstrip("|").split(",")]
         if len(parts) >= 3:
             attachment_shipper_cities.add(parts[-2])
-    if current_area and any(
-        city.casefold() != current_area.casefold() for city in attachment_shipper_cities
+    # the shipper line in a document is the company's address; a pickup ZIP written in the
+    # mail itself names the collection site and wins (rounds 10132 Bremen vs 71184
+    # Boeblingen, 10404 Erlangen vs 81862 Munich South asked for a ZIP they had given)
+    if (
+        current_area
+        and not zip_match
+        and any(city.casefold() != current_area.casefold() for city in attachment_shipper_cities)
     ):
         issues.append(
             {
                 "field": "pickup_zip",
                 "code": "conflict",
-                "detail": (
-                    "Mail pickup location and attachment shipper identify different places"
-                ),
+                "detail": ("Mail pickup location and attachment shipper identify different places"),
             }
         )
     if pickup:
@@ -206,9 +310,13 @@ def validate(
     elif data.get("pickup_zip") and str(data["pickup_zip"]) not in combined:
         data["pickup_zip"] = None
     for field, value in corrections.items():
+        if field == "no_pickup":
+            continue
         data[field] = value
         evidence[field] = {"source": "customer_correction", "value": value}
-    if pickup and not data.get("pickup_zip"):
+    if data.get("pickup_city"):  # an area from the answer: priced, exact address still asked
+        data["pickup_assumed"] = True
+    if pickup and not data.get("pickup_zip") and not data.get("pickup_city"):
         issues.append(
             {
                 "field": "pickup_zip",
@@ -246,9 +354,7 @@ def validate(
                 data["origin"] = airport
             evidence["origin"] = {"source": "pickup_zones", "value": data["origin"]}
         evidence["pickup_zip"] = {
-            "source": "body"
-            if "pickup_zip" not in corrections
-            else "customer_correction",
+            "source": "body" if "pickup_zip" not in corrections else "customer_correction",
             "value": data["pickup_zip"],
         }
     origin = data.get("origin")
@@ -277,9 +383,7 @@ def validate(
                 }
             )
         else:
-            evidence.setdefault(
-                "origin", {"source": "current_request", "value": origin}
-            )
+            evidence.setdefault("origin", {"source": "current_request", "value": origin})
     elif not pickup:
         issues.append(
             {
@@ -317,11 +421,7 @@ def validate(
         )
     )
     values = numeric_facts(active) if not has_lots else {}
-    if (
-        has_lots
-        and totals is None
-        and not {"weight_kg", "volume_cbm"} <= corrections.keys()
-    ):
+    if has_lots and totals is None and not {"weight_kg", "volume_cbm"} <= corrections.keys():
         issues.append(
             {
                 "field": "lots",
@@ -357,9 +457,7 @@ def validate(
                     }
                 )
             data[field] = (
-                int(observations[0][1])
-                if field == "pieces"
-                else float(observations[0][1])
+                int(observations[0][1]) if field == "pieces" else float(observations[0][1])
             )
             evidence[field] = {
                 "source": observations[0][0],
@@ -367,9 +465,7 @@ def validate(
                 "observations": [(n, str(v)) for n, v in observations],
             }
         elif field != "pieces":
-            issues.append(
-                {"field": field, "code": "missing", "detail": f"Confirm {field}"}
-            )
+            issues.append({"field": field, "code": "missing", "detail": f"Confirm {field}"})
     # UN markers in any source take precedence over a generic non-dangerous statement.
     dangerous = bool(
         re.search(
@@ -378,27 +474,34 @@ def validate(
             re.IGNORECASE,
         )
     )
-    if (
-        dangerous
-        and corrections.get("dangerous_goods") != "not_dangerous_document_corrected"
+    declared = re.search(
+        r"(?:dangerous goods|gefahrgut)\s*[:|]\s*([^\n|]*\bUN\s*\d{4}[^\n|]*)",
+        combined,
+        re.IGNORECASE,
+    )
+    # Dangerous goods (round 10132, reason dg_docs_missing): before quoting we must ask for
+    # the DG documents (Shipper's Declaration, safety data sheet). Cleared by the customer's
+    # documents, or by an explicit statement that the goods are not dangerous.
+    if dangerous and corrections.get("dangerous_goods") not in (
+        "not_dangerous_document_corrected",
+        "dg_documents_received",
     ):
         issues.append(
             {
                 "field": "dangerous_goods",
-                "code": "conflict_or_unsupported",
-                "detail": "Confirm UN/class and whether the non-dangerous declaration or attachment is incorrect",
+                "code": "documents_required",
+                "detail": "Dangerous goods: request the Shipper's Declaration and safety data sheet",
             }
         )
     evidence["dangerous_goods"] = {
         "source": "all_documents",
         "un_numbers": re.findall(r"\bUN\s*\d{4}\b", combined, re.IGNORECASE),
+        "declared": declared[1].strip()[:120] if declared else None,
     }
     try:
         rfq = Rfq.model_validate(data)
     except ValueError as exc:
         rfq = None
-        issues.append(
-            {"field": "shipment", "code": "invalid", "detail": str(exc)[:200]}
-        )
+        issues.append({"field": "shipment", "code": "invalid", "detail": str(exc)[:200]})
     draft = RfqDraft(facts=data, evidence=evidence, issues=issues, version=VERSION)
     return rfq, draft

@@ -2,11 +2,125 @@
 
 import os
 import re
+from datetime import UTC, date, datetime
 
 TEAM_LINE = "Your austrian Power Team"
 # a real first name above the team line reads like a person wrote the mail (jury bonus)
 SIGNER = os.getenv("MAIL_SIGNER", "Moritz").strip() or "Moritz"
 SIGNATURE = f"{SIGNER}\n{TEAM_LINE}"
+
+_MONTHS = {
+    "en": (
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ),
+    "de": (
+        "Januar",
+        "Februar",
+        "März",
+        "April",
+        "Mai",
+        "Juni",
+        "Juli",
+        "August",
+        "September",
+        "Oktober",
+        "November",
+        "Dezember",
+    ),
+}
+
+
+def written_date(value: date, lang: str) -> str:
+    language = "de" if lang == "de" else "en"
+    day = f"{value.day}." if language == "de" else str(value.day)
+    return f"{day} {_MONTHS[language][value.month - 1]} {value.year}"
+
+
+def customer_presentation(text: str, lang: str) -> str:
+    """Render literal dates/currency in prose without touching embedded technical IDs."""
+    text = re.sub(r"(?<![\w-])EUR(?![\w-])", "€", text)
+
+    def replace_timestamp(match: re.Match[str]) -> str:
+        try:
+            value = datetime.fromisoformat(match[0])
+            zone = ""
+            if value.tzinfo is not None:
+                value = value.astimezone(UTC)
+                zone = " UTC"
+            joiner = " um " if lang == "de" else " at "
+            return written_date(value.date(), lang) + joiner + value.strftime("%H:%M") + zone
+        except ValueError:
+            return match[0]
+
+    text = re.sub(
+        r"(?<![\w-])\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?"
+        r"(?:Z|[+-]\d{2}:\d{2})?(?![\w-])",
+        replace_timestamp,
+        text,
+    )
+
+    def replace_date(match: re.Match[str]) -> str:
+        try:
+            return written_date(date.fromisoformat(match[0]), lang)
+        except ValueError:
+            return match[0]  # invalid model dates remain visible to the validator
+
+    text = re.sub(r"(?<![\w-])\d{4}-\d{2}-\d{2}(?![\w-])", replace_date, text)
+    paragraphs = []
+    for paragraph in text.split("\n\n"):
+        if len(paragraph.split()) <= 70:
+            paragraphs.append(paragraph)
+            continue
+        sentences, start = [], 0
+        for boundary in re.finditer(r"(?<=[.!?])\s+(?=[A-ZÄÖÜ])", paragraph):
+            before = paragraph[: boundary.start()]
+            # German day numbers and ordinary titles are not sentence endings.
+            if re.search(r"(?:\d|\b(?:Dr|Mr|Ms|Mrs))\.$", before):
+                continue
+            sentences.append(paragraph[start : boundary.start()])
+            start = boundary.end()
+        sentences.append(paragraph[start:])
+        group = ""
+        for sentence in sentences:
+            if group and len((group + " " + sentence).split()) > 55:
+                paragraphs.append(group)
+                group = ""
+            group = f"{group} {sentence}".strip()
+        if group:
+            paragraphs.append(group)
+    return "\n\n".join(paragraphs)
+
+
+def has_customer_presentation_issue(text: str) -> bool:
+    """Reject backend vocabulary and dense/technical presentation in generated replies."""
+    return bool(
+        re.search(r"[()]|(?<![\w@.-])[a-z]+(?:_[a-z0-9]+)+(?![\w@-]|\.[A-Za-z0-9])", text)
+        or re.search(
+            r"^\s*(?:origin|destination|preference|source|language)\s*:",
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        or re.search(r"(?<![\w-])\d{4}-\d{2}-\d{2}(?=T|\b)(?!-)", text)
+        or re.search(r"\b\d{1,2}[./]\d{1,2}[./]\d{4}\b", text)
+        or re.search(
+            r"\b\d{1,2}\.?\s+(?:Jan|Feb|Mar|Mär|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Okt|Nov|Dec|Dez)"
+            r"\.?\s+\d{4}\b",
+            text,
+            re.IGNORECASE,
+        )
+        or any(len(paragraph.split()) > 70 for paragraph in text.split("\n\n"))
+    )
 
 
 def has_template_artifacts(text: str) -> bool:
@@ -26,7 +140,7 @@ def amount(minor: int, currency: str = "EUR") -> str:
     sign = "-" if minor < 0 else ""
     whole, cents = divmod(abs(minor), 100)
     number = f"{whole:,}".replace(",", ".") + f",{cents:02d}"
-    return f"{sign}{number} {'€' if currency == 'EUR' else currency}"
+    return f"{sign}{number} {'€' if currency.upper() == 'EUR' else currency}"
 
 
 _BOOKED_JOKES = {

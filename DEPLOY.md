@@ -20,6 +20,22 @@
 6. Roll back to `shadow` if required. Pending clarification replies are retained for manual
    review and no additional automated clarification is sent. Do not delete the workflow table.
 
+## Deploy rules (during live rounds)
+
+A push to `main` restarts the live container. While it restarts, nobody answers mail.
+
+1. Run `python -m pytest -q` first. Push nothing that is red.
+2. Push only right after a quote has gone out. RFQs arrive about every 6 minutes, so the
+   restart then falls into the gap. Never push while a session is in `pricing`.
+3. After the deploy, check the log for `agents loaded: bids, booking, clarification, rfq,
+   tariff, tracking` and `poller started at since_id=...`. A line `agent <name> does not
+   import` (also an `agent_import_failed` event and a #sos alert) means that agent is broken
+   while the others keep running: roll back to the previous deployment before the next RFQ.
+4. Then open the attention list (Übersicht or `GET /api/attention`) and watch the next
+   round: an `error` there means a round without a quote.
+5. An RFQ that was open during the restart is resumed at startup if it is younger than
+   330 s. Do not start `python run.py` on a laptop to help it along: a second instance
+   answers mail twice. For local work use `AGENTS_ENABLED=false` or the demo DB.
 
 The whole forwarder runs as **one** container: poller, agents and UI. Only one instance may
 poll the mailbox, otherwise mails are processed twice. Once it runs online, nobody runs
@@ -125,6 +141,9 @@ guarantee exactly-once effects across provider/network failures.
   comparable best-price evidence is available.
 - Before deploying, run `python -m pytest -q`; then restart the sole live instance and
   check `/api/health`, poller logs and tariff events. Do not run a second production poller.
+- `python -m app.agents.rfq_replay run --compare tests/fixtures/replay/baseline.json` replays
+  every stored live round offline and lists what a change moves (price, airline, mail text).
+  A changed price needs board evidence before the baseline is regenerated with `--out`.
 
 ## Moving a running local instance online (keeps all mails in and out)
 

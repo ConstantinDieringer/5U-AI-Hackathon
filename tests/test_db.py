@@ -204,6 +204,33 @@ def test_events_after_and_kv():
     assert db.kv_get("since_id") == "42"
 
 
+def test_air_price_migration_preserves_legacy_quotes(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "legacy.db")
+    legacy_schema = db.SCHEMA.replace("  air_total_minor   INTEGER,\n", "").replace(
+        "  air_currency      TEXT,\n", ""
+    )
+    with sqlite3.connect(path) as connection:
+        connection.executescript(legacy_schema)
+    db.init_db(path)
+    sid = rfq()
+    db.record_quote(
+        sid,
+        total_minor=90000,
+        currency="EUR",
+        airline="A",
+        origin="FRA",
+        destination="JFK",
+        transit_days=2,
+        source="sheet",
+    )
+    db.init_db(path)
+    quote = db.get_session(sid)["quotes"][0]
+    assert quote["total_minor"] == 90000
+    assert quote["air_total_minor"] is None and quote["air_currency"] is None
+
+
 def test_expire_overdue():
     old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(
         timespec="seconds"

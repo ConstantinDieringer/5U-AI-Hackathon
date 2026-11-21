@@ -126,8 +126,8 @@ def test_answer_from_crm(two_bookings, monkeypatch) -> None:
     assert "BK-6Z1GMPG3" in body and "confirmed by Fjordline Air Cargo" in body
     assert "STR to EZE" in body and "1228 kg" in body and "4.408,52 €" in body
     # door pickup in 70173, ready 25 Nov: still at the shipper, trucked, departs a day later
-    assert "still at your site (70173)" in body and "2026-11-25" in body
-    assert "depart STR on 26 Nov 2026 and arrive in EZE on 30 Nov 2026" in body
+    assert "still at your site in postal area 70173" in body and "25 November 2026" in body
+    assert "depart STR on 26 November 2026 and arrive in EZE on 30 November 2026" in body
     assert "- " not in body and body.startswith("Hello,")  # prose, neutral greeting
     assert body.rstrip().endswith(SIGNATURE)
     assert db.get_session(3000)["status"] == "answered"
@@ -140,15 +140,17 @@ def test_answer_variants_and_german(two_bookings) -> None:
     assert len(texts) == 4 and all(t.startswith("Hi Klaus,") for t in texts)
     de = tracking.answer_text(rec, "de", None, 0, today)
     assert de.startswith("Guten Tag,") and "STR nach EZE" in de and "4.408,52 €" in de
-    assert "Abflug ab STR am 26.11.2026" in de and "Ankunft in EZE am 30.11.2026" in de
+    assert (
+        "Abflug ab STR am 26. November 2026" in de and "Ankunft in EZE am 30. November 2026" in de
+    )
 
 
 @pytest.mark.parametrize(
     ("today", "phrase"),
     [
         (date(2026, 11, 25), "on its way to STR airport"),  # ready, truck to the airport
-        (date(2026, 11, 27), "left STR on 26 Nov 2026 and is in transit to EZE"),
-        (date(2026, 12, 2), "arrived in EZE on 30 Nov 2026"),
+        (date(2026, 11, 27), "left STR on 26 November 2026 and is in transit to EZE"),
+        (date(2026, 12, 2), "arrived in EZE on 30 November 2026"),
     ],
 )
 def test_where_follows_the_schedule(two_bookings, today, phrase) -> None:
@@ -175,9 +177,9 @@ def test_first_name_from_signature(body, name) -> None:
 
 REAL_DB = Path(__file__).resolve().parent.parent / "data" / "forwarder.db"
 REAL = {  # mail id -> booking reference, first name, departure, arrival (rfq.schedule)
-    1677: ("BK-6Z1GMPG3", "Klaus", "26 Nov 2026", "30 Nov 2026"),
-    1850: ("BK-L5RBV4FY", "Jonas", "26 Nov 2026", "1 Dec 2026"),
-    2252: ("BK-DCA1A2QI", "Mira", "24 Nov 2026", "28 Nov 2026"),
+    1677: ("BK-6Z1GMPG3", "Klaus", "26 November 2026", "30 November 2026"),
+    1850: ("BK-L5RBV4FY", "Jonas", "26 November 2026", "1 December 2026"),
+    2252: ("BK-DCA1A2QI", "Mira", "24 November 2026", "28 November 2026"),
 }
 
 

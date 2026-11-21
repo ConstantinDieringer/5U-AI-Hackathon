@@ -154,9 +154,7 @@ def test_2256_xlsx_dg_wins_over_body_nondg():
     )
     _, d = validate(
         m,
-        candidate(
-            pickup_zip="61391", destination="GRU", weight_kg=715, volume_cbm=2.65
-        ),
+        candidate(pickup_zip="61391", destination="GRU", weight_kg=715, volume_cbm=2.65),
         {
             "PL.xlsx": "Total gross weight (kg) | 715\nTotal volume (cbm) | 2.65\nDangerous goods: UN1133, Class 3, Adhesives"
         },
@@ -164,16 +162,15 @@ def test_2256_xlsx_dg_wins_over_body_nondg():
     assert [i["field"] for i in d.issues] == ["dangerous_goods"]
 
 
-def test_attachment_shipper_conflicting_with_named_pickup_blocks():
+def test_attachment_shipper_city_does_not_override_mail_pickup_zip():
+    """The document's shipper line is the company address; a ZIP in the mail names the
+    pickup site (rounds 10132, 10404: asking for a ZIP the customer gave lost the round)."""
     m = mail(
-        "Please arrange pickup from 21663 Lueneburg to YYZ. "
-        "855 kg gross, total volume 3.74 cbm."
+        "Please arrange pickup from 21663 Lueneburg to YYZ. 855 kg gross, total volume 3.74 cbm."
     )
     _, d = validate(
         m,
-        candidate(
-            pickup_zip="21663", destination="YYZ", weight_kg=855, volume_cbm=3.74
-        ),
+        candidate(pickup_zip="21663", destination="YYZ", weight_kg=855, volume_cbm=3.74),
         {
             "SLI.pdf": (
                 "Shipper: Lindqvist Medtech GmbH, Erlangen, Germany\n"
@@ -181,7 +178,25 @@ def test_attachment_shipper_conflicting_with_named_pickup_blocks():
             )
         },
     )
-    assert any(i["field"] == "pickup_zip" and i["code"] == "conflict" for i in d.issues)
+    assert not any(i["field"] == "pickup_zip" for i in d.issues)
+
+
+def test_dangerous_goods_ask_for_documents_and_clear_on_documents():
+    from app.agents import clarification
+
+    m = mail("Please arrange pickup from 71184 Boeblingen to MIA. 378 kg gross, 1.86 cbm.")
+    sli = {
+        "spec.pdf": "Total gross weight (kg): 378\nTotal volume (cbm): 1.86\n"
+        "Dangerous goods: UN3481, Class 9, Lithium ion batteries packed with equipment"
+    }
+    cand = candidate(pickup_zip="71184", destination="MIA", weight_kg=378, volume_cbm=1.86)
+    _, d = validate(m, cand, sli)
+    assert [i["field"] for i in d.issues] == ["dangerous_goods"]
+    text = clarification.text_for(d, "en")
+    assert "UN3481, Class 9" in text and "DGD" in text and "postal" not in text
+    assert "(" not in text and ")" not in text
+    rfq, d2 = validate(m, cand, sli, corrections={"dangerous_goods": "dg_documents_received"})
+    assert rfq is not None and not d2.issues
 
 
 def test_correct_lot_totals_and_unreadable_lot_block():
@@ -202,9 +217,7 @@ def test_mail_attachment_conflict_and_rounding():
         {"packing": "Total gross weight (kg): 100\nTotal volume (cbm): 2.646"},
     )
     assert not d.issues and r.weight_kg == 100
-    _, d = validate(
-        m, r, {"packing": "Total gross weight (kg): 200\nTotal volume (cbm): 2.65"}
-    )
+    _, d = validate(m, r, {"packing": "Total gross weight (kg): 200\nTotal volume (cbm): 2.65"})
     assert any(i["field"] == "weight_kg" and i["code"] == "conflict" for i in d.issues)
 
 
@@ -321,9 +334,7 @@ def test_late_reply_does_not_quote(monkeypatch):
 def test_restart_during_send_is_unknown(monkeypatch):
     m = mail(BODY)
     _, d = validate(m, candidate())
-    db.validation_save(
-        m.id, "awaiting_clarification", d.model_dump(), dataclasses.asdict(m)
-    )
+    db.validation_save(m.id, "awaiting_clarification", d.model_dump(), dataclasses.asdict(m))
     assert db.clarification_claim(m.id)
     clarification.catch_up()
     assert db.validation_get(m.id)["send_state"] == "unknown"
@@ -358,10 +369,7 @@ def test_read_text_pdf_xlsx_docx_sources(monkeypatch, tmp_path):
     monkeypatch.setattr(poller, "download_attachments", lambda m: [txt, xlsx, word])
     texts, media, issues = read_sources(m)
     assert (
-        not media
-        and not issues
-        and "100" in texts["spec.xlsx"]
-        and "UN1133" in texts["spec.txt"]
+        not media and not issues and "100" in texts["spec.xlsx"] and "UN1133" in texts["spec.txt"]
     )
 
 
@@ -405,10 +413,7 @@ def test_labelled_weight_of_and_decimal_units():
 
     from app.mail.rfq_validation import numeric_facts
 
-    assert (
-        numeric_facts("gross weight of 100 kg, total volume of 1.5 cbm")["weight_kg"]
-        == 100
-    )
+    assert numeric_facts("gross weight of 100 kg, total volume of 1.5 cbm")["weight_kg"] == 100
     assert numeric_facts("Gross weight: 2 t")["weight_kg"] == 2000
     assert numeric_facts("Gross weight: 10 lb")["weight_kg"] == Decimal("4.53592370")
 
@@ -423,9 +428,7 @@ def test_unreadable_document_cannot_be_cleared_by_yes(monkeypatch):
     d.evidence["attachment_texts"] = {}
     monkeypatch.setattr(clarification.hackloop, "send", lambda *a, **kw: {"id": 9001})
     clarification.request(m, m.id, d)
-    answer = Mail(
-        9999, m.id, m.sender, m.to, "Re", "yes", datetime.now(UTC).isoformat()
-    )
+    answer = Mail(9999, m.id, m.sender, m.to, "Re", "yes", datetime.now(UTC).isoformat())
     clarification.handle_reply(answer, m.id)
     assert db.validation_get(m.id)["state"] == "awaiting_clarification"
 
@@ -437,9 +440,7 @@ def test_shadow_rollback_does_not_continue_pending_quote(monkeypatch):
         "settings",
         dataclasses.replace(clarification.settings, rfq_validation_mode="shadow"),
     )
-    monkeypatch.setattr(
-        rfq, "handle_rfq", lambda *a: pytest.fail("rollback must not resume quote")
-    )
+    monkeypatch.setattr(rfq, "handle_rfq", lambda *a: pytest.fail("rollback must not resume quote"))
     answer = Mail(
         9999,
         m.id,
@@ -458,14 +459,7 @@ def test_replay_never_downloads_or_sends(monkeypatch):
     from app.mail.validation_replay import replay
 
     m = mail(BODY)
-    monkeypatch.setattr(
-        poller, "download_attachments", lambda *a: pytest.fail("replay downloaded")
-    )
-    monkeypatch.setattr(
-        clarification.hackloop, "send", lambda *a, **kw: pytest.fail("replay sent")
-    )
+    monkeypatch.setattr(poller, "download_attachments", lambda *a: pytest.fail("replay downloaded"))
+    monkeypatch.setattr(clarification.hackloop, "send", lambda *a, **kw: pytest.fail("replay sent"))
     rows = replay()
-    assert (
-        rows[0]["session_id"] == m.id
-        and rows[0]["stored_extraction_available"] is False
-    )
+    assert rows[0]["session_id"] == m.id and rows[0]["stored_extraction_available"] is False

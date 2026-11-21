@@ -17,6 +17,8 @@ Read all six files in `context/`:
 
 Follow `context/ai-workflow-rules.md`.
 
+For customer email wording or composer changes, use `.agents/skills/customer-email-voice/SKILL.md` and its shared runtime profile `app/mail/customer_voice.md`.
+
 Update `context/progress-tracker.md` after each meaningful change. If an implementation changes scope, standards or architecture, update the relevant context file before continuing.
 
 Challenge sources: [context/docs/CHALLENGE.md](context/docs/CHALLENGE.md) and the PDFs in `context/docs/`.

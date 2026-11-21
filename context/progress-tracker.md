@@ -13,7 +13,46 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
-- Session 12867 hardening: route subjects, airport names plus `(IATA)`, natural clarification replies and single-code answers resolve deterministically. Remaining RFQ gaps receive an evidence-bound full-thread `LLM_RESCUE_MODEL` pass before the first/follow-up question or human review; 337 tests pass, 4 skipped.
+- Session 12867 hardening: airport names plus `(IATA)` and natural single-code answers resolve deterministically. Remaining RFQ gaps receive an evidence-bound full-thread `LLM_RESCUE_MODEL` pass before the first question or human review.
+- Round 48 expired after two origin questions despite explicit DUS answers. Origin clarification now reuses the existing negation/ambiguity-aware free-text parser independently of optional recovery/one-question flags. No question-cap, pricing or deployment setting changes; initial extraction/runtime state remain unverified.
+- Customer presentation: €, full EN/DE months, sentence-based copy without parentheses/field names, short paragraphs across quotes/clarifications/bookings/tracking. Composer repairs leaks and safely formats dates/currency/paragraphs. 575 tests pass/4 skipped; 31 replay records unchanged except 18 quote bodies. No live mail sent; deployment unverified.
+
+- End-to-end tests rounds 35/39/42 (`tests/test_recent_rounds_e2e.py`, real flow, stubbed mail/portal/gateway, both clarify modes): 42 (Lagoon 3,210.00 + trucker, Zephyr never asked, holds for the next RFQ) and 39 (DGD + SDS asked, quote after the answer) pass on main. 35 failed: "the attached packing specification is correct" was no answer; fixed behind `CONFLICT_SOURCE_ANSWER` (default false = today: second question, or no quote under CLARIFY_ONCE). Bodies rebuilt from verified values; real mails 32 to 46 are not stored here.
+- Round 45 accepted/booked but customer quote leaked `road_transit`. Shared voice profile now translates timing labels into ordinary language; composer validation rejects internal timing enums/field names and uses its existing repair/fallback. No timing, selection or price changes; production SHA unverified.
+
+- 50/50 balance now `ratio` by default for trucker AND airline bids (`pricing.most_balanced`, `TRUCKER_BALANCE=minmax` restores the old rule). Min-max tied every 2-bid case 0.5/0.5 and the cheaper bid won the tie. Replay moves rounds 21/22/25/26/31 (trucker only, no air choice changes); 21–26 scored 28–38 accuracy and would hit the board's best price (+56.8). Not verified live; Railway variable must not pin minmax.
+- Round 42 `excluded_airline`: actual offer selected Lagoon but echoed excluded Zephyr in acknowledgement; exact board trigger unverified. Reuse parallel carrier preferences; filter before fan-out cap, pass exclusions to composer/fallback, keep emergency draft and booking consistent, and acknowledge exclusions generically. Combined suite: 544 passed, 4 skipped; production SHA unverified.
+- Approved freight voice implemented: specific openings, grounded thanks/history, I/we, contractions, situational warmth, plain uncertainty and one next step; composer gets a short fastest/cheapest rationale. Full suite 540 passed/4 skipped; 35 relevant tests passed after wording refinements. Synthetic EN/DE probes sent no mail; production activation unverified.
+
+- Customer carrier preferences (round 10820, excluded_airline: "do not offer Zephyr Steppe Cargo ... future inquiries"): `app/agents/carrier_prefs.py` parses refusals/preferences in code, stores them per customer (table customer_carrier_prefs). Excluded carriers are never asked for bids nor quoted; a preferred one wins when priced. Also applied in the emergency draft.
+- Setup change ~18:50: RFQs with SLI/packing-spec attachments declaring dangerous goods (UN3481 class 9). 5U rejects quotes without asking for DG documents (reason dg_docs_missing). Clarification now names the UN entry and asks for the Shipper's Declaration + SDS; documents or "attached" in the reply clear it. A ZIP in the mail beats the shipper city in the document.
+- Round 39 rejected `dg_docs_missing`: gate identified DG, but its questions omitted an explicit document request. EN/DE DG clarification now asks for applicable DG documents and review before quoting/booking; generic packing-list confirmation does not release the existing gate. 481 tests passed, 4 skipped; later non-template quote source and production deployment unverified.
+
+- Combined customer-email voice skill from Humanize Writing/Humanizer, pinned sources/MIT notices and shared runtime profile. Composer and repairs load it directly, retaining factual/style guards. Skill validation, 477 integrated tests and synthetic EN/DE gateway probes pass; no customer mail sent or production rollout verified.
+- Trucker balance review (task 5, default unchanged): replay records the trucker. On the 10 replayable door rounds ratio changes only 21, 22, 25, 26, 31; on 21/22/25/26 the board accuracy of the minmax quote equals 45 − 4.5 per % off the ratio total (±0.05), so ratio is recommended. Fastest should not add the truck lead time: it cannot reorder air options, and round 27 fits the ratio/minmax trucker, not the fastest (36.7 vs 39.32 points). Round 31 (ratio would pick Alpenblick) awaits its accuracy.
+- Email bids at the next weight break (task 6a, `BID_NEXT_BREAK`, default false): an airline with known portal brackets gets a second request billed at its next break; the cheaper offer counts. Round 27: Meridian 859 kg × 3.35 € = 2,877.65 € vs board best implied 1000 kg × 2.84 € (+ Hansekogge 140.72 € = 2,980.75 €, matches 39.32 points). Replay cannot show it (no stored reply to the second request); would fire on rounds 27 and 29 only. Carrier reaction to the wording not verified live.
+- One question per RFQ (task 3, `CLARIFY_ONCE`, default false = today's cap of two): the question lists every gap; free-text answers count (bare code in capitals, airport city, ZIP, "gross weight is N kg", "no ZIP, we drop it at CGN ourselves"); an unusable answer, or none by `CLARIFY_FALLBACK_AFTER_S`=45 s, leads to the best quote from real prices (stated airport only, no pickup guess) plus a `needs_human` attention item; no real price, no quote. Replay: only round 28 changes (one question, quote UV 390.45 €); rounds 15 to 20 stay unquoted and flagged. Not verified live.
+- Pickup ZIP instead of a guess (task 2, `ASK_PICKUP_ZIP`, default false = today): a pickup request without ZIP or area asks once for the ZIP. Only this shipment counts: the current text without signature, or earlier mail of the same thread (also unlabelled ZIPs in enforce's history check); the customer's other shipments never (Weidner used 61391/41007/72379). Enforce, the live default, already asked for round 20; the guess survived in shadow mode and the UI Notfall-Quote, both now covered. Replay: no enforce round changes; in shadow rounds 15 to 17, 19, 20 ask for the ZIP. Not verified live.
+- Replay corpus to round 31 (task 4): rounds 28 to 31 added (round 28 extraction reconstructed from its validation event, plus the later live portal read UV 390.45 €/LM 457.08 €, labelled manual). Harness fix: replayed customer answers now get an id after our question, so the reply ledger no longer drops them; round 28 now replays today's two-question loop. Rounds after 31 need a fresh /api/sessions export.
+- Self-delivery follow-ups (task 1, same `SELF_DELIVERY_RECOVERY`): with it on, negated sentences ("We do not deliver to FRA ourselves", "liefern nicht selbst") give no airport and count as a pickup request, German order ("liefern selbst nach Frankfurt") is read, codes count in capitals only. Off keeps today's rule, which still reads the negated sentence as FRA. Round 28 test: portal UV 390.45 € beats sheet 416.16 €. Not verified live.
+- Ruff config (task 6c): `pyproject.toml` sets line length 100 and py311 as TECH_SPEC says; no file reformatted. At 100, 57 files would rewrap (24 at the old default 88), so format touched files only; 7 existing ruff check findings unchanged.
+- Round 38: preserve collection lead versus explicit road transit in carrier timing evidence; composer rejects road-duration claims for collection/unknown lead, and fallback uses neutral carrier lead wording. 473 tests passed, 4 skipped; replay changes only 8 quote texts, with identical prices/options/schedules. Deployment unverified.
+
+- Round 35 rejected: XLSX labels serialized as `Total gross weight (kg): | 1751` were ignored by the numeric gate despite conflicting mail weight 2644. Accept combined table separators for weight/volume/pieces; preserve explicit conflict clarification and customer corrections. Exact production pricing cause remains unverified.
+- Replay cleanup closes the final thread-local SQLite connection before removing temporary databases on Windows, including error paths; production database handles in other threads are untouched.
+- Round 35 verification: full offline suite 463 passed, 4 skipped, plus the new replay-failure cleanup test passed; targeted Ruff and diff checks clean. Production audit/SHA and causal price reconciliation remain unavailable.
+
+- Self-delivery departure (`SELF_DELIVERY_RECOVERY`, default false = today): reads the airport from "deliver to Cologne airport (CGN) ourselves", "drop it off at CGN ourselves" or "from CGN to DFW" in the current message and in the answer to our origin question. Round 28 replays as a quote without a question; no stored round changes. Live portal price for round 28 not verified (the manual sheet price 416.16 € was too_high).
+- Trucker balance (`TRUCKER_BALANCE`, superseded: default is now `ratio`): `ratio` picks price/cheapest + time/fastest, which reproduces the board's best price on all 11 scored door rounds (minmax: 7). Replay with `ratio` moves only rounds 21/22/25/26, each to the implied best (+56.8 accuracy points there). Not verified live.
+- Stronger RFQ models: extraction defaults to gpt-5-mini (was nano); failed extraction repair defaults to gpt-5 (was mini), with price accounting. Both passed a synthetic gateway extraction/repair probe; 40 relevant tests pass. Composer stays mini; deployment overrides still take precedence and live rollout is unverified.
+- Startup agent check: `run.py` imports every agent from `app.agents.AGENTS` and logs `agents loaded: ...`; a broken one logs an error, emits `agent_import_failed` (#sos) and does NOT stop the other agents. CI imports every app module. DEPLOY.md has live-round deploy rules. Not verified on Railway; local start with AGENTS_ENABLED=false logged the line.
+- RFQ replay harness (`python -m app.agents.rfq_replay`, `tests/test_rfq_replay.py`): all 27 live rounds through the real flow offline (stored extraction/portal/bids, no network); baseline diff gates option, total, airline, carriers, clarification and mail text. 22/27 match production exactly; rounds 2/12 lack stored data, 18 to 20 now ask for the pickup. Composer output and new portal reads are not replayed.
+- Round 30 review: block unverified cargo cutoff promises (including close of business), retain personal quote repair and state requested cutoff as unconfirmed in composed and fallback text; no current carrier cutoff field exists. Offline suite: 353 passed, 4 skipped; EN/DE promises and rate-validity counterexample covered; deployment not verified.
+
+- Notfall-Quote (Live → "Notfall-Quote", `POST /api/sessions/{id}/draft`, `app/ui/drafts.py`): computes the quote from stored request, sheets, portal (8 s) and the session's bids, fills a house-style mail; sending it records the quote (rate_id) and hands back to the agent so booking works.
+- Reverted PR12 shortcuts (local parsing, composer bypass, cache keys). Every quote uses the individual `LLM_COMPOSE_MODEL` (default gpt-5-mini), with bounded same-customer history and audited source IDs; default budget four allows repairs. Synthetic gateway dry-run produced a personal grounded reply; no live customer mail sent or production rollout verified.
+- Round 27 booking review: freeze selected air cost/currency separately from the customer total; airline booking emails exclude truck costs and commercial adjustments. Legacy quotes omit an unverified air amount; customer confirmations keep their all-in total. Offline suite: 350 passed, 4 skipped; migration/reopen and EUR/USD coverage; production deployment not verified.
+
 - Numeric evidence accepts labelled sentence totals with `is` as well as `of`/colon forms. Round 24 was accepted but redundantly asked for 1754 kg already stated in the current mail; regression covers gate evidence, alternate labels and negative/non-gross statements.
 - RFQ 5844 regression: explicit self-delivery to FRA is recovered deterministically from the current body even if LLM origin is null. The final missing-origin guard now asks a durable clarification instead of setting error, including in shadow mode; its answers can continue without enabling the full strict gate.
 - Quote pickup timing: deterministic door quotes show reported truck lead time and explicitly unconfirmed collection slot; composer receives separate truck-lead/slot facts. Round 22 accepted but its fallback omitted the requested earliest pickup; no schedule or price policy changed.
@@ -57,6 +96,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - A4 `mail/poller.py` + `mail/store.py` + `mail/parse.py`: live run stores mail 208 once, a restart resumes at since_id 208; 6 tests (broken mail, restart, attachments).
 - A7 `app/llm.py`: live call OK (gpt-5-nano, 10+10 tokens, logged 5 micro-USD). The gateway returns no cost, so we use list prices (`app/llm_prices.json`). max_tokens=16 fails: use ≥ 100.
 - A5 `mail/router.py`: rules only, 10 tests green. A6 `python run.py` = poller + watchers + UI on :8000, checked live.
+- UI design exploration (branch `ui/design-guidelines`): Twenty-derived guidelines retained as a historical reference; the merge resolution preserves the current `DESIGN.md` v0.2 UI and all overview functionality from `main`.
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 - RFQ agent (`app/agents/rfq.py`, `bids.py`): 1 LLM extraction, sheet + portal, trucker bids (door-to-port) and email-only airline bids by mail, balanced bid choice, one EUR all-in quote per thread. Router: unknown sender in a new thread = RFQ. Extraction + portal live-checked on mail 265; full send not yet verified live.
@@ -65,7 +105,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
 - Task A, Karim: A1–A8 done. 16:21 PR #5 (Constantin's RFQ agent + bids) merged into main, local `a/rfq-agent` retired; live app now runs main. 16:30 booking agent live (`app/agents/booking.py`): 3 bookings confirmed by the airlines. Next: restart resume for RFQs, tracking agent (C).
-- PR #4 (UI restyle) NOT merged: it conflicts with Moritz's console redesign 299faf2 on main. Moritz + Constantin decide.
+- PR #4 conflict resolved on its branch: current `main` UI v3 wins; the earlier Twenty-derived guidelines remain documented as a historical reference.
 - Task B, Constantin: B1–B7 in PR #2 (pricing, portal, lanes, reference, dataset_version); next door-to-port trucking, bid selection, tariff mails.
 
 ## Next Up
@@ -101,6 +141,7 @@ Goal: the first accepted quote end to end before any polish.
 8. ~~Start kit contents~~ → 10 sheets (xlsx/pdf/docx/txt/jpg), 29 airlines + 23 truckers in `carrier-list.csv`, zones = 2-digit postcode → FRA/MUC/DUS/HAM/STR/CGN. Still open: trucking price (assumed: trucker bids by email).
 9. How to tell mail started by 5U's agents from other mail.
 10. The exact "fastest" rule, and the formula for the 50/50 price/speed balance among bids.
+    → Truckers: price/cheapest + time/fastest (board fit, rounds 13 to 29). Airline bids: same rule since 21.11 20:30 (no board evidence yet).
 11. ~~How many carriers to ask and how long to wait~~ → 2–5 carriers, full-score deadline 110 s,
     final deadline 300 s; 15 s are reserved for composing and sending.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
@@ -113,12 +154,22 @@ Goal: the first accepted quote end to end before any polish.
 18. (A) Reply format of trucker and airline bids unknown: parsed by regex (`bids.parse_price`); unreadable bids are logged as `bid_unreadable`. Check the first real ones.
 19. (A) Quotes are always in EUR. ~~Door-to-port without a trucker bid~~ → blocked by default;
     `ALLOW_INCOMPLETE_DOOR_QUOTE=true` is the explicit emergency override.
+20. Board points carry `booking: 0.0` on every booked round, also on time; the published rules list no booking points. What earns them?
+21. TECH_SPEC §8 still says `RFQ_VALIDATION_MODE=shadow` is the default; code, tracker and architecture say `enforce`. Which is binding?
 
 ## Architecture Decisions
 
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 20:55: Rounds 47 and 48 unanswered: the mailbox allows one poll per 5 s per team key, extra reads with our key (an analysis session bulk-read the mailbox) gave the live poller 429s, and its backoff doubled to minutes. Fix: a 429 keeps the server's wait and never doubles. Rule: nobody polls the mailbox with the team key except the live system. No webhook subscription exists (GET /v1/mailbox/webhook -> 404), so polling is the only intake.
+
+- 21.11 20:35: Carrier exclusions hardened (`carrier_prefs.parse`): two-letter codes ("ZS") and short names ("Zephyr Steppe") count, a negation only reaches its own clause ("we do not mind ..., but we prefer X" no longer bans X), "no objection to X" refuses nothing, country codes in brackets are ignored. Offline tests only; no live round with an exclusion since.
+
+- 21.11 19:30: Board fit: accuracy = 45 × (1 − |ours − best| / best / 10 %), quoting below best costs too. Rounds 2 and 27 lost on the air leg: the best price billed the next weight break (Solace 2000 kg, Meridian 1000 kg). Round 2 is fixed by the portal next-break check; the 503 → email-bid path (27) has no break check yet.
+
+- 21.11 19:00: Board accuracy (now visible) is the largest leak on answered rounds: rounds 2, 19, 21, 22, 25, 26 scored 28 to 38 of 45 while accepted. Rounds 15 to 17 (no answer) were forwarded-subject origin AMS and two RFQs without pickup; current code asks instead. LLM cost was about 0.2 points per quote, not a leak.
 
 - 21.11 18:30: `bids.wait(until_kinds=...)` returns once nobody of the awaited kind is left to answer (all airlines declined no longer waits out the timeout). Tested offline only.
 

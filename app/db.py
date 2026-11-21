@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS quotes (
   destination       TEXT,
   total_minor       INTEGER NOT NULL,
   currency          TEXT NOT NULL,
+  air_total_minor   INTEGER,
+  air_currency      TEXT,
   transit_days      INTEGER,
   source            TEXT CHECK (source IN ('sheet','portal','bid','manual')),
   rate_id           TEXT,
@@ -175,6 +177,14 @@ CREATE TABLE IF NOT EXISTS board_results (
 );
 
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS customer_carrier_prefs (
+  customer   TEXT NOT NULL,
+  carrier    TEXT NOT NULL,
+  kind       TEXT NOT NULL CHECK (kind IN ('exclude','prefer')),
+  session_id INTEGER,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (customer, carrier)
+);
 CREATE TABLE IF NOT EXISTS mail_delivery (
  mail_id INTEGER PRIMARY KEY, raw_json TEXT NOT NULL, source TEXT NOT NULL,
  status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
@@ -248,6 +258,14 @@ def tx() -> Iterator[sqlite3.Connection]:
         raise
 
 
+def close_thread_connection() -> None:
+    """Release this thread's SQLite handle before removing a temporary database."""
+    connection = getattr(_local, "c", None)
+    if connection is not None:
+        connection.close()
+        _local.c = None
+
+
 def init_db(path: str | None = None) -> None:
     """Create the database file and schema. Call once at startup (and per test)."""
     global _db_path, _generation
@@ -265,6 +283,11 @@ def init_db(path: str | None = None) -> None:
         columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
         if "accounting_json" not in columns:
             migration.execute("ALTER TABLE llm_calls ADD COLUMN accounting_json TEXT")
+        quote_columns = {row["name"] for row in migration.execute("PRAGMA table_info(quotes)")}
+        if "air_total_minor" not in quote_columns:
+            migration.execute("ALTER TABLE quotes ADD COLUMN air_total_minor INTEGER")
+        if "air_currency" not in quote_columns:
+            migration.execute("ALTER TABLE quotes ADD COLUMN air_currency TEXT")
     remap_unassigned()
     backfill_bookings_from_confirmations()
     if path_changed:
@@ -398,6 +421,38 @@ def events_after(
 
 
 # ---------------------------------------------------------------- kv
+
+
+def add_carrier_pref(customer: str, carrier: str, kind: str, session_id: int | None) -> bool:
+    """Store that a customer refuses ('exclude') or asks for ('prefer') a carrier. A refusal
+    is never downgraded to a preference. Returns True if something changed."""
+    cust = (customer or "").strip().lower()
+    with tx() as c:
+        old = _one(
+            c.execute(
+                "SELECT kind FROM customer_carrier_prefs WHERE customer = ? AND carrier = ?",
+                (cust, carrier),
+            )
+        )
+        if old and (old["kind"] == kind or old["kind"] == "exclude"):
+            return False
+        c.execute(
+            "INSERT INTO customer_carrier_prefs(customer, carrier, kind, session_id, created_at)"
+            " VALUES (?,?,?,?,?) ON CONFLICT(customer, carrier) DO UPDATE SET kind = excluded.kind,"
+            " session_id = excluded.session_id, created_at = excluded.created_at",
+            (cust, carrier, kind, session_id, now()),
+        )
+        return True
+
+
+def carrier_prefs(customer: str) -> list[tuple[str, str]]:
+    rows = _rows(
+        conn().execute(
+            "SELECT carrier, kind FROM customer_carrier_prefs WHERE customer = ? ORDER BY carrier",
+            ((customer or "").strip().lower(),),
+        )
+    )
+    return [(r["carrier"], r["kind"]) for r in rows]
 
 
 def kv_get(key: str, default: str | None = None) -> str | None:
@@ -595,6 +650,56 @@ def customer_mail_history(sid: int, sender: str, before_mail: int) -> list[dict[
     return [r for r in rows if parseaddr(r["sender"] or "")[1].lower() == owner]
 
 
+def customer_correspondence(sid: int) -> list[dict[str, Any]]:
+    """Small customer-only conversation window, with current thread taking priority."""
+    from email.utils import parseaddr
+
+    root = _one(
+        conn().execute(
+            "SELECT s.customer,m.received_at FROM sessions s JOIN mails m ON m.id=s.id WHERE s.id=?",
+            (sid,),
+        )
+    )
+    if not root:
+        return []
+    owner = parseaddr(root["customer"] or "")[1].lower()
+    if not owner:
+        return []
+    rows = _rows(
+        conn().execute(
+            "SELECT m.id,m.session_id,m.direction,m.sender,m.recipient,m.subject,m.body,"
+            " m.category,m.received_at,s.customer AS session_customer FROM mails m"
+            " JOIN sessions s ON s.id=m.session_id WHERE m.id<>? AND"
+            " (m.session_id=? OR (s.id<? AND julianday(m.received_at)<julianday(?)))"
+            " AND (LOWER(s.customer)=? OR LOWER(s.customer) LIKE ?)"
+            " ORDER BY (m.session_id=?) DESC,julianday(m.received_at) DESC,m.id DESC LIMIT 80",
+            (sid, sid, sid, root["received_at"], owner, f"%<{owner}>", sid),
+        )
+    )
+    selected = []
+    per_scope = {"current_thread": 0, "previous_conversation": 0}
+    for row in rows:
+        if parseaddr(row.pop("session_customer") or "")[1].lower() != owner:
+            continue
+        peer = row["sender"] if row["direction"] == "in" else row["recipient"]
+        if parseaddr(peer or "")[1].lower() != owner:
+            continue
+        if row["category"] not in {
+            "rfq",
+            "customer",
+            "quote",
+            "clarification",
+            "booking_confirmation",
+        }:
+            continue
+        scope = "current_thread" if row["session_id"] == sid else "previous_conversation"
+        if per_scope[scope] >= 4:
+            continue
+        per_scope[scope] += 1
+        selected.append({**row, "scope": scope})
+    return list(reversed(selected))
+
+
 def validation_pending() -> list[dict[str, Any]]:
     return _rows(
         conn().execute(
@@ -611,6 +716,26 @@ def kv_set(key: str, value: str) -> None:
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
+
+def kv_claim(key: str) -> bool:
+    """Atomic once-only marker: True for the first caller, False for every later one."""
+    with tx() as c:
+        return (
+            c.execute("INSERT OR IGNORE INTO kv(key, value) VALUES (?, ?)", (key, now())).rowcount
+            == 1
+        )
+
+
+def clarification_waiting() -> list[dict[str, Any]]:
+    """Sessions whose question went out and whose answer has not resolved it yet."""
+    return _rows(
+        conn().execute(
+            "SELECT v.session_id, s.created_at, v.draft_json FROM rfq_validation v"
+            " JOIN sessions s ON s.id = v.session_id"
+            " WHERE v.state = 'awaiting_clarification' AND v.send_state IN ('sent','unknown')"
+        )
+    )
 
 
 def validation_reply(sid: int) -> dict[str, Any] | None:
@@ -1232,12 +1357,15 @@ def record_quote(
     valid_until: str | None = None,
     alternatives: list[dict[str, Any]] | None = None,
     mail_id: int | None = None,
+    air_total_minor: int | None = None,
+    air_currency: str | None = None,
 ) -> int:
     with tx() as c:
         cur = c.execute(
             "INSERT INTO quotes(session_id, airline, origin, destination, total_minor, currency,"
-            " transit_days, source, rate_id, valid_until, alternatives_json, mail_id, sent_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " transit_days, source, rate_id, valid_until, alternatives_json, mail_id, sent_at,"
+            " air_total_minor, air_currency)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 session_id,
                 airline,
@@ -1252,6 +1380,8 @@ def record_quote(
                 _json(alternatives),
                 mail_id,
                 now(),
+                air_total_minor,
+                air_currency,
             ),
         )
         c.execute(
@@ -1967,6 +2097,24 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
                 "session_id": r["id"],
                 "kind": "to_book",
                 "reason": "Kunde hat geantwortet, noch nicht gebucht",
+                "subject": r["subject"],
+                "customer": r["customer"],
+                "status": r["status"],
+            }
+        )
+    for r in _rows(
+        c.execute(
+            "SELECT e.session_id, MAX(e.id) AS last, s.subject, s.customer, s.status"
+            " FROM events e JOIN sessions s ON s.id = e.session_id WHERE e.kind = 'needs_human'"
+            " GROUP BY e.session_id ORDER BY last DESC LIMIT ?",
+            (limit,),
+        )
+    ):
+        items.append(
+            {
+                "session_id": r["session_id"],
+                "kind": "needs_human",
+                "reason": "Rückfrage ohne brauchbare Antwort: prüfen",
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],

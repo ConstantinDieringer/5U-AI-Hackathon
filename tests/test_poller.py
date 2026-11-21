@@ -30,6 +30,7 @@ class FakeMailbox:
     def __init__(self, mails: list[dict[str, Any]]) -> None:
         self.mails = mails
         self.downloads: list[tuple[int, int]] = []
+        self.dispatched: list[tuple[int, str]] = []
 
     def poll(self, since_id: int, limit: int = 200) -> dict[str, Any]:
         new = [m for m in self.mails if m["id"] > since_id][:limit]
@@ -55,6 +56,11 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeMailbox:
     fake = FakeMailbox([])
     for name in ("poll", "get_message", "get_attachment"):
         monkeypatch.setattr(poller.hackloop, name, getattr(fake, name))
+    # record instead of starting agents: a real RFQ thread outlived its test, tried the
+    # gateway and wrote its error into the next test's new database ("database is locked")
+    monkeypatch.setattr(
+        poller, "dispatch", lambda mail, category, sid: fake.dispatched.append((mail.id, category))
+    )
     return fake
 
 
@@ -89,6 +95,7 @@ def test_each_mail_processed_once_across_restart(box: FakeMailbox, monkeypatch) 
     box.mails = [real_mail(301), real_mail(302, sender="anna@acme.hackloop.mail")]
     since, n = poller.poll_once(store.get_since_id())
     assert (since, n) == (302, 2) and handled.count("routed") == 2
+    assert box.dispatched == [(301, Category.PORTAL_REPLY), (302, Category.RFQ)]
 
     # "restart": since_id is read back from the DB, and even a replay from 0 does nothing
     assert store.get_since_id() == 302
@@ -106,6 +113,7 @@ def test_failing_mail_does_not_stop_the_batch(box: FakeMailbox) -> None:
     kinds = [e["kind"] for e in db.events_after(0)]
     assert "error" in kinds and kinds.count("routed") == 1
     assert db.get_session(402) is not None  # the good mail opened a customer session
+    assert box.dispatched == [(402, Category.RFQ)]  # handed on, no agent thread started
 
 
 def test_attachments_saved_under_mail_id(box: FakeMailbox, tmp_path: Path) -> None:
