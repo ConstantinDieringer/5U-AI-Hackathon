@@ -544,3 +544,21 @@ def test_german_price_change_mail(monkeypatch) -> None:
     booking.handle_reply(_yes(13403, "Passt, bitte buchen. Viele Grüße"), 13096)
     body = api.sent[-1]["body"]
     assert "Gesamtpreis" in body and "4.498,42 €" in body and "Nova Air" in body
+
+
+@pytest.mark.parametrize(
+    ("text", "verdict"),
+    [
+        ("Oui, c'est parfait, vous pouvez réserver.", True),
+        ("Perfecto, de acuerdo, adelante con la reserva.", True),
+        ("Akkoord, graag boeken.", True),
+        ("Dziękuję, proszę zarezerwować.", True),
+        ("好的，请订舱，谢谢！", True),
+        ("Хорошо, бронируйте.", True),
+        ("这个价格太贵了，我们不订了。", False),
+        ("Merci mais c'est trop cher.", False),
+        ("No, gracias, no reserven.", None),
+    ],
+)
+def test_acceptance_in_other_languages(text: str, verdict: bool | None) -> None:
+    assert booking.is_acceptance(text) is verdict
