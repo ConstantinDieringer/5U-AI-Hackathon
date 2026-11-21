@@ -1,0 +1,5907 @@
+{
+ "currency": "EUR",
+ "valid_from": "2026-11-01",
+ "valid_to": "2026-11-30",
+ "volume_factor": 167,
+ "lanes": [
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "CGN",
+   "destination": "LOS",
+   "transit_days": 5,
+   "minimum": 108.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.87
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.06
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.63
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.18
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.94
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.59
+    }
+   ],
+   "fuel": 1.21,
+   "security": 0.1
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "DUS",
+   "destination": "HKG",
+   "transit_days": 4,
+   "minimum": 67.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.1
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.29
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.65
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.32
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.19
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.96
+    }
+   ],
+   "fuel": 0.76,
+   "security": 0.12
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "DUS",
+   "destination": "TLV",
+   "transit_days": 1,
+   "minimum": 85.86,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.52
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.89
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.49
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.87
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.35
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.04
+    }
+   ],
+   "fuel": 1.34,
+   "security": 0.14
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "FRA",
+   "destination": "BOG",
+   "transit_days": 7,
+   "minimum": 65.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.69
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.94
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.51
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.56
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.28
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.85
+    }
+   ],
+   "fuel": 0.84,
+   "security": 0.13
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "FRA",
+   "destination": "DFW",
+   "transit_days": 3,
+   "minimum": 108.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 2.79
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.01
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.57
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.19
+    },
+    {
+     "from_kg": 500,
+     "rate": 0.92
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.84
+    }
+   ],
+   "fuel": 0.74,
+   "security": 0.14
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "FRA",
+   "destination": "DXB",
+   "transit_days": 3,
+   "minimum": 131.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 2.73
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.1
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.93
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.56
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.36
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.25
+    }
+   ],
+   "fuel": 0.91,
+   "security": 0.2
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "FRA",
+   "destination": "HKG",
+   "transit_days": 4,
+   "minimum": 75.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.32
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.39
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.91
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.51
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.22
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.98
+    }
+   ],
+   "fuel": 0.84,
+   "security": 0.22
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "FRA",
+   "destination": "MEL",
+   "transit_days": 7,
+   "minimum": 134.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.99
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.79
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.26
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.71
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.09
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.76
+    }
+   ],
+   "fuel": 1.22,
+   "security": 0.14
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "FRA",
+   "destination": "MIA",
+   "transit_days": 5,
+   "minimum": 91.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.84
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.11
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.46
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.14
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.9
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.52
+    }
+   ],
+   "fuel": 1.29,
+   "security": 0.25
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "FRA",
+   "destination": "SGN",
+   "transit_days": 3,
+   "minimum": 115.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.07
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.7
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.15
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.71
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.74
+    }
+   ],
+   "fuel": 0.77,
+   "security": 0.14
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "FRA",
+   "destination": "SIN",
+   "transit_days": 3,
+   "minimum": 72.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.07
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.34
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.54
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.24
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.06
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.65
+    }
+   ],
+   "fuel": 0.85,
+   "security": 0.24
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "HAM",
+   "destination": "DFW",
+   "transit_days": 4,
+   "minimum": 79.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.1
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.48
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.03
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.46
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.27
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.97
+    }
+   ],
+   "fuel": 1.29,
+   "security": 0.13
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "HAM",
+   "destination": "DXB",
+   "transit_days": 2,
+   "minimum": 114.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.58
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.64
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.31
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.87
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.59
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.44
+    }
+   ],
+   "fuel": 1.09,
+   "security": 0.21
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "HAM",
+   "destination": "MEX",
+   "transit_days": 3,
+   "minimum": 117.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 2.86
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.57
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.98
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.43
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.27
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.12
+    }
+   ],
+   "fuel": 1.34,
+   "security": 0.25
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "HAM",
+   "destination": "TLV",
+   "transit_days": 3,
+   "minimum": 128.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 2.72
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.48
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.21
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.9
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.6
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.22
+    }
+   ],
+   "fuel": 0.66,
+   "security": 0.22
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "MUC",
+   "destination": "BOG",
+   "transit_days": 6,
+   "minimum": 75.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.38
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.15
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.74
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.22
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.95
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.79
+    }
+   ],
+   "fuel": 0.89,
+   "security": 0.14
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "MUC",
+   "destination": "SYD",
+   "transit_days": 6,
+   "minimum": 105.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.52
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.42
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.54
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.12
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.43
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.87
+    }
+   ],
+   "fuel": 0.77,
+   "security": 0.22
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "STR",
+   "destination": "ORD",
+   "transit_days": 2,
+   "minimum": 140.98,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.08
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.3
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.04
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.52
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.29
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.66
+    }
+   ],
+   "fuel": 0.87,
+   "security": 0.25
+  },
+  {
+   "airline": "Elbflug Air Freight",
+   "origin": "STR",
+   "destination": "PVG",
+   "transit_days": 4,
+   "minimum": 112.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.72
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.45
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.76
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.04
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.61
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.37
+    }
+   ],
+   "fuel": 1.24,
+   "security": 0.1
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "CGN",
+   "destination": "MIA",
+   "transit_days": 4,
+   "minimum": 76.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.05
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.35
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.72
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.38
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.16
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.97
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.85
+    }
+   ],
+   "fuel": 0.69,
+   "security": 0.24
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "DUS",
+   "destination": "DFW",
+   "transit_days": 1,
+   "minimum": 119.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.06
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.45
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.11
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.72
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.86
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.56
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.47
+    }
+   ],
+   "fuel": 1.29,
+   "security": 0.21
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "DUS",
+   "destination": "KUL",
+   "transit_days": 5,
+   "minimum": 56.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.15
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.11
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.74
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.52
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.92
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.73
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.51
+    }
+   ],
+   "fuel": 1.04,
+   "security": 0.15
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "DUS",
+   "destination": "NRT",
+   "transit_days": 2,
+   "minimum": 113.42,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.39
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.04
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.31
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.78
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.91
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.43
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.17
+    }
+   ],
+   "fuel": 1.31,
+   "security": 0.21
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "FRA",
+   "destination": "BOM",
+   "transit_days": 2,
+   "minimum": 134.62,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.25
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.23
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.34
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.34
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.93
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.7
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.3
+    }
+   ],
+   "fuel": 0.81,
+   "security": 0.13
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "FRA",
+   "destination": "CAI",
+   "transit_days": 3,
+   "minimum": 118.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.64
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.62
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.64
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.9
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.52
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.19
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.09
+    }
+   ],
+   "fuel": 0.88,
+   "security": 0.22
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "FRA",
+   "destination": "DEL",
+   "transit_days": 3,
+   "minimum": 97.52,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.2
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.82
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.48
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.03
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.75
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.45
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.32
+    }
+   ],
+   "fuel": 1.27,
+   "security": 0.27
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "FRA",
+   "destination": "MEX",
+   "transit_days": 4,
+   "minimum": 79.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.11
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.61
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.19
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.95
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.44
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.15
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.94
+    }
+   ],
+   "fuel": 1.15,
+   "security": 0.17
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "FRA",
+   "destination": "MIA",
+   "transit_days": 2,
+   "minimum": 137.8,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.18
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.52
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.04
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.93
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.55
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.19
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.02
+    }
+   ],
+   "fuel": 0.94,
+   "security": 0.21
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "FRA",
+   "destination": "NRT",
+   "transit_days": 4,
+   "minimum": 116.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.5
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.66
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.34
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.01
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.61
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.37
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.14
+    }
+   ],
+   "fuel": 0.89,
+   "security": 0.14
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "HAM",
+   "destination": "HKG",
+   "transit_days": 4,
+   "minimum": 73.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.18
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.7
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.48
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.93
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.66
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.2
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.06
+    }
+   ],
+   "fuel": 0.63,
+   "security": 0.15
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "HAM",
+   "destination": "PEK",
+   "transit_days": 3,
+   "minimum": 133.56,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.47
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.7
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.26
+    },
+    {
+     "from_kg": 250,
+     "rate": 3.26
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.34
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.75
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.3
+    }
+   ],
+   "fuel": 0.96,
+   "security": 0.21
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "MUC",
+   "destination": "GRU",
+   "transit_days": 5,
+   "minimum": 127.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.09
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.39
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.92
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.69
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.1
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.87
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.53
+    }
+   ],
+   "fuel": 0.62,
+   "security": 0.18
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "MUC",
+   "destination": "LAX",
+   "transit_days": 6,
+   "minimum": 59.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.47
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.78
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.34
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.78
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.5
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.28
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.95
+    }
+   ],
+   "fuel": 1.13,
+   "security": 0.18
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "MUC",
+   "destination": "MEL",
+   "transit_days": 4,
+   "minimum": 69.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 5.88
+    },
+    {
+     "from_kg": 45,
+     "rate": 5.06
+    },
+    {
+     "from_kg": 100,
+     "rate": 4.35
+    },
+    {
+     "from_kg": 250,
+     "rate": 3.83
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.87
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.35
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.79
+    }
+   ],
+   "fuel": 0.91,
+   "security": 0.23
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "MUC",
+   "destination": "PEK",
+   "transit_days": 6,
+   "minimum": 113.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.39
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.73
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.39
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.78
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.06
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.5
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.31
+    }
+   ],
+   "fuel": 1.23,
+   "security": 0.25
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "MUC",
+   "destination": "SIN",
+   "transit_days": 6,
+   "minimum": 104.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.15
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.2
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.66
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.21
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.92
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.75
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.54
+    }
+   ],
+   "fuel": 0.98,
+   "security": 0.18
+  },
+  {
+   "airline": "Kestrel Airways",
+   "origin": "STR",
+   "destination": "MIA",
+   "transit_days": 4,
+   "minimum": 63.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.87
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.86
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.26
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.83
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.45
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.1
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.0
+    }
+   ],
+   "fuel": 0.84,
+   "security": 0.1
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "CGN",
+   "destination": "LOS",
+   "transit_days": 3,
+   "minimum": 114.48,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.6
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.19
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.73
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.69
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.42
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.94
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.69
+    }
+   ],
+   "fuel": 1.29,
+   "security": 0.13
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "DUS",
+   "destination": "KUL",
+   "transit_days": 2,
+   "minimum": 72.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.47
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.38
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.77
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.41
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.12
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.55
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.35
+    }
+   ],
+   "fuel": 1.15,
+   "security": 0.14
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "DUS",
+   "destination": "PEK",
+   "transit_days": 2,
+   "minimum": 118.72,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.88
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.42
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.46
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.8
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.53
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.22
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.22
+    }
+   ],
+   "fuel": 1.34,
+   "security": 0.24
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "FRA",
+   "destination": "MNL",
+   "transit_days": 5,
+   "minimum": 65.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.04
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.64
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.06
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.36
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.15
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.55
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.24
+    }
+   ],
+   "fuel": 1.04,
+   "security": 0.13
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "HAM",
+   "destination": "DEL",
+   "transit_days": 4,
+   "minimum": 66.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.21
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.76
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.4
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.06
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.59
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.45
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.25
+    }
+   ],
+   "fuel": 0.65,
+   "security": 0.25
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "HAM",
+   "destination": "DFW",
+   "transit_days": 1,
+   "minimum": 83.74,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.84
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.76
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.35
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.14
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.78
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.57
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.3
+    }
+   ],
+   "fuel": 1.37,
+   "security": 0.14
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "HAM",
+   "destination": "PEK",
+   "transit_days": 4,
+   "minimum": 126.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.16
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.49
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.07
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.79
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.65
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.22
+    }
+   ],
+   "fuel": 0.9,
+   "security": 0.1
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "HAM",
+   "destination": "SYD",
+   "transit_days": 6,
+   "minimum": 56.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 6.2
+    },
+    {
+     "from_kg": 45,
+     "rate": 5.15
+    },
+    {
+     "from_kg": 100,
+     "rate": 4.53
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.49
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.79
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.04
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.82
+    }
+   ],
+   "fuel": 0.76,
+   "security": 0.23
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "MUC",
+   "destination": "LIM",
+   "transit_days": 3,
+   "minimum": 124.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 5.3
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.56
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.56
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.24
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.4
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.09
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.65
+    }
+   ],
+   "fuel": 1.2,
+   "security": 0.19
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "MUC",
+   "destination": "NBO",
+   "transit_days": 4,
+   "minimum": 140.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.64
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.08
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.35
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.51
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.91
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.53
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.39
+    }
+   ],
+   "fuel": 1.2,
+   "security": 0.12
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "MUC",
+   "destination": "ORD",
+   "transit_days": 1,
+   "minimum": 144.16,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.07
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.79
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.4
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.04
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.86
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.4
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.02
+    }
+   ],
+   "fuel": 1.16,
+   "security": 0.22
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "STR",
+   "destination": "MIA",
+   "transit_days": 6,
+   "minimum": 117.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.69
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.28
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.53
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.18
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.77
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.27
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.16
+    }
+   ],
+   "fuel": 0.68,
+   "security": 0.15
+  },
+  {
+   "airline": "Vega Skyfreight",
+   "origin": "STR",
+   "destination": "YYZ",
+   "transit_days": 5,
+   "minimum": 122.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 2.93
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.4
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.06
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.77
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.49
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.36
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.24
+    }
+   ],
+   "fuel": 1.19,
+   "security": 0.18
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "CGN",
+   "destination": "DEL",
+   "transit_days": 2,
+   "minimum": 87.98,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.69
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.67
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.02
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.38
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.09
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.64
+    }
+   ],
+   "fuel": 1.15,
+   "security": 0.26
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "CGN",
+   "destination": "EZE",
+   "transit_days": 4,
+   "minimum": 80.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.99
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.27
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.65
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.09
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.61
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.19
+    }
+   ],
+   "fuel": 0.8,
+   "security": 0.19
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "CGN",
+   "destination": "LIM",
+   "transit_days": 5,
+   "minimum": 62.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 5.59
+    },
+    {
+     "from_kg": 45,
+     "rate": 5.09
+    },
+    {
+     "from_kg": 100,
+     "rate": 4.48
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.9
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.81
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.5
+    }
+   ],
+   "fuel": 0.77,
+   "security": 0.21
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "CGN",
+   "destination": "SCL",
+   "transit_days": 6,
+   "minimum": 131.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.54
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.27
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.49
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.29
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.04
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.61
+    }
+   ],
+   "fuel": 1.05,
+   "security": 0.16
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "DUS",
+   "destination": "BOG",
+   "transit_days": 3,
+   "minimum": 125.08,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.46
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.84
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.26
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.0
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.46
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.02
+    }
+   ],
+   "fuel": 0.73,
+   "security": 0.2
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "DUS",
+   "destination": "NBO",
+   "transit_days": 4,
+   "minimum": 119.78,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.55
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.96
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.6
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.59
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.36
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.86
+    }
+   ],
+   "fuel": 1.31,
+   "security": 0.17
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "DUS",
+   "destination": "TLV",
+   "transit_days": 2,
+   "minimum": 81.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.32
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.72
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.34
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.76
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.27
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.98
+    }
+   ],
+   "fuel": 0.73,
+   "security": 0.12
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "FRA",
+   "destination": "ATL",
+   "transit_days": 5,
+   "minimum": 129.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.27
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.71
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.06
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.73
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.42
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.08
+    }
+   ],
+   "fuel": 0.78,
+   "security": 0.23
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "FRA",
+   "destination": "DOH",
+   "transit_days": 1,
+   "minimum": 136.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.44
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.64
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.67
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.48
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.15
+    }
+   ],
+   "fuel": 1.21,
+   "security": 0.19
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "FRA",
+   "destination": "EZE",
+   "transit_days": 5,
+   "minimum": 121.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.93
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.39
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.47
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.85
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.39
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.03
+    }
+   ],
+   "fuel": 1.15,
+   "security": 0.18
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "FRA",
+   "destination": "JFK",
+   "transit_days": 4,
+   "minimum": 93.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.39
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.92
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.22
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.73
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.49
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.25
+    }
+   ],
+   "fuel": 0.92,
+   "security": 0.22
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "FRA",
+   "destination": "LAX",
+   "transit_days": 4,
+   "minimum": 107.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 2.85
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.48
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.81
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.45
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.23
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.97
+    }
+   ],
+   "fuel": 1.19,
+   "security": 0.14
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "FRA",
+   "destination": "MEX",
+   "transit_days": 4,
+   "minimum": 126.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.49
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.65
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.09
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.88
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.45
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.25
+    }
+   ],
+   "fuel": 1.0,
+   "security": 0.23
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "FRA",
+   "destination": "NRT",
+   "transit_days": 3,
+   "minimum": 136.74,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.29
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.64
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.31
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.75
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.45
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.04
+    }
+   ],
+   "fuel": 0.61,
+   "security": 0.15
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "HAM",
+   "destination": "EZE",
+   "transit_days": 6,
+   "minimum": 56.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.81
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.56
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.67
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.98
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.62
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.2
+    }
+   ],
+   "fuel": 0.72,
+   "security": 0.21
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "HAM",
+   "destination": "HKG",
+   "transit_days": 4,
+   "minimum": 130.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.78
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.95
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.66
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.18
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.7
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.36
+    }
+   ],
+   "fuel": 1.16,
+   "security": 0.18
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "HAM",
+   "destination": "TLV",
+   "transit_days": 1,
+   "minimum": 135.68,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 2.89
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.63
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.35
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.02
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.7
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.3
+    }
+   ],
+   "fuel": 1.2,
+   "security": 0.24
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "MUC",
+   "destination": "CAI",
+   "transit_days": 2,
+   "minimum": 144.16,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.49
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.46
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.09
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.41
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.96
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.49
+    }
+   ],
+   "fuel": 0.97,
+   "security": 0.24
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "MUC",
+   "destination": "DXB",
+   "transit_days": 2,
+   "minimum": 106.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 2.76
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.51
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.86
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.67
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.2
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.0
+    }
+   ],
+   "fuel": 0.56,
+   "security": 0.19
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "MUC",
+   "destination": "EZE",
+   "transit_days": 4,
+   "minimum": 121.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.94
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.35
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.87
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.33
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.83
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.04
+    }
+   ],
+   "fuel": 1.23,
+   "security": 0.21
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "MUC",
+   "destination": "ICN",
+   "transit_days": 5,
+   "minimum": 111.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.73
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.02
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.3
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.75
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.31
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.94
+    }
+   ],
+   "fuel": 1.08,
+   "security": 0.2
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "MUC",
+   "destination": "MIA",
+   "transit_days": 5,
+   "minimum": 55.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 3.77
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.17
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.47
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.1
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.93
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.51
+    }
+   ],
+   "fuel": 0.74,
+   "security": 0.11
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "MUC",
+   "destination": "NRT",
+   "transit_days": 2,
+   "minimum": 140.98,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.2
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.53
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.61
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.25
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.85
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.52
+    }
+   ],
+   "fuel": 1.26,
+   "security": 0.24
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "MUC",
+   "destination": "PEK",
+   "transit_days": 6,
+   "minimum": 112.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.27
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.63
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.16
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.84
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.22
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.75
+    }
+   ],
+   "fuel": 1.3,
+   "security": 0.25
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "MUC",
+   "destination": "SCL",
+   "transit_days": 4,
+   "minimum": 138.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 5.61
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.88
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.57
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.17
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.76
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.4
+    }
+   ],
+   "fuel": 1.11,
+   "security": 0.2
+  },
+  {
+   "airline": "Wayzata Air Cargo",
+   "origin": "STR",
+   "destination": "SGN",
+   "transit_days": 5,
+   "minimum": 71.0,
+   "breaks": [
+    {
+     "from_kg": 45,
+     "rate": 4.41
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.01
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.29
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.6
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.39
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.82
+    }
+   ],
+   "fuel": 0.95,
+   "security": 0.12
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "CGN",
+   "destination": "DFW",
+   "transit_days": 2,
+   "minimum": 76.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.1
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.79
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.18
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.61
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.19
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.89
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.75
+    }
+   ],
+   "fuel": 1.14,
+   "security": 0.24
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "CGN",
+   "destination": "LOS",
+   "transit_days": 4,
+   "minimum": 139.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.31
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.19
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.23
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.84
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.13
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.83
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.68
+    }
+   ],
+   "fuel": 1.16,
+   "security": 0.22
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "DUS",
+   "destination": "HKG",
+   "transit_days": 4,
+   "minimum": 108.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.68
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.93
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.18
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.58
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.04
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.53
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.41
+    }
+   ],
+   "fuel": 1.26,
+   "security": 0.13
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "FRA",
+   "destination": "BOM",
+   "transit_days": 3,
+   "minimum": 127.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.44
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.75
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.98
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.82
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.6
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.22
+    }
+   ],
+   "fuel": 0.56,
+   "security": 0.11
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "FRA",
+   "destination": "LIM",
+   "transit_days": 5,
+   "minimum": 106.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.45
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.65
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.88
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.33
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.89
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.55
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.4
+    }
+   ],
+   "fuel": 1.26,
+   "security": 0.18
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "FRA",
+   "destination": "RUH",
+   "transit_days": 2,
+   "minimum": 129.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.17
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.63
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.26
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.79
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.43
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.26
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.26
+    }
+   ],
+   "fuel": 0.95,
+   "security": 0.18
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "HAM",
+   "destination": "JFK",
+   "transit_days": 1,
+   "minimum": 116.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.43
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.81
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.31
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.05
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.58
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.17
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.03
+    }
+   ],
+   "fuel": 0.83,
+   "security": 0.23
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "MUC",
+   "destination": "DXB",
+   "transit_days": 2,
+   "minimum": 97.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.09
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.53
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.94
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.71
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.47
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.26
+    }
+   ],
+   "fuel": 1.01,
+   "security": 0.25
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "MUC",
+   "destination": "EZE",
+   "transit_days": 5,
+   "minimum": 132.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.01
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.51
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.88
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.79
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.48
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.96
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.69
+    }
+   ],
+   "fuel": 1.28,
+   "security": 0.24
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "MUC",
+   "destination": "RUH",
+   "transit_days": 3,
+   "minimum": 70.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.05
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.41
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.22
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.04
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.59
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.16
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.88
+    }
+   ],
+   "fuel": 0.74,
+   "security": 0.14
+  },
+  {
+   "airline": "Quetzal Air Freight",
+   "origin": "STR",
+   "destination": "SCL",
+   "transit_days": 2,
+   "minimum": 111.3,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.82
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.14
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.64
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.16
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.75
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.39
+    },
+    {
+     "from_kg": 2000,
+     "rate": 2.39
+    }
+   ],
+   "fuel": 1.23,
+   "security": 0.24
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "CGN",
+   "destination": "SYD",
+   "transit_days": 5,
+   "minimum": 75.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.92
+    },
+    {
+     "from_kg": 45,
+     "rate": 5.03
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.87
+    },
+    {
+     "from_kg": 250,
+     "rate": 3.02
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.33
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.86
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.54
+    }
+   ],
+   "fuel": 0.76,
+   "security": 0.21
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "DUS",
+   "destination": "JFK",
+   "transit_days": 5,
+   "minimum": 100.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.96
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.21
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.82
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.34
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.83
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.5
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.25
+    }
+   ],
+   "fuel": 1.09,
+   "security": 0.13
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "FRA",
+   "destination": "BKK",
+   "transit_days": 2,
+   "minimum": 91.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.19
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.4
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.86
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.26
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.9
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.58
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.26
+    }
+   ],
+   "fuel": 1.05,
+   "security": 0.27
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "FRA",
+   "destination": "DFW",
+   "transit_days": 2,
+   "minimum": 109.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.76
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.78
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.42
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.69
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.52
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.22
+    }
+   ],
+   "fuel": 0.85,
+   "security": 0.25
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "FRA",
+   "destination": "LIM",
+   "transit_days": 5,
+   "minimum": 72.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.09
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.12
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.63
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.72
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.58
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.37
+    }
+   ],
+   "fuel": 1.1,
+   "security": 0.19
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "FRA",
+   "destination": "NBO",
+   "transit_days": 7,
+   "minimum": 91.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.3
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.78
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.87
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.18
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.98
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.54
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.19
+    }
+   ],
+   "fuel": 0.94,
+   "security": 0.16
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "FRA",
+   "destination": "ORD",
+   "transit_days": 4,
+   "minimum": 110.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.73
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.32
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.42
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.82
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.64
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.46
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.14
+    }
+   ],
+   "fuel": 0.66,
+   "security": 0.11
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "HAM",
+   "destination": "BOG",
+   "transit_days": 2,
+   "minimum": 127.2,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.62
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.06
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.53
+    },
+    {
+     "from_kg": 250,
+     "rate": 3.53
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.44
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.76
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.29
+    }
+   ],
+   "fuel": 1.43,
+   "security": 0.23
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "HAM",
+   "destination": "MEX",
+   "transit_days": 3,
+   "minimum": 81.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.28
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.49
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.17
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.67
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.5
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.38
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.1
+    }
+   ],
+   "fuel": 0.68,
+   "security": 0.21
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "HAM",
+   "destination": "SGN",
+   "transit_days": 6,
+   "minimum": 68.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.45
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.69
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.77
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.47
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.8
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.46
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.28
+    }
+   ],
+   "fuel": 0.91,
+   "security": 0.11
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "MUC",
+   "destination": "JNB",
+   "transit_days": 4,
+   "minimum": 117.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.02
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.1
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.54
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.33
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.48
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.3
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.3
+    }
+   ],
+   "fuel": 0.91,
+   "security": 0.26
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "MUC",
+   "destination": "LAX",
+   "transit_days": 5,
+   "minimum": 82.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.12
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.28
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.73
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.4
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.08
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.98
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.83
+    }
+   ],
+   "fuel": 1.17,
+   "security": 0.14
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "STR",
+   "destination": "LAX",
+   "transit_days": 2,
+   "minimum": 137.8,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.81
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.78
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.37
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.37
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.55
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.25
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.25
+    }
+   ],
+   "fuel": 1.06,
+   "security": 0.27
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "STR",
+   "destination": "MEL",
+   "transit_days": 5,
+   "minimum": 102.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 6.48
+    },
+    {
+     "from_kg": 45,
+     "rate": 5.83
+    },
+    {
+     "from_kg": 100,
+     "rate": 5.01
+    },
+    {
+     "from_kg": 250,
+     "rate": 4.36
+    },
+    {
+     "from_kg": 500,
+     "rate": 3.49
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.97
+    },
+    {
+     "from_kg": 2000,
+     "rate": 2.38
+    }
+   ],
+   "fuel": 1.16,
+   "security": 0.24
+  },
+  {
+   "airline": "Yellowtail Air Freight",
+   "origin": "STR",
+   "destination": "MNL",
+   "transit_days": 5,
+   "minimum": 61.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.37
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.76
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.35
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.76
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.6
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.44
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.17
+    }
+   ],
+   "fuel": 1.32,
+   "security": 0.23
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "CGN",
+   "destination": "LOS",
+   "transit_days": 4,
+   "minimum": 76.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.62
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.83
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.49
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.65
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.93
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.7
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.29
+    }
+   ],
+   "fuel": 1.04,
+   "security": 0.12
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "CGN",
+   "destination": "SYD",
+   "transit_days": 6,
+   "minimum": 124.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.52
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.91
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.98
+    },
+    {
+     "from_kg": 250,
+     "rate": 3.62
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.93
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.67
+    },
+    {
+     "from_kg": 2000,
+     "rate": 2.22
+    }
+   ],
+   "fuel": 0.98,
+   "security": 0.11
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "DUS",
+   "destination": "RUH",
+   "transit_days": 3,
+   "minimum": 64.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.37
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.93
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.64
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.09
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.88
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.73
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.37
+    }
+   ],
+   "fuel": 0.6,
+   "security": 0.13
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "FRA",
+   "destination": "LAX",
+   "transit_days": 1,
+   "minimum": 112.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.33
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.73
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.24
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.24
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.62
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.25
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.25
+    }
+   ],
+   "fuel": 1.4,
+   "security": 0.21
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "FRA",
+   "destination": "PVG",
+   "transit_days": 2,
+   "minimum": 102.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.66
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.45
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.03
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.64
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.4
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.17
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.82
+    }
+   ],
+   "fuel": 0.85,
+   "security": 0.23
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "FRA",
+   "destination": "SCL",
+   "transit_days": 3,
+   "minimum": 92.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.68
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.84
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.11
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.24
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.86
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.66
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.31
+    }
+   ],
+   "fuel": 0.84,
+   "security": 0.23
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "HAM",
+   "destination": "HKG",
+   "transit_days": 2,
+   "minimum": 130.38,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.16
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.62
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.61
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.52
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.9
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.69
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.69
+    }
+   ],
+   "fuel": 1.29,
+   "security": 0.25
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "MUC",
+   "destination": "HKG",
+   "transit_days": 5,
+   "minimum": 105.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.68
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.94
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.68
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.44
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.22
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.02
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.58
+    }
+   ],
+   "fuel": 0.84,
+   "security": 0.21
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "MUC",
+   "destination": "PVG",
+   "transit_days": 5,
+   "minimum": 140.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.54
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.58
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.17
+    },
+    {
+     "from_kg": 250,
+     "rate": 1.82
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.64
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.48
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.2
+    }
+   ],
+   "fuel": 0.86,
+   "security": 0.13
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "MUC",
+   "destination": "SGN",
+   "transit_days": 6,
+   "minimum": 65.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.56
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.1
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.57
+    },
+    {
+     "from_kg": 250,
+     "rate": 3.07
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.49
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.87
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.55
+    }
+   ],
+   "fuel": 1.32,
+   "security": 0.24
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "STR",
+   "destination": "ORD",
+   "transit_days": 3,
+   "minimum": 133.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.84
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.11
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.86
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.37
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.16
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.56
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.36
+    }
+   ],
+   "fuel": 0.82,
+   "security": 0.23
+  },
+  {
+   "airline": "Helix Air Freight",
+   "origin": "STR",
+   "destination": "PVG",
+   "transit_days": 4,
+   "minimum": 81.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.79
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.34
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.74
+    },
+    {
+     "from_kg": 250,
+     "rate": 2.52
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.92
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.67
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.5
+    }
+   ],
+   "fuel": 0.74,
+   "security": 0.2
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "CGN",
+   "destination": "MIA",
+   "transit_days": 2,
+   "minimum": 78.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 2.91
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.12
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.61
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.26
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.1
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.84
+    }
+   ],
+   "fuel": 1.11,
+   "security": 0.23
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "CGN",
+   "destination": "TLV",
+   "transit_days": 2,
+   "minimum": 73.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.25
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.54
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.83
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.68
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.55
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.19
+    }
+   ],
+   "fuel": 0.61,
+   "security": 0.1
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "FRA",
+   "destination": "KUL",
+   "transit_days": 4,
+   "minimum": 72.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.04
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.4
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.97
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.67
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.29
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.1
+    }
+   ],
+   "fuel": 0.69,
+   "security": 0.17
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "FRA",
+   "destination": "NBO",
+   "transit_days": 4,
+   "minimum": 96.46,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.56
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.01
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.05
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.37
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.1
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.64
+    }
+   ],
+   "fuel": 1.0,
+   "security": 0.17
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "FRA",
+   "destination": "ORD",
+   "transit_days": 2,
+   "minimum": 114.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.46
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.15
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.52
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.02
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.47
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.07
+    }
+   ],
+   "fuel": 0.97,
+   "security": 0.13
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "FRA",
+   "destination": "PEK",
+   "transit_days": 4,
+   "minimum": 139.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.05
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.4
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.65
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.99
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.57
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.43
+    }
+   ],
+   "fuel": 0.87,
+   "security": 0.15
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "FRA",
+   "destination": "SGN",
+   "transit_days": 5,
+   "minimum": 77.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 2.92
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.19
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.97
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.58
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.33
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.06
+    }
+   ],
+   "fuel": 1.19,
+   "security": 0.13
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "HAM",
+   "destination": "DXB",
+   "transit_days": 4,
+   "minimum": 91.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.37
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.49
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.07
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.76
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.5
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.14
+    }
+   ],
+   "fuel": 1.01,
+   "security": 0.17
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "MUC",
+   "destination": "GRU",
+   "transit_days": 4,
+   "minimum": 103.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.26
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.47
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.58
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.11
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.49
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.12
+    }
+   ],
+   "fuel": 1.02,
+   "security": 0.11
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "MUC",
+   "destination": "HKG",
+   "transit_days": 3,
+   "minimum": 111.3,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.31
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.84
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.46
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.01
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.5
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.15
+    }
+   ],
+   "fuel": 0.96,
+   "security": 0.23
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "MUC",
+   "destination": "NBO",
+   "transit_days": 3,
+   "minimum": 132.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.25
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.68
+    },
+    {
+     "from_kg": 100,
+     "rate": 4.08
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.26
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.77
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.19
+    }
+   ],
+   "fuel": 1.2,
+   "security": 0.27
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "STR",
+   "destination": "MNL",
+   "transit_days": 4,
+   "minimum": 120.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.72
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.27
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.58
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.09
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.63
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.43
+    }
+   ],
+   "fuel": 1.03,
+   "security": 0.14
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "STR",
+   "destination": "PEK",
+   "transit_days": 5,
+   "minimum": 70.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.36
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.76
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.37
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.85
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.48
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.08
+    }
+   ],
+   "fuel": 0.71,
+   "security": 0.19
+  },
+  {
+   "airline": "Orion Cargo Air",
+   "origin": "STR",
+   "destination": "TLV",
+   "transit_days": 4,
+   "minimum": 118.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.43
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.78
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.22
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.86
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.34
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.98
+    }
+   ],
+   "fuel": 0.94,
+   "security": 0.23
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "CGN",
+   "destination": "EZE",
+   "transit_days": 5,
+   "minimum": 79.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.41
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.17
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.21
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.89
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.54
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.06
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.67
+    }
+   ],
+   "fuel": 0.7,
+   "security": 0.2
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "CGN",
+   "destination": "SGN",
+   "transit_days": 4,
+   "minimum": 73.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.22
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.67
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.19
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.49
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.84
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.51
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.27
+    }
+   ],
+   "fuel": 1.01,
+   "security": 0.23
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "CGN",
+   "destination": "SIN",
+   "transit_days": 4,
+   "minimum": 102.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.7
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.48
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.61
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.91
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.74
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.46
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.27
+    }
+   ],
+   "fuel": 1.16,
+   "security": 0.21
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "DUS",
+   "destination": "BOM",
+   "transit_days": 5,
+   "minimum": 115.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.42
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.8
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.24
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.79
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.58
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.17
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.92
+    }
+   ],
+   "fuel": 1.16,
+   "security": 0.2
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "DUS",
+   "destination": "DEL",
+   "transit_days": 4,
+   "minimum": 68.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.18
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.3
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.87
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.44
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.63
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.34
+    }
+   ],
+   "fuel": 0.62,
+   "security": 0.22
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "DUS",
+   "destination": "JFK",
+   "transit_days": 4,
+   "minimum": 78.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.13
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.38
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.17
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.84
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.36
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.22
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.93
+    }
+   ],
+   "fuel": 0.8,
+   "security": 0.23
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "DUS",
+   "destination": "SYD",
+   "transit_days": 4,
+   "minimum": 68.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 6.53
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.9
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.63
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.61
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.24
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.02
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.47
+    }
+   ],
+   "fuel": 0.85,
+   "security": 0.11
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "FRA",
+   "destination": "BOG",
+   "transit_days": 4,
+   "minimum": 83.74,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.1
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.1
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.24
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.92
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.25
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.76
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.46
+    }
+   ],
+   "fuel": 1.34,
+   "security": 0.17
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "FRA",
+   "destination": "ICN",
+   "transit_days": 6,
+   "minimum": 58.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.23
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.55
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.84
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.36
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.17
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.01
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.85
+    }
+   ],
+   "fuel": 1.21,
+   "security": 0.11
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "FRA",
+   "destination": "JNB",
+   "transit_days": 4,
+   "minimum": 118.72,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.33
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.37
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.36
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.99
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.45
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.25
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.71
+    }
+   ],
+   "fuel": 1.3,
+   "security": 0.23
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "FRA",
+   "destination": "SYD",
+   "transit_days": 6,
+   "minimum": 124.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.36
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.45
+    },
+    {
+     "from_kg": 100,
+     "rate": 4.05
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.04
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.71
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.44
+    },
+    {
+     "from_kg": 2000,
+     "rate": 2.15
+    }
+   ],
+   "fuel": 0.65,
+   "security": 0.18
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "FRA",
+   "destination": "TPE",
+   "transit_days": 3,
+   "minimum": 71.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.33
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.46
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.56
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.95
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.72
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.55
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.3
+    }
+   ],
+   "fuel": 1.12,
+   "security": 0.1
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "HAM",
+   "destination": "BOG",
+   "transit_days": 3,
+   "minimum": 77.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.63
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.94
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.03
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.39
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.82
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.57
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.22
+    }
+   ],
+   "fuel": 1.04,
+   "security": 0.25
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "HAM",
+   "destination": "RUH",
+   "transit_days": 3,
+   "minimum": 114.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.32
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.62
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.12
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.55
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.26
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.15
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.04
+    }
+   ],
+   "fuel": 0.92,
+   "security": 0.21
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "MUC",
+   "destination": "BOG",
+   "transit_days": 4,
+   "minimum": 94.34,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.11
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.74
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.03
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.63
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.4
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.0
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.84
+    }
+   ],
+   "fuel": 1.28,
+   "security": 0.23
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "MUC",
+   "destination": "LIM",
+   "transit_days": 6,
+   "minimum": 137.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.49
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.23
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.49
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.17
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.84
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.62
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.31
+    }
+   ],
+   "fuel": 0.7,
+   "security": 0.22
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "MUC",
+   "destination": "MEL",
+   "transit_days": 3,
+   "minimum": 138.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 6.24
+    },
+    {
+     "from_kg": 45,
+     "rate": 5.49
+    },
+    {
+     "from_kg": 100,
+     "rate": 4.83
+    },
+    {
+     "from_kg": 300,
+     "rate": 4.2
+    },
+    {
+     "from_kg": 500,
+     "rate": 3.49
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.69
+    },
+    {
+     "from_kg": 2000,
+     "rate": 2.37
+    }
+   ],
+   "fuel": 0.99,
+   "security": 0.25
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "MUC",
+   "destination": "MEX",
+   "transit_days": 3,
+   "minimum": 63.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.98
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.95
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.36
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.94
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.63
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.35
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.04
+    }
+   ],
+   "fuel": 0.73,
+   "security": 0.16
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "MUC",
+   "destination": "MIA",
+   "transit_days": 2,
+   "minimum": 134.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.0
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.37
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.62
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.23
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.05
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.61
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.61
+    }
+   ],
+   "fuel": 0.84,
+   "security": 0.18
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "MUC",
+   "destination": "YYZ",
+   "transit_days": 3,
+   "minimum": 123.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.93
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.22
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.32
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.06
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.9
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.43
+    },
+    {
+     "from_kg": 2000,
+     "rate": 1.13
+    }
+   ],
+   "fuel": 1.29,
+   "security": 0.15
+  },
+  {
+   "airline": "Cobalt Skylift",
+   "origin": "STR",
+   "destination": "YYZ",
+   "transit_days": 4,
+   "minimum": 72.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.08
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.22
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.6
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.46
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.23
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.07
+    },
+    {
+     "from_kg": 2000,
+     "rate": 0.77
+    }
+   ],
+   "fuel": 0.71,
+   "security": 0.17
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "CGN",
+   "destination": "SYD",
+   "transit_days": 4,
+   "minimum": 134.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 6.28
+    },
+    {
+     "from_kg": 45,
+     "rate": 5.34
+    },
+    {
+     "from_kg": 100,
+     "rate": 4.28
+    },
+    {
+     "from_kg": 300,
+     "rate": 3.89
+    },
+    {
+     "from_kg": 500,
+     "rate": 3.27
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.84
+    }
+   ],
+   "fuel": 1.13,
+   "security": 0.23,
+   "source": "transcribed-from-jpg"
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "DUS",
+   "destination": "MEX",
+   "transit_days": 5,
+   "minimum": 101.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.02
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.36
+    },
+    {
+     "from_kg": 100,
+     "rate": 1.89
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.57
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.32
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.0
+    }
+   ],
+   "fuel": 0.74,
+   "security": 0.24,
+   "source": "transcribed-from-jpg"
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "DUS",
+   "destination": "SYD",
+   "transit_days": 5,
+   "minimum": 110.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 5.78
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.45
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.92
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.9
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.2
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.89
+    }
+   ],
+   "fuel": 0.69,
+   "security": 0.16,
+   "source": "transcribed-from-jpg"
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "DUS",
+   "destination": "YYZ",
+   "transit_days": 4,
+   "minimum": 62.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.08
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.62
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.07
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.61
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.22
+    },
+    {
+     "from_kg": 1000,
+     "rate": 0.96
+    }
+   ],
+   "fuel": 0.88,
+   "security": 0.21,
+   "source": "transcribed-from-jpg"
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "FRA",
+   "destination": "DXB",
+   "transit_days": 2,
+   "minimum": 138.86,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 2.9
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.23
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.05
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.66
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.45
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.33
+    }
+   ],
+   "fuel": 1.12,
+   "security": 0.22,
+   "source": "transcribed-from-jpg"
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "FRA",
+   "destination": "EZE",
+   "transit_days": 2,
+   "minimum": 126.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.57
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.34
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.74
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.52
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.92
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.48
+    }
+   ],
+   "fuel": 1.06,
+   "security": 0.21,
+   "source": "transcribed-from-jpg"
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "MUC",
+   "destination": "JNB",
+   "transit_days": 7,
+   "minimum": 105.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 3.74
+    },
+    {
+     "from_kg": 45,
+     "rate": 2.81
+    },
+    {
+     "from_kg": 100,
+     "rate": 2.19
+    },
+    {
+     "from_kg": 300,
+     "rate": 1.62
+    },
+    {
+     "from_kg": 500,
+     "rate": 1.39
+    },
+    {
+     "from_kg": 1000,
+     "rate": 1.22
+    }
+   ],
+   "fuel": 0.85,
+   "security": 0.24,
+   "source": "transcribed-from-jpg"
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "MUC",
+   "destination": "TPE",
+   "transit_days": 5,
+   "minimum": 69.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.1
+    },
+    {
+     "from_kg": 45,
+     "rate": 3.73
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.21
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.57
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.36
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.03
+    }
+   ],
+   "fuel": 1.15,
+   "security": 0.21,
+   "source": "transcribed-from-jpg"
+  },
+  {
+   "airline": "Danube Wings Cargo",
+   "origin": "STR",
+   "destination": "SGN",
+   "transit_days": 5,
+   "minimum": 83.0,
+   "breaks": [
+    {
+     "from_kg": 0,
+     "rate": 4.63
+    },
+    {
+     "from_kg": 45,
+     "rate": 4.21
+    },
+    {
+     "from_kg": 100,
+     "rate": 3.45
+    },
+    {
+     "from_kg": 300,
+     "rate": 2.93
+    },
+    {
+     "from_kg": 500,
+     "rate": 2.4
+    },
+    {
+     "from_kg": 1000,
+     "rate": 2.18
+    }
+   ],
+   "fuel": 1.09,
+   "security": 0.11,
+   "source": "transcribed-from-jpg"
+  }
+ ]
+}

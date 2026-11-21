@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/forwarder.db*
+data/inbox/
+*.log
+.DS_Store
