@@ -81,6 +81,9 @@ class Settings:
     cutoff_question_notice: bool
     tariff_on_ready_date: bool
     unit_evidence: bool
+    totals_same_line: bool
+    thousands_evidence: bool
+    clarify_cap_resolve: bool
     revision_not_acceptance: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
@@ -105,6 +108,7 @@ class Settings:
     followup_max: int
     followup_window_s: float
     followup_check_every_s: float
+    prebook_answer: bool
     phishing_gate_mode: str
     phishing_gate_llm_mode: str
     phishing_gate_model: str
@@ -174,6 +178,9 @@ settings = Settings(
     cutoff_question_notice=_flag("CUTOFF_QUESTION_NOTICE", True),
     tariff_on_ready_date=_flag("TARIFF_ON_READY_DATE", True),
     unit_evidence=_flag("UNIT_EVIDENCE", True),
+    totals_same_line=_flag("TOTALS_SAME_LINE"),
+    thousands_evidence=_flag("THOUSANDS_EVIDENCE"),
+    clarify_cap_resolve=_flag("CLARIFY_CAP_RESOLVE"),
     revision_not_acceptance=_flag("REVISION_NOT_ACCEPTANCE", True),
     all_excluded_notice=_flag("ALL_EXCLUDED_NOTICE", True),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)
@@ -221,6 +228,9 @@ settings = Settings(
     followup_max=max(0, int(_env("FOLLOWUP_MAX", "3"))),
     followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
     followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "2"))),
+    # customer answers our quote with questions: answer them from the stored quote and ask
+    # for the go-ahead (app/agents/prebook.py); false = today's generic clarification
+    prebook_answer=_env("PREBOOK_ANSWER", "false").lower() in ("1", "true", "yes", "on"),
     # phishing gate: off | shadow (classify and log, block nothing) | enforce
     phishing_gate_mode=_env("PHISHING_GATE_MODE", "enforce").lower(),
     # what an LLM-only verdict may do; it never does more than PHISHING_GATE_MODE allows

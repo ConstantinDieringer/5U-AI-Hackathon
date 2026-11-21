@@ -262,7 +262,17 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Rückfrageantworten vor Booking behandeln und nur angefragte Werte übernehmen. Bleiben RFQ-Felder nach deterministischer Auswertung offen, liest `LLM_RESCUE_MODEL` den vollständigen aktuellen Kundenthread vor der ersten Rückfrage beziehungsweise vor einem Human-Handoff. Es darf nur explizit belegte Korrekturen mit einem wörtlichen Beleg liefern; Code prüft Beleg, Feldtyp und vollständigen RFQ erneut. Erst ein weiterhin ungelöster, abgelaufener oder ausdrücklich pausierter/manueller Fall benötigt einen Menschen.
 - Bei Gefahrguthinweisen ausdrücklich Gefahrgutunterlagen (DGD/Versendererklärung und SDS,
   soweit zutreffend) anfragen und Prüfung vor Angebot/Buchung erklären. Eine allgemeine
-  Bestätigung der Packliste ist weder Dokumenteneingang noch Transportfreigabe.
+  Bestätigung der Packliste ist weder Dokumenteneingang noch Transportfreigabe. Die Zusage,
+  DGD/SDS zu senden, gibt die Angebotssperre frei (Runde 41 nach bloßer Zusage akzeptiert;
+  6fdc811 wartete auf Anhänge, 26b5b9b nahm das zurück): nie auf Anhänge warten.
+- Schalter, alle Standard `false` (= heutiges Verhalten): `TOTALS_SAME_LINE` – ein
+  Summen-Label erreicht seine Zahl über einen Zeilenumbruch nur nach of/is oder `:`/`|`
+  (Tabellenkopf „Gross weight (kg)“ ist keine Summe). `THOUSANDS_EVIDENCE` – „1,674 kg“ ist
+  1674 kg, wenn eine bekannte Zahl derselben Sendung das belegt, sonst bei Unplausibilität
+  unter 10 kg; eine Regel (`weight_reading`) für Mail, Anhang, Antwort, Freitext und Rescue.
+  `CLARIFY_CAP_RESOLVE` – nach zwei Rückfragen eindeutiger plausibler Thread-Wert, sonst
+  Angebot aus der Mail (Gefahrgut erst nach gestellter DG-Frage), sonst keine Mail, Fehler-
+  Event und erster Eintrag in „Zu tun“.
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
@@ -277,6 +287,20 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   die Freigabe selbst und gilt pro Satz; separate Sachfragen ersetzen keine Freigabe.
   Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
   dieselbe Prüfung gilt bei Annahme eines geänderten Buchungspreises.
+- Vorabfragen beantworten (`PREBOOK_ANSWER`, Standard `false`, `app/agents/prebook.py`):
+  `booking.classify_reply` (Regeln, kein LLM) unterscheidet yes/no/question/deferral/unclear;
+  nur „yes“ (unverändert `is_acceptance`) bucht. Eine Antwort auf das Angebot, deren
+  Fragesätze alle ein bekanntes Thema nennen (schnellste/günstigste Option, Abflug/Ankunft,
+  Laufzeit, Airline, Abholung, Gültigkeit, Preisumfang, Annahmeschluss, Routing), wird aus
+  dem gespeicherten ersten Angebot beantwortet: Fahrplan über `rfq.schedule` zum Angebotstag,
+  Alternativen des Angebots, Trucker-Vorlauf aus `pricing_audit`. Kein zweites Angebot, kein
+  anderer Preis; Gesamtpreis höchstens einmal, sonst kein Betrag; fehlende Fakten werden zur
+  Buchung zugesagt, nie erfunden. Andere Flughäfen/PLZ/Abholdaten, nicht zuordenbare Fragen
+  und eine bessere Option auf dem angefragten Kriterium bleiben im heutigen Rückfrageablauf.
+  Versand über `send_customer` ohne LLM-Review (`review=False`), Kategorie `prebook_answer`,
+  zählt mit den Follow-ups gegen `FOLLOWUP_MAX`, mindestens 10 s Abstand zur letzten eigenen
+  Mail; Pause/Handbetrieb/Quarantäne senden nichts. Nach einer solchen Antwort bucht ein „Ja“
+  mit Wunsch nach einer anderen Option („the faster one instead“) nicht.
 
 - Dedizierter Stilagent `app/agents/email_review.py` auf Nutzerwunsch standardmäßig aus: `EMAIL_REVIEW_ENABLED=false`. Kein zusätzlicher Stil-Review-LLM-Aufruf; deterministische Darstellung und finale Versandprüfung bleiben aktiv. Optionaler expliziter Opt-in mit `LLM_REVIEW_MODEL=gpt-5`: genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens, ohne Versand oder Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen bleiben geschützt; Fehler/Budgetende behält den geprüften Entwurf. Pause/Handbetrieb und Quote-Deadline werden unmittelbar vor dem Versand geprüft.
 
