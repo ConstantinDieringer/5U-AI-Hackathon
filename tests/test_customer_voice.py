@@ -11,11 +11,20 @@ from app.models import RateOption, Rfq
 
 
 @pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize(
+    "preference,criterion",
+    [
+        ("fastest", "shortest air transit"),
+        ("cheapest", "lowest air price"),
+    ],
+)
 def test_writing_profile_reaches_composer_and_repair_without_extra_pass(
-    tmp_path, monkeypatch, language
+    tmp_path, monkeypatch, language, preference, criterion
 ):
     db.init_db(str(tmp_path / "voice.db"))
-    request = Rfq(origin="FRA", destination="DEL", weight_kg=736, language=language)
+    request = Rfq(
+        origin="FRA", destination="DEL", weight_kg=736, language=language, preference=preference
+    )
     option = RateOption("Test Air", "FRA", "DEL", 2, 120000, "EUR", 120000, "sheet")
     profile = customer_voice()
     calls = []
@@ -26,6 +35,10 @@ def test_writing_profile_reaches_composer_and_repair_without_extra_pass(
     ) + "\n\nYour austrian Power Team"
 
     def complete(purpose, messages, *args, **kwargs):
+        facts = json.loads(messages[1]["content"])["verified_facts"]
+        assert facts["requested_preference"] == preference
+        assert criterion in facts["selection_explanation"]
+        assert facts["pickup_included"] is False
         calls.append((purpose, messages[0]["content"]))
         return json.dumps(
             {

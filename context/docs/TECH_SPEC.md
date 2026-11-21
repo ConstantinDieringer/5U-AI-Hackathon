@@ -257,6 +257,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
 - Gemeinsames Schreibprofil: `app/mail/customer_voice.md` kombiniert auf Kundenmails zugeschnittene Regeln aus Humanize Writing und Humanizer. Der Composer lädt diese lokale Datei als Systemanweisung; `.agents/skills/customer-email-voice/SKILL.md` verweist für künftige Agenten darauf. Quellen sind auf Commit-SHAs fixiert, MIT-Hinweise liegen beim Skill. Keine Laufzeitdownloads, kein zusätzlicher LLM-Aufruf und keine neue Abhängigkeit.
+- Freigegebene Frachtmail-Stimme: konkreter Einstieg, belegter Gesprächsbezug, Dank für echte Klärungen, kurze Auswahlbegründung, Preis im Fließtext, natürliches I/we und Kontraktionen, klare Unsicherheit, situationsgerechte Wärme und ein passender nächster Schritt. Formulierungsbeispiele sind Orientierung, keine festen Vorlagen. Der Composer erhält den tatsächlichen Auswahlgrund (Luftlaufzeit bzw. Luftpreis unter geprüften Optionen), ohne neue Preis-/Terminentscheidung.
 
 - Eine Cargo-Annahmefrist ist derzeit keine belegte Angebotsinformation. Composer-Ausgaben
   dürfen weder Abflug-/Bereitschaftsdatum noch Tarifgültigkeit als Cutoff ausgeben.
