@@ -44,18 +44,30 @@ _YES = re.compile(
     r"\b(book|book it|go ahead|proceed|accept|accepted|works for us|"
     r"sounds good|let'?s do it|approved?|"
     r"buchen|einverstanden|passt|nehmen wir|angenommen|"
-    r"réserve\w*|reserv\w*|prenot\w*|procedi\w*|akzeptier\w*|d'accord|adelante)\b",
+    r"réserve\w*|reserv\w*|prenot\w*|procedi\w*|akzeptier\w*|d'accord|adelante|"
+    r"allez-y|confirm(?:ons|amos|iamo)|aceit\w*|acept\w*|de acuerdo|de acordo|va bene|"
+    r"boeken|boek het|akkoord|ga uw gang|ga je gang|boka|godkänn\w*|godkend\w*|"
+    r"bestil\w*|rezerw\w*|zarezerw\w*|akceptuj\w*|potwierdzam|rezervuj\w*|souhlasím|"
+    r"rezervați|acceptăm|de acord|onayl\w*|kabul\w*|rezervasyon|"
+    r"бронир\w*|заброниру\w*|согласны|подтверждаем|принимаем)\b"
+    # CJK has no word boundaries: these phrases match without \b
+    r"|订舱|预订|請預訂|请预订|同意|确认预订|可以订|予約(?:して|をお願い)|手配をお願い|承認します"
+    r"|예약해|진행해 주세요|승인합니다|احجز|نوافق",
     re.IGNORECASE,
 )
 _NO = re.compile(
     r"\b(not|don'?t|do not|no thanks|decline|too expensive|cancel|nicht|kein\w*|leider|"
-    r"zu teuer|absagen|stornier\w*|pas|non)\b",
+    r"zu teuer|absagen|stornier\w*|pas|non|no|niet|geen|nie|inte|ikke|não|nu|değil|"
+    r"не|нет)\b"
+    r"|不要|不用|别订|不订|取消|いいえ|キャンセル|しません|아니요|취소|لا",
     re.IGNORECASE,
 )
 _DECLINE = re.compile(  # wins over any "yes" word ("we will not proceed")
     r"too expensive|decline|not (?:go ahead|proceed|book)|no thanks|zu teuer|absagen|"
     r"nicht buchen|\b(?:will\s+not|won't|would\s+not|wouldn't|cannot|can't|"
-    r"do\s+not|don't)\s+(?:go\s+ahead|proceed|book|accept|approve|reserve)\b",
+    r"do\s+not|don't)\s+(?:go\s+ahead|proceed|book|accept|approve|reserve)\b|"
+    r"trop cher|demasiado caro|muito caro|troppo caro|te duur|za drogo|för dyrt|pahalı|"
+    r"слишком дорого|太贵|高すぎ|너무 비싸",
     re.IGNORECASE,
 )
 _CONFIRMED = re.compile(r"\bBooking\s+(BK-[A-Za-z0-9]+)\s+confirmed\b", re.IGNORECASE)

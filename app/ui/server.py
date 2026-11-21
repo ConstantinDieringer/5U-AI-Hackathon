@@ -488,6 +488,12 @@ def api_health() -> dict[str, Any]:
         "mailbox_429_last_10min": rate_limit_watch.recent(),
         "email_reviewer_model": settings.llm_review_model,
         "email_review_enabled": settings.email_review_enabled,
+        "audio_transcription": {
+            "groq_configured": bool(settings.groq_api_key),
+            "groq_model": settings.groq_audio_model,
+            "local_enabled": settings.local_audio_enabled,
+            "local_model": settings.local_audio_model,
+        },
         "tracking_notice_version": "required-v1",
         "tracking_notice_recovery_enabled": settings.agents_enabled,
         "thread_rescue_enabled": settings.thread_rescue_enabled,
