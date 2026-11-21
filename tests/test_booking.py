@@ -57,6 +57,7 @@ PREBOOK_QUESTIONS = [
     "Bevor wir buchen, bestätigen Sie bitte die Abholung.",
     "Bitte buchen, falls der Abflug am Freitag möglich ist.",
     "I'll check whether we can proceed with the booking and get back to you.",
+    "I'll check whether we can go ahead and get back to you.",
     "We are checking whether we can accept the offer.",
     "Ich prüfe, ob wir die Buchung freigeben können.",
 ]
@@ -74,9 +75,17 @@ def test_prebooking_question_or_condition_is_not_consent(body):
     "Bitte buchen. Wann erhalten wir die Referenz?",
     "We checked internally and accept your offer. Please book.",
     "Wir haben die Buchung geprüft. Bitte buchen.",
+    "Please book it. I'll check whether our invoice details are current.",
 ])
 def test_explicit_booking_request_can_include_a_followup_question(body):
     assert booking.is_acceptance(body) is True
+
+
+@pytest.mark.parametrize("approval", [
+    "book", "go ahead", "proceed", "accept", "approve", "reserve", "buchen", "passt",
+])
+def test_pending_check_scopes_all_existing_approval_words(approval):
+    assert booking.is_acceptance(f"We are checking whether we can {approval}.") is None
 
 
 class Api:

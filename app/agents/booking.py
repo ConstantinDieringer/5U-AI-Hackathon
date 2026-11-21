@@ -101,8 +101,7 @@ _PREBOOK_QUESTION = re.compile(
 
 _PENDING_APPROVAL = re.compile(
     r"\b(?:check|checking|prüfen|prüfe|klären|kläre)\b[^.!?\n]{0,60}"
-    r"\b(?:whether|if|ob)\b[^.!?\n]{0,100}"
-    r"\b(?:book|booking|proceed|accept|buchen|buchung|annehmen)\b",
+    r"\b(?:whether|if|ob)\b",
     re.IGNORECASE,
 )
 
@@ -112,7 +111,11 @@ def is_acceptance(body: str) -> bool | None:
     text = own_text(body)
     if _DECLINE.search(text):
         return False
-    if _PREBOOK_QUESTION.search(text) or _PENDING_APPROVAL.search(text):
+    pending = any(
+        _PENDING_APPROVAL.search(sentence) and _YES.search(sentence)
+        for sentence in re.split(r"[.!?\n]", text)
+    )
+    if _PREBOOK_QUESTION.search(text) or pending:
         return None  # mentioning booking in a question/condition is not consent
     if config.settings.revision_not_acceptance and _REVISION.search(text):
         return None
