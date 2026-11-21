@@ -418,7 +418,7 @@ def test_full_app_start_with_isolated_mailbox(tmp_path):
         "RUNTIME_DIR": str(tmp_path / "runtime"),
         "INBOX_DIR": str(tmp_path / "inbox"),
         "PORT": str(port),
-        "UI_PASSWORD": "",
+            "UI_PASSWORD": "smoke-only",
     }
     code = (
         "import httpx; from app import hackloop; "

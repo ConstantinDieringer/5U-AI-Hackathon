@@ -45,6 +45,7 @@ class Settings:
     tracking_address: str
     llm_model: str
     llm_retry_model: str
+    llm_rescue_model: str
     llm_compose_model: str
     poll_interval_s: float
     db_path: str
@@ -97,6 +98,7 @@ settings = Settings(
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
     llm_model=_env("LLM_MODEL"),
     llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5"),  # stronger repair when extraction fails
+    llm_rescue_model=_env("LLM_RESCUE_MODEL", "gpt-5"),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
