@@ -1,5 +1,6 @@
 """API tests for app/ui/server.py (no 5U calls, no streaming loop)."""
 
+import dataclasses
 from datetime import UTC
 
 import pytest
@@ -12,9 +13,15 @@ TEAM = "austrian-power@hackloop.mail"
 
 
 @pytest.fixture()
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     db.init_db(str(tmp_path / "api.db"))
-    with TestClient(server.app) as c:
+    monkeypatch.setattr(
+        server,
+        "settings",
+        dataclasses.replace(server.settings, ui_user="team", ui_password="test-ui"),
+    )
+    with TestClient(server.app, headers={"X-Requested-With": "XMLHttpRequest"}) as c:
+        c.auth = ("team", "test-ui")
         yield c
 
 
@@ -90,12 +97,34 @@ def test_basic_auth_when_password_set(client, monkeypatch):
         "settings",
         dataclasses.replace(server.settings, ui_user="team", ui_password="pw"),
     )
+    client.auth = None
     assert client.get("/api/stats").status_code == 401
     assert client.get("/api/health").status_code == 200
     good = base64.b64encode(b"team:pw").decode()
     bad = base64.b64encode(b"team:nope").decode()
     assert client.get("/api/stats", headers={"Authorization": f"Basic {bad}"}).status_code == 401
     assert client.get("/api/stats", headers={"Authorization": f"Basic {good}"}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("GET", "/"),
+        ("GET", "/api/sessions"),
+        ("GET", "/static/index.html"),
+        ("GET", "/docs"),
+        ("POST", "/api/pause-all"),
+        ("POST", "/api/admin/import-db"),
+    ],
+)
+def test_missing_password_locks_dashboard_but_health_stays_available(
+    client, monkeypatch, method, path
+):
+    monkeypatch.setattr(server, "settings", dataclasses.replace(server.settings, ui_password=""))
+    assert client.request(method, path).status_code == 503
+    health = client.get("/api/health")
+    assert health.status_code == 200 and health.json()["dashboard_locked"] is True
+    assert not db.is_global_paused()
 
 
 def test_crm_won_lost(client):

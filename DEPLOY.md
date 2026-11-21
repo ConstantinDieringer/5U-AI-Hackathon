@@ -1,5 +1,15 @@
 # Deploy (Railway)
 
+## Missing dashboard password
+
+`UI_PASSWORD` is required for dashboard access, not for mail-agent startup. If it is
+absent, the process logs a configuration error once and continues according to
+`AGENTS_ENABLED`. All dashboard, static, docs and management API requests return 503.
+Only `/api/health` and the independently HMAC-protected mailbox webhook remain reachable.
+Health reports `dashboard_locked=true`. Set a strong password in the correct Railway
+service/environment and redeploy to restore dashboard access; no password is generated,
+logged or exposed automatically. A missing password must not cause a restart loop.
+
 ## RFQ input validation rollout
 
 1. Use an isolated checkout for development; do not pull new modules underneath a running agent.

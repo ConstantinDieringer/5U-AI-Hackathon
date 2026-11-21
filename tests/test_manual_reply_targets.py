@@ -1,5 +1,7 @@
 """Case 12460: a carrier's latest reply must not become the customer's default recipient."""
 
+import dataclasses
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -38,7 +40,13 @@ def case(tmp_path, monkeypatch):
         return {"id": 50000 + len(sent)}
 
     monkeypatch.setattr(hackloop, "send", send)
-    with TestClient(server.app) as client:
+    monkeypatch.setattr(
+        server,
+        "settings",
+        dataclasses.replace(server.settings, ui_user="team", ui_password="test-ui"),
+    )
+    with TestClient(server.app, headers={"X-Requested-With": "XMLHttpRequest"}) as client:
+        client.auth = ("team", "test-ui")
         yield client, sid, sent
 
 

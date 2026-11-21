@@ -398,7 +398,11 @@ def test_ui_reply_and_release_endpoints(box: Box, monkeypatch) -> None:
     from app.ui import server
 
     gate(monkeypatch)
-    monkeypatch.setattr(server, "settings", dataclasses.replace(server.settings, ui_password=""))
+    monkeypatch.setattr(
+        server,
+        "settings",
+        dataclasses.replace(server.settings, ui_user="team", ui_password="test-ui"),
+    )
     db.ingest_mail(
         mail_id=200, sender="kunde@hackloop.mail", recipient="x", subject="RFQ", body=RFQ_BODY,
         category="rfq",
@@ -411,6 +415,7 @@ def test_ui_reply_and_release_endpoints(box: Box, monkeypatch) -> None:
     )
     headers = {"X-Requested-With": "XMLHttpRequest"}
     with TestClient(server.app) as c:
+        c.auth = ("team", "test-ui")
         r = c.post("/api/sessions/200/reply", json={"text": "Hi", "mail_id": 201}, headers=headers)
         assert r.status_code == 409 and sent == []
         r = c.post("/api/sessions/200/reply", json={"text": "Hi"}, headers=headers)

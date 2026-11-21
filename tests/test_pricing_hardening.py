@@ -86,12 +86,9 @@ def test_all_text_formats_match_seed_prices():
             assert lane.fuel == Decimal(str(expected["fuel"]))
             assert lane.security == Decimal(str(expected["security"]))
             assert [(b.from_kg, b.rate) for b in lane.breaks] == [
-                (Decimal(str(b["from_kg"])), Decimal(str(b["rate"])))
-                for b in expected["breaks"]
+                (Decimal(str(b["from_kg"])), Decimal(str(b["rate"]))) for b in expected["breaks"]
             ]
-    assert (
-        count == 149
-    )  # nine JPG lanes are covered by the existing seed regression tests
+    assert count == 149  # nine JPG lanes are covered by the existing seed regression tests
 
 
 def test_next_month_atomic_reload_and_duplicate(tmp_path):
@@ -120,9 +117,7 @@ def test_older_update_never_replaces_newer():
     old = document()
     old.lanes[0].minimum = Decimal(999)
     tariff.publish(update(old, "older", "2026-11-20T16:00:00+00:00"), path)
-    assert (
-        next(x for x in pricing.load_lanes() if x.valid_from.month == 12).minimum == 10
-    )
+    assert next(x for x in pricing.load_lanes() if x.valid_from.month == 12).minimum == 10
 
 
 def test_concurrent_updates_do_not_lose_lanes():
@@ -195,29 +190,21 @@ def test_dataset_alert_persistent_and_cache_invalidated(monkeypatch):
 def test_board_all_nonaccepted_alert_once():
     for verdict in ("open", "pending", "rejected", "accepted"):
         for _ in range(2):
-            db.save_board_result(
-                round_id="1", verdict=verdict, reason="test", raw={}, points=None
-            )
+            db.save_board_result(round_id="1", verdict=verdict, reason="test", raw={}, points=None)
     events = [x for x in db.events_after(0) if x["kind"] == "board_verdict"]
     assert [x["level"] for x in events] == ["warn", "warn", "warn", "info"]
 
 
 def test_503_returns_email_fallback():
     def fetch(*args):
-        raise hackloop.HackloopError(
-            "GET", "/v1/portal/rates", 503, "Ask airline by email"
-        )
+        raise hackloop.HackloopError("GET", "/v1/portal/rates", 503, "Ask airline by email")
 
-    result = portal_sync.portal_result(
-        Rfq(origin="CGN", destination="DEL", weight_kg=120), fetch
-    )
+    result = portal_sync.portal_result(Rfq(origin="CGN", destination="DEL", weight_kg=120), fetch)
     assert set(result.email_fallbacks) == {"JP", "UV"} and not result.options
 
 
 def test_retry_after_is_not_capped():
-    assert (
-        hackloop._retry_wait(httpx.Response(429, headers={"Retry-After": "65"})) == 65
-    )
+    assert hackloop._retry_wait(httpx.Response(429, headers={"Retry-After": "65"})) == 65
 
 
 def test_429_blocks_other_calls_without_exceeding_deadline(monkeypatch):
@@ -234,9 +221,7 @@ def test_429_blocks_other_calls_without_exceeding_deadline(monkeypatch):
     )
     for _ in range(2):
         with pytest.raises(hackloop.HackloopError):
-            hackloop.get_rate(
-                "FRA", "JFK", "X", 100, deadline=hackloop.time.monotonic() + 1
-            )
+            hackloop.get_rate("FRA", "JFK", "X", 100, deadline=hackloop.time.monotonic() + 1)
     assert len(seen) == 1
 
 
@@ -258,9 +243,7 @@ def test_rate_limit_header_prevents_next_request(monkeypatch):
     )
     hackloop.get_rate("CGN", "DEL", "JP", 120, deadline=hackloop.time.monotonic() + 1)
     with pytest.raises(hackloop.HackloopError):
-        hackloop.get_rate(
-            "CGN", "DEL", "JP", 120, deadline=hackloop.time.monotonic() + 1
-        )
+        hackloop.get_rate("CGN", "DEL", "JP", 120, deadline=hackloop.time.monotonic() + 1)
     assert len(seen) == 1
 
 
@@ -269,9 +252,7 @@ def test_usd_sheets_and_bids_keep_original_amount(monkeypatch):
     monkeypatch.setattr(
         fx,
         "settings",
-        dataclasses.replace(
-            fx.settings, usd_eur_rate="0.92", usd_eur_valid_until=expiry
-        ),
+        dataclasses.replace(fx.settings, usd_eur_rate="0.92", usd_eur_valid_until=expiry),
     )
     tariff.publish(update(document("USD")), pricing.RUNTIME_TARIFFS)
     option = pricing.sheet_options(
@@ -335,9 +316,7 @@ def test_image_extraction_uses_gateway_and_validates(monkeypatch, tmp_path):
     p.write_bytes(b"test-image")
     assert parse_attachment(p).currency == "EUR"
     assert calls[0][0][0] == "tariff_extract"
-    assert calls[0][0][1][0]["content"][1]["image_url"]["url"].startswith(
-        "data:image/jpeg;base64,"
-    )
+    assert calls[0][0][1][0]["content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 
 def test_original_kit_cli_retains_all_158_lanes():
@@ -359,9 +338,7 @@ def test_tariff_mail_changes_next_rfq_and_replay_skips_parser(monkeypatch, tmp_p
     source = next((ROOT / "data/start-kit").glob("yellowtail*tariff*.txt"))
     replacement = tmp_path / "next-month.txt"
     replacement.write_text(
-        source.read_text()
-        .replace("01.11.2026", "01.12.2026")
-        .replace("30.11.2026", "31.12.2026")
+        source.read_text().replace("01.11.2026", "01.12.2026").replace("30.11.2026", "31.12.2026")
     )
     monkeypatch.setattr(poller, "download_attachments", lambda m: [replacement])
     mail = Mail(
@@ -399,7 +376,8 @@ def test_failed_snapshot_refresh_preserves_seed(monkeypatch, tmp_path):
     assert portal_sync.load_portal_lanes() == old
 
 
-def test_full_app_start_with_isolated_mailbox(tmp_path):
+@pytest.mark.parametrize("ui_password", ["smoke-only", ""])
+def test_full_app_start_with_isolated_mailbox(tmp_path, ui_password):
     """Boot real threads/server with a fake 5U transport and a disposable database."""
     import os
     import socket
@@ -418,7 +396,7 @@ def test_full_app_start_with_isolated_mailbox(tmp_path):
         "RUNTIME_DIR": str(tmp_path / "runtime"),
         "INBOX_DIR": str(tmp_path / "inbox"),
         "PORT": str(port),
-            "UI_PASSWORD": "smoke-only",
+        "UI_PASSWORD": ui_password,
     }
     code = (
         "import httpx; from app import hackloop; "
@@ -440,10 +418,7 @@ def test_full_app_start_with_isolated_mailbox(tmp_path):
         while time.monotonic() < deadline and child.poll() is None:
             try:
                 healthy = (
-                    httpx.get(
-                        f"http://127.0.0.1:{port}/api/health", timeout=0.5
-                    ).status_code
-                    == 200
+                    httpx.get(f"http://127.0.0.1:{port}/api/health", timeout=0.5).status_code == 200
                 )
                 if healthy:
                     break
@@ -451,6 +426,8 @@ def test_full_app_start_with_isolated_mailbox(tmp_path):
                 pass
             time.sleep(0.1)
         assert healthy, f"isolated application did not start (exit={child.poll()})"
+        if not ui_password:
+            assert httpx.get(f"http://127.0.0.1:{port}/").status_code == 503
         c = __import__("sqlite3").connect(tmp_path / "smoke.db")
         try:
             assert c.execute("select count(*) from tariff_jobs").fetchone()[0] == 0

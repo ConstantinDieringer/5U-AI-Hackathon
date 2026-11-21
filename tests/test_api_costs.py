@@ -1,5 +1,6 @@
 """RFQ cost attribution, cache billing and legacy database migration."""
 
+import dataclasses
 import sqlite3
 from types import SimpleNamespace
 
@@ -7,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db, llm
+from app.ui import server
 from app.ui.server import app
 
 
@@ -33,9 +35,7 @@ def test_cache_discount_and_reasoning_not_double_charged():
 
 
 def test_missing_details_prices_and_usage():
-    a = llm.accounting(
-        "gpt-5-nano", SimpleNamespace(prompt_tokens=1000, completion_tokens=500)
-    )
+    a = llm.accounting("gpt-5-nano", SimpleNamespace(prompt_tokens=1000, completion_tokens=500))
     assert a["total_micro_usd"] == 250
     assert a["tokens"]["cached_input"] is None
     assert llm.accounting("unknown", usage())["status"] == "price_missing"
@@ -63,7 +63,12 @@ def test_call_details_persist_and_api_isolates_rfqs(tmp_path, monkeypatch):
     llm.complete("extract_rfq", [], 1)
     llm.complete("compose_quote", [], 1)
     llm.complete("extract_rfq", [], 2)
-    result = TestClient(app).get("/api/sessions/1").json()
+    monkeypatch.setattr(
+        server,
+        "settings",
+        dataclasses.replace(server.settings, ui_user="team", ui_password="test-ui"),
+    )
+    result = TestClient(app).get("/api/sessions/1", auth=("team", "test-ui")).json()
     u = result["llm_usage"]
     assert u["total_micro_usd"] == result["llm_cost_micro_usd"] == 464
     assert u["input_tokens"] == 2000 and u["output_tokens"] == 1000

@@ -376,6 +376,11 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 10. UI / interne API
 
+- Fehlendes `UI_PASSWORD` beendet den Prozess nicht: Agenten starten gemäß `AGENTS_ENABLED`.
+  Stattdessen sperrt die Middleware sämtliche Dashboard-/Management-/Static-/Docs-Pfade mit
+  HTTP 503. Nur Health und der separat HMAC-geschützte Mailbox-Webhook bleiben erreichbar.
+  `/api/health.dashboard_locked` zeigt den Zustand. Kein generiertes oder protokolliertes Passwort.
+
 - Manuelle Antworten wählen standardmäßig die neueste eingegangene Mail des Session-Kunden,
   nie automatisch einen Carrier. Eine andere eingegangene Mail derselben Session bleibt
   ausdrücklich auswählbar; die Versandbestätigung nennt den tatsächlichen Empfänger.

@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Missing `UI_PASSWORD` now locks dashboard/API access with 503 instead of crashing all agents. Public health reports the lock; signed mailbox webhook remains independent. Empty/configured-password subprocess startup and protected-route regressions pass; full suite 880 passed/4 skipped. Production activation pending.
+
 - Reduced strong-model frequency: no pre-question routine pass; persisted 30-second stall clock resets on progress. Immediate rescue only for unprocessable concrete answers or former human-handoff threshold; document-only waiting skips the model. 786 passed/4 skipped; final targeted checks 50 passed. Deployment unverified.
 
 - RFQ rescue uses `gpt-5.6-sol`/high with raw attachment tables, full conversation and validator feedback; separate persisted call budget and duplicate-evidence claims. Fixed table-header weights, contextual thousands-formatted replies and promised DG documents; removed RFQ two-question handoff/timed quote without evidence. 784 tests passed/4 skipped; final follow-up checks 120 passed. Gateway access/deployment unverified; style review defaults off.

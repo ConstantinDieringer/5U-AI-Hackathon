@@ -51,7 +51,12 @@ app.add_api_route(webhook.PATH, webhook.receive, methods=["POST"], include_in_sc
 async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
     """Protect the dashboard and state-changing requests; the webhook uses its own HMAC."""
     public = request.url.path in PUBLIC_PATHS
-    if settings.ui_password and not public:
+    if not public and not settings.ui_password:
+        response = Response(
+            status_code=503,
+            content="Dashboard locked: configure UI_PASSWORD and redeploy. Mail agents remain enabled according to AGENTS_ENABLED.",
+        )
+    elif not public:
         header = request.headers.get("authorization", "")
         authenticated = False
         if header.lower().startswith("basic "):
@@ -398,6 +403,7 @@ def api_health() -> dict[str, Any]:
 
     return {
         "ok": True,
+        "dashboard_locked": not bool(settings.ui_password),
         "process_started_at": STARTED_AT.isoformat(timespec="seconds"),
         "rfq_watchdog": settings.rfq_watchdog,
         "email_style_version": EMAIL_STYLE_VERSION,

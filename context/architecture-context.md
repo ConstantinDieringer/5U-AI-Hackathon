@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Missing UI password:** start mail agents normally according to `AGENTS_ENABLED`; lock all dashboard and management routes with 503 rather than exiting. Public health reports `dashboard_locked`; signed webhook authentication remains mandatory. Missing dashboard configuration cannot restart the mail process.
+
 - **Rescue activation:** persist the last meaningful clarification progress time; invoke the strong model only after 30 seconds stalled, an unprocessable explicit answer, or the former handoff threshold. Normal first clarification and waiting for documents do not invoke it. The clarification worker checks stalled waiting RFQs; stale results cannot replace a newer validation state.
 
 - **RFQ evidence recovery:** `gpt-5.6-sol` with high reasoning reads the saved conversation, raw attachment text, observations and validation feedback. Four correction rounds per new evidence set, twelve separately budgeted calls per session, persisted input claims prevent duplicate workers/restart calls. Deadline and human controls remain binding; RFQs no longer hand off merely after two questions or quote missing evidence on a timer. Separate style review defaults off. Gateway model access/deployment unverified.

@@ -23,8 +23,7 @@ def main() -> None:
     log = logging.getLogger("run")
 
     if not settings.ui_password:
-        log.critical("UI_PASSWORD must be set before starting the dashboard or mail agents")
-        raise SystemExit(2)
+        log.error("UI_PASSWORD missing: dashboard locked; mail agents and signed webhook continue")
 
     from app import db
     from app.mail import poller, webhook
