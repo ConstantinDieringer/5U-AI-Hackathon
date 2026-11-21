@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- RFQ replay harness (`python -m app.agents.rfq_replay`, `tests/test_rfq_replay.py`): all 27 live rounds through the real flow offline (stored extraction/portal/bids, no network); baseline diff gates option, total, airline, carriers, clarification and mail text. 22/27 match production exactly; rounds 2/12 lack stored data, 18 to 20 now ask for the pickup. Composer output and new portal reads are not replayed.
 - Reverted PR12 shortcuts (local parsing, composer bypass, cache keys). Every quote uses the individual `LLM_COMPOSE_MODEL` (default gpt-5-mini), with bounded same-customer history and audited source IDs; default budget four allows repairs. Synthetic gateway dry-run produced a personal grounded reply; no live customer mail sent or production rollout verified.
 - Round 27 booking review: freeze selected air cost/currency separately from the customer total; airline booking emails exclude truck costs and commercial adjustments. Legacy quotes omit an unverified air amount; customer confirmations keep their all-in total. Offline suite: 350 passed, 4 skipped; migration/reopen and EUR/USD coverage; production deployment not verified.
 
@@ -115,12 +116,16 @@ Goal: the first accepted quote end to end before any polish.
 18. (A) Reply format of trucker and airline bids unknown: parsed by regex (`bids.parse_price`); unreadable bids are logged as `bid_unreadable`. Check the first real ones.
 19. (A) Quotes are always in EUR. ~~Door-to-port without a trucker bid~~ → blocked by default;
     `ALLOW_INCOMPLETE_DOOR_QUOTE=true` is the explicit emergency override.
+20. Board points carry `booking: 0.0` on every booked round, also on time; the published rules list no booking points. What earns them?
+21. TECH_SPEC §8 still says `RFQ_VALIDATION_MODE=shadow` is the default; code, tracker and architecture say `enforce`. Which is binding?
 
 ## Architecture Decisions
 
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 19:00: Board accuracy (now visible) is the largest leak on answered rounds: rounds 2, 19, 21, 22, 25, 26 scored 28 to 38 of 45 while accepted. Rounds 15 to 17 (no answer) were forwarded-subject origin AMS and two RFQs without pickup; current code asks instead. LLM cost was about 0.2 points per quote, not a leak.
 
 - 21.11 18:30: `bids.wait(until_kinds=...)` returns once nobody of the awaited kind is left to answer (all airlines declined no longer waits out the timeout). Tested offline only.
 

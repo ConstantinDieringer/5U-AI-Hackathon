@@ -125,6 +125,9 @@ guarantee exactly-once effects across provider/network failures.
   comparable best-price evidence is available.
 - Before deploying, run `python -m pytest -q`; then restart the sole live instance and
   check `/api/health`, poller logs and tariff events. Do not run a second production poller.
+- `python -m app.agents.rfq_replay run --compare tests/fixtures/replay/baseline.json` replays
+  every stored live round offline and lists what a change moves (price, airline, mail text).
+  A changed price needs board evidence before the baseline is regenerated with `--out`.
 
 ## Moving a running local instance online (keeps all mails in and out)
 

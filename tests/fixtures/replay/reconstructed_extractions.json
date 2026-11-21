@@ -1,0 +1,14 @@
+{
+ "937": {
+  "note": "round 4: nano returned the ICAO code EDDL as origin (progress tracker 16:20)",
+  "extraction": {"origin": "EDDL", "pickup_zip": "51896", "destination": "ORD", "weight_kg": 679, "volume_cbm": 4.19, "pieces": 6, "preference": "cheapest", "ready_date": "2026-11-28", "language": "en", "customer_name": "Deniz", "customer_questions": [], "service_constraints": []}
+ },
+ "1967": {
+  "note": "round 9: nano returned weight_kg 0 for lots given per piece ('each') (progress tracker 16:54)",
+  "extraction": {"origin": null, "pickup_zip": "36627", "destination": "LOS", "weight_kg": 0, "volume_cbm": 1.68, "pieces": 13, "preference": "cheapest", "ready_date": "2026-11-29", "language": "en", "customer_name": "Mira", "customer_questions": [], "service_constraints": []}
+ },
+ "2530": {
+  "note": "round 11: nano returned origin YYZ, equal to the destination, for pickup 21663 (progress tracker 17:08)",
+  "extraction": {"origin": "YYZ", "pickup_zip": "21663", "destination": "YYZ", "weight_kg": 855, "volume_cbm": 3.74, "pieces": 4, "preference": "cheapest", "ready_date": "2026-11-26", "language": "en", "customer_name": "Sara", "customer_questions": [], "service_constraints": []}
+ }
+}
