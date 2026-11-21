@@ -3,6 +3,9 @@
 Guarantees
 - Each mail is queued durably by exact ID, shared with signed webhook deliveries.
 - The cursor advances only after enqueue commits, independently of agent processing.
+- The poller only enqueues. One consumer (`webhook.run`) processes the queue in mail-id
+  order, so a reply is never handled before its root mail is stored.
+- Carrier bids run in a bounded pool so a slow bid document never stalls intake.
 - An error in one mail is logged (and shown in the UI) and the loop goes on.
 """
 
@@ -11,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from app import db, hackloop
@@ -21,6 +25,8 @@ from app.models import Category, Mail
 log = logging.getLogger(__name__)
 
 POLL_LIMIT = 200
+BID_WORKERS = 4  # carrier bids handled in parallel; the rest wait in the pool's queue
+_bid_pool = ThreadPoolExecutor(max_workers=BID_WORKERS, thread_name_prefix="bid")
 MAX_MAIL_ATTACHMENT_BYTES = 20_000_000
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -227,14 +233,30 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
 
         if booking.on_airline_mail(mail):  # "Booking BK-… confirmed" is not a bid
             return
-        bids.on_bid_mail(mail, session_id)
+        _bid_pool.submit(_bid, bids.on_bid_mail, mail, session_id)
+
+
+def _bid(handler, mail: Mail, session_id: int | None) -> None:
+    """Pool task: a failing bid is logged and shown, never lost silently."""
+    try:
+        handler(mail, session_id)
+    except Exception as exc:
+        log.exception("bid mail %s failed", mail.id)
+        db.emit(
+            "error",
+            f"Gebot {mail.id} nicht verarbeitet: {type(exc).__name__}",
+            session_id,
+            level="error",
+            mail_id=mail.id,
+        )
 
 
 RATE_LIMIT_RETRY_S = 6.0  # just over the mailbox limit of one poll per 5 s
 
 
 def poll_once(since_id: int) -> tuple[int, int]:
-    """One poll call. Returns (new since_id, number of mails in the batch)."""
+    """One poll call: enqueue only, `webhook.run` processes. Returns (new since_id, number of
+    mails in the batch)."""
     from app.mail import webhook
 
     batch = hackloop.poll(since_id, limit=POLL_LIMIT)
@@ -248,10 +270,6 @@ def poll_once(since_id: int) -> tuple[int, int]:
     if next_id is not None and next_id > since_id:
         since_id = next_id
         store.set_since_id(since_id)
-    # Also drain here for poll-only callers; the concurrent worker uses the same atomic claims.
-    for _ in range(POLL_LIMIT):
-        if not webhook.process_once():
-            break
     return since_id, len(messages)
 
 
