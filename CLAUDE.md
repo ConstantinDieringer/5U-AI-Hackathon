@@ -8,6 +8,7 @@ Python 3.11 · FastAPI · SQLite (`sqlite3`, no ORM) · threads · one static HT
 - **Loaded automatically:** this file and the code standards below.
 - **Loaded automatically by path:** `.claude/rules/*.md` pull in the matching `context/areas/*.md` file as soon as you read or edit a file in that area. If it does not appear, read it yourself from the table.
 - **Read only when needed:** `context/progress-tracker.md` when you plan work, need open questions or pending decisions, or update it after a change.
+- **Read when planning or after a pull:** the newest eight files in `context/changes/` (`ls context/changes | sort | tail -8`): recent changes, one file per PR.
 
 | Task touches | Read |
 |---|---|
@@ -36,7 +37,7 @@ Python 3.11 · FastAPI · SQLite (`sqlite3`, no ORM) · threads · one static HT
 
 ## After a change
 
-- One or two lines in `context/progress-tracker.md` (newest first); overflow moves to `context/history/progress-log.md`.
+- Add **one new file** to `context/changes/` for the PR (format in `context/changes/README.md`). Do not edit `context/progress-tracker.md`; only the context owner does.
 - Changed subsystem behavior goes into that `context/areas/*.md` file (replace outdated lines), not the tracker.
 - Budgets are enforced by `tests/test_context_budget.py`.
 

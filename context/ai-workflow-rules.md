@@ -14,7 +14,7 @@ Build incrementally and spec-driven. Implement against the context files; do not
 ## Context Hygiene (keeps every task fast)
 
 - Always-read files have byte budgets in `tests/test_context_budget.py`; a change that exceeds them must move content out, not raise the budget.
-- Progress tracker: current state only, one or two lines per entry, section limits as stated in the file. Overflow moves verbatim to `context/history/progress-log.md`.
+- Progress tracker: current state only, edited by the context owner alone. Every PR records its change as one new file in `context/changes/` (`context/changes/README.md`) and never edits another PR's file.
 - Area files describe current behavior, not how we got there. Replace outdated lines instead of appending; history goes to `context/history/`.
 - Never paste test logs, replay tables or round-by-round narratives into context files; put them in the commit or PR.
 
@@ -28,7 +28,7 @@ Build incrementally and spec-driven. Implement against the context files; do not
 
 - Do not invent product behavior that the context files do not define.
 - Ambiguous requirement: resolve it in the relevant area file before implementing.
-- Missing requirement: add an open question to `progress-tracker.md` before continuing.
+- Missing requirement: add an `Open question:` line to your `context/changes/` file before continuing.
 - Live mail workflows follow the history-first clarification policy in `context/areas/rfq.md`.
 
 ## Verification
@@ -40,4 +40,4 @@ Build incrementally and spec-driven. Implement against the context files; do not
 
 1. The current unit works end to end within its scope.
 2. No rule in `code-standards.md` or the touched area file was violated.
-3. `progress-tracker.md` and the touched area file reflect the completed work.
+3. The PR's `context/changes/` file and the touched area file reflect the completed work.
