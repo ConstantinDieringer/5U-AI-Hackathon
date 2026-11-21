@@ -14,6 +14,7 @@ from typing import Any
 
 from app import db, hackloop
 from app.config import settings
+from app.mail.content import current_message
 from app.mail.language import detect
 from app.mail.router import address
 from app.mail.style import SIGNATURE, amount
@@ -40,20 +41,14 @@ def is_status_question(body: str) -> bool:
 
 def _name_tokens(customer: str) -> set[str]:
     local = address(customer).split("@")[0]
-    return {
-        t
-        for t in re.split(r"[^a-z0-9]+", local.lower())
-        if len(t) >= 4 and t not in _STOP
-    }
+    return {t for t in re.split(r"[^a-z0-9]+", local.lower()) if len(t) >= 4 and t not in _STOP}
 
 
 def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The booking the mail asks about, or None."""
     for m in _BK.finditer(text):
         ref = m.group(0).upper()
-        hit = next(
-            (r for r in records if (r["booking_reference"] or "").upper() == ref), None
-        )
+        hit = next((r for r in records if (r["booking_reference"] or "").upper() == ref), None)
         if hit:
             return hit
     for m in _AP.finditer(text):
@@ -89,9 +84,7 @@ def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     if best[0] < 2:
         return None
     if len(scored) > 1 and scored[1][0] == best[0]:
-        log.info(
-            "tracking: %s bookings match equally, asking for the reference", len(scored)
-        )
+        log.info("tracking: %s bookings match equally, asking for the reference", len(scored))
         return None  # ambiguous: asking beats answering for the wrong shipment
     return best[1]
 
@@ -197,9 +190,7 @@ def _not_found_text(lang: str) -> str:
 
 
 def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None:
-    if session_id is not None and (
-        db.is_paused(session_id) or db.is_manual(session_id)
-    ):
+    if session_id is not None and (db.is_paused(session_id) or db.is_manual(session_id)):
         db.emit(
             db.Ev.WARN,
             "Tracking-Antwort nicht gesendet: Session pausiert/manuell",
@@ -207,11 +198,7 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None
         )
         return
     to = address(mail.sender)
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(to, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -226,9 +213,7 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None
     )
 
 
-def handle(
-    mail: Mail, session_id: int | None, booked_session: int | None = None
-) -> None:
+def handle(mail: Mail, session_id: int | None, booked_session: int | None = None) -> None:
     """Answer one tracking question. `booked_session` is set when a customer asks in the
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:
@@ -239,6 +224,19 @@ def handle(
             rec = next((r for r in records if r["session_id"] == booked_session), None)
         else:
             rec = find(text, records)
+        if (
+            rec is None
+            and session_id is not None
+            and not (_BK.search(text) or _AP.search(text) or _RATE.search(text))
+        ):
+            history = db.customer_mail_history(session_id, mail.sender, mail.id)
+            refs = {
+                match.group(0)
+                for item in history
+                for match in _BK.finditer(current_message(item["body"]).facts)
+            }
+            if len(refs) == 1 and _weight(text) is None and not re.search(r"\b[A-Z]{3}\b", text):
+                rec = find(next(iter(refs)), records)
         if rec is None:
             log.warning("tracking mail %s: no booking matched", mail.id)
             db.emit(
@@ -247,7 +245,18 @@ def handle(
                 session_id,
                 level="warn",
             )
-            _reply(mail, _not_found_text(lang), session_id, "tracking_answer")
+            if session_id is not None and db.get_session(session_id):
+                from app.agents import clarification
+
+                clarification.ask(
+                    mail,
+                    session_id,
+                    "tracking",
+                    "Could you send us the booking reference or our AP reference? We could not identify a unique shipment from this thread and our records.",
+                    "Könnten Sie uns die Buchungsnummer oder unsere AP-Referenz nennen? Aus diesem Verlauf und unseren Unterlagen konnten wir keine eindeutige Sendung zuordnen.",
+                )
+            else:
+                _reply(mail, _not_found_text(lang), session_id, "tracking_answer")
             return
         _reply(mail, answer_text(rec, lang), session_id, "tracking_answer")
         db.emit(

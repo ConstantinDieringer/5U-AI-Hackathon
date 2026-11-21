@@ -465,7 +465,9 @@ function renderDetail() {
   const s = S.detail, notices = [];
   if (s.validation) {
     const v = s.validation, d = v.draft || {};
-    notices.push(el("div", { class: "notice" }, "Eingangsprüfung: " + v.state + " · Rückfrage: " + v.send_state,
+    const states = {awaiting_clarification: "Warte auf ergänzende Angaben", resolving: "Antwort wird geprüft", ready: "Angaben geklärt", manual_review: "Manuelle Prüfung erforderlich", expired: "Ursprüngliche Anfragefrist abgelaufen"};
+    const delivery = v.send_state === "unknown" ? " · Versand der Rückfrage unbestätigt" : v.send_state === "pending" && v.state === "awaiting_clarification" ? " · Rückfrage wartet auf Versand" : "";
+    notices.push(el("div", { class: "notice" }, (states[v.state] || v.state) + delivery,
       ...(d.issues || []).map((i) => el("div", {}, i.field + ": " + (i.detail || i.code))),
       el("details", {}, el("summary", {}, "Geprüfte Angaben und Quellen"), el("pre", { style: "white-space:pre-wrap" }, JSON.stringify({facts:d.facts,evidence:d.evidence},null,2)))));
   }

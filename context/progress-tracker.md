@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- History-first follow-up policy implemented on the existing validation lifecycle: unique same-thread facts can resolve gaps without another mail; incomplete replies trigger targeted follow-ups with cumulative corrections. Durable reply ledger/restart replay, sender checks, booking/tracking questions and default enforce mode added. Original deadlines and human controls retained.
 - RFQ validation: current-message evidence and attachment checks, additive durable clarification state, one automatic question, reply routing before booking, deadline/pause/restart protections; `RFQ_VALIDATION_MODE=shadow` remains the default pending production replay acceptance.
 - RFQ validation verification: 257 tests passed, 1 existing test skipped; relevant Ruff checks pass. Read-only local replay covered 18 sessions but no stored extractions, so no live extraction accuracy claim or production activation. Integrated the latest API-cost/pickup-note changes; enforce never prices an assumed pickup.
 
