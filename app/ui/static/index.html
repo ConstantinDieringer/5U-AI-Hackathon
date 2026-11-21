@@ -484,6 +484,11 @@ function renderDetail() {
     ...notices,
     el("div", { id: "reply", style: "display:none;margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
       el("div", { id: "draft-info", class: "caption", style: "margin-bottom:8px" }),
+      el("label", { class: "caption", for: "reply-mail" }, "Antworten auf"),
+      el("select", { id: "reply-mail", style: "width:100%;margin:6px 0 12px" }, ...s.mails.filter((m) => m.direction === "in").slice().reverse().map((m) => {
+        const label = [m.subject || "Ohne Betreff", m.sender || "unbekannter Absender", time(m.received_at)].join(" · ");
+        return el("option", { value: String(m.id) }, label);
+      })),
       el("textarea", { id: "reply-text", placeholder: "Hallo …" }), el("div", { class: "actions" }, el("button", { class: "btn primary", onclick: sendReply }, icon("send"), "Senden"), el("button", { class: "btn ghost", onclick: () => toggleReply(false) }, "Abbrechen"))));
   const tl = el("ul", { class: "tl", id: "timeline" }); s.events.forEach((e) => tl.append(eventItem(e)));
   const mails = el("div", {}); for (const m of s.mails) mails.append(el("div", { class: "mail " + m.direction },
@@ -531,7 +536,7 @@ async function sendReply() { const text = $("#reply-text").value.trim(); if (!te
   if (!confirm("Antwort jetzt an den Kunden senden? Die Session wird dabei übernommen.")) return;
   // a draft counts as our quote only if the price in the text is still the draft's price
   const quote = DRAFT && text.includes(money(DRAFT.total_minor).replace(" EUR", "").trim()) ? DRAFT : null;
-  try { await post(`/api/sessions/${S.selected}/reply`, { text, quote }); toggleReply(false); DRAFT = null; } catch (e) { alert("Senden fehlgeschlagen: " + e.message); }
+  const mail_id = Number($("#reply-mail").value);\n  try { await post(`/api/sessions/${S.selected}/reply`, { text, quote, mail_id }); toggleReply(false); DRAFT = null; } catch (e) { alert("Senden fehlgeschlagen: " + e.message); }
   await Promise.all([loadDetail(), loadSessions()]); }
 
 // ---------- CRM ----------
