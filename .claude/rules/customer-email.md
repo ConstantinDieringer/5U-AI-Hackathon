@@ -1,6 +1,7 @@
 ---
 paths:
   - "app/mail/outgoing.py"
+  - "app/mail/quote_pdf.py"
   - "app/mail/style.py"
   - "app/mail/subjects.py"
   - "app/mail/language.py"

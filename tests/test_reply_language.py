@@ -189,3 +189,25 @@ def test_setting_off_changes_nothing(
     monkeypatch.setattr(reply_language, "settings", off)
     assert _localize() == (SUBJECT, BODY)
     assert mailbox["calls"] == [] and mailbox["events"] == []
+
+
+def test_chinese_reply_keeps_codes_and_references_glued_to_cjk(mailbox: dict[str, Any]) -> None:
+    """CJK has no word boundaries: "发往LIM" or "号是R-4821" must still count as kept."""
+    mailbox["customer"] = ["您好，请报价从 MUC 到 JFK 的空运，500 公斤。谢谢！"]
+    mailbox["answer"] = _answer(
+        "zh",
+        "您的空运报价 FRA到JFK",
+        "尊敬的 Dupont 女士，\n\n感谢您的询价。我们可以在 2026年11月25日 将您 500 kg 的货物"
+        "从FRA运往JFK。总价为 1240 €，您的参考号是R-4821。\n\n此致\nAustrian Power",
+    )
+    _, body = _localize()
+    assert "感谢您的询价" in body and "R-4821" in body and "1240 €" in body
+
+
+def test_reformatted_euro_amount_sends_original(mailbox: dict[str, Any]) -> None:
+    """Same digits, other meaning: "1,475.50 €" would be misread by a German reader."""
+    body = BODY.replace("1240 €", "1.475,50 €")
+    _, french = ANSWERS["fr"]
+    mailbox["answer"] = _answer("fr", body=french.replace("1240 €", "1,475.50 €"))
+    assert _localize(body) == (SUBJECT, body)
+    assert [level for level, _ in mailbox["events"]] == ["warn"]
