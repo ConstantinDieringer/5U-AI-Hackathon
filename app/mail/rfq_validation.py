@@ -26,29 +26,93 @@ _ALIASES = {
     "CGN": "Cologne|Köln|EDDK",
     "STR": "Stuttgart|EDDS",
 }
+_IATA = re.compile(r"\b[A-Z]{3}\b", re.IGNORECASE)
+_ROUTE = re.compile(r"\b([A-Z]{3})\s*(?:to|nach|[-–—>])\s*([A-Z]{3})\b", re.IGNORECASE)
+_SELF_DELIVERY = re.compile(
+    r"\b(?:deliver|bring|tender|drop\s*off|liefern|bringen|anliefern)\b"
+    r"[^\n.!?]{0,160}\b(?:ourselves|myself|selbst)\b",
+    re.IGNORECASE,
+)
+
+
+def supported_origin_codes(text: str, destination: str | None = None) -> set[str]:
+    """Supported German export airports explicitly present in current customer text."""
+    supported = set(pickup_zones().values())
+    found = {code.upper() for code in _IATA.findall(text) if code.upper() in supported}
+    if destination:
+        found.discard(destination.upper())
+    return found
 
 
 def explicit_delivery_origin(mail, destination):
-    """Recover a single supported self-delivery airport from current words, never history."""
-    active = current_message(mail.body).facts
-    pattern = re.compile(
-        r"\b(?:deliver|bring|tender|liefern|bringen)\b[^\n.!?]{0,120}?"
-        r"\b(?:to|nach|zum)\s+(?:the\s+)?([A-Z]{3})\b"
-        r"[^\n.!?]{0,60}?\b(?:ourselves|myself|selbst)\b",
-        re.IGNORECASE,
-    )
+    """Recover one explicit airport-to-airport origin from the current request, never history.
+
+    The airport code may follow a city name (``Düsseldorf Airport (DUS)``) or live in a
+    route-like subject (``DUS to BOM``); requiring it immediately after ``to`` caused 12867.
+    """
+    current = current_message(mail.body, mail.subject)
+    active = current.facts
+    combined = f"{current.subject}\n{active}"
     supported = set(pickup_zones().values())
-    airports = {
-        code.upper()
-        for match in pattern.finditer(active)
-        for code in re.findall(r"\b[A-Z]{3}\b", match[0], re.IGNORECASE)
-        if code.upper() in supported
+    destination = (destination or "").upper()
+    body_airports = supported_origin_codes(active, destination)
+    if len(body_airports) > 1:
+        return None
+    route_origins = {
+        origin.upper()
+        for origin, target in _ROUTE.findall(combined)
+        if origin.upper() in supported
+        and origin.upper() != destination
+        and (not destination or target.upper() == destination)
     }
-    return (
-        next(iter(airports))
-        if len(airports) == 1 and destination not in airports
-        else None
-    )
+    if len(route_origins) == 1 and (
+        not body_airports or route_origins == body_airports
+    ):
+        return next(iter(route_origins))
+    if not _SELF_DELIVERY.search(active):
+        return None
+    return next(iter(body_airports)) if len(body_airports) == 1 else None
+
+
+def requested_airport_corrections(
+    text: str,
+    asked: set[str],
+    *,
+    origin: str | None = None,
+    destination: str | None = None,
+) -> dict[str, str]:
+    """Read natural airport answers only for fields the customer was asked to clarify."""
+    result: dict[str, str] = {}
+    origin = (origin or "").upper() or None
+    destination = (destination or "").upper() or None
+    routes = [(left.upper(), right.upper()) for left, right in _ROUTE.findall(text)]
+    if "origin" in asked:
+        candidates = supported_origin_codes(text, destination)
+        candidates |= {
+            left
+            for left, right in routes
+            if left in set(pickup_zones().values())
+            and left != destination
+            and (not destination or right == destination)
+        }
+        if len(candidates) == 1:
+            result["origin"] = next(iter(candidates))
+    if "destination" in asked:
+        labelled = re.search(
+            r"\b(?:destination|arrival)(?:\s+airport)?(?:\s+code)?\b"
+            r"[^\n.!?]{0,30}?\b([A-Z]{3})\b",
+            text,
+            re.IGNORECASE,
+        )
+        candidates = {labelled[1].upper()} if labelled else set()
+        candidates |= {right for left, right in routes if not origin or left == origin}
+        if asked == {"destination"} and not candidates:
+            candidates = {code.upper() for code in _IATA.findall(text)}
+            if origin:
+                candidates.discard(origin)
+        if len(candidates) == 1:
+            result["destination"] = next(iter(candidates))
+    return result
 
 
 def numeric_facts(text):

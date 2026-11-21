@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 DEFAULT_MODEL = (
     "gpt-5-nano"  # cheapest allowed model by list price; override with LLM_MODEL
 )
-MAX_CALLS_PER_SESSION = min(2, settings.llm_max_calls_per_session)
+MAX_CALLS_PER_SESSION = min(3, settings.llm_max_calls_per_session)
 PRICES_FILE = Path(__file__).with_name("llm_prices.json")
 
 _client = OpenAI(
@@ -134,7 +134,7 @@ def complete(
     model_name: str | None = None,
 ) -> str:
     """One chat completion through the gateway. Returns the message text and logs the cost.
-    `model_name` overrides LLM_MODEL for this call (the extraction retry uses LLM_RETRY_MODEL)."""
+    `model_name` overrides LLM_MODEL for this call (retry/rescue models are configured)."""
     _reserve(session_id)
     name = model_name or model()
     kw: dict[str, Any] = {

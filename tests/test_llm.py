@@ -53,20 +53,22 @@ def test_configured_call_limit_in_a_session(sent: list[dict[str, Any]]) -> None:
     msg = [{"role": "user", "content": "hi"}]
     llm.complete("extract", msg, session_id=7)
     llm.complete("reply", msg, session_id=7)
+    llm.complete("rescue", msg, session_id=7)
     with pytest.raises(llm.LlmBudgetError):
         llm.complete("again", msg, session_id=7)
-    assert len(sent) == 2
+    assert len(sent) == 3
 
 
 def test_budget_survives_a_restart(
     sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The count lives in the db: a restarted app still refuses call 3."""
+    """The count lives in the db: a restarted app still refuses call 4."""
     import importlib
 
     msg = [{"role": "user", "content": "hi"}]
     llm.complete("extract", msg, session_id=8)
     llm.complete("repair", msg, session_id=8)
+    llm.complete("rescue", msg, session_id=8)
     importlib.reload(llm)  # what a restart of run.py does to module state
     monkeypatch.setattr(  # the reloaded client must not reach the network either
         llm._client.chat.completions, "create", lambda **kw: sent.append(kw)
@@ -76,7 +78,7 @@ def test_budget_survives_a_restart(
             llm.complete("again", msg, session_id=8)
     finally:
         importlib.reload(llm)
-    assert len(sent) == 2
+    assert len(sent) == 3
 
 
 def test_calls_logged_before_the_counter_count(sent: list[dict[str, Any]]) -> None:

@@ -3,22 +3,81 @@
 from __future__ import annotations
 
 import dataclasses
+import json
+import logging
 import re
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
-from app import db, hackloop
+from app import db, hackloop, llm
 from app.config import settings
 from app.mail.content import current_message
 from app.mail.language import detect
-from app.mail.rfq_validation import numeric_facts, validate
+from app.mail.rfq_validation import (
+    numeric_facts,
+    requested_airport_corrections,
+    validate,
+)
 from app.mail.router import address
 from app.mail.style import SIGNATURE
-from app.models import Mail, RfqDraft
+from app.models import Mail, Rfq, RfqDraft
+from app.pricing.reference import pickup_zones
+
+log = logging.getLogger(__name__)
+
+_RESCUE_FIELDS = (
+    "origin",
+    "pickup_zip",
+    "destination",
+    "weight_kg",
+    "volume_cbm",
+    "pieces",
+    "dangerous_goods",
+)
+RESCUE_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "clarification_rescue",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["corrections"],
+            "properties": {
+                "corrections": {
+                    "type": "array",
+                    "maxItems": 7,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["field", "value", "evidence"],
+                        "properties": {
+                            "field": {"type": "string", "enum": list(_RESCUE_FIELDS)},
+                            "value": {"type": "string"},
+                            "evidence": {"type": "string"},
+                        },
+                    },
+                }
+            },
+        },
+    },
+}
+RESCUE_PROMPT = (
+    "You are the final recovery pass for an air-freight clarification. Read the complete "
+    "customer thread. Resolve only fields listed as unresolved, using explicit customer facts "
+    "from this shipment. Newer customer messages override the original request. Never use a "
+    "signature as a pickup location, never guess, and never infer consent. Return only corrections "
+    "that are unambiguous. Each evidence value must be an exact customer quote from the supplied "
+    "thread. Airport values are IATA codes, weights are kg, volumes are cbm, and pickup_zip is five "
+    "digits. Omit a field when the thread does not establish it."
+)
 
 
 def expired(sid):
     session = db.get_session(sid)
-    return not session or datetime.fromisoformat(session["deadline_at"]) <= datetime.now(UTC)
+    return not session or datetime.fromisoformat(
+        session["deadline_at"]
+    ) <= datetime.now(UTC)
 
 
 def text_for(draft, lang):
@@ -56,17 +115,180 @@ def text_for(draft, lang):
     wanted = items[0] if len(items) == 1 else ", ".join(items[:-1]) + joiner + items[-1]
     # one short human paragraph, no bullet list; the labels in brackets stay so the reply
     # can be matched to the field
+    follow_up = int(draft.evidence.get("clarification_round", 0)) > 0
+    example = ""
+    if follow_up and len(fields) == 1:
+        examples = {
+            "origin": " Antworten Sie zum Beispiel mit „Origin: DUS“.",
+            "destination": " Antworten Sie zum Beispiel mit „Destination: BOM“.",
+            "pickup_zip": " Antworten Sie zum Beispiel mit „Pickup ZIP: 12345“.",
+            "weight_kg": " Antworten Sie zum Beispiel mit „Gross weight: 1200 kg“.",
+            "volume_cbm": " Antworten Sie zum Beispiel mit „Volume: 4,2 cbm“.",
+        }
+        examples_en = {
+            "origin": ' For example, reply with "Origin: DUS".',
+            "destination": ' For example, reply with "Destination: BOM".',
+            "pickup_zip": ' For example, reply with "Pickup ZIP: 12345".',
+            "weight_kg": ' For example, reply with "Gross weight: 1200 kg".',
+            "volume_cbm": ' For example, reply with "Volume: 4.2 cbm".',
+        }
+        example = (examples if lang == "de" else examples_en).get(fields[0], "")
     if lang == "de":
         return (
             "Guten Tag,\n\ndanke für Ihre Anfrage. Damit wir Ihnen einen genauen Preis "
             f"nennen können, brauchen wir noch {wanted}. Schicken Sie uns das kurz hier im "
-            f"Thread, dann melden wir uns gleich mit dem Angebot.\n\n{SIGNATURE}\n"
+            f"Thread, dann melden wir uns gleich mit dem Angebot.{example}\n\n{SIGNATURE}\n"
         )
     return (
         "Hello,\n\nthanks for your request. To give you an exact price we just need "
         f"{wanted}. Could you send that over in this thread? We'll come back with the "
-        f"quote right away.\n\n{SIGNATURE}\n"
+        f"quote right away.{example}\n\n{SIGNATURE}\n"
     )
+
+
+def _normal(text: object) -> str:
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _thread_transcript(mail: Mail, sid: int, root: Mail) -> str:
+    rows = list(reversed(db.customer_mail_history(sid, mail.sender, mail.id)))
+    rows.append({"id": mail.id, "subject": mail.subject, "body": mail.body})
+    seen = set()
+    pieces = []
+    for row in rows:
+        mid = int(row["id"])
+        if mid in seen:
+            continue
+        seen.add(mid)
+        current = current_message(
+            str(row.get("body") or ""), str(row.get("subject") or "")
+        )
+        pieces.append(
+            f"CUSTOMER MESSAGE {mid}\nSubject: {current.subject}\n{current.facts}".strip()
+        )
+    if root.id not in seen:
+        current = current_message(root.body, root.subject)
+        pieces.insert(
+            0,
+            f"CUSTOMER MESSAGE {root.id}\nSubject: {current.subject}\n{current.facts}".strip(),
+        )
+    return "\n\n".join(pieces)
+
+
+def _rescue_value(field: str, raw: object) -> str | float | int | None:
+    value = str(raw or "").strip()
+    if field in ("origin", "destination"):
+        code = value.upper()
+        if not re.fullmatch(r"[A-Z]{3}", code):
+            return None
+        if field == "origin" and code not in set(pickup_zones().values()):
+            return None
+        return code
+    if field == "pickup_zip":
+        match = re.fullmatch(r"(?:D-)?(\d{5})", value, re.IGNORECASE)
+        return match[1] if match else None
+    if field == "dangerous_goods":
+        return value if value == "not_dangerous_document_corrected" else None
+    try:
+        number = Decimal(value.replace(" ", "").replace(",", "."))
+    except InvalidOperation:
+        return None
+    if number <= 0:
+        return None
+    if field == "pieces":
+        return int(number) if number == number.to_integral_value() else None
+    return float(number)
+
+
+def rescue_with_model(
+    mail: Mail, sid: int, root: Mail, draft: RfqDraft
+) -> tuple[Rfq | None, RfqDraft]:
+    """Use the stronger model once more, then accept only evidence-bound validated facts."""
+    asked = {issue["field"] for issue in draft.issues}
+    allowed = set(_RESCUE_FIELDS) & asked
+    if "lots" in asked:
+        allowed |= {"weight_kg", "volume_cbm"}
+    if not allowed:
+        return None, draft
+    transcript = _thread_transcript(mail, sid, root)
+    prompt = {
+        "unresolved_fields": sorted(asked),
+        "known_facts": draft.facts,
+        "thread": transcript,
+    }
+    try:
+        raw = llm.complete(
+            "clarification_rescue",
+            [
+                {"role": "system", "content": RESCUE_PROMPT},
+                {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+            ],
+            sid,
+            max_tokens=350,
+            response_format=RESCUE_SCHEMA,
+            model_name=settings.llm_rescue_model,
+        )
+        result = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001 - rescue failure must not stop the workflow
+        log.warning("session %s: clarification rescue failed: %s", sid, exc)
+        db.emit(
+            "validation_rescue_failed",
+            f"Stärkeres Modell konnte nicht auflösen: {type(exc).__name__}",
+            sid,
+            level="warn",
+        )
+        return None, draft
+    corrections = dict(draft.evidence.get("corrections", {}))
+    accepted = []
+    normalized_thread = _normal(transcript)
+    for item in result.get("corrections", []):
+        field = item.get("field")
+        evidence = str(item.get("evidence") or "").strip()
+        if (
+            field not in allowed
+            or not evidence
+            or _normal(evidence) not in normalized_thread
+        ):
+            continue
+        value = _rescue_value(field, item.get("value"))
+        if value is None:
+            continue
+        corrections[field] = value
+        accepted.append({"field": field, "evidence": evidence[:160]})
+    old_texts = draft.evidence.get("attachment_texts", {})
+    remaining = [issue for issue in draft.issues if issue["field"] == "attachments"]
+    rfq, checked = validate(root, draft, old_texts, remaining, corrections=corrections)
+    checked.evidence.update(
+        {
+            "corrections": corrections,
+            "attachment_texts": old_texts,
+            "rescue_model": settings.llm_rescue_model,
+            "rescue_evidence": accepted,
+        }
+    )
+    for key in (
+        "blocking_clarification",
+        "clarification_round",
+        "rescue_before_clarification",
+    ):
+        if key in draft.evidence:
+            checked.evidence[key] = draft.evidence[key]
+    if checked.issues or rfq is None:
+        db.emit(
+            "validation_rescue_unresolved",
+            "Stärkeres Modell geprüft; Angaben weiterhin nicht eindeutig",
+            sid,
+            level="warn",
+        )
+        return None, checked
+    db.emit(
+        "validation_rescued",
+        "Stärkeres Modell hat die Kundenangaben eindeutig aufgelöst",
+        sid,
+        model=settings.llm_rescue_model,
+        fields=[item["field"] for item in accepted],
+    )
+    return rfq, checked
 
 
 def recover_history(mail, sid, draft):
@@ -84,15 +306,14 @@ def recover_history(mail, sid, draft):
     for row in history:
         text = current_message(row["body"]).facts
         facts = {k: float(v) for k, v in numeric_facts(text).items()}
-        for field, label in (
-            ("origin", "origin|departure|abflug"),
-            ("destination", "destination|ziel"),
-        ):
-            match = re.search(
-                rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", text, re.IGNORECASE
+        facts.update(
+            requested_airport_corrections(
+                text,
+                missing,
+                origin=draft.facts.get("origin"),
+                destination=draft.facts.get("destination"),
             )
-            if match:
-                facts[field] = match[1].upper()
+        )
         if match := re.search(
             r"(?:pickup\s*(?:zip|postal code)|abhol.*?plz)\s*[:=]?\s*(\d{5})",
             text,
@@ -139,6 +360,23 @@ def request(mail, sid, draft):
 
             rfq.handle_rfq(root, sid)
             return
+        if not draft.evidence.get("rescue_before_clarification"):
+            draft.evidence["rescue_before_clarification"] = True
+            previous = db.validation_get(sid)
+            root = Mail(**previous["root"]) if previous else mail
+            rescued, draft = rescue_with_model(mail, sid, root, draft)
+            if rescued is not None:
+                db.validation_save(
+                    sid,
+                    "ready",
+                    draft.model_dump(mode="json"),
+                    dataclasses.asdict(root),
+                )
+                db.set_request(sid, rescued.model_dump())
+                from app.agents import rfq
+
+                rfq.handle_rfq(root, sid)
+                return
     db.validation_save(
         sid,
         "awaiting_clarification",
@@ -147,7 +385,8 @@ def request(mail, sid, draft):
     )
     db.emit(
         "validation_blocked",
-        "Rückfrage erforderlich: " + ", ".join(sorted({i["field"] for i in draft.issues})),
+        "Rückfrage erforderlich: "
+        + ", ".join(sorted({i["field"] for i in draft.issues})),
         sid,
         level="warn",
     )
@@ -223,7 +462,9 @@ def handle_reply(mail, sid, *, resume=False):
     ):
         db.validation_save(sid, "manual_review", row["draft"], {})
         return True
-    resuming = resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
+    resuming = (
+        resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
+    )
     if not resuming and not db.clarification_reply_claim(sid, mail.id):
         return True
     draft = RfqDraft.model_validate(row["draft"])
@@ -260,14 +501,14 @@ def handle_reply(mail, sid, *, resume=False):
             )
     if "pickup_zip" in asked and (m := re.search(r"\b(?:D-)?(\d{5})\b", own)):
         corrections["pickup_zip"] = m[1]
-    for field, label in (
-        ("origin", "origin|departure|abflug"),
-        ("destination", "destination|ziel"),
-    ):
-        if field in asked and (
-            m := re.search(rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", own, re.IGNORECASE)
-        ):
-            corrections[field] = m[1].upper()
+    corrections.update(
+        requested_airport_corrections(
+            own,
+            asked,
+            origin=draft.facts.get("origin"),
+            destination=draft.facts.get("destination"),
+        )
+    )
     if (
         "dangerous_goods" in asked
         and re.search(r"non-dangerous|not dangerous|kein gefahrgut", own, re.IGNORECASE)
@@ -296,9 +537,25 @@ def handle_reply(mail, sid, *, resume=False):
         **corrections,
     }
     checked.evidence["attachment_texts"] = old_texts
-    if draft.evidence.get("blocking_clarification"):
-        checked.evidence["blocking_clarification"] = True
+    for key in (
+        "blocking_clarification",
+        "clarification_round",
+        "rescue_before_clarification",
+    ):
+        if key in draft.evidence:
+            checked.evidence[key] = draft.evidence[key]
     if checked.issues or rfq is None:
+        rescued, checked = rescue_with_model(mail, sid, root, checked)
+        if rescued is not None:
+            db.validation_save(sid, "ready", checked.model_dump(mode="json"), {})
+            db.set_request(sid, rescued.model_dump())
+            from app.agents import rfq as agent
+
+            agent.handle_rfq(root, sid)
+            return True
+        checked.evidence["clarification_round"] = (
+            int(draft.evidence.get("clarification_round", 0)) + 1
+        )
         db.clarification_reopen(sid, checked.model_dump(mode="json"))
         request(mail, sid, checked)
         return True
@@ -367,7 +624,10 @@ def run(stop):
                 handle_reply(_stored_mail(saved), saved["session_id"])
             for item in db.validation_pending():
                 row = db.validation_get(item["session_id"])
-                if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
+                if (
+                    row["state"] == "awaiting_clarification"
+                    and row["send_state"] == "pending"
+                ):
                     request(
                         Mail(**row["root"]),
                         item["session_id"],

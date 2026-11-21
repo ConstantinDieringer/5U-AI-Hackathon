@@ -1,6 +1,7 @@
 """RFQ inputs, durable clarification lifecycle and existing quote/booking boundaries."""
 
 import dataclasses
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -21,6 +22,11 @@ def isolated(tmp_path, monkeypatch):
         dataclasses.replace(rfq.settings, rfq_validation_mode="enforce"),
     )
     monkeypatch.setattr(clarification, "settings", rfq.settings)
+    monkeypatch.setattr(
+        clarification.llm,
+        "complete",
+        lambda *args, **kwargs: json.dumps({"corrections": []}),
+    )
 
 
 def mail(body, mid=3627):
