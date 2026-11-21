@@ -466,7 +466,9 @@ def test_portal_response_price_change_asks_customer_with_new_total_and_alternati
     booking.handle_reply(_yes(13403), 13096)
     body = api.sent[-1]["body"]
     # new all-in = 4,128.50 + (4,069.12 - 3,699.20) = 4,498.42; Nova all-in 3,710 + 429.30
-    assert "4.498,42 €" in body and "4.128,50 €" in body and "booked" not in body.lower()
+    assert "4.498,42 €" in body and "4.128,50 €" in body
+    assert "your shipment is booked." not in body.lower()
+    assert "Once your shipment is booked," in body
     assert "Nova Air" in body and "4.139,30 €" in body and "Solace" not in body
     assert "(" not in body and " - " not in body and "—" not in body
     b = db.get_session(13096)["bookings"][0]
@@ -487,12 +489,8 @@ def test_same_price_in_airline_mail_confirms_quoted_total(monkeypatch) -> None:
     api = _round49(monkeypatch, wait_s=30)
     booking.handle_reply(_yes(13403), 13096)
     _airline_confirms("3,699.20")
-    _wait_for(
-        lambda: (
-            len(api.sent) == 1
-            and db.get_session(13096)["bookings"][0]["customer_state"] == "confirmed_sent"
-        )
-    )
+    _wait_for(lambda: db.get_session(13096)["bookings"][0]["customer_state"] == "confirmed_sent")
+    assert len(api.sent) == 1
     assert "4.128,50 €" in api.sent[0]["body"] and "BK-WQW57T0G" in api.sent[0]["body"]
     assert db.get_session(13096)["bookings"][0]["customer_state"] == "confirmed_sent"
 

@@ -71,15 +71,29 @@ def test_fallback_and_actual_customer_wire_preserve_language(lang, month, monkey
         return sent[-1]
 
     monkeypatch.setattr(hackloop, "send", send)
+    db.ingest_mail(
+        mail_id=123,
+        sender="customer@hackloop.mail",
+        recipient="team@hackloop.mail",
+        subject="Request",
+        body=body,
+        category="rfq",
+    )
+    db.set_request(123, request(lang).model_dump())
     hackloop.send_customer(
         "customer@hackloop.mail",
         shipment_subject("DUS", "SYD", lang, ""),
         body,
         in_reply_to=123,
+        session_id=123,
         review=False,
     )
     assert sent[0]["in_reply_to"] == 123
     assert detect(sent[0]["body"].replace(SIGNATURE, "")) == lang
+    from app.mail.tracking_notice import NOTICES
+
+    assert NOTICES[(lang, False)] in sent[0]["body"]
+    assert NOTICES[("en", False)] not in sent[0]["body"]
 
 
 @pytest.mark.parametrize("lang", ["fr", "es", "it"])

@@ -57,6 +57,8 @@ class Settings:
     thread_rescue_enabled: bool
     thread_rescue_max_calls: int
     thread_rescue_after_s: float
+    thread_rescue_max_age_s: float
+    thread_rescue_max_parallel: int
     llm_compose_model: str
     llm_review_model: str
     email_review_enabled: bool
@@ -117,6 +119,7 @@ class Settings:
     followup_max: int
     followup_window_s: float
     followup_check_every_s: float
+    tracking_notice_check_every_s: float
     prebook_answer: bool
     phishing_gate_mode: str
     phishing_gate_llm_mode: str
@@ -128,7 +131,8 @@ class Settings:
     outbound_burst_s: float
     outbound_session_max: int
     outbound_duplicate_s: float
-    llm_audio_model: str
+    speech_model: str
+    speech_model_dir: str
     llm_vision_model: str
     attachment_transcription: bool
     link_fetch: bool
@@ -152,6 +156,10 @@ settings = Settings(
     thread_rescue_enabled=_env("THREAD_RESCUE_ENABLED", "true").lower() == "true",
     thread_rescue_max_calls=max(1, int(_env("THREAD_RESCUE_MAX_CALLS", "6"))),
     thread_rescue_after_s=max(10.0, float(_env("THREAD_RESCUE_AFTER_S", "45"))),
+    # only fresh customer input: older threads are history, not a live workflow (a restart
+    # woke ~40 hours-old threads at once, sent mails into them and hit gateway 429s)
+    thread_rescue_max_age_s=max(60.0, float(_env("THREAD_RESCUE_MAX_AGE_S", "600"))),
+    thread_rescue_max_parallel=max(1, int(_env("THREAD_RESCUE_MAX_PARALLEL", "2"))),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",
@@ -243,6 +251,7 @@ settings = Settings(
     followup_max=max(0, int(_env("FOLLOWUP_MAX", "3"))),
     followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
     followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "2"))),
+    tracking_notice_check_every_s=max(5.0, float(_env("TRACKING_NOTICE_CHECK_EVERY_S", "30"))),
     # customer answers our quote with questions: answer them from the stored quote and ask
     # for the go-ahead (app/agents/prebook.py); false = today's generic clarification
     prebook_answer=_env("PREBOOK_ANSWER", "false").lower() in ("1", "true", "yes", "on"),
@@ -259,9 +268,10 @@ settings = Settings(
     outbound_burst_s=float(_env("OUTBOUND_BURST_S", "120")),
     outbound_session_max=max(1, int(_env("OUTBOUND_SESSION_MAX", "15"))),  # per thread
     outbound_duplicate_s=float(_env("OUTBOUND_DUPLICATE_S", "1800")),  # same text again
-    # voice messages (mp3/wav) are read by an audio model via chat completions (input_audio);
-    # scanned pages and photos by a vision model (empty = LLM_MODEL)
-    llm_audio_model=_env("LLM_AUDIO_MODEL", "gpt-4o-mini-audio-preview"),
+    # voice messages are transcribed locally (app/mail/speech.py): the gateway refuses audio.
+    # Scanned pages and photos go to a vision model via the gateway (empty = LLM_MODEL)
+    speech_model=_env("SPEECH_MODEL", "base.en"),
+    speech_model_dir=_env("SPEECH_MODEL_DIR"),  # Docker bakes the model into /opt/whisper
     llm_vision_model=_env("LLM_VISION_MODEL"),
     # false = never spend gateway calls on audio/scan attachments (text files still read)
     attachment_transcription=_env("ATTACHMENT_TRANSCRIPTION", "true").lower() != "false",
