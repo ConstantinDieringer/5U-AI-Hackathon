@@ -108,6 +108,7 @@ class Settings:
     followup_max: int
     followup_window_s: float
     followup_check_every_s: float
+    prebook_answer: bool
     phishing_gate_mode: str
     phishing_gate_llm_mode: str
     phishing_gate_model: str
@@ -227,6 +228,9 @@ settings = Settings(
     followup_max=max(0, int(_env("FOLLOWUP_MAX", "3"))),
     followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
     followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "2"))),
+    # customer answers our quote with questions: answer them from the stored quote and ask
+    # for the go-ahead (app/agents/prebook.py); false = today's generic clarification
+    prebook_answer=_env("PREBOOK_ANSWER", "false").lower() in ("1", "true", "yes", "on"),
     # phishing gate: off | shadow (classify and log, block nothing) | enforce
     phishing_gate_mode=_env("PHISHING_GATE_MODE", "enforce").lower(),
     # what an LLM-only verdict may do; it never does more than PHISHING_GATE_MODE allows

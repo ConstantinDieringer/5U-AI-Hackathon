@@ -287,6 +287,20 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   die Freigabe selbst und gilt pro Satz; separate Sachfragen ersetzen keine Freigabe.
   Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
   dieselbe Prüfung gilt bei Annahme eines geänderten Buchungspreises.
+- Vorabfragen beantworten (`PREBOOK_ANSWER`, Standard `false`, `app/agents/prebook.py`):
+  `booking.classify_reply` (Regeln, kein LLM) unterscheidet yes/no/question/deferral/unclear;
+  nur „yes“ (unverändert `is_acceptance`) bucht. Eine Antwort auf das Angebot, deren
+  Fragesätze alle ein bekanntes Thema nennen (schnellste/günstigste Option, Abflug/Ankunft,
+  Laufzeit, Airline, Abholung, Gültigkeit, Preisumfang, Annahmeschluss, Routing), wird aus
+  dem gespeicherten ersten Angebot beantwortet: Fahrplan über `rfq.schedule` zum Angebotstag,
+  Alternativen des Angebots, Trucker-Vorlauf aus `pricing_audit`. Kein zweites Angebot, kein
+  anderer Preis; Gesamtpreis höchstens einmal, sonst kein Betrag; fehlende Fakten werden zur
+  Buchung zugesagt, nie erfunden. Andere Flughäfen/PLZ/Abholdaten, nicht zuordenbare Fragen
+  und eine bessere Option auf dem angefragten Kriterium bleiben im heutigen Rückfrageablauf.
+  Versand über `send_customer` ohne LLM-Review (`review=False`), Kategorie `prebook_answer`,
+  zählt mit den Follow-ups gegen `FOLLOWUP_MAX`, mindestens 10 s Abstand zur letzten eigenen
+  Mail; Pause/Handbetrieb/Quarantäne senden nichts. Nach einer solchen Antwort bucht ein „Ja“
+  mit Wunsch nach einer anderen Option („the faster one instead“) nicht.
 
 - Dedizierter Stilagent `app/agents/email_review.py` auf Nutzerwunsch standardmäßig aus: `EMAIL_REVIEW_ENABLED=false`. Kein zusätzlicher Stil-Review-LLM-Aufruf; deterministische Darstellung und finale Versandprüfung bleiben aktiv. Optionaler expliziter Opt-in mit `LLM_REVIEW_MODEL=gpt-5`: genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens, ohne Versand oder Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen bleiben geschützt; Fehler/Budgetende behält den geprüften Entwurf. Pause/Handbetrieb und Quote-Deadline werden unmittelbar vor dem Versand geprüft.
 
