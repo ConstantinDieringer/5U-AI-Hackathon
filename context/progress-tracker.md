@@ -20,8 +20,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## In Progress
 
-- Task C (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), implementation starting with C1 `db.py`.
-- Tasks A (mail poller, router) and B (portal sync, lane index): status unknown in repo, no code pushed yet.
+- Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), implementation starting with C1 `db.py`.
+- Tasks A, Karim (mail poller, router) and B, Constantin (portal sync, lane index): status unknown in repo, no code pushed yet.
 
 ## Next Up
 
@@ -47,7 +47,7 @@ Goal: the first accepted quote end to end before any polish.
 ## Open Questions
 
 1. ~~Architecture and stack~~ → decided (`architecture-context.md`). Still open: where the system runs overnight.
-2. Team members and owners: task C taken; owners of A and B still to be named here.
+2. ~~Team members and owners~~ → A (mail, router, RFQ agent): Karim · B (pricing, tariffs, portal): Constantin · C (CRM, sessions UI, tracking): Moritz.
 3. Scoring weights: the brief says 45/40/15 and the kickoff deck says 55/30/15. We use the brief's until 5U confirms.
 4. First request arrives 16:00 (kit card). Still open: deadline, start of hourly changes, pitch slot.
 5. Has our OpenAI key been posted to the gateway? Which models does `/v1/gateway/models` allow, and at what cost?
