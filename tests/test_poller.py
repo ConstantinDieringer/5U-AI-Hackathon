@@ -195,3 +195,54 @@ def test_bid_runs_in_pool_and_a_failure_is_reported(tmp_path: Path, monkeypatch)
             break
         threading.Event().wait(0.02)
     assert errors and "901" in errors[0]["message"]
+def _now_mail(mid: int, **kw: Any) -> dict[str, Any]:
+    from datetime import UTC, datetime
+
+    return real_mail(mid, received_at=datetime.now(UTC).isoformat(timespec="seconds"), **kw)
+
+
+def test_parent_comes_from_our_db_without_an_api_call(box: FakeMailbox) -> None:
+    """Our bid request is stored without a sender; the mailbox API would answer 404."""
+    db.record_outgoing(
+        mail_id=950,
+        recipient="kestrel-airways@hackloop.mail",
+        subject="Rate request [AP-1]",
+        body="...",
+        category="bid_request",
+    )
+    parent = poller._parent(950)
+    assert parent is not None and parent.id == 950
+    assert parent.sender == poller.settings.team_mailbox
+    assert parent.to == "kestrel-airways@hackloop.mail"
+    assert poller._parent(951) is None  # unknown here and at the API (404)
+
+
+def test_headerless_re_reply_joins_the_open_session(box: FakeMailbox) -> None:
+    customer = "anna@acme.hackloop.mail"
+    box.mails = [
+        _now_mail(810, sender=customer, subject="Air freight MUC-LAX"),
+        _now_mail(811, sender=customer, subject="Re: Air freight MUC-LAX", in_reply_to=None),
+        _now_mail(812, sender=customer, subject="Air freight MUC-LAX"),  # no Re: = new request
+    ]
+    poll(0)
+    assert box.dispatched == [
+        (810, Category.RFQ),
+        (811, Category.CUSTOMER),
+        (812, Category.RFQ),
+    ]
+    assert _session_of(811) == 810 and _session_of(812) == 812
+
+
+def test_reply_with_unknown_ancestors_opens_no_session_and_needs_a_person(
+    box: FakeMailbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(poller.screening, "screen", lambda mail, category: None)  # no LLM
+    box.mails = [
+        _now_mail(820, sender="anna@acme.hackloop.mail", in_reply_to=777, references=[777]),
+    ]
+    poll(0)
+    assert _session_of(820) is None
+    assert db.get_session(820) is None  # no orphan session
+    items = [i for i in db.attention_items() if i["kind"] == db.ORPHAN_REPLY]
+    assert [i["mail_id"] for i in items] == [820]
+    assert any(e["kind"] == db.ORPHAN_REPLY for e in db.events_after(0))

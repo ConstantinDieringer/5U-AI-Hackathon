@@ -19,7 +19,7 @@ API fields: `context/docs/mail-format.md`, `context/docs/5u-api.md`.
 
 ## Rules
 
-- **Session = one customer-started thread.** Mails map to sessions via known mail IDs in `references`; ratedesk replies are not threaded and fall back to subject matching. Every outgoing mail is stored with `db.record_outgoing()`.
+- **Session = one customer-started thread.** Mails map to sessions via known mail IDs in `references`; ratedesk replies are not threaded and fall back to subject matching. A header-less customer mail with a reply prefix (`Re:`/`AW:`) and the subject of an open session of the same sender (last 2 h) joins that session. A customer reply whose ancestors we do not know opens **no** session: it is stored unassigned as an `orphan_reply` error and listed in "Zu tun". The poller reads the parent mail from our DB before the mailbox API. Every outgoing mail is stored with `db.record_outgoing()`.
 - **Ingress:** webhook and fallback polling only persist into `mail_delivery` (webhook acks within 5 s), deduplicated by exact ID. **One consumer** (`webhook.run`) processes the queue in mail-id order, so a reply never runs before its root is stored. Carrier bids run in a bounded pool (`poller.BID_WORKERS`). Pending work resumes after restart; ambiguous dispatches become `unknown` with a warning. Only polling advances its cursor. Never rotate the signing secret on startup (`python -m app.mail.webhook_admin`).
 - **Polling limit:** one poll per 5 s per team key. Nobody polls the mailbox with the team key except the live system; a 429 keeps the server's wait and never doubles.
 - **Unknown sender in a new thread = RFQ.** Mail that 5U's agents did not start is ignored.
