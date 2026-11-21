@@ -13,6 +13,7 @@
    "preference": "fastest"
   },
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -54,6 +55,7 @@
    "preference": "fastest"
   },
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -96,6 +98,7 @@
    "preference": "fastest"
   },
   "airline": "Fjordline Air Cargo",
+  "trucker": null,
   "source": "portal",
   "route": "DUS-JFK",
   "transit_days": 3,
@@ -130,6 +133,7 @@
    "preference": "cheapest"
   },
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -171,6 +175,7 @@
    "preference": "fastest"
   },
   "airline": "Fjordline Air Cargo",
+  "trucker": null,
   "source": "portal",
   "route": "STR-EZE",
   "transit_days": 4,
@@ -203,6 +208,7 @@
    "preference": "cheapest"
   },
   "airline": "Fjordline Air Cargo",
+  "trucker": null,
   "source": "portal",
   "route": "DUS-KUL",
   "transit_days": 5,
@@ -232,6 +238,7 @@
    "preference": "fastest"
   },
   "airline": "Fjordline Air Cargo",
+  "trucker": null,
   "source": "portal",
   "route": "MUC-LAX",
   "transit_days": 3,
@@ -262,6 +269,7 @@
    "preference": "cheapest"
   },
   "airline": "Borealis Freight Airways",
+  "trucker": null,
   "source": "portal",
   "route": "MUC-CAI",
   "transit_days": 4,
@@ -290,6 +298,7 @@
    "preference": "cheapest"
   },
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -327,6 +336,7 @@
    "preference": "cheapest"
   },
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -366,6 +376,7 @@
    "preference": "cheapest"
   },
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -403,6 +414,7 @@
    "preference": "cheapest"
   },
   "airline": "Wayzata Air Cargo",
+  "trucker": null,
   "source": "sheet",
   "route": "FRA-DOH",
   "transit_days": 1,
@@ -429,6 +441,7 @@
    "preference": "cheapest"
   },
   "airline": "Borealis Freight Airways",
+  "trucker": "Hansekogge Trucking",
   "source": "portal",
   "route": "HAM-DEL",
   "transit_days": 5,
@@ -461,6 +474,7 @@
    "preference": "cheapest"
   },
   "airline": "Gannet Airways",
+  "trucker": "Westfalenroute",
   "source": "portal",
   "route": "DUS-PEK",
   "transit_days": 5,
@@ -485,6 +499,7 @@
   "status": "pricing",
   "request": null,
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -510,6 +525,7 @@
   "status": "pricing",
   "request": null,
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -534,6 +550,7 @@
   "status": "pricing",
   "request": null,
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -558,6 +575,7 @@
   "status": "pricing",
   "request": null,
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -582,6 +600,7 @@
   "status": "pricing",
   "request": null,
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -606,6 +625,7 @@
   "status": "pricing",
   "request": null,
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -637,6 +657,7 @@
    "preference": "fastest"
   },
   "airline": "Meridian Freightways",
+  "trucker": "Spessart Spedition",
   "source": "portal",
   "route": "HAM-EZE",
   "transit_days": 3,
@@ -670,6 +691,7 @@
    "preference": "fastest"
   },
   "airline": "Juniper Cargo Lines",
+  "trucker": "Ruhrpott Express",
   "source": "portal",
   "route": "CGN-SGN",
   "transit_days": 2,
@@ -704,6 +726,7 @@
    "preference": "cheapest"
   },
   "airline": "Meridian Freightways",
+  "trucker": null,
   "source": "portal",
   "route": "FRA-DEL",
   "transit_days": 4,
@@ -730,6 +753,7 @@
    "preference": "fastest"
   },
   "airline": "Riverbend Airlines Cargo",
+  "trucker": "Ruhrpott Express",
   "source": "portal",
   "route": "DUS-ATL",
   "transit_days": 2,
@@ -760,6 +784,7 @@
    "preference": "fastest"
   },
   "airline": "Fjordline Air Cargo",
+  "trucker": "Isarwelle Spedition",
   "source": "portal",
   "route": "STR-EZE",
   "transit_days": 4,
@@ -791,6 +816,7 @@
    "preference": "fastest"
   },
   "airline": "Nova Atlas Cargo",
+  "trucker": "Kranich Kurier",
   "source": "portal",
   "route": "MUC-BKK",
   "transit_days": 2,
@@ -823,6 +849,7 @@
    "preference": "fastest"
   },
   "airline": "Meridian Freightways",
+  "trucker": "Hansekogge Trucking",
   "source": "bid",
   "route": "HAM-EZE",
   "transit_days": 3,
@@ -851,6 +878,7 @@
   "status": "pricing",
   "request": null,
   "airline": null,
+  "trucker": null,
   "source": null,
   "route": null,
   "transit_days": null,
@@ -883,6 +911,7 @@
    "preference": "cheapest"
   },
   "airline": "Nova Atlas Cargo",
+  "trucker": "Westfalenroute",
   "source": "bid",
   "route": "FRA-PVG",
   "transit_days": 4,
@@ -916,6 +945,7 @@
    "preference": "fastest"
   },
   "airline": "Meridian Freightways",
+  "trucker": null,
   "source": "portal",
   "route": "MUC-PVG",
   "transit_days": 3,
@@ -942,6 +972,7 @@
    "preference": "cheapest"
   },
   "airline": "Ibisair Cargo",
+  "trucker": "Hansekogge Trucking",
   "source": "portal",
   "route": "STR-BOM",
   "transit_days": 6,

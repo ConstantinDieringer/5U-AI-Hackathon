@@ -120,3 +120,32 @@ def test_round_28_with_self_delivery_recovery_quotes_the_portal_price(
         39045,
         0,
     )
+
+
+def test_trucker_balance_evidence(corpus, results, tmp_path, monkeypatch) -> None:
+    """TRUCKER_BALANCE (default minmax) on every door-to-port round. Where ratio picks another
+    trucker, the board accuracy of the minmax quote fits 45 - 4.5 points per % deviation from
+    the ratio total (rounds 21, 22, 25, 26); round 31 has no accuracy yet. Evidence for the
+    PR's recommendation; the default stays unchanged."""
+    import dataclasses
+
+    from app import config
+    from app.agents import rfq
+
+    ratio = dataclasses.replace(config.settings, trucker_balance="ratio")
+    monkeypatch.setattr(config, "settings", ratio)
+    monkeypatch.setattr(rfq, "settings", ratio)
+    cases = {c["round_no"]: c for c in corpus["cases"]}
+    moved = {}
+    for round_no, today in results.items():
+        if not today["trucker"]:
+            continue
+        got = rfq_replay.replay_case(cases[round_no], tmp_path, corpus["lane_observations"])
+        if got["trucker"] != today["trucker"]:
+            moved[round_no] = (today["total_minor"], got["total_minor"])
+    assert sorted(moved) == [21, 22, 25, 26, 31]
+    for round_no, (minmax_total, ratio_total) in moved.items():
+        board = cases[round_no]["board"]["accuracy"]
+        if board is not None:
+            predicted = 45 - 4.5 * 100 * abs(minmax_total - ratio_total) / ratio_total
+            assert abs(predicted - board) < 0.05, (round_no, predicted, board)

@@ -444,6 +444,14 @@ def _result(sid: int, run: _Run) -> dict[str, Any]:
             if e.get("level") in ("warn", "error")
         }
     )
+    trucker = next(
+        (
+            a["trucker"]
+            for a in (quote or {}).get("alternatives") or []
+            if isinstance(a, dict) and a.get("trucker")
+        ),
+        None,
+    )
     request = None
     if session.get("request"):
         stored = session["request"]
@@ -464,6 +472,7 @@ def _result(sid: int, run: _Run) -> dict[str, Any]:
         "status": session.get("status"),
         "request": request,
         "airline": quote["airline"] if quote else None,
+        "trucker": trucker,
         "source": quote["source"] if quote else None,
         "route": f"{quote['origin']}-{quote['destination']}" if quote else None,
         "transit_days": quote["transit_days"] if quote else None,
@@ -499,6 +508,7 @@ _COMPARED = (
     "outcome",
     "request",
     "airline",
+    "trucker",
     "source",
     "route",
     "transit_days",
