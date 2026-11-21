@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 48 expired after two origin questions despite explicit DUS answers. Origin clarification now reuses the existing negation/ambiguity-aware free-text parser independently of optional recovery/one-question flags. No question-cap, pricing or deployment setting changes; initial extraction/runtime state remain unverified.
+
 - Round 45 accepted/booked but customer quote leaked `road_transit`. Shared voice profile now translates timing labels into ordinary language; composer validation rejects internal timing enums/field names and uses its existing repair/fallback. No timing, selection or price changes; production SHA unverified.
 
 - 50/50 balance now `ratio` by default for trucker AND airline bids (`pricing.most_balanced`, `TRUCKER_BALANCE=minmax` restores the old rule). Min-max tied every 2-bid case 0.5/0.5 and the cheaper bid won the tie. Replay moves rounds 21/22/25/26/31 (trucker only, no air choice changes); 21–26 scored 28–38 accuracy and would hit the board's best price (+56.8). Not verified live; Railway variable must not pin minmax.

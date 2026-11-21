@@ -122,6 +122,12 @@ def free_text_answer(text, asked, destination):
     for clause in re.split(r"[.!?;\n]", body):
         if _NEGATION.search(clause):
             continue
+        if re.search(
+            r"\b(?:last time|previously|used to|usually|normally|letztes mal|früher|normalerweise)\b",
+            clause,
+            re.IGNORECASE,
+        ):
+            continue  # historical/usual airports do not answer the current shipment question
         codes |= {c for c in re.findall(r"\b[A-Z]{3}\b", clause) if c in supported}
         cities |= {
             code

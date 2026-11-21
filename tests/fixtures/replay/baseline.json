@@ -874,28 +874,32 @@
  {
   "session_id": 7237,
   "round_no": 28,
-  "outcome": "clarification",
-  "status": "pricing",
-  "request": null,
-  "airline": null,
+  "outcome": "quoted",
+  "status": "quoted",
+  "request": {
+   "airport": "CGN",
+   "destination": "DFW",
+   "pickup_zip": null,
+   "weight_kg": 85.0,
+   "volume_cbm": 0.7,
+   "preference": "cheapest"
+  },
+  "airline": "Ultraviolet Air Freight",
   "trucker": null,
-  "source": null,
-  "route": null,
-  "transit_days": null,
-  "total_minor": null,
+  "source": "portal",
+  "route": "CGN-DFW",
+  "transit_days": 4,
+  "total_minor": 39045,
   "carriers_asked": [],
-  "clarifications_sent": 2,
-  "open_issues": [
-   "origin"
-  ],
+  "clarifications_sent": 1,
+  "open_issues": [],
   "warnings": [
-   "clarification_loop",
    "validation_blocked",
    "validation_result"
   ],
   "notes": [],
   "network_blocked": 0,
-  "quote_body": null
+  "quote_body": "Hi Klaus,\n\nthank you for reaching out, here is our offer.\n\nAir freight CGN to DFW: 390,45 € all-in.\nIt flies with Ultraviolet Air Freight, transit time 4 days from departure.\nEarliest departure from CGN is 27 Nov 2026, arriving in DFW on 1 Dec 2026.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
  },
  {
   "session_id": 7448,

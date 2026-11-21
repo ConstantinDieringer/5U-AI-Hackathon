@@ -132,12 +132,13 @@ def _quote(sid: int = 7237) -> dict | None:
     return quotes[0] if quotes else None
 
 
-def test_today_asks_again_after_a_free_text_answer(thread) -> None:
+def test_origin_answer_resolves_even_without_one_question_mode(thread) -> None:
     configure, start, answer, questions, _ = thread
     configure(False)
     start()
     answer(ANSWERS[0])
-    assert len(questions()) == 2 and _quote() is None
+    assert len(questions()) == 1
+    assert _quote()["total_minor"] == 39045
 
 
 @pytest.mark.parametrize("reply", ANSWERS)

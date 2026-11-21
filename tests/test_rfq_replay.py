@@ -94,12 +94,11 @@ def test_replay_cleanup_also_releases_database_on_failure(tmp_path, monkeypatch)
 
 
 def test_replayed_answers_reach_the_clarification(results) -> None:
-    """Round 28 under today's rules: the four stored answers arrive after our question (the
-    reply ledger drops older ids), none names the origin as "origin: XXX", and the second
-    question hits today's cap of two, as live (production sent four before the cap)."""
+    """Round 28's first explicit airport answer now resolves without optional flags."""
     got = results[28]
-    assert got["outcome"] == "clarification" and got["open_issues"] == ["origin"]
-    assert got["clarifications_sent"] == 2 and "clarification_loop" in got["warnings"]
+    assert got["outcome"] == "quoted" and got["open_issues"] == []
+    assert got["clarifications_sent"] == 1
+    assert got["airline"] == "Ultraviolet Air Freight" and got["total_minor"] == 39045
 
 
 def test_round_28_with_self_delivery_recovery_quotes_the_portal_price(

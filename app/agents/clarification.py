@@ -350,6 +350,10 @@ def handle_reply(mail, sid, *, resume=False):
         # free text: "CGN", "Cologne", a ZIP, "gross weight is 85 kg" (round 28's four answers)
         found = free_text_answer(own, asked, draft.facts.get("destination"))
         corrections.update({k: v for k, v in found.items() if k not in corrections})
+    if "origin" in asked and "origin" not in corrections:
+        # Direct answers work independently of optional recovery/one-question modes.
+        found = free_text_answer(own, {"origin"}, draft.facts.get("destination"))
+        corrections.update(found)
     if "origin" in asked and "origin" not in corrections and settings.self_delivery_recovery:
         # "we'll drop it off at CGN ourselves", "quote it from CGN to DFW" (round 28)
         stated = explicit_delivery_origin(mail, draft.facts.get("destination"))
