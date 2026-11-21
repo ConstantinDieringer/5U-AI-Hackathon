@@ -108,6 +108,9 @@ _WORDS: dict[str, frozenset[str]] = {
             "bonjour",
             "pouvez",
             "cordialement",
+            "oui",
+            "allez",
+            "réservez",
         ]
     ),
     "es": frozenset(
@@ -130,6 +133,9 @@ _WORDS: dict[str, frozenset[str]] = {
             "hola",
             "podría",
             "saludos",
+            "sí",
+            "adelante",
+            "reserven",
         ]
     ),
     "it": frozenset(
@@ -152,6 +158,9 @@ _WORDS: dict[str, frozenset[str]] = {
             "potreste",
             "cordiali",
             "saluti",
+            "sì",
+            "procedete",
+            "prenotate",
         ]
     ),
 }

@@ -13,6 +13,7 @@ Current state only: one or two lines per entry, newest first. Subsystem behavior
 
 ## Recent Changes (max 8)
 
+- Never silent (R60, R63-65, R70): unreadable bids get one checked model reading (`BID_LLM_FALLBACK`), missing trucker bids an estimate from earlier zone bids (`ESTIMATE_MISSING_TRUCK`), undecided booking replies a checked second opinion (`CONSENT_LLM_CHECK`), short replies keep the customer's language. All default on. 1360 passed/5 skipped; not live.
 - Round 70: "we won't go ahead" booked. Explicit negated booking intent (incl. contractions, curly apostrophes) now overrides positive verbs; no booking or price-change approval from it.
 - Round 70: French RFQ got an English reply. Request language (ISO code) now reaches composer/repair; FR/ES/IT fallbacks, months, subjects and tracking notices keep the language; unsupported fallback languages fail visibly.
 - Reply in the customer's language: fr/es/it replies translated by one checked gateway call in `hackloop.send_customer`, English fallback plus warn event (`REPLY_IN_CUSTOMER_LANGUAGE`). 1291 passed/5 skipped.
@@ -20,12 +21,11 @@ Current state only: one or two lines per entry, newest first. Subsystem behavior
 - Context system: lean always-read core, per-area files in `context/areas/`, history archived in `context/history/`, size budgets tested.
 - Required tracking paragraph in every RFQ customer send, plus a 30 s repair worker. 1261 passed/5 skipped; rollout pending.
 - Thread rescue limited to input younger than 600 s and two parallel owners (was waking 40 h old threads on restart). Offline tests only.
-- Clarification cap counted per workflow instead of per thread. Offline tests only.
 
 ## Pending Decisions and Rollouts (max 10)
 
 - Flags built and tested but off by default, awaiting a team decision: `PREBOOK_ANSWER`, `RFQ_WATCHDOG`, `TOTALS_SAME_LINE`, `THOUSANDS_EVIDENCE`, `CLARIFY_CAP_RESOLVE`, `BID_NEXT_BREAK`, `CLARIFY_ONCE`, `ASK_PICKUP_ZIP`.
-- Round 60 lead: "Yes", "Ja", "OK", "I confirm", "That works" are `unclear` today although our nudge asks for "a short yes". Yes rule unchanged pending a decision.
+- Round 60 lead ("Yes", "Ja", "OK" unclear): rules unchanged; `CONSENT_LLM_CHECK` (default on) now books them via a checked gateway call. Turn off in Railway if the team disagrees.
 - Live health still reported the email reviewer enabled; toggling needs the authorized Railway account.
 - Tracking notice v1 and strict prose v4 rollout not yet verified on production.
 

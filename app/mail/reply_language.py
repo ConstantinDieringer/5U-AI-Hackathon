@@ -43,12 +43,15 @@ def _target(session_id: int, in_reply_to: int | None, recipient: str) -> str | N
     from app.mail.content import current_message
     from app.mail.language import detect
 
-    # newest first; includes in_reply_to itself when it is the customer's mail
+    # newest first; includes in_reply_to itself when it is the customer's mail. A short reply
+    # ("Oui, allez-y", "Sí, gracias", "OK") names no language: the newest mail that does
+    # decides, so a French customer's booking confirmation stays French.
     mails = db.customer_mail_history(session_id, recipient, (in_reply_to or 2**62) + 1)
-    if not mails:
-        return None
-    lang = detect(current_message(mails[0]["body"] or "").text, default="")
-    return lang if lang in LANGUAGE_NAMES else None
+    for mail in mails:
+        lang = detect(current_message(mail["body"] or "").text, default="")
+        if lang:
+            return lang if lang in LANGUAGE_NAMES else None
+    return None
 
 
 def _check(original: str, translated: str, prose: str, target: str) -> None:
