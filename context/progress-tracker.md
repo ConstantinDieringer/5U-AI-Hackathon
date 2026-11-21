@@ -13,7 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
-- Thread rescue owner in progress: evidence-bound full-thread plans, obsolete source-hold releases, persistent ownership through pricing/booking/tracking, separate rescue budget and restart leases. Case 17998 reaches pricing with later text replacing MP3; integrating concurrent main updates and verifying the full suite before rollout.
+- Thread rescue owner: evidence-bound full-thread plans, obsolete source-hold releases, targeted questions, pricing/offer/booking/tracking ownership, separate recovery budget and restart leases. Case 17998 reaches pricing from the later written replacement for MP3; short clear consent can book, conditions/revisions cannot. Integrated Python 3.11: 1135 passed/5 skipped, stored RFQ replay unchanged; production activation not yet verified.
 
 - Writer tone: the composer's shared profile now asks for a close, cheerful best-friend voice throughout each mail, including first contact without invented history. German defaults to du unless formal address is explicitly requested. Latest main's subject rules, separate reviewer and factual/send controls preserved. Integrated full suite passes on Python 3.11 and 3.12: 1104 passed, 5 skipped; no manual live sends.
 - Round 64 carrier documents additionally use `Total, all-in` and adjacent label/value rows. Explicit totals now support those ordinary table layouts without scanning past an unrelated row; all four observed document totals replay correctly. Production no-answer cause remains unverified beyond the already reproduced body-only bid gap.
