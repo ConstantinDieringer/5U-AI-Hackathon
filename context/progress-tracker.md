@@ -202,6 +202,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11: fr/es/it customers got English replies (every path reduced to de/en). `send_customer` now translates the finished subject+body once (`app/mail/reply_language.py`); numbers, airport codes, references and the tracking notice are checked, English on any doubt (warn). Rollback: `REPLY_IN_CUSTOMER_LANGUAGE=false`. Offline tests only.
+
 - 21.11 23:15: Thread rescue woke ~40 hours-old threads on every restart (no age limit, unbounded parallel gpt-5 calls): gateway 429 bursts, mails into stale threads, a Kessler loop stopped by the mail guard. Now only input younger than `THREAD_RESCUE_MAX_AGE_S` (600 s), max `THREAD_RESCUE_MAX_PARALLEL` (2) owners at once. Offline tests only.
 
 - 21.11 23:05: "Weitere Rückfrage unterdrückt" fired far too often: the two-question cap counted RFQ, booking and tracking questions together (all `category='clarification'`), so one RFQ question plus one "shall we book?" question capped the thread. Now counted per workflow (`clarify.sent.<sid>` in kv); booking/tracking at the cap is a warning, not an error/#sos. Offline tests only.
