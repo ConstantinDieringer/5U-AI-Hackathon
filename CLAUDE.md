@@ -6,17 +6,16 @@ A digital air freight forwarder for the 5U AI challenge (START HACK Munich 2026)
 
 ## Before every task
 
-Read all five files in `context/`:
+Read all six files in `context/`:
 
 1. `context/project-overview.md`: what we build, what 5U provides, rules, scoring
 2. `context/code-standards.md`: implementation rules
 3. `context/ui-context.md`: design principles and screens
 4. `context/ai-workflow-rules.md`: workflow, scoping, verification
 5. `context/progress-tracker.md`: current state, next steps, open questions
+6. `context/architecture-context.md`: stack, boundaries, session model (links to `context/docs/TECH_SPEC.md` and `context/docs/design/`)
 
 Follow `context/ai-workflow-rules.md`.
-
-`context/architecture-context.md` does not exist yet. It will be added once the architecture and stack are decided, and from then on it must be read too.
 
 Update `context/progress-tracker.md` after each meaningful change. If an implementation changes scope, standards or architecture, update the relevant context file before continuing.
 

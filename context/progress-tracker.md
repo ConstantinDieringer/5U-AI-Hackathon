@@ -4,7 +4,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Current Phase
 
-- Setup
+- Phase 1: setup until the first request at 16:00
 
 ## Current Goal
 
@@ -20,11 +20,14 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## In Progress
 
-- None.
+- Task C (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), implementation starting with C1 `db.py`.
+- Tasks A (mail poller, router) and B (portal sync, lane index): status unknown in repo, no code pushed yet.
 
 ## Next Up
 
 1. Phase 1 tasks A/B/C (see team plan): mail poller + router, portal sync, db.py + UI.
+2. Agree with A: every outgoing mail via `db.record_outgoing()`, quote sends only after `db.claim_quote_send()`.
+3. Switch `app/pricing/pricing.py` to integer cents (code-standards).
 
 Build order (proposed, confirm):
 
@@ -43,14 +46,14 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Open Questions
 
-1. Architecture and stack, including where the system runs overnight.
-2. Team members and who owns which part.
+1. ~~Architecture and stack~~ → decided (`architecture-context.md`). Still open: where the system runs overnight.
+2. Team members and owners: task C taken; owners of A and B still to be named here.
 3. Scoring weights: the brief says 45/40/15 and the kickoff deck says 55/30/15. We use the brief's until 5U confirms.
-4. Hackathon deadline, the time hourly changes start, and the pitch slot.
+4. First request arrives 16:00 (kit card). Still open: deadline, start of hourly changes, pitch slot.
 5. Has our OpenAI key been posted to the gateway? Which models does `/v1/gateway/models` allow, and at what cost?
 6. The portal's current rate-read cap (`X-RateLimit-Limit`).
 7. Formats of RFQs, carrier bids, rate desk replies, booking confirmations and tariff mails. Unknown until we see real mail.
-8. Start kit contents (sheet formats, carrier list, zones), and how door-to-port trucking is priced (trucker bids by email?).
+8. ~~Start kit contents~~ → 10 sheets (xlsx/pdf/docx/txt/jpg), 29 airlines + 23 truckers in `carrier-list.csv`, zones = 2-digit postcode → FRA/MUC/DUS/HAM/STR/CGN. Still open: trucking price (assumed: trucker bids by email).
 9. How to tell mail started by 5U's agents from other mail.
 10. The exact "fastest" rule, and the formula for the 50/50 price/speed balance among bids.
 11. How many carriers to ask and how long to wait for bids within the 2-minute target.
@@ -63,4 +66,5 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
-- None yet.
+- 21.11: Kit card received (mailbox `austrian-power@hackloop.mail`, first request 16:00); API key kept out of the repo.
+- 21.11: Sheets show a break-point effect (billing at the next weight break is often cheaper); unconfirmed which price the scorer uses, check on the board.
