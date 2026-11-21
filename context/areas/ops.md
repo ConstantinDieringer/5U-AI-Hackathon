@@ -10,3 +10,9 @@ Full guide: `DEPLOY.md`. Why/history: grep `context/history/`.
 - **When quotes start failing** (setup changes about hourly): check our logs and `/v1/board/me` first, find what changed, fix the root cause, add a Session Note in the tracker.
 - Stopping `run.py` with an open SSE client needs `kill -9` or closing the UI first.
 - Git: branch + PR for every change; commit messages in English with `feat:`/`fix:`/`chore:`/`docs:`/`test:` (TECH_SPEC §11).
+
+## Tests (run these while iterating; the full suite only before the PR)
+
+```
+python -m pytest -q tests/test_imports.py tests/test_alerts.py tests/test_board_watch.py tests/test_server.py
+```

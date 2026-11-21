@@ -1,6 +1,6 @@
 # Progress Tracker
 
-Read on every task, so it stays small (budget enforced by `tests/test_context_budget.py`).
+Read when planning or updating, so it stays small (budget enforced by `tests/test_context_budget.py`).
 Current state only: one or two lines per entry, newest first. Subsystem behavior belongs in
 `context/areas/*.md`. When a section exceeds its limit, move the oldest entries verbatim to
 `context/history/progress-log.md` (newest first there too).
@@ -13,6 +13,7 @@ Current state only: one or two lines per entry, newest first. Subsystem behavior
 
 ## Recent Changes (max 8)
 
+- Faster context: code standards auto-imported into `CLAUDE.md`, area files auto-loaded by path (`.claude/rules/`), per-area test commands, `slow` marker for replay/full-app tests.
 - Round 70: "we won't go ahead" booked. Explicit negated booking intent (incl. contractions, curly apostrophes) now overrides positive verbs; no booking or price-change approval from it.
 - Round 70: French RFQ got an English reply. Request language (ISO code) now reaches composer/repair; FR/ES/IT fallbacks, months, subjects and tracking notices keep the language; unsupported fallback languages fail visibly.
 - Reply in the customer's language: fr/es/it replies translated by one checked gateway call in `hackloop.send_customer`, English fallback plus warn event (`REPLY_IN_CUSTOMER_LANGUAGE`). 1291 passed/5 skipped.
@@ -20,7 +21,6 @@ Current state only: one or two lines per entry, newest first. Subsystem behavior
 - Context system: lean always-read core, per-area files in `context/areas/`, history archived in `context/history/`, size budgets tested.
 - Required tracking paragraph in every RFQ customer send, plus a 30 s repair worker. 1261 passed/5 skipped; rollout pending.
 - Thread rescue limited to input younger than 600 s and two parallel owners (was waking 40 h old threads on restart). Offline tests only.
-- Clarification cap counted per workflow instead of per thread. Offline tests only.
 
 ## Pending Decisions and Rollouts (max 10)
 

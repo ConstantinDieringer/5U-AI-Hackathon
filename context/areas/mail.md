@@ -28,3 +28,9 @@ API fields: `context/docs/mail-format.md`, `context/docs/5u-api.md`.
 - Airline replies with attachments route as bids when threaded or `[AP-n]`-tagged.
 - Processing is idempotent by message ID. Reply in the customer's thread (`in_reply_to`). Mail to our own address gets 422.
 - Tests never call 5U or the gateway: `tests/conftest.py` fails any test that tries.
+
+## Tests (run these while iterating; the full suite only before the PR)
+
+```
+python -m pytest -q tests/test_mailbox_webhook.py tests/test_poller.py tests/test_router.py tests/test_phishing_gate.py tests/test_mail_guard.py tests/test_attachment_documents.py tests/test_links.py tests/test_db.py
+```

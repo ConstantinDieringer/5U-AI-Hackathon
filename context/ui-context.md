@@ -48,3 +48,9 @@ The jury judges UX and design, and the pitch will show the UI, so the UI is a sc
 - Übersicht v0.3: status strip, "Fehler & Warnungen" (`GET /api/problems`, ERROR logs as `log_error` events via `app/ui/log_events.py`), "Lagebild/Kontext kopieren" (`/api/context`, `/api/sessions/{id}/context`).
 - Deploy light in the top bar (`/api/deploy-gate`); attention list `GET /api/attention`.
 - Mail content is rendered only via `textContent`; JSON fields are snake_case.
+
+## Tests (run these while iterating; the full suite only before the PR)
+
+```
+python -m pytest -q tests/test_server.py tests/test_manual_reply_targets.py tests/test_dashboard_problems.py tests/test_alerts.py tests/test_board_watch.py tests/test_api_costs.py
+```
