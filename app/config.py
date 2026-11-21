@@ -70,6 +70,7 @@ class Settings:
     self_delivery_recovery: bool
     ask_pickup_zip: bool
     clarify_once: bool
+    bid_next_break: bool
     clarify_fallback_after_s: float
     llm_max_calls_per_session: int
     runtime_dir: Path
@@ -126,6 +127,7 @@ settings = Settings(
     self_delivery_recovery=_flag("SELF_DELIVERY_RECOVERY"),
     ask_pickup_zip=_flag("ASK_PICKUP_ZIP"),
     clarify_once=_flag("CLARIFY_ONCE"),
+    bid_next_break=_flag("BID_NEXT_BREAK"),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)
     clarify_fallback_after_s=float(_env("CLARIFY_FALLBACK_AFTER_S", "45")),
     llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "4"))),
