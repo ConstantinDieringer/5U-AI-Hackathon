@@ -66,6 +66,8 @@ class _Request:
     asked: dict[str, Carrier] = field(default_factory=dict)  # email -> carrier
     offers: list[Offer] = field(default_factory=list)
     declined: set[str] = field(default_factory=set)  # emails that said "we do not serve"
+    # emails whose reply came but could not be priced: answered, nothing more to wait for
+    unreadable: set[str] = field(default_factory=set)
 
 
 _open: dict[int, _Request] = {}
@@ -280,6 +282,68 @@ def document_timing(text: str) -> str:
     return (preferred or usable or [""])[0]
 
 
+_UNITS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+    "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "eins": 1, "ein": 1, "eine": 1, "zwei": 2, "drei": 3, "vier": 4, "fünf": 5, "sechs": 6,
+    "sieben": 7, "acht": 8, "neun": 9, "zehn": 10, "elf": 11, "zwölf": 12,
+}  # fmt: skip
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
+         "eighty": 80, "ninety": 90}  # fmt: skip
+_NUMBER_WORD = re.compile(
+    rf"\b(?:(?P<tens>{'|'.join(_TENS)})(?:[- ](?P<unit>{'|'.join(_UNITS)}))?"
+    rf"|(?P<only>{'|'.join(sorted(_UNITS, key=len, reverse=True))}))\b",
+    re.IGNORECASE,
+)
+_SPOKEN_CENTS = re.compile(
+    r"(\d{1,3}(?:,\d{3})*|\d+)\s*(?:euros?|EUR)\s*(?:and|und)?\s*(\d{1,2})\s*(?:cents?|ct)\b",
+    re.IGNORECASE,
+)
+_SPOKEN_EURO = re.compile(r"(\d[\d,.]*\d|\d)\s*(?:euros?)\b", re.IGNORECASE)
+_NOT_THE_PRICE = re.compile(
+    r"each hour|per hour|an hour|pro stunde|je stunde|waiting|wartezeit|not part|"
+    r"nicht (?:im|teil|enthalten)",
+    re.IGNORECASE,
+)
+_SPOKEN_TOTAL = re.compile(r"all[- ]?in|total|gesamt|insgesamt|in summe", re.IGNORECASE)
+
+
+def normalize_spoken(text: str) -> str:
+    """A voice transcript in the form the bid parsers read: number words as digits ("four
+    hours" -> "4 hours"), "358 euros and 64 cents" -> "358.64 EUR", "115 euros" -> "115 EUR"."""
+
+    def word(m: re.Match) -> str:
+        if m.group("only"):
+            return str(_UNITS[m.group("only").lower()])
+        unit = _UNITS[m.group("unit").lower()] if m.group("unit") else 0
+        return str(_TENS[m.group("tens").lower()] + unit)
+
+    text = _NUMBER_WORD.sub(word, text)
+    text = _SPOKEN_CENTS.sub(lambda m: f"{m.group(1)}.{int(m.group(2)):02d} EUR", text)
+    return _SPOKEN_EURO.sub(lambda m: f"{m.group(1)} EUR", text)
+
+
+def spoken_price(text: str) -> tuple[Decimal, str] | None:
+    """The all-in price of a (normalized) voice offer. Sentences naming the total or all-in
+    win; amounts for waiting time or "not part of" are never the price. Without a total
+    sentence, the one amount said is the price; several different amounts give None."""
+    totals: set[tuple[Decimal, str]] = set()
+    others: set[tuple[Decimal, str]] = set()
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+        if _NOT_THE_PRICE.search(sentence):
+            continue
+        for m in _AMOUNT.finditer(sentence):
+            num = _number(m.group("num1") or m.group("num2") or "")
+            cur = (m.group("cur1") or m.group("cur2") or "").upper()
+            if num is None or num <= 0:
+                continue
+            found = (money(num), {"€": "EUR", "$": "USD"}.get(cur, cur))
+            (totals if _SPOKEN_TOTAL.search(sentence) else others).add(found)
+    pick = totals or others
+    return next(iter(pick)) if len(pick) == 1 else None
+
+
 def _bid_evidence(
     body: str, files: list[tuple[str, str]], spoken: list[tuple[str, str]]
 ) -> tuple[str, tuple[Decimal, str] | None, str | None]:
@@ -295,7 +359,8 @@ def _bid_evidence(
             return body, None, f"{name}: no unambiguous explicit total"
         evidence.append((document_timing(text), price))
     for name, text in spoken:
-        price = parse_price(text)
+        text = normalize_spoken(text)
+        price = spoken_price(text)
         if price is None:
             return body, None, f"{name}: no price in voice message"
         evidence.append((text, price))
@@ -319,7 +384,9 @@ def timing_kind(text: str) -> str:
     stop = match.end() + end.start() if end else len(text)
     clause = text[start:stop].lower()
     road = bool(re.search(r"transit time|driving|fahrzeit|transportdauer", clause))
-    collection = bool(re.search(r"pickup|pick up|collect|abhol", clause)) and not road
+    collection = (
+        bool(re.search(r"pickup|pick up|collect|abhol|driver|fahrer", clause)) and not road
+    )
     return "road_transit" if road else "collection_lead" if collection else "unspecified"
 
 
@@ -464,8 +531,13 @@ def _spawn(fn, *args) -> None:  # tests replace this with a direct call
     threading.Thread(target=fn, args=args, name=f"bid-doc-{args[0].id}", daemon=True).start()
 
 
-def _unreadable(carrier: Carrier, sid: int, issue: str) -> None:
-    db.emit("bid_unreadable", f"Gebot von {carrier.name}: {issue}"[:300], sid, level="warn")
+def _unreadable(carrier: Carrier, sid: int, issue: str, kind: str = "bid_unreadable") -> None:
+    """The carrier answered but gave no usable price: log it and stop waiting for them
+    (rounds 63/64 waited out the bid window for replies that would never become offers)."""
+    with _cond:
+        _open.setdefault(sid, _Request()).unreadable.add(carrier.email)
+        _cond.notify_all()
+    db.emit(kind, f"Gebot von {carrier.name}: {issue}"[:300], sid, level="warn")
 
 
 def on_bid_mail(mail: Mail, session_id: int | None) -> None:
@@ -511,14 +583,14 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
 def _transcribe_then_evaluate(
     mail: Mail, sid: int, carrier: Carrier, body: str, files: list, pending: list
 ) -> None:
-    """Runs in its own thread: a gateway call must not hold up the mail loop. The calls do
-    not use the session's LLM budget (5 voice bids would leave none for extraction and the
-    quote mail); MAX_BID_TRANSCRIPTIONS per session bounds their cost instead."""
+    """Runs in its own thread: transcription must not hold up the mail loop. Voice messages
+    are read locally (no cost). Scans cost a gateway call outside the session's LLM budget;
+    MAX_BID_TRANSCRIPTIONS per session bounds those."""
     try:
         spoken: list[tuple[str, str]] = []
         files = list(files)
         for path, doc in pending:
-            if documents.cached_transcript(path) is None:
+            if doc.media and documents.cached_transcript(path) is None:
                 with _cond:
                     used = _transcriptions.get(sid, 0)
                     if used >= MAX_BID_TRANSCRIPTIONS:
@@ -563,12 +635,7 @@ def _evaluate(
         return
     evidence, price, issue = _bid_evidence(body, files, spoken)
     if price is None:
-        db.emit(
-            "bid_unreadable",
-            f"Gebot von {carrier.name}: {issue or 'kein Preis erkannt'}",
-            sid,
-            level="warn",
-        )
+        _unreadable(carrier, sid, issue or "kein Preis erkannt")
         return
     amount, currency = price
     from app.pricing.fx import eur_rate
@@ -576,12 +643,7 @@ def _evaluate(
     try:
         fx, fx_source, fx_expiry = eur_rate(currency)
     except ValueError as exc:
-        db.emit(
-            "bid_skipped",
-            f"Gebot von {carrier.name}: {exc}",
-            sid,
-            level="warn",
-        )
+        _unreadable(carrier, sid, str(exc), kind="bid_skipped")
         return
     offer = Offer(
         carrier,
@@ -631,7 +693,7 @@ def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None)
         req = _open.get(session_id)
         if req is None or not req.asked:
             return True
-        answered = {o.carrier.email for o in req.offers} | req.declined
+        answered = {o.carrier.email for o in req.offers} | req.declined | req.unreadable
         if until_kinds is not None:
             have = {o.carrier.kind for o in req.offers}
             # round 11: every airline had declined, yet we waited out the full timeout
