@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 56 customer will check whether booking can proceed: current keyword rule still returned acceptance. The shared consent guard now also recognizes pending EN/DE internal approval checks; positive past checks followed by an explicit booking order remain valid. Existing booking/price-change flows reuse it; no live booking triggered.
+
 - Strict customer prose v4 closes the unchecked all-excluded notice and subject paths. Independent final assertions reject punctuation, including Unicode/HTML variants, and unresolved EUR/numeric dates/zero fractions; transmitted subject/body are stored, reply IDs retain threading. Reviewer acceptance instructions tightened. Python 3.11: 701 passed/4 skipped; targeted wire tests include a misbehaving reviewer and failed renderer. Existing v3 deployment verified active; v4 rollout pending.
 - Round 54 followup reproduced a consent defect: "Before we book, could you confirm...?" matched the bare `book` rule. Booking and changed-price acceptance now leave pre-booking questions/conditional approval unresolved; direct booking requests with later informational questions still work. Existing clarification flow handles the unresolved reply; actual production actor remains unverified.
 

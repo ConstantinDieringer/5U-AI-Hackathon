@@ -56,6 +56,9 @@ PREBOOK_QUESTIONS = [
     "If you can confirm arrival by Friday, please book.",
     "Bevor wir buchen, bestätigen Sie bitte die Abholung.",
     "Bitte buchen, falls der Abflug am Freitag möglich ist.",
+    "I'll check whether we can proceed with the booking and get back to you.",
+    "We are checking whether we can accept the offer.",
+    "Ich prüfe, ob wir die Buchung freigeben können.",
 ]
 
 
@@ -69,6 +72,8 @@ def test_prebooking_question_or_condition_is_not_consent(body):
     "Could you book the shipment for us?",
     "Yes, go ahead. Please confirm the pickup time.",
     "Bitte buchen. Wann erhalten wir die Referenz?",
+    "We checked internally and accept your offer. Please book.",
+    "Wir haben die Buchung geprüft. Bitte buchen.",
 ])
 def test_explicit_booking_request_can_include_a_followup_question(body):
     assert booking.is_acceptance(body) is True

@@ -262,7 +262,9 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Stilversion v4 prüft Kundenbetreff UND Text unmittelbar vor dem Transport mit einer unabhängigen finalen Assertion. Unicode-Satzzeichen und HTML-Entities werden normalisiert; Re/Fw-Präfixe entfallen, Threading bleibt über `in_reply_to` erhalten. Auch All-Excluded-Hinweise durchlaufen `send_customer`. Gespeichert werden tatsächlich übergebener Betreff und Text. Direkte Carrier-/Truckerprotokolle bleiben unverändert.
 - Buchungsfreigabe: Vorabfragen wie „Before we book...“ und bedingte Zustimmung gelten
-  nicht als Auftrag, auch wenn „book“ vorkommt. Direkte Aufträge dürfen zusätzliche
+  ebenso wie noch laufende interne Prüfungen („check whether we can proceed“) ausdrücklich
+  als ungeklärte Freigabe, auch wenn „book“ vorkommt. Eine abgeschlossene Prüfung mit
+  explizitem Auftrag bleibt gültig. Direkte Aufträge dürfen zusätzliche
   Informationsfragen enthalten. Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
   dieselbe Prüfung gilt bei Annahme eines geänderten Buchungspreises.
 
