@@ -17,12 +17,14 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`.
 - Task B, Constantin, pricing: parser fix (first break 0 kg, PDFs via pdfplumber), `RateOption` in cents, `sheet_options`/`pick`, portal rates + lane snapshot (114 lanes, 15 airlines), lane index, reference data; `app/models.py` (Rfq validated); portal airlines fetched in parallel, snapshot auto-refresh; 34 tests green.
 - Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
+- C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11. Not yet run under uvicorn.
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 ## In Progress
 
-- Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), implementation starting with C1 `db.py`.
+- Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), next: C3 `app/ui/server.py`, C4 `static/index.html`.
 - Task A, Karim (mail poller, router, `hackloop.py`): not in repo yet. `portal_options()` (B) is untested live until `hackloop.get_rate/get_ports/get_brackets` exist.
+- Task B, Constantin: B1–B6 in PR #2; next door-to-port trucking, bid selection, tariff mails.
 
 ## Next Up
 

@@ -1,0 +1,296 @@
+"""Tests for app/db.py. No real 5U calls. Run: python -m pytest -q"""
+
+import threading
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app import db
+
+CUSTOMER = "anna@shipper.example"
+TEAM = "austrian-power@hackloop.mail"
+
+
+@pytest.fixture(autouse=True)
+def fresh_db(tmp_path):
+    db.init_db(str(tmp_path / "test.db"))
+    yield
+
+
+def rfq(mail_id=100, **kw):
+    args = {
+        "mail_id": mail_id,
+        "sender": CUSTOMER,
+        "recipient": TEAM,
+        "subject": "RFQ FRA-DFW 40kg",
+        "body": "Hi, cheapest please",
+        "category": "rfq",
+    }
+    args.update(kw)
+    return db.ingest_mail(**args)
+
+
+def test_rfq_opens_session_with_deadline():
+    sid = rfq()
+    assert sid == 100
+    s = db.get_session(sid)
+    assert s["status"] == "new" and s["kind"] == "rfq" and s["customer"] == CUSTOMER
+    created = datetime.fromisoformat(s["created_at"])
+    assert datetime.fromisoformat(s["deadline_at"]) - created == timedelta(minutes=6)
+    assert [e["kind"] for e in s["events"]] == [db.Ev.MAIL_IN]
+
+
+def test_duplicate_mail_is_ignored():
+    rfq()
+    assert rfq() == 100
+    s = db.get_session(100)
+    assert len(s["mails"]) == 1 and len(s["events"]) == 1
+
+
+def test_carrier_bid_reply_maps_to_customer_session():
+    sid = rfq()
+    # we ask a carrier for a bid in a NEW thread (mail 200)
+    db.record_outgoing(
+        mail_id=200,
+        recipient="kestrel-airways@hackloop.mail",
+        subject="Bid request FRA-DFW",
+        body="...",
+        category="bid_request",
+        session_id=sid,
+    )
+    # carrier answers; its references point to OUR mail, not the RFQ
+    got = db.ingest_mail(
+        mail_id=201,
+        sender="kestrel-airways@hackloop.mail",
+        recipient=TEAM,
+        subject="Re: Bid request",
+        body="EUR 150, 2 days",
+        category="carrier_bid",
+        references=[200],
+        in_reply_to=200,
+    )
+    assert got == sid
+    assert {m["id"] for m in db.get_session(sid)["mails"]} == {100, 200, 201}
+
+
+def test_customer_followup_stays_in_session():
+    sid = rfq()
+    db.record_outgoing(
+        mail_id=101,
+        recipient=CUSTOMER,
+        subject="Re: RFQ",
+        body="146.80 EUR",
+        category="quote",
+        in_reply_to=100,
+        references=[100],
+    )
+    got = db.ingest_mail(
+        mail_id=102,
+        sender=CUSTOMER,
+        recipient=TEAM,
+        subject="Re: RFQ",
+        body="Accepted",
+        category="customer",
+        references=[100, 101],
+        in_reply_to=101,
+    )
+    assert got == sid
+    assert len(db.list_sessions()) == 1
+
+
+def test_unknown_carrier_mail_is_unassigned():
+    got = db.ingest_mail(
+        mail_id=300,
+        sender="elbflug-air-freight@hackloop.mail",
+        recipient=TEAM,
+        subject="Tariff December",
+        body="see attachment",
+        category="tariff",
+    )
+    assert got is None
+    assert [m["id"] for m in db.list_unassigned()] == [300]
+
+
+def test_tracking_session_has_no_deadline():
+    sid = db.ingest_mail(
+        mail_id=400,
+        sender="tracking@hackloop.mail",
+        recipient=TEAM,
+        subject="Where is BK-12345678?",
+        body="status?",
+        category="tracking",
+    )
+    s = db.get_session(sid)
+    assert s["kind"] == "tracking" and s["deadline_at"] is None
+
+
+def test_claim_quote_send_only_once():
+    sid = rfq()
+    assert db.claim_quote_send(sid) is True
+    assert db.claim_quote_send(sid) is False
+
+
+def test_claim_blocked_by_pause_takeover_and_global_pause():
+    a, b, c = rfq(1), rfq(2), rfq(3)
+    db.set_paused(a, True)
+    db.takeover(b)
+    assert db.claim_quote_send(a) is False
+    assert db.claim_quote_send(b) is False
+    db.set_global_pause(True)
+    assert db.claim_quote_send(c) is False and db.is_paused(c)
+    db.set_global_pause(False)
+    assert db.claim_quote_send(c) is True
+
+
+def test_claim_is_atomic_under_race():
+    sid = rfq()
+    results = []
+    barrier = threading.Barrier(8)
+
+    def worker():
+        barrier.wait()
+        results.append(db.claim_quote_send(sid))
+
+    ts = [threading.Thread(target=worker) for _ in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert results.count(True) == 1
+
+
+def test_quote_booking_and_tracking_lookup():
+    sid = rfq()
+    db.record_quote(
+        sid,
+        total_minor=14680,
+        currency="EUR",
+        airline="Elbflug Air Freight",
+        origin="FRA",
+        destination="DFW",
+        transit_days=3,
+        source="sheet",
+        alternatives=[{"airline": "Yellowtail", "total_minor": 17460}],
+    )
+    assert db.get_session(sid)["status"] == "quoted"
+    db.record_booking(
+        sid,
+        booking_reference="BK-ABCDEFGH",
+        rate_id="R-12345678",
+        airline="Elbflug Air Freight",
+        price_minor=14680,
+        currency="EUR",
+    )
+    db.record_booking(
+        sid,
+        booking_reference="BK-ABCDEFGH",
+        rate_id="R-12345678",
+        airline="Elbflug Air Freight",
+        price_minor=14680,
+        currency="EUR",
+    )  # retry
+    assert len(db.get_session(sid)["bookings"]) == 1
+    assert db.update_booking_status("BK-ABCDEFGH", "confirmed") == sid
+    b = db.find_booking("BK-ABCDEFGH")
+    assert b["status"] == "confirmed" and b["team_reference"] == "AP-100"
+    assert db.get_session(sid)["status"] == "confirmed"
+
+
+def test_events_after_and_kv():
+    rfq()
+    first = db.events_after(0)
+    db.emit(db.Ev.PRICED, "3 Optionen", session_id=100, best="Elbflug")
+    new = db.events_after(first[-1]["id"])
+    assert len(new) == 1 and new[0]["payload"] == {"best": "Elbflug"}
+    db.kv_set("since_id", "42")
+    assert db.kv_get("since_id") == "42"
+
+
+def test_expire_overdue():
+    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(timespec="seconds")
+    sid = rfq(received_at=old)
+    assert db.expire_overdue() == [sid]
+    assert db.get_session(sid)["status"] == "expired"
+
+
+def test_list_sessions_attention_first():
+    old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(timespec="seconds")
+    calm = rfq(1)
+    urgent = rfq(2, received_at=old)  # 1 min left -> needs attention
+    rows = db.list_sessions()
+    assert rows[0]["id"] == urgent and rows[0]["needs_attention"] == 1
+    assert rows[1]["id"] == calm and rows[1]["needs_attention"] == 0
+
+
+def test_llm_cost_and_stats():
+    sid = rfq()
+    db.claim_quote_send(sid)
+    db.record_llm_call(
+        sid,
+        purpose="reply",
+        model="gpt-x",
+        prompt_tokens=300,
+        completion_tokens=120,
+        cost_micro_usd=420,
+        latency_ms=800,
+    )
+    db.record_quote(
+        sid,
+        total_minor=10000,
+        currency="EUR",
+        airline="X",
+        origin="FRA",
+        destination="DFW",
+        transit_days=2,
+        source="portal",
+    )
+    st = db.stats()
+    assert st["avg_llm_cost_micro_usd_per_quote"] == 420
+    assert st["by_status"] == {"quoted": 1}
+    assert db.get_session(sid)["llm_cost_micro_usd"] == 420
+
+
+def test_concurrent_writers_no_lock_errors():
+    errors = []
+
+    def writer(n):
+        try:
+            for i in range(100):
+                mid = n * 1000 + i
+                db.ingest_mail(
+                    mail_id=mid,
+                    sender=CUSTOMER,
+                    recipient=TEAM,
+                    subject="s",
+                    body="b",
+                    category="rfq",
+                )
+                db.emit(db.Ev.PRICED, "p", session_id=mid)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    def reader():
+        last = 0
+        for _ in range(200):
+            rows = db.events_after(last)
+            if rows:
+                last = rows[-1]["id"]
+
+    ts = [threading.Thread(target=writer, args=(n,)) for n in range(1, 7)]
+    ts += [threading.Thread(target=reader) for _ in range(2)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert errors == []
+    assert db.stats()["sessions_total"] == 600
+
+
+def test_board_result_change_detection():
+    sid = rfq()
+    assert db.save_board_result(
+        round_id="r1", verdict="pending", reason=None, points=None, raw={}, session_id=sid
+    )
+    assert not db.save_board_result(
+        round_id="r1", verdict="pending", reason=None, points=None, raw={}
+    )
+    assert db.save_board_result(
+        round_id="r1", verdict="accepted", reason=None, points={"total": 87}, raw={}
+    )
+    assert db.get_session(sid)["board"][0]["verdict"] == "accepted"
