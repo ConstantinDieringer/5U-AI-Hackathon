@@ -13,7 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
-- Writer tone: the composer's shared profile now asks for a very friendly, familiar voice like a note to a good friend, including first contact without invented relationship history. Separate final reviewer and factual/send controls unchanged. 42 existing voice, personal-reply, presentation and reviewer regressions pass; no live sends or deployment.
+- Writer tone: the composer's shared profile now asks for a close, cheerful best-friend voice throughout each mail, including first contact without invented history. German defaults to du unless formal address is explicitly requested. Separate final reviewer and factual/send controls unchanged. 42 voice/personal-reply/presentation/reviewer regressions pass; no live sends or deployment.
 
 - Rounds 49/50 (-22.5 each): portal-booked XC, customer confirmed the quoted total, airline then confirmed +10 % air. Booking now waits for the airline price (`AIRLINE_CONFIRM_WAIT_S`=180), asks the customer on a change beyond `PRICE_CHANGE_TOLERANCE_PCT`=0.5 with the new all-in and one cheaper alternative, yes confirms, other answers `needs_human` + #sos. Final style reviewer keeps amounts/airlines as protected terms. 689 passed/4 skipped; airline mail price format and scorer rule unverified live.
 
