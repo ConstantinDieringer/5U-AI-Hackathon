@@ -83,3 +83,44 @@ def test_reference_zip_zone_and_carriers():
     assert "Taunusfracht" in {t.name for t in truckers_for_zone("60")}
     c = carrier_by_email("Cobalt-Skylift@HACKLOOP.mail")
     assert c is not None and c.kind == "airline" and "JFK" in c.serves
+
+
+def test_parse_rejects_implausible_values():
+    for bad in (
+        {**RATE, "total": "0.00"},
+        {**RATE, "transit_days": "x"},
+        {**RATE, "currency": "EURO"},
+    ):
+        with pytest.raises(ValueError):
+            parse_rate(bad)
+
+
+def test_portal_options_parallel_and_ignores_wrong_lane(monkeypatch):
+    import threading
+    import time
+
+    monkeypatch.setattr(portal_sync, "_cache", {})
+    active, peak = [0], [0]
+    lock = threading.Lock()
+
+    def slow_fetch(o, d, airline, kg, cbm):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        time.sleep(0.1)
+        with lock:
+            active[0] -= 1
+        if airline == "UV":
+            return {**RATE, "destination": "SIN", "airline_code": "UV"}  # answer for another lane
+        return {**RATE, "airline_code": airline}
+
+    opts = portal_options(Rfq(origin="CGN", destination="DEL", weight_kg=120), fetch=slow_fetch)
+    assert peak[0] == 2  # both airlines fetched at the same time
+    assert [o.destination for o in opts] == ["DEL"]
+
+
+def test_dataset_version_change_is_logged(monkeypatch, caplog):
+    monkeypatch.setattr(portal_sync, "_seen_dataset_version", None)
+    parse_rate(RATE)
+    parse_rate({**RATE, "dataset_version": "v2"})
+    assert "dataset_version changed v1 -> v2" in caplog.text

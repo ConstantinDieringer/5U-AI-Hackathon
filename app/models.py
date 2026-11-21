@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 @dataclass
@@ -37,18 +37,37 @@ class Category(str, Enum):
 
 
 class Rfq(BaseModel):
-    """What the LLM extracts from a customer RFQ. Pricing reads only these fields."""
+    """What the LLM extracts from a customer RFQ. Pricing reads only these fields.
+
+    Validated here because it is LLM output (code-standards: validate at the boundary).
+    Limits mirror the portal: weight 0 < kg <= 100000, volume 0 <= cbm <= 1000.
+    """
 
     origin: str | None = None  # IATA; None when only a pickup ZIP is given
     pickup_zip: str | None = None  # set = door-to-port
     destination: str  # IATA
-    weight_kg: float  # total gross weight
-    volume_cbm: float = 0.0  # total volume
-    pieces: int | None = None
+    weight_kg: float = Field(gt=0, le=100_000)  # total gross weight
+    volume_cbm: float = Field(default=0.0, ge=0, le=1_000)  # total volume
+    pieces: int | None = Field(default=None, ge=1)
     preference: Literal["cheapest", "fastest"] = "cheapest"
     ready_date: str | None = None  # ISO date
     language: str = "en"
     customer_name: str | None = None
+
+    @field_validator("origin", "destination", mode="before")
+    @classmethod
+    def _iata(cls, v: object) -> object:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        code = str(v).strip().upper()
+        if len(code) != 3 or not code.isalpha():
+            raise ValueError(f"not an IATA airport code: {v!r}")
+        return code
+
+    @field_validator("pickup_zip", mode="before")
+    @classmethod
+    def _zip(cls, v: object) -> object:
+        return str(v).strip() or None if v is not None else None
 
 
 Source = Literal["sheet", "portal", "bid"]

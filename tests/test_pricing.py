@@ -1,11 +1,13 @@
 """Hand-calculated prices from the start-kit sheets. Every rate-sheet trap gets a case here."""
 
+from datetime import date
 from decimal import Decimal as D
 
 import pytest
+from pydantic import ValidationError
 
 from app.models import RateOption, Rfq
-from app.pricing.pricing import load_lanes, pick, price_lane, sheet_options
+from app.pricing.pricing import chargeable_kg, load_lanes, pick, price_lane, sheet_options
 
 
 def lane(airline, origin, dest):
@@ -106,3 +108,34 @@ def test_pick_ties_and_errors():
     assert pick(opts, "cheapest").airline == "fast"
     with pytest.raises(ValueError):
         pick(opts, "best")
+
+
+def test_tariff_validity_window():
+    # start-kit sheets are valid 2026-11-01 .. 2026-11-30
+    rfq = Rfq(origin="FRA", destination="DFW", weight_kg=120)
+    assert len(sheet_options(rfq, on=date(2026, 11, 30))) == 2
+    assert sheet_options(rfq, on=date(2026, 12, 1)) == []
+
+
+def test_chargeable_weight_is_not_rounded_like_the_portal():
+    # portal: 10.3 kg, 0.1234 cbm -> chargeable "20.6078"
+    assert chargeable_kg(10.3, 0.1234) == D("20.6078")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"destination": "Frankfurt", "weight_kg": 10},
+        {"destination": "DFW", "weight_kg": 0},
+        {"destination": "DFW", "weight_kg": 10, "volume_cbm": -1},
+        {"destination": "", "weight_kg": 10},
+    ],
+)
+def test_rfq_rejects_invalid_llm_output(bad):
+    with pytest.raises(ValidationError):
+        Rfq(**bad)
+
+
+def test_rfq_normalises_codes():
+    r = Rfq(origin=" fra ", destination="dfw", weight_kg=1, pickup_zip=" ")
+    assert (r.origin, r.destination, r.pickup_zip) == ("FRA", "DFW", None)
