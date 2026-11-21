@@ -458,3 +458,10 @@ def test_quarantine_check_fault_never_stops_a_reply(monkeypatch):
     monkeypatch.setattr(hackloop, "_json_obj", lambda _r: {"id": 1, "references": []})
     hackloop.send("customer@hackloop.mail", "Re: x", "hello", in_reply_to=5)
     assert sent["json"]["in_reply_to"] == 5
+
+
+def test_llm_mode_off_makes_no_model_call_for_unsure_mail(box: Box, monkeypatch) -> None:
+    gate(monkeypatch, llm_mode="off")
+    monkeypatch.setattr(llm, "complete", lambda *a, **kw: pytest.fail("no call in off mode"))
+    deliver(raw_mail(9005, "new-company@hackloop.mail", "Could you call me back please?"))
+    assert box.dispatched == [(9005, Category.RFQ)]

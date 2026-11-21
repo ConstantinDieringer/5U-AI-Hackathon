@@ -18,7 +18,6 @@ from app import db, llm
 from app.config import settings
 from app.mail.content import current_message
 from app.mail.router import address
-from app.mail.voice import customer_voice
 from app.models import Mail, Rfq, RfqDraft
 
 log = logging.getLogger(__name__)
@@ -82,6 +81,11 @@ IATA airport codes, kg, cbm and five-digit pickup ZIPs. Omit fields without evid
 For an unambiguous short yes to the current offer, add booking_consent=true with the exact current
 customer affirmation as evidence. This never overrides a condition, revision, question or rejection.
 Return all schema fields; empty questions unless asking. State a short operational reason.
+"""
+# The plan's only customer-facing text is one short question. The full voice profile
+# (10 000 characters, written for whole quote mails) was sent with every rescue call.
+QUESTION_STYLE = """A question is one or two friendly, plain sentences to a business contact:
+no colons, semicolons, dashes, parentheses, lists or field names, and German uses du.
 """
 
 
@@ -176,6 +180,8 @@ def _eligible(sid: int, mail: Mail) -> bool:
         return False  # already asked this input; wait for an actual new customer answer
     if validation.get("send_state") in ("sending", "unknown"):
         return False
+    if any(b.get("customer_state") == "awaiting_airline" for b in session["bookings"]):
+        return False  # booked: the booking waiter answers once the airline price is known
     if not session["quotes"]:
         if datetime.fromisoformat(session["deadline_at"]) <= datetime.now(UTC):
             return False
@@ -324,7 +330,7 @@ def _decision(
             raw = llm.complete(
                 "thread_rescue",
                 [
-                    {"role": "system", "content": PROMPT + "\n" + customer_voice()},
+                    {"role": "system", "content": PROMPT + QUESTION_STYLE},
                     {
                         "role": "user",
                         "content": json.dumps(context, ensure_ascii=False, default=str),
@@ -501,6 +507,10 @@ def recover_request(
     """Inline recovery before asking, with authority to release obsolete source holds."""
     if not _eligible(sid, mail):
         return None, draft
+    if draft.issues and all(i["field"] == "dangerous_goods" for i in draft.issues):
+        # Only the customer's documents clear this gate (_apply never releases it and no
+        # correction field exists for it): a model call here cannot change the outcome.
+        return None, draft
     plan, key, evidence = _decision(mail, sid, root, draft, "validation")
     if plan is None:
         return None, draft
@@ -520,6 +530,16 @@ def recover_request(
     return request, draft
 
 
+def _rules_decide(session: dict, mail: Mail) -> bool:
+    """A clear yes to the open offer: the booking tool settles it by its own rules, without
+    a plan. Questions, conditions and anything after the booking stay with the model."""
+    from app.agents import booking
+
+    if not session["quotes"] or session["bookings"]:
+        return False
+    return booking.is_acceptance(mail.body) is True
+
+
 def take_over(mail: Mail, sid: int) -> bool:
     """Own the next step; booking/tracking/pricing retain their durable business checks."""
     from app.agents import booking, clarification, rfq, tracking
@@ -534,6 +554,15 @@ def take_over(mail: Mail, sid: int) -> bool:
         if row.get("draft")
         else RfqDraft(facts=session["request"] or {})
     )
+    if _rules_decide(session, mail) and db.kv_claim(f"rescue.rules.{sid}.{mail.id}"):
+        # A clear yes needs no model: the booking tool decides it by rules anyway. Once per
+        # mail; if that leaves it unanswered, the model path follows.
+        db.rescue_answer_seen(sid, mail.id)
+        if row:
+            db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})
+        booking.handle_reply(mail, sid)
+        db.emit("thread_rescue_rules", "Antwort per Regel entschieden, kein Modell", sid)
+        return True
     if not session["quotes"] and mail.id != root.id:
         _, checked = clarification.answer_draft(mail, sid, root, draft)
         checked.evidence = {**draft.evidence, **checked.evidence}

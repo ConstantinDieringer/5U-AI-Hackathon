@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
 - Routing, Preisrechnung, Auswahl und Tariflookup: **kein LLM**.
-- Phishing-Gate: Regeln (Schicht A) laufen vor jeder Aktion. Nur bei „unsure" ein Call `mail_screening` mit `PHISHING_GATE_MODEL` (Standard `gpt-5-nano`), `session_id=None` (zählt nicht gegen das Session-Limit), 2 s Timeout ohne Retry, ≤ 300 Tokens, Mail als begrenzter Datenblock. Fehler oder Timeout = unsure, nie phishing. `PHISHING_GATE_MODE` off|shadow|enforce (Standard enforce, sperrt Regel-Verdikte); `PHISHING_GATE_LLM_MODE` (Standard shadow) begrenzt LLM-Verdikte.
+- Phishing-Gate: Regeln (Schicht A) laufen vor jeder Aktion. Nur bei „unsure" ein Call `mail_screening` mit `PHISHING_GATE_MODEL` (Standard `gpt-5-nano`), `session_id=None` (zählt nicht gegen das Session-Limit), 2 s Timeout ohne Retry, ≤ 300 Tokens, Mail als begrenzter Datenblock. Fehler oder Timeout = unsure, nie phishing. `PHISHING_GATE_MODE` off|shadow|enforce (Standard enforce, sperrt Regel-Verdikte); `PHISHING_GATE_LLM_MODE` off|shadow|enforce (Standard off = kein Call; shadow protokolliert nur) begrenzt LLM-Verdikte.
 - Prompts als Konstanten in der jeweiligen Datei, auf Englisch, kurz.
 
 ### Übernahme blockierter Threads

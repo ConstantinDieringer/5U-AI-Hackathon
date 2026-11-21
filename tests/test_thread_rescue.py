@@ -607,3 +607,85 @@ def test_cost_defaults_avoid_gpt5_and_second_composer_call():
     assert settings.llm_rescue_model == "gpt-5-mini"
     assert settings.thread_rescue_max_calls == 2
     assert settings.compose_repair is False
+
+
+def _no_model(monkeypatch):
+    monkeypatch.setattr(
+        rescue.llm, "complete", lambda *a, **k: pytest.fail("rules decide, no model call")
+    )
+
+
+def test_owner_books_a_clear_yes_by_rules_without_a_model_call(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    accepted = dataclasses.replace(answer, id=18101, body="Please book your offer.")
+    ingest(accepted, "customer")
+    db.kv_set(f"rescue.owner.{SID}", "1")
+    _no_model(monkeypatch)
+    booked = []
+    monkeypatch.setattr(booking, "handle_reply", lambda *args: booked.append(args))
+    rescue.take_over(accepted, SID)
+    assert booked == [(accepted, SID)]
+    assert not db.clarification_unhandled_replies()
+
+
+def test_rules_get_one_attempt_then_the_model_owns_the_same_mail(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    accepted = dataclasses.replace(answer, id=18101, body="Please book your offer.")
+    ingest(accepted, "customer")
+    monkeypatch.setattr(booking, "handle_reply", lambda *args: None)  # leaves it unanswered
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(accepted, SID)
+    assert not calls
+    rescue.take_over(accepted, SID)
+    assert len(calls) == 1
+
+
+def test_a_question_about_the_offer_still_reaches_the_model(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    question = dataclasses.replace(answer, id=18101, body="Is the pickup included in the total?")
+    ingest(question, "customer")
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(question, SID)
+    assert len(calls) == 1
+
+
+def test_dangerous_goods_only_gate_is_asked_without_a_model_call(case, monkeypatch):
+    root, answer, draft = case
+    draft.issues = [{"field": "dangerous_goods", "code": "documents_required", "detail": "UN 3480"}]
+    _no_model(monkeypatch)
+    request, unchanged = rescue.recover_request(answer, SID, root, draft)
+    assert request is None and unchanged is draft
+
+
+def test_booking_waiting_for_the_airline_price_is_not_rescued(case, monkeypatch):
+    _, answer, _ = case
+    add_quote()
+    accepted = dataclasses.replace(answer, id=18101, body="Please book your offer.")
+    ingest(accepted, "customer")
+    db.record_booking(
+        SID,
+        booking_reference="BK-1",
+        rate_id="r1",
+        airline="Fjordline Cargo",
+        price_minor=123456,
+        currency="EUR",
+    )
+    db.set_booking_customer_state(SID, booking.AWAITING_AIRLINE)
+    _no_model(monkeypatch)
+    monkeypatch.setattr(booking, "handle_reply", lambda *a: pytest.fail("waiter owns it"))
+    assert rescue._eligible(SID, accepted) is False
+    rescue.take_over(accepted, SID)
+
+
+def test_rescue_prompt_carries_no_voice_profile(case, monkeypatch):
+    from app.mail.voice import customer_voice
+
+    _, answer, _ = case
+    calls = model(monkeypatch, plan("wait", corrections=[], releases=[]))
+    rescue.take_over(answer, SID)
+    system = calls[0][0][1][0]["content"]
+    assert customer_voice()[:200] not in system
+    assert len(system) < 4000
