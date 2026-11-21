@@ -27,6 +27,7 @@ def payload(body):
     )
 
 
+@pytest.mark.usefixtures("compose_repair_on")
 @pytest.mark.parametrize(
     "lang,question",
     [

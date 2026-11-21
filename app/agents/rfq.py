@@ -982,7 +982,8 @@ def compose_quote_text(
         },
     ]
     last_error: Exception | None = None
-    for attempt in range(2):
+    attempts = 2 if settings.compose_repair else 1  # no repair: checked template instead
+    for attempt in range(attempts):
         raw = ""
         try:
             raw = llm.complete(
@@ -1021,9 +1022,9 @@ def compose_quote_text(
             # the model signs with the team line only; code adds the signer's name above it
             signed = body.rstrip()[: -len(TEAM_LINE)] + SIGNATURE + "\n"
             return _with_cutoff_notice(signed, rfq)
-        except Exception as exc:  # noqa: BLE001 - repair once, then safe fallback
+        except Exception as exc:  # noqa: BLE001 - optional repair (COMPOSE_REPAIR), then fallback
             last_error = exc
-            if attempt == 0:
+            if attempt + 1 < attempts:
                 messages.extend(
                     [
                         {"role": "assistant", "content": raw},

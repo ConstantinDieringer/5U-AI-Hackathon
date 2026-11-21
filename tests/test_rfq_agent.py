@@ -309,6 +309,7 @@ def test_composer_requires_question_coverage_and_one_verified_total(
     assert "not yet available" not in fallback
 
 
+@pytest.mark.usefixtures("compose_repair_on")
 def test_composer_repairs_mixed_route_phrase_once(monkeypatch) -> None:
     request = Rfq(origin="FRA", destination="GRU", weight_kg=100)
     option = RateOption("Test Air", "FRA", "GRU", 2, 147500, "EUR", 147500, "sheet")
@@ -339,6 +340,33 @@ def test_composer_repairs_mixed_route_phrase_once(monkeypatch) -> None:
 
     assert "FRA to GRU" in text
     assert purposes == ["compose_quote", "compose_quote_repair"]
+
+
+def test_composer_without_repair_sends_checked_template_after_one_call(monkeypatch) -> None:
+    """Default (COMPOSE_REPAIR off): a failed check costs no second composer call."""
+    request = Rfq(origin="FRA", destination="GRU", weight_kg=100)
+    option = RateOption("Test Air", "FRA", "GRU", 2, 147500, "EUR", 147500, "sheet")
+    purposes: list[str] = []
+
+    def complete(purpose, *args, **kwargs):
+        purposes.append(purpose)
+        return json.dumps(
+            {
+                "body": "Hello,\n\nTest Air from origin to nach GRU: 1.475 € all-in.",
+                "answered_questions": [],
+                "unavailable_questions": [],
+                "addressed_constraints": [],
+                "unavailable_constraints": [],
+            }
+        )
+
+    monkeypatch.setattr(rfq.llm, "complete", complete)
+    monkeypatch.setattr(rfq, "settings", dataclasses.replace(rfq.settings, compose_repair=False))
+
+    text = rfq.compose_quote_text(request, option, 147500, None, 1)
+
+    assert purposes == ["compose_quote"]
+    assert "GRU" in text and "nach GRU" not in text  # deterministic copy, not the bad draft
 
 
 # ---------------------------------------------------------------- whole flow
@@ -572,10 +600,9 @@ def test_catch_up_resumes_open_rfq_without_new_llm_call_or_bid_mail(stub, monkey
     for t in started:
         t.join(10)
 
-    assert llm_calls == [
-        "compose_quote",
-        "compose_quote_repair",
-    ]  # stored extraction reused; invalid response composition is repaired once
+    # stored extraction reused; an invalid composition goes out as the checked template
+    # copy without a second composer call (COMPOSE_REPAIR off by default)
+    assert llm_calls == ["compose_quote"]
     assert [m["to"] for m in stub.sent] == [CUSTOMER]  # no second bid mail, just the quote
     assert "trucking to CGN" in stub.sent[0]["body"]  # the replayed trucker bid is in
     assert db.get_session(265)["status"] == "quoted"

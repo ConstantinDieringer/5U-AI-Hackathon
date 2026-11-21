@@ -85,6 +85,7 @@ def test_composer_cannot_turn_collection_lead_into_road_duration(kind):
     assert "from your door to the airport" not in safe
 
 
+@pytest.mark.usefixtures("compose_repair_on")
 @pytest.mark.parametrize("repair_succeeds", [True, False])
 def test_internal_timing_label_repairs_or_falls_back(tmp_path, monkeypatch, repair_succeeds):
     db.init_db(str(tmp_path / "timing.db"))

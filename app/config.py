@@ -59,7 +59,10 @@ class Settings:
     thread_rescue_after_s: float
     thread_rescue_max_age_s: float
     thread_rescue_max_parallel: int
+    thread_rescue_max_mails: int
+    thread_rescue_body_chars: int
     llm_compose_model: str
+    compose_repair: bool
     llm_review_model: str
     email_review_enabled: bool
     reply_in_customer_language: bool
@@ -161,16 +164,25 @@ settings = Settings(
     ratedesk_address=_env("RATEDESK_ADDRESS", "ratedesk@hackloop.mail").lower(),
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
     llm_model=_env("LLM_MODEL"),
-    llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5"),  # stronger repair when extraction fails
-    llm_rescue_model=_env("LLM_RESCUE_MODEL", "gpt-5"),
+    # one step up from LLM_MODEL, not gpt-5: a repair or rescue on gpt-5 alone costs more
+    # than all other calls of a quote together (cost points: 0 at 0.10 USD per quote)
+    llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5-mini"),  # repair when extraction fails
+    llm_rescue_model=_env("LLM_RESCUE_MODEL", "gpt-5-mini"),
     thread_rescue_enabled=_env("THREAD_RESCUE_ENABLED", "true").lower() == "true",
-    thread_rescue_max_calls=max(1, int(_env("THREAD_RESCUE_MAX_CALLS", "6"))),
+    thread_rescue_max_calls=max(1, int(_env("THREAD_RESCUE_MAX_CALLS", "2"))),
     thread_rescue_after_s=max(10.0, float(_env("THREAD_RESCUE_AFTER_S", "45"))),
     # only fresh customer input: older threads are history, not a live workflow (a restart
     # woke ~40 hours-old threads at once, sent mails into them and hit gateway 429s)
     thread_rescue_max_age_s=max(60.0, float(_env("THREAD_RESCUE_MAX_AGE_S", "600"))),
     thread_rescue_max_parallel=max(1, int(_env("THREAD_RESCUE_MAX_PARALLEL", "2"))),
+    # rescue prompt size: the latest N mails of the thread (root always kept), each cut to
+    # this many characters; was 35 mails x 9000 characters, up to ~80k input tokens per call
+    thread_rescue_max_mails=max(2, int(_env("THREAD_RESCUE_MAX_MAILS", "8"))),
+    thread_rescue_body_chars=max(500, int(_env("THREAD_RESCUE_BODY_CHARS", "2500"))),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
+    # a second composer call after a failed check doubles the quote's biggest cost; off =
+    # the checked deterministic quote copy goes out instead
+    compose_repair=_flag("COMPOSE_REPAIR", False),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",
     reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
