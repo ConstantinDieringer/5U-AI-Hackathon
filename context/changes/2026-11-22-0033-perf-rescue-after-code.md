@@ -1,0 +1,1 @@
+- Rescue without a model where rules decide (PR #71): clear yes or status question after the quote goes to the booking tool, DG-only gates use the template question, bookings waiting for the airline price are skipped, voice profile out of the rescue prompt. `PHISHING_GATE_LLM_MODE` default `off`.

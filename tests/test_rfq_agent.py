@@ -611,3 +611,16 @@ def test_catch_up_skips_old_rfq(stub) -> None:
         c.execute("UPDATE sessions SET created_at = ? WHERE id = 265",
                   ("2026-11-21T15:00:00+00:00",))  # fmt: skip
     assert mail and rfq.catch_up() == 0
+
+
+def test_extract_ends_without_a_retry_when_the_budget_is_spent(monkeypatch) -> None:
+    purposes = []
+
+    def complete(purpose, *args, **kwargs):
+        purposes.append(purpose)
+        raise rfq.llm.LlmBudgetError("budget spent")
+
+    monkeypatch.setattr(rfq.llm, "complete", complete)
+    mail = Mail(1, 1, CUSTOMER, TEAM, "MUC-LAX", MAIL_1628, datetime.now(UTC).isoformat())
+    assert rfq.extract_rfq(mail, 1) is None
+    assert purposes == ["extract_rfq"]
