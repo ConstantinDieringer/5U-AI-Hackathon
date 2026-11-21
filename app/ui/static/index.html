@@ -433,6 +433,34 @@ async function loadDetail() { if (S.selected == null) return;
 const act = (path, confirmText) => async () => { if (confirmText && !confirm(confirmText)) return; try { await post(`/api/sessions/${S.selected}/${path}`); } catch (e) { alert("Fehler: " + e.message); } await Promise.all([loadDetail(), loadSessions()]); };
 function laneOf(s) { const r = s.request || {}, q = (s.quotes || [])[0] || {}; const o = r.origin || q.origin, d = r.destination || q.destination, parts = [];
   if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(r.preference || r.mode); return parts.join(" · "); }
+function costCard(s) {
+  const u = s.llm_usage || { calls: [], call_count: 0, total_micro_usd: 0, input_tokens: 0, output_tokens: 0 };
+  const dollars = (v) => v == null ? "Unbekannt" : Number(v / 1e6).toLocaleString("de-DE", { minimumFractionDigits: 6, maximumFractionDigits: 6 }) + " USD";
+  const count = (v) => v == null ? "Nicht gemeldet" : Number(v).toLocaleString("de-DE");
+  const c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "API-Kosten dieser RFQ")),
+    el("div", { class: "why-total" }, el("b", {}, dollars(u.total_micro_usd)), el("span", { class: "muted" }, `${u.call_count} Aufrufe · Input ${count(u.input_tokens)} · Output ${count(u.output_tokens)}`)),
+    el("p", { class: "caption" }, "Schätzung nach OpenAI-Modellpreisen in USD. Cached Input ist Teil des Inputs; Reasoning ist bereits im Output enthalten. Keine doppelte Berechnung."));
+  if (u.incomplete_calls) c.append(el("p", { class: "notice" }, `${u.incomplete_calls} Aufrufe ohne Preis oder Verbrauchsdaten. Bekannte Teilsumme: ${dollars(u.known_cost_micro_usd)}.`));
+  if (u.legacy_calls) c.append(el("p", { class: "caption" }, "Historische Aufrufe: ursprüngliche Kostenschätzung erhalten; Cache-, Reasoning- und Preisdetails wurden damals nicht gespeichert."));
+  if (!u.calls.length) c.append(el("p", { class: "muted" }, "Noch keine LLM-Aufrufe für diese RFQ erfasst."));
+  for (const call of u.calls) {
+    const a = call.accounting, t = a && a.tokens, rates = a && a.rates, costs = a && a.components_micro_usd;
+    const wrap = el("details", {}, el("summary", {}, `${call.purpose || "Aufruf"} · ${call.model || "Modell unbekannt"} · ${dollars(a && a.status !== "estimated" ? null : call.cost_micro_usd)}`));
+    const rows = t ? [
+      [t.cached_input == null ? "Input (Cache unbekannt)" : "Input ohne Cache", t.input - (t.cached_input || 0), rates && rates.input, costs && costs.input],
+      ["Cached Input", t.cached_input, rates && rates.cached_input, costs && costs.cached_input],
+      ["Output inkl. Reasoning", t.output, rates && rates.output, costs && costs.output],
+      ["Davon Reasoning", t.reasoning, null, null]
+    ] : [["Input", call.prompt_tokens, null, null], ["Output", call.completion_tokens, null, null]];
+    const table = el("table", { class: "list" }, el("thead", {}, el("tr", {}, ...["Tokenart", "Tokens", "USD / 1 Mio.", "Kosten"].map(x => el("th", {}, x)))),
+      el("tbody", {}, ...rows.map(([label, tokens, rate, cost]) => el("tr", {}, el("td", {}, label), el("td", { class: "num" }, count(tokens)), el("td", { class: "num" }, rate == null ? "" : String(rate)), el("td", { class: "num" }, cost == null ? "" : dollars(Number(cost)))))));
+    wrap.append(el("div", { style: "overflow-x:auto" }, table));
+    if (t && t.cached_input == null) wrap.append(el("p", { class: "caption" }, "Gateway meldet keinen Cache-Anteil. Input zum regulären Tarif geschätzt."));
+    if (a && (a.prompt_details || a.completion_details)) wrap.append(el("details", {}, el("summary", {}, "Weitere gemeldete Tokenarten"), el("pre", {}, JSON.stringify({ input: a.prompt_details, output: a.completion_details }, null, 2))));
+    c.append(wrap);
+  }
+  return c;
+}
 function renderDetail() {
   const s = S.detail, notices = [];
   if (s.mode === "manual") notices.push(el("div", { class: "notice" }, icon("hand"), "Ein Mensch hat diese Session übernommen. Der Agent antwortet hier nicht mehr."));
@@ -452,7 +480,7 @@ function renderDetail() {
     el("div", { class: "h" }, el("span", {}, m.direction === "in" ? "von " + (m.sender || "?") : "an " + (m.recipient || "?")), el("span", {}, time(m.received_at))),
     el("div", { class: "s" }, m.subject || ""), el("details", { open: s.mails.length === 1 ? true : null }, el("summary", {}, "Text"), el("pre", {}, m.body || ""))));
   $("#detail").replaceChildren(head, el("div", { class: "dgrid" },
-    el("div", { class: "stack" }, whyCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Timeline"), el("span", { class: "aside caption" }, "live")), tl)),
+    el("div", { class: "stack" }, costCard(s), whyCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Timeline"), el("span", { class: "aside caption" }, "live")), tl)),
     el("div", { class: "stack" }, s.bookings.length ? bookingCard(s) : null, boardCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Mails"), el("span", { class: "aside caption" }, String(s.mails.length))), s.mails.length ? mails : emptyState("mail", "Keine Mails.")))));
 }
 function eventItem(e, fresh) { const li = el("li", { class: (e.level || "") + (fresh ? " fresh" : "") }, el("span", { class: "time" }, time(e.created_at)), el("span", { class: "msg" }, e.message || e.kind),
@@ -541,7 +569,7 @@ let refreshT = null;
 function refreshSoon() { clearTimeout(refreshT); refreshT = setTimeout(() => { loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "live") loadSessions(); if (S.page === "crm") loadCrm(); }, 500); }
 function onEvent(e) { if (S.seen.has(e.id)) return; S.seen.add(e.id); S.lastId = Math.max(S.lastId, e.id);
   if (S.detail && e.session_id === S.selected) { const tl = $("#timeline"); if (tl) tl.append(eventItem(e, true));
-    if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted"].includes(e.kind)) loadDetail(); }
+    if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted", "llm_call"].includes(e.kind)) loadDetail(); }
   refreshSoon(); }
 function connect() { const es = new EventSource("/api/stream?since=" + S.lastId);
   es.onopen = () => { $("#live-dot").className = "dot on"; $("#live-text").textContent = "Live verbunden"; };
