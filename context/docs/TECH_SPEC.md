@@ -284,6 +284,8 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Angebots-Sprache bleibt als ISO-Code bis zum Composer/Reparatur erhalten, statt Nicht-Deutsch pauschal in Englisch umzuwandeln. Aktuelle Mail-/Anhangsprosa entscheidet vor Signatur/Historie; erkennbare Sprachabweichungen lösen Reparatur aus. Deterministische Angebote, Monate und Betreffe unterstützen EN/DE/FR/ES/IT. Für andere Sprachen darf ein fehlender geprüfter Fallback nicht still durch Englisch ersetzt werden; der normale Composer bleibt verfügbar. Kein zusätzlicher Rewrite-Call.
+
 - Explizit verneinte Buchungsabsichten (`won't go ahead`, `cannot accept`, `don't reserve`, einschließlich typografischer Apostrophe) haben Vorrang vor positiven Schlüsselwörtern. Der gemeinsame Freigabeparser darf daraus weder Buchung noch Preisänderungsfreigabe ableiten.
 
 - Carrier-Angebote mit Anhängen verwenden denselben begrenzten lokalen TXT/PDF/DOCX/XLSX-Leser wie RFQs. Nur explizite Gesamtpreise mit eindeutiger Währung werden übernommen; `Total, all-in` und unmittelbar folgende Wertzeilen werden unterstützt, aber nicht über fremde Zeilen hinweg gesucht. Komponenten, Wartezeit-Zuschläge und Referenznummern ersetzen keinen Gesamtpreis. Widersprüche zwischen Mail und Dokumenten sowie unlesbare/Audio-Anhänge bleiben als `bid_unreadable` sichtbar und werden nicht geraten. Der bisherige reine Mailtextpfad bleibt erhalten.

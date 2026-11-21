@@ -10,6 +10,48 @@ SIGNER = os.getenv("MAIL_SIGNER", "Moritz").strip() or "Moritz"
 SIGNATURE = f"{SIGNER}\n{TEAM_LINE}"
 
 _MONTHS = {
+    "fr": (
+        "janvier",
+        "février",
+        "mars",
+        "avril",
+        "mai",
+        "juin",
+        "juillet",
+        "août",
+        "septembre",
+        "octobre",
+        "novembre",
+        "décembre",
+    ),
+    "es": (
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
+    ),
+    "it": (
+        "gennaio",
+        "febbraio",
+        "marzo",
+        "aprile",
+        "maggio",
+        "giugno",
+        "luglio",
+        "agosto",
+        "settembre",
+        "ottobre",
+        "novembre",
+        "dicembre",
+    ),
     "en": (
         "January",
         "February",
@@ -42,7 +84,7 @@ _MONTHS = {
 
 
 def written_date(value: date, lang: str) -> str:
-    language = "de" if lang == "de" else "en"
+    language = lang if lang in _MONTHS else "en"
     day = f"{value.day}." if language == "de" else str(value.day)
     return f"{day} {_MONTHS[language][value.month - 1]} {value.year}"
 

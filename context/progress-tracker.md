@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 70 language root cause reproduced: detector returns fr, composer reduced every non-de code to en. Full request language now reaches composition/repair, current document prose participates in detection, recognizable mismatched output is rejected. FR/ES/IT quote fallback, months and subjects preserve language; unsupported fallback languages fail visibly rather than send English. No extra LLM step or pricing change.
+
 - Round 70 rejected the English response to its French RFQ, then said "we won't go ahead"; the intent parser returned True and an actual airline booking followed. Explicit contracted/expanded negative booking intent now overrides positive verbs, including curly apostrophes; public handler regressions assert no booking/send. Language-composer issue tracked separately.
 
 - Carrier document totals hardened (PR, `bids.document_price` / `document_timing`): 18 offer layouts x 5 formats (txt, pipe table, PDF, DOCX paragraphs, DOCX table) replay exact. Tier 1 total labels with qualifiers (Total amount, Total (EUR), Gesamtpreis (netto), Summe, Total due, incl. fuel), value in the next row, column-header currency, empty/merged table cells, NBSP thousands. Tier 2 price labels only without a total line and only with the currency at the amount. Never: per-unit rates, waiting/optional/excluded charges, sub-totals, offer/reference numbers, two different totals. Duration from the transit/collection line, never validity/payment/storage; number words. Before: 32/90 layouts and three silent wrong values (0.07 EUR per-kg rate as total, 1.00 EUR from NBSP thousands, 7-day validity as transit).
