@@ -494,7 +494,7 @@ function renderDetail() {
       el("button", { class: "btn", onclick: loadDraft, title: "Preis aus Tarifblatt, Portal und Geboten berechnen und eine fertige Quote ins Antwortfeld setzen" }, icon("coin"), "Notfall-Quote"),
       el("button", { class: "btn primary", onclick: () => toggleReply(true) }, icon("send"), "Antworten")),
     ...notices,
-    el("div", { id: "reply", style: "display:" + (reply.open ? "block" : "none") + ";margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
+    el("div", { id: "reply", style: "display:" + (reply.open ? "block" : "none") + ";margin-top:16px" }, s.first_reply_at || !recipient || !recipient.is_thread_starter ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
       el("label", { class: "caption", for: "reply-to" }, "Empfänger"),
       el("select", { id: "reply-to", style: "width:100%;margin:6px 0", onchange: (e) => { reply.to = e.target.value; reply.mail_id = null; renderDetail(); } }, ...choices.map((r) =>
         el("option", { value: r.address, selected: r.address === reply.to }, r.address + " · " + r.role_label))),
