@@ -56,6 +56,8 @@ _WORDS: dict[str, frozenset[str]] = {
             "how",
             "i",
             "agree",
+            "dangerous",
+            "goods",
             "weight",
             "gross",
             "volume",
