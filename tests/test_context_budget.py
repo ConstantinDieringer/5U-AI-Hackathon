@@ -10,13 +10,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# bytes; always-read files are loaded on every task
+# bytes; CLAUDE.md and its @imports are loaded into every session
 ALWAYS_READ = {
-    "CLAUDE.md": 4_000,
+    "CLAUDE.md": 4_500,
     "context/code-standards.md": 4_000,
-    "context/progress-tracker.md": 6_000,
 }
 ON_DEMAND = {
+    "context/progress-tracker.md": 6_000,
     "context/architecture-context.md": 5_000,
     "context/project-overview.md": 5_000,
     "context/ai-workflow-rules.md": 4_000,
@@ -70,3 +70,27 @@ def test_claude_md_routes_only_to_existing_files() -> None:
     assert paths, "CLAUDE.md must route to context files"
     missing = sorted(p for p in paths if "*" not in p and not (ROOT / p).is_file())
     assert not missing, f"CLAUDE.md points to missing files: {missing}"
+
+
+def test_claude_md_imports_exist() -> None:
+    text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    imports = re.findall(r"^@(\S+)$", text, flags=re.MULTILINE)
+    assert "context/code-standards.md" in imports
+    missing = [i for i in imports if not (ROOT / i).is_file()]
+    assert not missing, f"CLAUDE.md imports missing files: {missing}"
+
+
+def test_every_area_has_a_path_rule_that_matches_real_files() -> None:
+    rules = sorted((ROOT / ".claude" / "rules").glob("*.md"))
+    targets: set[str] = set()
+    for rule in rules:
+        text = rule.read_text(encoding="utf-8")
+        front = text.split("---")[1]
+        globs = re.findall(r'^\s+- "([^"]+)"$', front, flags=re.MULTILINE)
+        assert globs, f"{rule.name} needs a paths list"
+        dead = [g for g in globs if not any(ROOT.glob(g))]
+        assert not dead, f"{rule.name} paths match no file: {dead}"
+        targets.update(re.findall(r"`(context/[^`]+\.md)`", text))
+    areas = {f"context/areas/{a.name}" for a in (ROOT / "context" / "areas").glob("*.md")}
+    assert not areas - targets, f"area files without a path rule: {sorted(areas - targets)}"
+    assert all((ROOT / t).is_file() for t in targets), "a path rule points to a missing file"

@@ -29,3 +29,9 @@ Binding detail: TECH_SPEC §6 (data models), portal API in `context/docs/5u-api.
 - **Carrier preferences:** excluded carriers are never asked nor quoted; a preferred one wins when priced. Two-letter codes and short names count; a negation reaches only its own clause.
 - **Board accuracy:** `45 × (1 − |ours − best| / best / 10 %)`; quoting below best costs too. Only quotes within 5 % are accepted. Every rate-sheet trap gets a unit test.
 - **FX/audit:** `RateOption` and `pricing_audit` events keep original currency, tariff version, ordinary/breakpoint totals and the FX evidence. `python -m app.pricing.audit` joins board evidence.
+
+## Tests (run these while iterating; the full suite only before the PR)
+
+```
+python -m pytest -q tests/test_pricing.py tests/test_pricing_hardening.py tests/test_parse_tariffs.py tests/test_portal_and_reference.py tests/test_portal_fallback_capacity.py tests/test_served_lanes.py tests/test_trucker_balance.py tests/test_bid_attachments.py tests/test_bid_next_break.py tests/test_document_totals.py tests/test_carrier_prefs.py tests/test_carrier_exclusion_guard.py tests/test_rounds_66_68_offers.py
+```

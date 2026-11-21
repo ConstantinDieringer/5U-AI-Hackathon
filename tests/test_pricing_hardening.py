@@ -399,6 +399,7 @@ def test_failed_snapshot_refresh_preserves_seed(monkeypatch, tmp_path):
     assert portal_sync.load_portal_lanes() == old
 
 
+@pytest.mark.slow
 def test_full_app_start_with_isolated_mailbox(tmp_path):
     """Boot real threads/server with a fake 5U transport and a disposable database."""
     import os

@@ -46,5 +46,12 @@ The jury judges UX and design, and the pitch will show the UI, so the UI is a sc
 - Manual replies default to the latest incoming customer mail; carrier mails stay explicitly selectable. Customer quotes to other recipients are rejected before send; the confirmation names the recipient. Only customer responses set `first_reply_at`.
 - Notfall-Quote (`POST /api/sessions/{id}/draft`, `app/ui/drafts.py`) computes a quote from stored data and hands back to the agent after sending.
 - Übersicht v0.3: status strip, "Fehler & Warnungen" (`GET /api/problems`, ERROR logs as `log_error` events via `app/ui/log_events.py`), "Lagebild/Kontext kopieren" (`/api/context`, `/api/sessions/{id}/context`).
+- **Manual fallback export:** `app/ui/ai_context.py` builds one markdown briefing per session (thread, attachment text, state, events, diagnostics, recent log lines from the in-memory `app/ui/logbuffer.py` ring) for pasting into an outside chat model; `context.zip` adds original attachment files. Read only: no download, send or gateway call.
 - Deploy light in the top bar (`/api/deploy-gate`); attention list `GET /api/attention`.
 - Mail content is rendered only via `textContent`; JSON fields are snake_case.
+
+## Tests (run these while iterating; the full suite only before the PR)
+
+```
+python -m pytest -q tests/test_server.py tests/test_manual_reply_targets.py tests/test_dashboard_problems.py tests/test_context_export.py tests/test_alerts.py tests/test_board_watch.py tests/test_api_costs.py
+```
