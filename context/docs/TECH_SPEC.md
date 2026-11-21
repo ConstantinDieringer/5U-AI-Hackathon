@@ -2,7 +2,7 @@
 
 **Verbindlich für alle drei Teammitglieder und für jede Claude-/KI-Session, die Code für dieses Repo schreibt.**
 Wer davon abweichen will, ändert zuerst diese Datei (kurz im Team ansagen), dann den Code.
-Repo: `ConstantinDieringer/5U-AI-Hackathon` · Ablage: `context/docs/TECH_SPEC.md` · Stand: 21.11.2026, 15:20
+Repo: `ConstantinDieringer/5U-AI-Hackathon` · Ablage: `context/docs/TECH_SPEC.md` · Stand: 21.11.2026, 18:00
 
 ---
 
@@ -151,6 +151,8 @@ class Rfq(BaseModel):         # Pydantic (LLM-Output); die Preisrechnung liest n
     ready_date: str | None    # ISO-Datum
     language: str = "en"
     customer_name: str | None
+    customer_questions: list[str] = []     # jede explizite Kundenfrage, max. 5
+    service_constraints: list[str] = []    # weitere Service-/Terminbedingungen, max. 10
 ```
 
 Umgesetzt in `app/models.py` (21.11., 15:30).
@@ -218,11 +220,32 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
-- **Hartes Limit: max. 2 LLM-Calls pro Thread** (Extraktion + Antworttext bzw. ein Extraktions-Retry mit `LLM_RETRY_MODEL`, wenn die erste Antwort unbrauchbar ist). Ein dritter Call wirft eine Exception.
-- `max_tokens` immer setzen (Extraktion ≤ 200, Mailtext ≤ 250). `temperature=0` für Extraktion.
+- **Hartes Limit: standardmäßig max. 3 LLM-Calls pro Thread**, über
+  `LLM_MAX_CALLS_PER_SESSION` konfiguriert: Extraktion, optional genau eine strukturierte
+  Reparatur und Antworttext. Weitere Calls werfen eine Exception.
+- `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, Mailtext ≤ 500).
+  `temperature=0` für strukturierte Outputs.
 - Strukturierte Outputs über JSON-Schema/Pydantic, kein freies Parsen.
 - Routing, Preisrechnung, Auswahl und Tariflookup: **kein LLM**.
 - Prompts als Konstanten in der jeweiligen Datei, auf Englisch, kurz.
+
+## 8a. RFQ-Antwortvertrag und Zeitbudget
+
+- Die Extraktion bewahrt neben den Preisfeldern alle expliziten Kundenfragen und
+  Servicebedingungen. Schlägt die Pydantic-Validierung fehl, ist genau ein Reparatur-Call
+  mit demselben Schema erlaubt.
+- Der Antwort-Composer erhält ausschließlich verifizierte Preis-, Laufzeit-, Termin- und
+  Verfügbarkeitsfakten. Seine Ausgabe wird vor dem Senden geprüft: genau ein EUR-Gesamtpreis,
+  jede Kundenfrage entweder beantwortet oder ausdrücklich als nicht verfügbar markiert.
+  Bei jeder ungültigen Ausgabe wird ein deterministischer Antworttext verwendet.
+- Carrier werden anhand aktueller Lane-Beobachtungen ausgewählt und auf
+  `MIN_BID_CARRIERS..MAX_BID_CARRIERS` begrenzt. Negative Beobachtungen verfallen nach
+  `CARRIER_OBSERVATION_TTL_S`.
+- Bis `QUOTE_FULL_SCORE_DEADLINE_S` wird auf den besten vollständigen Preis gewartet; die
+  absolute Sendeschranke ist `QUOTE_FINAL_DEADLINE_S`. Door-to-Port darf standardmäßig nie
+  ohne Trucking-Anteil angeboten werden (`ALLOW_INCOMPLETE_DOOR_QUOTE=false`).
+- Offene RFQ-Sessions werden beim Start aus SQLite wieder aufgenommen. Sende-Claims und bereits
+  gespeicherte Carrier-Anfragen verhindern doppelte Kundenangebote bzw. unnötige Doppelanfragen.
 
 ## 9. Logging & Fehler
 

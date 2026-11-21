@@ -162,6 +162,131 @@ def test_schedule_door_to_port_and_past_ready_date() -> None:
     assert rfq.schedule(door.model_copy(update={"ready_date": "next week"}), 2, today) is None
 
 
+def test_rfq_preserves_questions_and_constraints() -> None:
+    parsed = Rfq.model_validate(
+        {
+            "destination": "LAX",
+            "weight_kg": 998,
+            "customer_questions": [" Earliest departure? ", "Earliest departure?"],
+            "service_constraints": ["One consignment", " Single AWB "],
+        }
+    )
+    assert parsed.customer_questions == ["Earliest departure?"]
+    assert parsed.service_constraints == ["One consignment", "Single AWB"]
+
+
+def test_extract_repairs_invalid_structured_output(monkeypatch) -> None:
+    valid = {
+        "origin": "MUC",
+        "pickup_zip": None,
+        "destination": "LAX",
+        "weight_kg": 998,
+        "volume_cbm": 2.39,
+        "pieces": 2,
+        "preference": "fastest",
+        "ready_date": "2026-11-29",
+        "language": "en",
+        "customer_name": "Deniz",
+        "customer_questions": ["Confirm earliest departure and arrival"],
+        "service_constraints": ["Single consignment under one AWB"],
+    }
+    outputs = iter(["not json", json.dumps(valid)])
+    purposes = []
+
+    def complete(purpose, *args, **kwargs):
+        purposes.append(purpose)
+        return next(outputs)
+
+    monkeypatch.setattr(rfq.llm, "complete", complete)
+    mail = Mail(1, 1, CUSTOMER, TEAM, "MUC-LAX", MAIL_1628, datetime.now(UTC).isoformat())
+    parsed = rfq.extract_rfq(mail, 1)
+    assert parsed is not None
+    assert parsed.customer_questions == ["Confirm earliest departure and arrival"]
+    assert purposes == ["extract_rfq", "extract_rfq_retry"]
+
+
+def test_bid_carriers_are_capped_and_observed_lanes_rank_first(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    truck = bids.Carrier("Truck", "trucker", "truck@hackloop.mail", ("51",))
+    carriers = {
+        f"air-{index}@hackloop.mail": bids.Carrier(
+            f"Air {index}", "airline", f"air-{index}@hackloop.mail", ("ORD",)
+        )
+        for index in range(4)
+    }
+    monkeypatch.setattr(rfq, "truckers_for_zone", lambda *args: [truck])
+    monkeypatch.setattr(
+        rfq,
+        "airlines_for",
+        lambda *args: [SimpleNamespace(channel="email_only", email=email) for email in carriers],
+    )
+    monkeypatch.setattr(rfq, "carrier_by_email", carriers.get)
+    monkeypatch.setattr(
+        rfq.served_lanes,
+        "serves",
+        lambda email, *args: True if email.endswith("2@hackloop.mail") else None,
+    )
+    monkeypatch.setattr(
+        rfq,
+        "settings",
+        dataclasses.replace(rfq.settings, min_bid_carriers=2, max_bid_carriers=3),
+    )
+    request = Rfq(pickup_zip="51447", destination="ORD", weight_kg=100)
+    trucks, airlines = rfq._bid_carriers(request, "CGN")
+    assert trucks == [truck]
+    assert 2 <= len(trucks + airlines) <= 3
+    assert airlines[0].name == "Air 2"
+
+
+def test_composer_requires_question_coverage_and_one_verified_total(monkeypatch) -> None:
+    request = Rfq(
+        origin="MUC",
+        destination="LAX",
+        weight_kg=998,
+        ready_date="2026-11-29",
+        customer_questions=["When do we arrive?"],
+    )
+    option = RateOption("Fjordline", "MUC", "LAX", 3, 320358, "EUR", 320358, "portal")
+    body = "Hello,\n\n3.203,58 € all-in. Arrival is 2 Dec 2026.\n\nYour austrian Power Team\n"
+    monkeypatch.setattr(
+        rfq.llm,
+        "complete",
+        lambda *args, **kwargs: json.dumps(
+            {
+                "body": body,
+                "answered_questions": [0],
+                "unavailable_questions": [],
+                "addressed_constraints": [],
+                "unavailable_constraints": [],
+            }
+        ),
+    )
+    assert (
+        rfq.compose_quote_text(
+            request, option, 320358, None, 7, today=datetime(2026, 11, 21).date()
+        )
+        == body
+    )
+
+    monkeypatch.setattr(
+        rfq.llm,
+        "complete",
+        lambda *args, **kwargs: json.dumps(
+            {
+                "body": body + "EUR 1.00",
+                "answered_questions": [],
+                "unavailable_questions": [],
+                "addressed_constraints": [],
+                "unavailable_constraints": [],
+            }
+        ),
+    )
+    fallback = rfq.compose_quote_text(request, option, 320358, None, 7)
+    assert _amounts(fallback) == ["3.203,58 €"]
+    assert "not yet available" in fallback
+
+
 # ---------------------------------------------------------------- whole flow
 
 
@@ -297,11 +422,46 @@ def test_503_fallback_requests_known_carrier_once(stub, monkeypatch):
         ),
     )
     monkeypatch.setattr(bids, "wait", lambda *args, **kw: [])
+    monkeypatch.setattr(
+        rfq,
+        "settings",
+        dataclasses.replace(rfq.settings, allow_incomplete_door_quote=True),
+    )
     mail = _rfq_mail()
     rfq.handle_rfq(mail, 265)
     requests = [x for x in stub.sent if x["to"] == carrier.email]
     assert len(requests) == 1
     assert stub.sent[-1]["to"] == CUSTOMER
+
+
+def test_incomplete_door_quote_is_not_sent(stub, monkeypatch) -> None:
+    trucker = bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",))
+    monkeypatch.setattr(rfq, "_bid_carriers", lambda *args: ([trucker], []))
+    monkeypatch.setattr(bids, "wait", lambda *args, **kwargs: [])
+    mail = _rfq_mail()
+    rfq.handle_rfq(mail, 265)
+    assert all(message["to"] != CUSTOMER for message in stub.sent)
+    assert db.get_session(265)["status"] == "error"
+
+
+def test_existing_bid_request_is_not_resent_after_restart(stub) -> None:
+    mail = _rfq_mail()
+    carrier = bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",))
+    db.record_outgoing(
+        mail_id=900,
+        recipient=carrier.email,
+        subject="old request",
+        body="old body",
+        category="bid_request",
+        session_id=mail.id,
+        raw={"id": 900},
+    )
+    request = Rfq(pickup_zip="51447", destination="ORD", weight_kg=100)
+    try:
+        assert bids.request(mail.id, request, "CGN", [carrier]) == 0
+        assert all(message["to"] != carrier.email for message in stub.sent)
+    finally:
+        bids.close(mail.id)
 
 
 # ---------------------------------------------------------------- resume after restart
@@ -313,7 +473,9 @@ def test_catch_up_resumes_open_rfq_without_new_llm_call_or_bid_mail(stub, monkey
     )
     monkeypatch.setattr(rfq, "_bid_carriers", lambda r, o: ([trucker], []))
     llm_calls: list[str] = []
-    monkeypatch.setattr(rfq.llm, "complete", lambda *a, **k: llm_calls.append("x") or "{}")
+    monkeypatch.setattr(
+        rfq.llm, "complete", lambda purpose, *a, **k: llm_calls.append(purpose) or "{}"
+    )
     mail = _rfq_mail()
     # state left by the run before the restart: extracted, bid asked, trucker answered
     db.set_status(265, "pricing")
@@ -339,7 +501,7 @@ def test_catch_up_resumes_open_rfq_without_new_llm_call_or_bid_mail(stub, monkey
     for t in started:
         t.join(10)
 
-    assert llm_calls == []  # stored extraction reused
+    assert llm_calls == ["compose_quote"]  # stored extraction reused; only response composition
     assert [m["to"] for m in stub.sent] == [CUSTOMER]  # no second bid mail, just the quote
     assert "trucking to CGN" in stub.sent[0]["body"]  # the replayed trucker bid is in
     assert db.get_session(265)["status"] == "quoted"

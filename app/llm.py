@@ -21,7 +21,7 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gpt-5-nano"  # cheapest allowed model by list price; override with LLM_MODEL
-MAX_CALLS_PER_SESSION = 2  # TECH_SPEC section 8: extraction + reply text
+MAX_CALLS_PER_SESSION = settings.llm_max_calls_per_session
 PRICES_FILE = Path(__file__).with_name("llm_prices.json")
 
 _client = OpenAI(
@@ -33,7 +33,7 @@ _client = OpenAI(
 
 
 class LlmBudgetError(RuntimeError):
-    """A session tried to make more gateway calls than MAX_CALLS_PER_SESSION."""
+    """A session tried to make more gateway calls than configured."""
 
 
 def model() -> str:

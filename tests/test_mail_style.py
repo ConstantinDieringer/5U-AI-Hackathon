@@ -1,5 +1,6 @@
 """Mail presentation contracts across agents without sending real mail."""
 
+import json
 import re
 
 import pytest
@@ -80,3 +81,27 @@ def test_money_format_preserves_cents_and_other_currencies() -> None:
     assert amount(0) == "0,00 €"
     assert amount(147501) == "1.475,01 €"
     assert amount(147501, "USD") == "1.475,01 USD"
+
+
+@pytest.mark.parametrize(
+    "bad_copy", ["Route FRA – JFK", "Route FRA - JFK", "- Price", "Best regards,"]
+)
+def test_composer_falls_back_when_style_is_wrong(monkeypatch, bad_copy: str) -> None:
+    request = Rfq(
+        origin="FRA",
+        destination="JFK",
+        weight_kg=100,
+        customer_questions=["Can you insure the cargo?"],
+    )
+    option = RateOption("Test Air", "FRA", "JFK", 2, 147500, "EUR", 147500, "sheet")
+    response = {
+        "body": f"Hello,\n\n1.475,00 € all-in. {bad_copy}\n\nYour austrian Power Team",
+        "answered_questions": [],
+        "unavailable_questions": [0],
+        "addressed_constraints": [],
+        "unavailable_constraints": [],
+    }
+    monkeypatch.setattr(rfq.llm, "complete", lambda *args, **kwargs: json.dumps(response))
+    text = rfq.compose_quote_text(request, option, 147500, None, 1)
+    assert_style(text)
+    assert "Verified information is not yet available" in text

@@ -230,6 +230,7 @@ def tx() -> Iterator[sqlite3.Connection]:
 def init_db(path: str | None = None) -> None:
     """Create the database file and schema. Call once at startup (and per test)."""
     global _db_path, _generation
+    path_changed = path is not None
     if path is not None:
         _db_path = path
         _generation += 1
@@ -239,6 +240,11 @@ def init_db(path: str | None = None) -> None:
     c = conn()
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
+    if path_changed:
+        # A database path can later be replaced by the UI import endpoint, which runs in a
+        # different thread. Do not leave the initializing thread holding its WAL on Windows.
+        c.close()
+        _local.c = None
 
 
 def import_database(data: bytes) -> dict[str, Any]:
@@ -650,6 +656,16 @@ def incoming_mails_containing(text: str, limit: int = 1000) -> list[dict[str, An
             (text, limit),
         )
     )
+
+
+def bid_request_recipients(session_id: int) -> set[str]:
+    """Carrier addresses already contacted for this RFQ, used for restart-safe fan-out."""
+    rows = conn().execute(
+        "SELECT recipient FROM mails WHERE session_id = ? AND direction = 'out'"
+        " AND category = 'bid_request'",
+        (session_id,),
+    )
+    return {str(row["recipient"] or "").strip().lower() for row in rows if row["recipient"]}
 
 
 def set_status(session_id: int, status: str, reason: str | None = None) -> None:
