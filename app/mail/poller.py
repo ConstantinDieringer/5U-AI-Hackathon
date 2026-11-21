@@ -15,7 +15,7 @@ from pathlib import Path
 
 from app import db, hackloop
 from app.config import settings
-from app.mail import parse, router, screening, store
+from app.mail import guard, parse, router, screening, store
 from app.models import Category, Mail
 
 log = logging.getLogger(__name__)
@@ -77,8 +77,13 @@ def handle(raw: dict, *, recover: bool = False) -> None:
     mail = parse.mail_from_api(raw)
     in_reply_to = parse.in_reply_to(raw)
     category, rule = router.classify(mail, _parent(in_reply_to))
+    try:  # empty or automatic mail: held below, never worth a phishing-gate LLM call
+        early = guard.precheck(mail, category)
+    except Exception:
+        log.exception("mail guard precheck failed on mail %s", mail.id)
+        early = None
     try:
-        check = screening.screen(mail, category)
+        check = None if early else screening.screen(mail, category)
     except Exception:
         log.exception("phishing gate failed on mail %s: treated as not screened", mail.id)
         check = None
@@ -96,6 +101,14 @@ def handle(raw: dict, *, recover: bool = False) -> None:
     if saved.is_new and check is not None and check.verdict is not screening.Verdict.GENUINE:
         _flag(mail, check, saved.session_id)
     db.delivery_state(mail.id, "stored")
+    try:
+        held = guard.inbound(mail, category, saved.session_id, early)
+    except Exception:
+        log.exception("mail guard failed on mail %s: processed normally", mail.id)
+        held = None
+    if held is not None:
+        db.delivery_state(mail.id, "done")
+        return
     _deliver(mail, category, rule, saved.session_id)
 
 

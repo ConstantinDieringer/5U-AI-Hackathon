@@ -213,6 +213,9 @@ def send(
     for callers' convenience and only checked against what the server stored.
     """
     payload: dict[str, Any] = {"to": to, "subject": subject, "body": body}
+    from app.mail import guard
+
+    guard.check_outbound(to, body, in_reply_to)  # raises OutboundLoopBlocked on a mail loop
     if in_reply_to is not None:
         from app import db
 
@@ -231,6 +234,7 @@ def send(
             sent.get("references"),
             references,
         )
+    guard.record_sent(to, body, in_reply_to)
     log.info("sent mail %s to %s: %s", sent.get("id"), to, subject[:80])
     return sent
 
