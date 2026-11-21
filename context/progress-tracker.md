@@ -34,7 +34,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## In Progress
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
-- Task A, Karim: A1–A8 done. 16:21 PR #5 (Constantin's RFQ agent + bids) merged into main, local `a/rfq-agent` retired; live app now runs main. Next: booking agent, restart resume.
+- Task A, Karim: A1–A8 done. 16:21 PR #5 (Constantin's RFQ agent + bids) merged into main, local `a/rfq-agent` retired; live app now runs main. 16:30 booking agent live (`app/agents/booking.py`): 3 bookings confirmed by the airlines. Next: restart resume for RFQs, tracking agent (C).
 - PR #4 (UI restyle) NOT merged: it conflicts with Moritz's console redesign 299faf2 on main. Moritz + Constantin decide.
 - Task B, Constantin: B1–B7 in PR #2 (pricing, portal, lanes, reference, dataset_version); next door-to-port trucking, bid selection, tariff mails.
 
@@ -87,6 +87,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 16:30: Booking agent live. Board counts round 5 as booked; rounds 2+3 (booked 20 min late, rate re-fetched) show booked=false. Book fast. `kill` alone does not stop run.py while the UI has an SSE client open: use `kill -9` or close the UI first.
 
 - 21.11 16:20: Round 4 (mail 937) lost: LLM gave ICAO origin `EDDL`, Rfq rejected it. Fixed (9b068ab: ICAO→IATA, bad origin dropped when a ZIP is given). Round 2 acceptance (mail 618) not booked: no booking agent yet.
 
