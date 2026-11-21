@@ -299,7 +299,7 @@ function el(tag, attrs = {}, ...kids) {
 function svg(tag, attrs = {}, ...kids) { const n = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v); kids.flat().forEach((c) => c && n.append(c)); return n; }
 function icon(name) { const s = svg("svg", { class: "icon" }); s.append(svg("use", { href: "#i-" + name })); return s; }
 const api = async (p, o) => { const r = await fetch(p, o); if (!r.ok) throw new Error((await r.text()) || r.status); return r.json(); };
-const post = (p, b) => api(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined });
+const post = (p, b) => api(p, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }, body: b ? JSON.stringify(b) : undefined });
 const money = (m, c) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (c || "EUR");
 const euro = (m) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 }) + " €";
 const usd = (u) => u == null ? "–" : "$" + (u / 1e6).toFixed(u < 10000 ? 4 : 3);

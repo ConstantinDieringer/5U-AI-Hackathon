@@ -84,6 +84,10 @@ requirements.txt
 `.env` (nie committen, das Repo ist öffentlich). **Maßgeblich ist `.env.example` im Repo-Root**: alle Variablen mit Standardwert und Kommentar. `TEAM_API_KEY`, UI-Passwort und Webhook-Signing-Secret sind geheim. Das Signing-Secret bleibt in einer privaten Datei auf dem persistenten Volume oder in `MAILBOX_WEBHOOK_SECRET`. Neue Variable = Eintrag in `.env.example` + Standardwert in `app/config.py` im selben Commit.
 
 - Zugriff nur über `from app.config import settings` (z. B. `settings.api_key`).
+- `UI_PASSWORD` ist vor dem Start von `run.py` verpflichtend. Browser-Schreibzugriffe senden
+  `X-Requested-With: XMLHttpRequest`; die Mailbox-Webhook-Route verwendet separat HMAC-SHA256.
+- Eingehende Mail-Anhänge sind nicht vertrauenswürdig: maximal 12 je Mail und 20 MB insgesamt;
+  Downloads werden bei 20 MB pro Datei abgebrochen.
 - Der eigene OpenAI-Key wird **einmalig per curl** im Gateway hinterlegt und steht **nirgends** im Repo oder in `.env`.
 - `.gitignore` enthält mindestens: `.env`, `.venv/`, `__pycache__/`, `data/forwarder.db`, `data/inbox/`, `*.log`.
 
