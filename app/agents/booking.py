@@ -33,6 +33,7 @@ from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
 from app.mail.style import SIGNATURE, amount, booked_joke, has_template_artifacts
+from app.mail.subjects import shipment_subject
 from app.models import Mail
 from app.pricing.pricing import to_minor
 from app.pricing.reference import airline_email
@@ -88,12 +89,35 @@ _REVISION = re.compile(
     re.IGNORECASE,
 )
 
+_PREBOOK_QUESTION = re.compile(
+    r"\bbefore\s+(?:(?:we|i|you)\s+(?:book|proceed|accept|approve)\b|"
+    r"booking\b|proceeding\b)"
+    r"|\b(?:can|could|may|should)\s+(?:we|i)\s+(?:book|proceed|accept)\b"
+    r"|\b(?:book|proceed|accept)\b[^.!?\n]{0,100}\b(?:if|once)\b"
+    r"|\b(?:if|once)\b[^.!?\n]{0,100}\b(?:book|proceed|accept)\b"
+    r"|\b(?:bevor|ehe)\b[^.!?\n]{0,80}\b(?:buchen|bestätigen|freigeben)\b"
+    r"|\b(?:buchen|bestätigen|freigeben)\b[^.!?\n]{0,80}\b(?:wenn|falls)\b",
+    re.IGNORECASE,
+)
+
+_PENDING_APPROVAL = re.compile(
+    r"\b(?:check|checking|prüfen|prüfe|klären|kläre)\b[^.!?\n]{0,60}"
+    r"\b(?:whether|if|ob)\b",
+    re.IGNORECASE,
+)
+
 
 def is_acceptance(body: str) -> bool | None:
     """True = accepts, False = declines, None = unclear (left to a human)."""
     text = own_text(body)
     if _DECLINE.search(text):
         return False
+    pending = any(
+        _PENDING_APPROVAL.search(sentence) and _YES.search(sentence)
+        for sentence in re.split(r"[.!?\n]", text)
+    )
+    if _PREBOOK_QUESTION.search(text) or pending:
+        return None  # mentioning booking in a question/condition is not consent
     if config.settings.revision_not_acceptance and _REVISION.search(text):
         return None
     yes, no = bool(_YES.search(text)), bool(_NO.search(text))
@@ -102,6 +126,45 @@ def is_acceptance(body: str) -> bool | None:
     if no and not yes:
         return False
     return None
+
+
+_DEFERRAL = re.compile(
+    r"\b(?:get|come)\s+back\s+to\s+you|\blook\s+(?:at|into|over)\s+(?:it|this|the\s+offer)|"
+    r"\b(?:review|discuss|check)\w*\s+(?:it\s+|this\s+|the\s+offer\s+)?internally|"
+    r"\bmelde\w*\s+(?:mich|uns)|\bkomm\w*\s+(?:darauf\s+)?zurück|\bschau\w*\s+(?:es|uns\s+das)\s+an",
+    re.IGNORECASE,
+)
+# After a pre-booking answer: "book the faster one instead" must never book the quoted one
+# (REVISION_NOT_ACCEPTANCE is off in production). Stricter only: it can stop a booking.
+_OTHER_OPTION = re.compile(
+    r"\binstead\b|\bstattdessen\b|\balternativ\w*|\bother\s+(?:airline|carrier|option|one)|"
+    r"\b(?:faster|quicker|cheaper|slower)\s+(?:one|option|connection|flight|airline)|"
+    r"\b(?:schneller|günstiger|billiger)\w*\s+(?:verbindung|option|variante|flug|airline)|"
+    r"\bdie\s+(?:schnellere|günstigere|billigere)\b|\bandere\w*\s+(?:airline|option|verbindung)",
+    re.IGNORECASE,
+)
+
+
+def classify_reply(body: str) -> str:
+    """yes | no | question | deferral | unclear, by rules (no LLM). Only "yes" books, exactly
+    as is_acceptance decides. "question": every question sentence names a topic of the quoted
+    option (prebook.parse); a negation word inside it ("is pickup not included?") is no
+    decline, an explicit decline ("we will not proceed") stays "no"."""
+    from app.agents import prebook
+
+    verdict = is_acceptance(body)
+    if verdict is True:
+        return "yes"
+    text = own_text(body)
+    if verdict is False and _DECLINE.search(text):
+        return "no"
+    if prebook.parse(text) is not None:
+        return "question"
+    if verdict is False:
+        return "no"
+    if _PENDING_APPROVAL.search(text) or _DEFERRAL.search(text):
+        return "deferral"
+    return "unclear"
 
 
 def language(body: str) -> str:
@@ -237,10 +300,18 @@ def _confirm_to_customer(
         return False
     to = address(mail.sender)
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    session = db.get_session(sid) or {}
+    quotes = session.get("quotes") or []
+    if quotes:
+        quote = quotes[0]
+        subject = shipment_subject(
+            quote.get("origin"), quote.get("destination"), language(mail.body), subject
+        )
     sent = hackloop.send_customer(
         to, subject, text, in_reply_to=mail.id, session_id=sid, protected_terms=protected_terms
     )
     text = sent["body"]
+    subject = sent["subject"]
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=to,
@@ -288,6 +359,20 @@ def _handle(mail: Mail, sid: int) -> None:
             log.info("session %s already booked, reply %s ignored", sid, mail.id)
         return
     verdict = is_acceptance(mail.body)
+    if settings.prebook_answer:
+        from app.agents import prebook
+
+        if verdict is True:
+            if prebook.answered_before(s) and _OTHER_OPTION.search(own_text(mail.body)):
+                verdict = None  # names another option after our answer: never book on it
+                db.emit(
+                    db.Ev.WARN,
+                    "Kunde nennt nach unserer Antwort eine andere Option: nicht gebucht",
+                    sid,
+                    level="warn",
+                )
+        elif classify_reply(mail.body) == "question" and prebook.reply(mail, sid, s):
+            return  # answered (or deliberately held); booking still waits for a clear yes
     if verdict is not True:
         if verdict is None:
             from app.agents import clarification
@@ -738,6 +823,7 @@ def catch_up() -> None:
             for m in full["mails"]
             if m["direction"] == "in"
             and m["id"] > quote_mail
+            and m.get("category") != "phishing"  # quarantined: never acted on
             and address(str(m["sender"] or "")) == address(str(full.get("customer") or ""))
         ]
         if not replies:

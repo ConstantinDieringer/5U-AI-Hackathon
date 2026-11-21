@@ -257,6 +257,9 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     """Human reply in the customer's thread. Takes the session over first."""
     s = _require(session_id)
     incoming = [m for m in s["mails"] if m["direction"] == "in"]
+    if body.mail_id is not None and db.reply_blocked(body.mail_id):
+        raise HTTPException(409, "mail is quarantined as phishing: release it first")
+    incoming = [m for m in incoming if m.get("category") != "phishing"]
     if not incoming:
         raise HTTPException(409, "no incoming mail to reply to")
     customer = address(s.get("customer") or "")
@@ -307,7 +310,7 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
         db.record_outgoing(
             mail_id=sent_id,
             recipient=parent["sender"],
-            subject=subject,
+            subject=sent.get("subject", subject),
             body=sent.get("body", body.text),
             category="manual_reply",
             session_id=session_id,
@@ -340,6 +343,25 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     return {"ok": True, "mail_id": sent_id}
 
 
+@app.get("/api/quarantine")
+def api_quarantine() -> list[dict[str, Any]]:
+    """Mails the phishing gate blocked and nobody has released yet."""
+    return db.quarantined()
+
+
+@app.post("/api/mails/{mail_id}/release")
+def api_release(mail_id: int) -> dict[str, Any]:
+    """Release a quarantined mail: the normal flow runs, the sender is trusted in its thread."""
+    from app.mail import poller
+
+    try:
+        return poller.release(mail_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except (RuntimeError, TypeError, ValueError) as e:
+        raise HTTPException(409, str(e)) from e
+
+
 MAX_DB_BYTES = 500 * 1024 * 1024
 
 
@@ -357,16 +379,33 @@ async def api_import_db(request: Request) -> dict[str, Any]:
     return db.import_database(data)
 
 
+@app.get("/api/deploy-gate")
+def api_deploy_gate() -> dict[str, Any]:
+    from app.ui import deploy_gate
+
+    return deploy_gate.gate()
+
+
+@app.get("/api/unanswered")
+def api_unanswered() -> list[dict[str, Any]]:
+    return db.unanswered_rounds()
+
+
 @app.get("/api/health")
 def api_health() -> dict[str, Any]:
     from app.mail.outgoing import EMAIL_STYLE_VERSION
+    from app.process import STARTED_AT
 
     return {
         "ok": True,
+        "process_started_at": STARTED_AT.isoformat(timespec="seconds"),
+        "rfq_watchdog": settings.rfq_watchdog,
         "email_style_version": EMAIL_STYLE_VERSION,
         "build_revision": settings.build_revision,
         "email_reviewer_model": settings.llm_review_model,
         "email_review_enabled": settings.email_review_enabled,
         "llm_max_calls_per_session": settings.llm_max_calls_per_session,
+        "phishing_gate_mode": settings.phishing_gate_mode,
+        "phishing_gate_llm_mode": settings.phishing_gate_llm_mode,
         "last_event": (db.events_after(0, limit=1) or [{}])[0].get("id"),
     }

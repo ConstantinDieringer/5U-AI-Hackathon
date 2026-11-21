@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -194,6 +195,10 @@ def get_attachment(message_id: int, attachment_id: int) -> bytes:
     raise HackloopError(method, path, None, "attachment download failed")
 
 
+class QuarantinedReply(RuntimeError):
+    """A reply to a mail the phishing gate quarantined; a person must release it first."""
+
+
 def send(
     to: str,
     subject: str,
@@ -208,7 +213,19 @@ def send(
     for callers' convenience and only checked against what the server stored.
     """
     payload: dict[str, Any] = {"to": to, "subject": subject, "body": body}
+    from app.mail import guard
+
+    guard.check_outbound(to, body, in_reply_to)  # raises OutboundLoopBlocked on a mail loop
     if in_reply_to is not None:
+        from app import db
+
+        try:  # last line of the phishing gate, for every sender
+            blocked = db.reply_blocked(in_reply_to)
+        except Exception:
+            log.exception("quarantine check failed for mail %s: sending", in_reply_to)
+            blocked = False
+        if blocked:
+            raise QuarantinedReply(f"mail {in_reply_to} is quarantined as phishing")
         payload["in_reply_to"] = in_reply_to
     sent = _json_obj(_request("POST", "/v1/mailbox/messages", safe=False, json=payload))
     if references and sent.get("references") != [*references]:
@@ -217,6 +234,7 @@ def send(
             sent.get("references"),
             references,
         )
+    guard.record_sent(to, body, in_reply_to)
     log.info("sent mail %s to %s: %s", sent.get("id"), to, subject[:80])
     return sent
 
@@ -235,12 +253,17 @@ def send_customer(
     protected_terms: tuple[str, ...] = (),
     allow_manual: bool = False,
     deadline_at: float | None = None,
+    review: bool = True,
+    before_transport: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
-    """All customer replies pass the final prose renderer before transport."""
+    """All customer replies pass the final prose renderer before transport. review=False skips
+    the LLM style reviewer for fixed, pre-written templates (no gateway cost).
+    `before_transport` runs after the last control check, right before the HTTP send: from
+    then on the mail may have gone out, so a caller can record that durably."""
     from app import db
     from app.agents.email_review import review_customer_mail
     from app.mail.language import detect
-    from app.mail.outgoing import customer_body
+    from app.mail.outgoing import customer_body, customer_subject, validate_customer_text
 
     def allowed() -> None:
         if session_id is not None and (
@@ -252,11 +275,21 @@ def send_customer(
 
     allowed()
     lang = detect(body)
+    subject = customer_subject(subject, lang)
     rendered = customer_body(body, lang)
-    rendered = customer_body(
-        review_customer_mail(rendered, lang, session_id, protected_terms), lang
-    )
+    if review:
+        rendered = customer_body(
+            review_customer_mail(rendered, lang, session_id, protected_terms), lang
+        )
+    validate_customer_text(rendered)
+    validate_customer_text(subject)
     allowed()
+    if before_transport is not None:
+        try:
+            before_transport()
+        except Exception:
+            # bookkeeping only: a fault here must never stop the quote from going out
+            log.exception("before_transport hook failed: sending anyway")
     options: dict[str, Any] = {}
     if in_reply_to is not None:
         options["in_reply_to"] = in_reply_to
@@ -264,6 +297,7 @@ def send_customer(
         options["references"] = references
     sent = dict(send(to=to, subject=subject, body=rendered, **options))
     sent["body"] = rendered
+    sent["subject"] = subject
     return sent
 
 

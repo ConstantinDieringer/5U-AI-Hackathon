@@ -141,8 +141,9 @@ def test_extra_questions_with_the_composer(tmp_path, monkeypatch) -> None:
 
 def test_extra_questions_fallback_today_skips_the_drop_off_question(tmp_path, monkeypatch) -> None:
     """Composer failure: the deterministic text answers the arrival (schedule line) but says
-    nothing on the drop-off time; the cutoff notice needs 'drop-off ... until/before/by'."""
-    w = build_world(tmp_path, monkeypatch)
+    nothing on the drop-off time; the cutoff notice needs 'drop-off ... until/before/by'.
+    Setting off (default on since 21.11)."""
+    w = build_world(tmp_path, monkeypatch, cutoff_question_notice=False)
     body = _hofmann(w)
     assert "arriving in DEL on" in body
     assert "cutoff" not in body.lower() and "drop" not in body.lower()
@@ -225,8 +226,8 @@ def _december_quote(w: World, monkeypatch) -> int:
 def test_ready_date_in_december_uses_todays_november_sheet(tmp_path, monkeypatch) -> None:
     """Today: validity is checked against the day we quote (21.11), so a 2.12 shipment gets the
     November rate even after the December tariff mail is ingested; from 1.12 on the same
-    request would get the December rate."""
-    w = build_world(tmp_path, monkeypatch)
+    request would get the December rate. Setting off (default on since 21.11)."""
+    w = build_world(tmp_path, monkeypatch, tariff_on_ready_date=False)
     _ingest_december(tmp_path, monkeypatch)
     november = _december_quote(w, monkeypatch)
     sheet = pricing.sheet_options(
@@ -286,7 +287,15 @@ UNITS = [
 
 
 @pytest.mark.parametrize(("body", "kg", "cbm", "proved"), UNITS)
-def test_units_today_ask_unless_labelled(body: str, kg: float, cbm: float, proved: float) -> None:
+def test_units_today_ask_unless_labelled(
+    monkeypatch, body: str, kg: float, cbm: float, proved: float
+) -> None:
+    """UNIT_EVIDENCE off (default on since 21.11)."""
+    from app import config
+
+    monkeypatch.setattr(
+        config, "settings", dataclasses.replace(config.settings, unit_evidence=False)
+    )
     _, issues = _check(body, kg, cbm)
     labelled = body.startswith("FRA to JFK. Gross weight:")
     assert issues == ([] if labelled else [("volume_cbm" if proved < 100 else "weight_kg")])
@@ -379,7 +388,8 @@ def _revise(w: World, text: str) -> list[dict[str, Any]]:
 
 @pytest.mark.parametrize(("text", "books_today"), REVISIONS)
 def test_revision_never_sends_a_second_quote(tmp_path, monkeypatch, text, books_today) -> None:
-    w = build_world(tmp_path, monkeypatch)
+    """REVISION_NOT_ACCEPTANCE off (default on since 21.11)."""
+    w = build_world(tmp_path, monkeypatch, revision_not_acceptance=False)
     _quoted_thread(w)
     out = _revise(w, text)
     assert len(db.get_session(6001)["quotes"]) == 1
@@ -426,8 +436,8 @@ ALL_OUT = (
 
 def test_every_carrier_excluded_today(tmp_path, monkeypatch) -> None:
     """Today: no quote, the session ends in error, the customer hears nothing; the attention
-    list gets the no_price error."""
-    w = build_world(tmp_path, monkeypatch)
+    list gets the no_price error. ALL_EXCLUDED_NOTICE off (default on since 21.11)."""
+    w = build_world(tmp_path, monkeypatch, all_excluded_notice=False)
     assert _uln(w, 7003, ALL_OUT) is None
     assert not any(m["to"] in (ZEPHYR, LAGOON, HIMALAYA, PAMPERO) for m in w.sent)
     assert w.to(CUSTOMER) == []
@@ -444,6 +454,8 @@ def test_every_carrier_excluded_with_notice(tmp_path, monkeypatch) -> None:
     text = mails[0]["body"]
     assert "Your austrian Power Team" in text and "€" not in text
     assert not has_customer_presentation_issue(text)
+    assert not any(c in text for c in ":;_()")
+    assert ":" not in mails[0]["subject"] and ";" not in mails[0]["subject"]
     for name in ("Zephyr", "Lagoon", "Himalaya", "Pampero"):
         assert name not in text  # exclusions acknowledged generically, as in quotes
     events = {e["kind"]: e for e in db.get_session(7004)["events"]}

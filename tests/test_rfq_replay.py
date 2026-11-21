@@ -60,9 +60,7 @@ def test_replay_reproduces_production_quotes(corpus, results) -> None:
         (11, "HAM", 855.0),  # LLM origin YYZ equals the destination: ZIP zone wins
     ],
 )
-def test_lost_rounds_now_resolve_the_request(
-    results, round_no, airport, weight_kg
-) -> None:
+def test_lost_rounds_now_resolve_the_request(results, round_no, airport, weight_kg) -> None:
     request = results[round_no]["request"]
     assert request["airport"] == airport and request["weight_kg"] == weight_kg
 
@@ -94,10 +92,11 @@ def test_replay_cleanup_also_releases_database_on_failure(tmp_path, monkeypatch)
 
 
 def test_replayed_answers_reach_the_clarification(results) -> None:
-    """Round 28's first explicit airport answer now resolves without optional flags."""
+    """Round 28: SELF_DELIVERY_RECOVERY (default on since 21.11) reads "drop it at CGN
+    ourselves" in the request itself, so the quote goes out without the question."""
     got = results[28]
     assert got["outcome"] == "quoted" and got["open_issues"] == []
-    assert got["clarifications_sent"] == 1
+    assert got["clarifications_sent"] == 0
     assert got["airline"] == "Ultraviolet Air Freight" and got["total_minor"] == 39045
 
 
@@ -155,3 +154,31 @@ def test_trucker_balance_evidence(corpus, results, tmp_path, monkeypatch) -> Non
         if board is not None:
             predicted = 45 - 4.5 * 100 * abs(minmax_total - ratio_total) / ratio_total
             assert abs(predicted - board) < 0.05, (round_no, predicted, board)
+
+
+# ---------------------------------------------------------------- RFQ watchdog
+
+
+def _key(r: dict) -> tuple:
+    return tuple(r.get(k) for k in rfq_replay._COMPARED)
+
+
+def test_watchdog_on_changes_no_stored_round(corpus, results) -> None:
+    """RFQ_WATCHDOG=true over every stored round: the flow's own answers stay as they are
+    (no accepted round is handled differently) and every round still without a quote is
+    left with an explicit reason, never a guessed price."""
+    with rfq_replay._settings(rfq_watchdog=True):
+        on = {r["round_no"]: r for r in rfq_replay.replay_all(corpus)}
+    assert {n: _key(r) for n, r in on.items()} == {n: _key(r) for n, r in results.items()}
+    unanswered = [r for r in on.values() if r["outcome"] != "quoted"]
+    assert unanswered and all(r["watchdog"] not in (None, "sent") for r in unanswered)
+    assert all(r["watchdog"] is None for r in results.values())  # off: never runs
+
+
+def test_watchdog_recovers_every_round_killed_after_its_bid_requests(corpus, results) -> None:
+    """A restart right after the bid requests (rounds 4, 9, 15 to 17 had pushes inside the
+    round): the watchdog alone quotes the same airline, total and text as the full flow."""
+    with rfq_replay._settings(rfq_watchdog=True):
+        killed = {r["round_no"]: r for r in rfq_replay.replay_all(corpus, kill_after_bids=True)}
+    assert sum("killed_after_bids" in r["notes"] for r in killed.values()) >= 20
+    assert {n: _key(r) for n, r in killed.items()} == {n: _key(r) for n, r in results.items()}

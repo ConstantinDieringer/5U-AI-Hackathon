@@ -9,9 +9,12 @@ AGENTS = (
     "carrier_prefs",
     "clarification",
     "email_review",
+    "followup",
+    "prebook",
     "rfq",
     "tariff",
     "tracking",
+    "watchdog",
 )
 
 

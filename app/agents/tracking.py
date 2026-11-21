@@ -386,6 +386,7 @@ def _reply(
         protected_terms=protected_terms,
     )
     body = sent["body"]
+    subject = sent["subject"]
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=to,

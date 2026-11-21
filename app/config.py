@@ -17,9 +17,10 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, "").strip() or default
 
 
-def _flag(name: str) -> bool:
-    """An on/off switch; only "true" switches on, anything else keeps today's behaviour."""
-    return _env(name, "false").lower() == "true"
+def _flag(name: str, default: bool = False) -> bool:
+    """An on/off switch: "true"/"false" in the environment win, otherwise the default."""
+    value = _env(name, "true" if default else "false").lower()
+    return value == "true" if value in ("true", "false") else default
 
 
 TRUCKER_BALANCES = ("minmax", "ratio")
@@ -80,9 +81,16 @@ class Settings:
     cutoff_question_notice: bool
     tariff_on_ready_date: bool
     unit_evidence: bool
+    totals_same_line: bool
+    thousands_evidence: bool
+    clarify_cap_resolve: bool
     revision_not_acceptance: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
+    rfq_watchdog: bool
+    rfq_watchdog_after_s: float
+    rfq_interval_s: float
+    deploy_gate_margin_s: float
     llm_max_calls_per_session: int
     runtime_dir: Path
     usd_eur_rate: str
@@ -95,6 +103,25 @@ class Settings:
     webhook_poll_interval_s: float
     price_change_tolerance_pct: float
     airline_confirm_wait_s: float
+    followup_enabled: bool
+    followup_after_s: float
+    followup_max: int
+    followup_window_s: float
+    followup_check_every_s: float
+    prebook_answer: bool
+    phishing_gate_mode: str
+    phishing_gate_llm_mode: str
+    phishing_gate_model: str
+    mail_guard_enabled: bool
+    inbound_flood_max: int
+    inbound_flood_s: float
+    outbound_burst_max: int
+    outbound_burst_s: float
+    outbound_session_max: int
+    outbound_duplicate_s: float
+    llm_audio_model: str
+    llm_vision_model: str
+    attachment_transcription: bool
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -112,7 +139,7 @@ settings = Settings(
     llm_rescue_model=_env("LLM_RESCUE_MODEL", "gpt-5"),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
-    email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "true").lower() == "true",
+    email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
@@ -141,18 +168,30 @@ settings = Settings(
     carrier_observation_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", "3600")),
     allow_incomplete_door_quote=(_env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"),
     trucker_balance=_trucker_balance(),
-    self_delivery_recovery=_flag("SELF_DELIVERY_RECOVERY"),
+    # on by default since 21.11 (fehler-log): rounds 28/35, revision/all-excluded/December edge
+    # cases; each still switches off with NAME=false in Railway
+    self_delivery_recovery=_flag("SELF_DELIVERY_RECOVERY", True),
     ask_pickup_zip=_flag("ASK_PICKUP_ZIP"),
     clarify_once=_flag("CLARIFY_ONCE"),
     bid_next_break=_flag("BID_NEXT_BREAK"),
-    conflict_source_answer=_flag("CONFLICT_SOURCE_ANSWER"),
-    cutoff_question_notice=_flag("CUTOFF_QUESTION_NOTICE"),
-    tariff_on_ready_date=_flag("TARIFF_ON_READY_DATE"),
-    unit_evidence=_flag("UNIT_EVIDENCE"),
-    revision_not_acceptance=_flag("REVISION_NOT_ACCEPTANCE"),
-    all_excluded_notice=_flag("ALL_EXCLUDED_NOTICE"),
+    conflict_source_answer=_flag("CONFLICT_SOURCE_ANSWER", True),
+    cutoff_question_notice=_flag("CUTOFF_QUESTION_NOTICE", True),
+    tariff_on_ready_date=_flag("TARIFF_ON_READY_DATE", True),
+    unit_evidence=_flag("UNIT_EVIDENCE", True),
+    totals_same_line=_flag("TOTALS_SAME_LINE"),
+    thousands_evidence=_flag("THOUSANDS_EVIDENCE"),
+    clarify_cap_resolve=_flag("CLARIFY_CAP_RESOLVE"),
+    revision_not_acceptance=_flag("REVISION_NOT_ACCEPTANCE", True),
+    all_excluded_notice=_flag("ALL_EXCLUDED_NOTICE", True),
     # CLARIFY_ONCE: without a usable answer by then, quote from real prices (before 120 s)
     clarify_fallback_after_s=float(_env("CLARIFY_FALLBACK_AFTER_S", "45")),
+    # RFQ_WATCHDOG: an RFQ still without our quote this long after it arrived gets the best
+    # quote real prices allow (app/agents/watchdog.py); never a second quote, never paused
+    rfq_watchdog=_env("RFQ_WATCHDOG", "false").lower() == "true",
+    rfq_watchdog_after_s=max(30.0, float(_env("RFQ_WATCHDOG_AFTER_S", "200"))),
+    # deploy gate: RFQs arrive about every 6 min 4 s; the phase is read from real arrivals
+    rfq_interval_s=max(60.0, float(_env("RFQ_INTERVAL_S", "364"))),
+    deploy_gate_margin_s=max(0.0, float(_env("DEPLOY_GATE_MARGIN_S", "90"))),
     llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "8"))),
     runtime_dir=Path(
         _env(
@@ -183,7 +222,41 @@ settings = Settings(
     # wait this long for the airline's confirmation mail (with its price) before confirming
     # the booking to the customer anyway; 0 confirms right after booking as before
     airline_confirm_wait_s=max(0.0, float(_env("AIRLINE_CONFIRM_WAIT_S", "180"))),
+    # customer silent after our quote -> nudge in the thread (app/agents/followup.py)
+    followup_enabled=_env("FOLLOWUP_ENABLED", "true").lower() not in ("0", "false", "no", "off"),
+    followup_after_s=float(_env("FOLLOWUP_AFTER_S", "30")),
+    followup_max=max(0, int(_env("FOLLOWUP_MAX", "3"))),
+    followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
+    followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "2"))),
+    # customer answers our quote with questions: answer them from the stored quote and ask
+    # for the go-ahead (app/agents/prebook.py); false = today's generic clarification
+    prebook_answer=_env("PREBOOK_ANSWER", "false").lower() in ("1", "true", "yes", "on"),
+    # phishing gate: off | shadow (classify and log, block nothing) | enforce
+    phishing_gate_mode=_env("PHISHING_GATE_MODE", "enforce").lower(),
+    # what an LLM-only verdict may do; it never does more than PHISHING_GATE_MODE allows
+    phishing_gate_llm_mode=_env("PHISHING_GATE_LLM_MODE", "shadow").lower(),
+    phishing_gate_model=_env("PHISHING_GATE_MODEL", "gpt-5-nano"),
+    # mail guard (app/mail/guard.py): empty/automatic mail, RFQ floods, outgoing mail loops
+    mail_guard_enabled=_env("MAIL_GUARD_ENABLED", "true").lower() != "false",
+    inbound_flood_max=max(1, int(_env("INBOUND_FLOOD_MAX", "3"))),  # new RFQs per sender
+    inbound_flood_s=float(_env("INBOUND_FLOOD_S", "600")),  # 5U sends one RFQ per 6 min
+    outbound_burst_max=max(1, int(_env("OUTBOUND_BURST_MAX", "6"))),  # mails to one customer
+    outbound_burst_s=float(_env("OUTBOUND_BURST_S", "120")),
+    outbound_session_max=max(1, int(_env("OUTBOUND_SESSION_MAX", "15"))),  # per thread
+    outbound_duplicate_s=float(_env("OUTBOUND_DUPLICATE_S", "1800")),  # same text again
+    # voice messages (mp3/wav) are read by an audio model via chat completions (input_audio);
+    # scanned pages and photos by a vision model (empty = LLM_MODEL)
+    llm_audio_model=_env("LLM_AUDIO_MODEL", "gpt-4o-mini-audio-preview"),
+    llm_vision_model=_env("LLM_VISION_MODEL"),
+    # false = never spend gateway calls on audio/scan attachments (text files still read)
+    attachment_transcription=_env("ATTACHMENT_TRANSCRIPTION", "true").lower() != "false",
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):
     raise ValueError("RFQ_VALIDATION_MODE must be shadow or enforce")
+for _name, _mode in (
+    ("PHISHING_GATE_MODE", settings.phishing_gate_mode),
+    ("PHISHING_GATE_LLM_MODE", settings.phishing_gate_llm_mode),
+):
+    if _mode not in ("off", "shadow", "enforce"):
+        raise ValueError(f"{_name} must be off, shadow or enforce")

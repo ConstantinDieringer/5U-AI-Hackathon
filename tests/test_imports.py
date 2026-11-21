@@ -18,7 +18,7 @@ MODULES = sorted(
     ".".join(p.relative_to(ROOT).with_suffix("").parts).removesuffix(".__init__")
     for p in (ROOT / "app").rglob("*.py")
 )
-TOOLS = {"rfq_replay"}  # offline tools in app/agents, not reached by mail
+TOOLS = {"reply_replay", "rfq_replay"}  # offline tools in app/agents, not reached by mail
 
 
 def test_there_are_modules_to_import() -> None:
@@ -56,7 +56,7 @@ def test_startup_check_reports_a_broken_agent_and_goes_on(
     with caplog.at_level(logging.INFO):
         run._check_agents(logging.getLogger("run"))  # must not raise
 
-    assert "agents loaded: bids, booking, carrier_prefs, clarification, email_review, rfq, tariff" in caplog.text
+    assert "agents loaded: bids, booking, carrier_prefs, clarification, email_review, followup, prebook, rfq, tariff" in caplog.text
     assert "agent tracking does not import: SyntaxError" in caplog.text
     events = db.events_after(0)
     assert [e["kind"] for e in events] == ["agent_import_failed"]

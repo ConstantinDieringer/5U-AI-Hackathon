@@ -212,6 +212,21 @@ CREATE TABLE IF NOT EXISTS tariff_jobs (
   status TEXT NOT NULL DEFAULT 'pending',
   error TEXT
 );
+CREATE TABLE IF NOT EXISTS mail_screening (
+  mail_id      INTEGER PRIMARY KEY,
+  sender       TEXT NOT NULL,
+  thread_root  INTEGER NOT NULL,
+  verdict      TEXT NOT NULL CHECK (verdict IN ('genuine','phishing','unsure')),
+  layer        TEXT NOT NULL,
+  score        REAL NOT NULL,
+  blocked      INTEGER NOT NULL DEFAULT 0 CHECK (blocked IN (0,1)),
+  routed_as    TEXT NOT NULL,
+  reasons_json TEXT NOT NULL CHECK (json_valid(reasons_json)),
+  detail_json  TEXT CHECK (detail_json IS NULL OR json_valid(detail_json)),
+  released_at  TEXT,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_mail_screening_thread ON mail_screening(thread_root, sender);
 """
 
 
@@ -288,9 +303,7 @@ def init_db(path: str | None = None) -> None:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_total_minor INTEGER")
         if "air_currency" not in quote_columns:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_currency TEXT")
-        booking_columns = {
-            row["name"] for row in migration.execute("PRAGMA table_info(bookings)")
-        }
+        booking_columns = {row["name"] for row in migration.execute("PRAGMA table_info(bookings)")}
         # price the airline actually confirmed, and where the customer side of the booking
         # stands (see booking.py: awaiting_airline, confirmed_sent, price_change_asked, ...)
         for column, kind in (
@@ -301,6 +314,12 @@ def init_db(path: str | None = None) -> None:
         ):
             if column not in booking_columns:
                 migration.execute(f"ALTER TABLE bookings ADD COLUMN {column} {kind}")
+        board_columns = {
+            row["name"] for row in migration.execute("PRAGMA table_info(board_results)")
+        }
+        if "cause_json" not in board_columns:
+            # why a round got no answer, frozen when the board first reports it
+            migration.execute("ALTER TABLE board_results ADD COLUMN cause_json TEXT")
     remap_unassigned()
     backfill_bookings_from_confirmations()
     if path_changed:
@@ -655,7 +674,8 @@ def customer_mail_history(sid: int, sender: str, before_mail: int) -> list[dict[
     rows = _rows(
         conn().execute(
             "SELECT id,sender,subject,body FROM mails WHERE session_id=?"
-            " AND direction='in' AND id<? ORDER BY id DESC LIMIT 20",
+            " AND direction='in' AND id<? AND category IS NOT 'phishing'"
+            " ORDER BY id DESC LIMIT 20",
             (sid, before_mail),
         )
     )
@@ -885,7 +905,7 @@ def backfill_bookings_from_confirmations() -> int:
     mails = _rows(
         c.execute(
             "SELECT m.body FROM mails m WHERE m.direction = 'in' AND m.body LIKE '%Booking reference:%'"
-            " AND m.body LIKE '%Your reference: AP-%'"
+            " AND m.body LIKE '%Your reference: AP-%' AND m.category IS NOT 'phishing'"
         )
     )
     n = 0
@@ -919,6 +939,32 @@ def backfill_bookings_from_confirmations() -> int:
             )
         n += 1
     return n
+
+
+def _create_session(
+    c: sqlite3.Connection,
+    session_id: int,
+    category: str,
+    sender: str,
+    subject: str,
+    received_at: str,
+) -> None:
+    kind = SESSION_CATEGORIES[category]
+    deadline = (_parse(received_at) + DEADLINE).isoformat(timespec="seconds")
+    c.execute(
+        "INSERT INTO sessions(id, kind, customer, subject, status, deadline_at,"
+        " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+        (
+            session_id,
+            kind,
+            sender,
+            subject,
+            "new",
+            deadline if kind == "rfq" else None,
+            received_at,
+            now(),
+        ),
+    )
 
 
 def ingest_mail(
@@ -960,21 +1006,7 @@ def ingest_mail(
         if session_id is None and category in SESSION_CATEGORIES:
             session_id = mail_id
             created = True
-            deadline = (_parse(received_at) + DEADLINE).isoformat(timespec="seconds")
-            c.execute(
-                "INSERT INTO sessions(id, kind, customer, subject, status, deadline_at,"
-                " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                (
-                    session_id,
-                    SESSION_CATEGORIES[category],
-                    sender,
-                    subject,
-                    "new",
-                    deadline if SESSION_CATEGORIES[category] == "rfq" else None,
-                    received_at,
-                    now(),
-                ),
-            )
+            _create_session(c, session_id, category, sender, subject, received_at)
         c.execute(
             "INSERT INTO mails(id, session_id, thread_root, in_reply_to, direction, sender,"
             " recipient, subject, body, category, received_at, raw_json)"
@@ -1170,8 +1202,9 @@ def incoming_mails_containing(text: str, limit: int = 1000) -> list[dict[str, An
     """Incoming mails whose body contains `text` (case-insensitive), oldest first."""
     return _rows(
         conn().execute(
-            "SELECT id, sender, body, received_at FROM mails"
-            " WHERE direction = 'in' AND instr(lower(body), lower(?)) > 0 ORDER BY id LIMIT ?",
+            "SELECT id, sender, body, received_at FROM mails WHERE direction = 'in'"
+            " AND category IS NOT 'phishing' AND instr(lower(body), lower(?)) > 0"
+            " ORDER BY id LIMIT ?",
             (text, limit),
         )
     )
@@ -1517,9 +1550,7 @@ def set_airline_price(session_id: int, price_minor: int, currency: str) -> None:
 
 
 def bookings_with_customer_state(state: str) -> list[dict[str, Any]]:
-    return _rows(
-        conn().execute("SELECT * FROM bookings WHERE customer_state = ?", (state,))
-    )
+    return _rows(conn().execute("SELECT * FROM bookings WHERE customer_state = ?", (state,)))
 
 
 def tracking_records() -> list[dict[str, Any]]:
@@ -1652,19 +1683,22 @@ def save_board_result(
     raw: dict[str, Any],
     session_id: int | None = None,
     failed: bool = False,
+    cause: dict[str, Any] | None = None,
 ) -> bool:
     """Upsert one board round. Returns True if the verdict is new or changed. A changed
-    `failed` round is emitted as an error (shows in the UI attention list)."""
+    `failed` round is emitted as an error (shows in the UI attention list). `cause` (why a
+    round got no answer) is kept from the first sync that brings one."""
     with tx() as c:
         old = _one(c.execute("SELECT verdict FROM board_results WHERE round_id = ?", (round_id,)))
         c.execute(
             "INSERT INTO board_results(round_id, session_id, verdict, reason, points_json, raw_json,"
-            " fetched_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(round_id) DO UPDATE SET"
+            " fetched_at, cause_json) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(round_id) DO UPDATE SET"
             " session_id = COALESCE(excluded.session_id, board_results.session_id),"
             " verdict = excluded.verdict, reason = excluded.reason,"
             " points_json = excluded.points_json, raw_json = excluded.raw_json,"
-            " fetched_at = excluded.fetched_at",
-            (round_id, session_id, verdict, reason, _json(points), _json(raw), now()),
+            " fetched_at = excluded.fetched_at,"
+            " cause_json = COALESCE(board_results.cause_json, excluded.cause_json)",
+            (round_id, session_id, verdict, reason, _json(points), _json(raw), now(), _json(cause)),
         )
         changed = old is None or old["verdict"] != verdict
         if changed and verdict:
@@ -1745,6 +1779,165 @@ def pricing_evidence() -> list[dict[str, Any]]:
     )
 
 
+# ---------------------------------------------------------------- phishing gate (mail_screening)
+
+
+def screening_get(mail_id: int) -> dict[str, Any] | None:
+    r = _one(conn().execute("SELECT * FROM mail_screening WHERE mail_id = ?", (mail_id,)))
+    if r:
+        r["reasons"] = json.loads(r.pop("reasons_json"))
+        d = r.pop("detail_json")
+        r["detail"] = json.loads(d) if d else None
+    return r
+
+
+def screening_save(
+    *,
+    mail_id: int,
+    sender: str,
+    thread_root: int,
+    verdict: str,
+    layer: str,
+    score: float,
+    blocked: bool,
+    routed_as: str,
+    reasons: list[str],
+    detail: dict[str, Any] | None = None,
+) -> None:
+    """First verdict wins: a redelivered mail keeps its stored screening."""
+    with tx() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO mail_screening(mail_id, sender, thread_root, verdict, layer,"
+            " score, blocked, routed_as, reasons_json, detail_json, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                mail_id,
+                sender,
+                thread_root,
+                verdict,
+                layer,
+                score,
+                1 if blocked else 0,
+                routed_as,
+                _json(reasons),
+                _json(detail),
+                now(),
+            ),
+        )
+
+
+def screening_released(sender: str, thread_root: int) -> bool:
+    """A person released this sender in this thread: trust the rest of the thread."""
+    return (
+        _one(
+            conn().execute(
+                "SELECT 1 FROM mail_screening WHERE sender = ? AND thread_root = ?"
+                " AND released_at IS NOT NULL LIMIT 1",
+                (sender, thread_root),
+            )
+        )
+        is not None
+    )
+
+
+def thread_parties(mail_ids: Sequence[int]) -> list[str]:
+    """Customers of the sessions the given stored mails belong to ('' for a stored mail
+    without a session). Empty when none of the ids is a mail we stored."""
+    ids = [int(i) for i in mail_ids][:50]
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    rows = _rows(
+        conn().execute(
+            f"SELECT COALESCE(s.customer, '') AS customer FROM mails m"
+            f" LEFT JOIN sessions s ON s.id = m.session_id WHERE m.id IN ({marks})",
+            ids,
+        )
+    )
+    return [r["customer"] for r in rows]
+
+
+def known_customers() -> list[str]:
+    return [
+        r["customer"]
+        for r in _rows(
+            conn().execute(
+                "SELECT DISTINCT customer FROM sessions WHERE kind = 'rfq' AND customer IS NOT NULL"
+            )
+        )
+    ]
+
+
+def quarantined(limit: int = 50) -> list[dict[str, Any]]:
+    """Blocked mails a person has not released yet, newest first."""
+    rows = _rows(
+        conn().execute(
+            "SELECT q.mail_id, q.sender, q.verdict, q.layer, q.score, q.reasons_json,"
+            " q.routed_as, q.created_at, m.subject, m.session_id, m.received_at"
+            " FROM mail_screening q JOIN mails m ON m.id = q.mail_id"
+            " WHERE q.blocked = 1 AND q.released_at IS NULL ORDER BY q.mail_id DESC LIMIT ?",
+            (limit,),
+        )
+    )
+    for r in rows:
+        r["reasons"] = json.loads(r.pop("reasons_json"))
+    return rows
+
+
+def reply_blocked(mail_id: int) -> bool:
+    """True while `mail_id` is quarantined: nothing may be sent in reply to it."""
+    return (
+        _one(
+            conn().execute(
+                "SELECT 1 FROM mail_screening WHERE mail_id = ? AND blocked = 1"
+                " AND released_at IS NULL",
+                (mail_id,),
+            )
+        )
+        is not None
+    )
+
+
+def release_quarantined(mail_id: int) -> dict[str, Any]:
+    """Undo a quarantine: restore the routed category, open the session the mail would have
+    opened, trust the sender in this thread. Returns {session_id, category, raw}.
+    Raises LookupError when the mail is not quarantined."""
+    with tx() as c:
+        q = _one(
+            c.execute(
+                "SELECT * FROM mail_screening WHERE mail_id = ? AND blocked = 1"
+                " AND released_at IS NULL",
+                (mail_id,),
+            )
+        )
+        m = _one(c.execute("SELECT * FROM mails WHERE id = ?", (mail_id,)))
+        if not q or not m:
+            raise LookupError(f"mail {mail_id} is not in quarantine")
+        category = q["routed_as"]
+        session_id = m["session_id"]
+        if session_id is None and category in SESSION_CATEGORIES:
+            exists = _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (mail_id,)))
+            if not exists:
+                _create_session(
+                    c, mail_id, category, m["sender"], m["subject"] or "", m["received_at"]
+                )
+            session_id = mail_id
+        c.execute(
+            "UPDATE mails SET category = ?, session_id = ? WHERE id = ?",
+            (category, session_id, mail_id),
+        )
+        c.execute("UPDATE mail_screening SET released_at = ? WHERE mail_id = ?", (now(), mail_id))
+        _emit(
+            c,
+            Ev.HUMAN_ACTION,
+            f"Mail {mail_id} von {m['sender']} freigegeben, normale Verarbeitung als {category}",
+            session_id,
+            payload={"mail_id": mail_id, "category": category},
+        )
+    raw = json.loads(m["raw_json"]) if m.get("raw_json") else None
+    return {"session_id": session_id, "category": category, "raw": raw}
+
+
 # ---------------------------------------------------------------- watchers & stats
 
 
@@ -1752,6 +1945,185 @@ def session_by_created_at(ts: str) -> int | None:
     """Find the RFQ session whose first mail arrived at `ts` (board rows carry sent_at)."""
     r = _one(conn().execute("SELECT id FROM sessions WHERE created_at = ?", (ts,)))
     return int(r["id"]) if r else None
+
+
+NO_ANSWER = "no answer"  # board verdict for a round we never answered
+WATCHDOG_REPLY_CATEGORIES = ("quote", "manual_reply", "notice")
+
+
+def watchdog_candidates(created_after: str, created_before: str) -> list[dict[str, Any]]:
+    """RFQ sessions created in (created_after, created_before] with no quote and no other
+    reply of ours that ends the thread (quote, manual reply, all-carriers-excluded notice).
+    Paused/manual/claimed rows are included so the caller can say why it skips them."""
+    return _rows(
+        conn().execute(
+            "SELECT s.id AS session_id, s.status, s.created_at, s.paused, s.mode,"
+            " s.first_reply_at FROM sessions s JOIN mails m ON m.id = s.id"
+            # only a root mail routed as an RFQ starts the RFQ flow (poller.dispatch); a
+            # phishing-blocked mail is stored as 'phishing' and never qualifies
+            " WHERE s.kind = 'rfq' AND m.direction = 'in' AND m.category = 'rfq'"
+            " AND s.created_at > ? AND s.created_at <= ?"
+            " AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = s.id)"
+            " AND NOT EXISTS (SELECT 1 FROM mails o WHERE o.session_id = s.id"
+            f" AND o.direction = 'out' AND o.category IN {WATCHDOG_REPLY_CATEGORIES!r})"
+            " ORDER BY s.created_at",
+            (created_after, created_before),
+        )
+    )
+
+
+def release_unsent_quote_claim(session_id: int) -> bool:
+    """Free a quote claim that provably never reached the mailbox: no quote row, no reply mail
+    of ours and no transport marker (set right before the HTTP send). A claim whose send may
+    have happened is never released, so this cannot cause a second quote."""
+    with tx() as c:
+        cur = c.execute(
+            "UPDATE sessions SET first_reply_at = NULL, updated_at = ? WHERE id = ?"
+            " AND first_reply_at IS NOT NULL AND mode = 'auto'"
+            " AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = sessions.id)"
+            " AND NOT EXISTS (SELECT 1 FROM mails o WHERE o.session_id = sessions.id"
+            f" AND o.direction = 'out' AND o.category IN {WATCHDOG_REPLY_CATEGORIES!r})"
+            " AND NOT EXISTS (SELECT 1 FROM kv WHERE kv.key = 'quote.transport.' || sessions.id)",
+            (now(), session_id),
+        )
+        if cur.rowcount != 1:
+            return False
+        _emit(
+            c,
+            "quote_claim_released",
+            "Quote-Claim ohne Versand freigegeben (Neustart oder Abbruch vor dem Senden)",
+            session_id,
+            level="warn",
+        )
+        return True
+
+
+def llm_calls_used(session_id: int) -> int:
+    """Gateway calls already counted for the session (same rule as reserve_llm_call)."""
+    c = conn()
+    kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (f"llm_calls:{session_id}",)))
+    logged = _one(
+        c.execute("SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ?", (session_id,))
+    )
+    return max(int(kv["value"]) if kv else 0, int(logged["n"]) if logged else 0)
+
+
+def root_mail(session_id: int) -> dict[str, Any] | None:
+    """The customer's first mail of a session (the RFQ itself)."""
+    return _one(
+        conn().execute(
+            "SELECT id, sender, recipient, subject, body, category, received_at, raw_json"
+            " FROM mails WHERE id = ? AND direction = 'in'",
+            (session_id,),
+        )
+    )
+
+
+def round_cause(session_id: int | None, sent_at: str | None) -> dict[str, Any]:
+    """Why a board round got no answer, from our own records: the matching session's last
+    status, last error event and last event time, plus any process start inside the round.
+    No session for the round's sent time: the mail never reached us (rate limit, outage), or
+    it was stored without opening an RFQ session."""
+    c = conn()
+    cause: dict[str, Any] = {"session_id": session_id, "sent_at": sent_at}
+    if sent_at:
+        try:
+            start = datetime.fromisoformat(sent_at)
+            end = (start + DEADLINE).isoformat()
+            restarts = _rows(
+                c.execute(
+                    "SELECT created_at FROM events WHERE kind = 'process_start'"
+                    " AND created_at >= ? AND created_at <= ? ORDER BY id",
+                    (start.isoformat(timespec="seconds"), end),
+                )
+            )
+            cause["restarts_s"] = [
+                int((_parse(r["created_at"]) - start).total_seconds()) for r in restarts
+            ]
+        except ValueError:
+            pass
+    if session_id is None:
+        stored = (
+            _one(
+                c.execute(
+                    "SELECT id, category FROM mails WHERE direction = 'in' AND received_at = ?",
+                    (sent_at,),
+                )
+            )
+            if sent_at
+            else None
+        )
+        if stored:
+            cause.update(
+                kind="no_session",
+                summary=f"Mail {stored['id']} gespeichert ({stored['category']}), keine RFQ-Session",
+            )
+        else:
+            cause.update(kind="mail_not_received", summary="Mail nicht empfangen")
+        return cause
+    s = _one(c.execute("SELECT status, paused, mode FROM sessions WHERE id = ?", (session_id,)))
+    last = _one(
+        c.execute(
+            "SELECT kind, message, created_at FROM events WHERE session_id = ?"
+            " ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        )
+    )
+    error = _one(
+        c.execute(
+            "SELECT kind, message, created_at FROM events WHERE session_id = ?"
+            " AND level = 'error' AND kind != 'board_verdict' ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        )
+    )
+    status = s["status"] if s else None
+    cause.update(
+        kind="session",
+        status=status,
+        paused=bool(s and s["paused"]),
+        manual=bool(s and s["mode"] == "manual"),
+        last_error=error,
+        last_event_at=last["created_at"] if last else None,
+        last_event_kind=last["kind"] if last else None,
+    )
+    why = (error or {}).get("message") or (last or {}).get("message") or "kein Ereignis"
+    cause["summary"] = f"Status {status}: {why}"[:200]
+    return cause
+
+
+def unanswered_rounds(limit: int = 200) -> list[dict[str, Any]]:
+    """Board rounds with verdict "no answer" and their stored cause, newest round first."""
+    rows = _rows(
+        conn().execute(
+            "SELECT b.round_id, b.session_id, b.raw_json, b.cause_json, s.subject, s.customer"
+            " FROM board_results b LEFT JOIN sessions s ON s.id = b.session_id"
+            " WHERE b.verdict = ?",
+            (NO_ANSWER,),
+        )
+    )
+    out = []
+    for r in rows:
+        raw = json.loads(r.pop("raw_json") or "null") or {}
+        cause = json.loads(r.pop("cause_json") or "null")
+        if cause is None:  # synced before causes were stored: derive it now
+            cause = round_cause(r["session_id"], raw.get("sent_at"))
+        out.append({**r, "sent_at": raw.get("sent_at"), "cause": cause})
+    out.sort(key=lambda r: -int(r["round_id"]) if str(r["round_id"]).isdigit() else 0)
+    return out[:limit]
+
+
+def recent_rfqs(limit: int = 12) -> list[dict[str, Any]]:
+    """Newest customer RFQ sessions first: arrival and whether our quote/reply went out."""
+    return _rows(
+        conn().execute(
+            "SELECT s.id, s.created_at, s.first_reply_at,"
+            " EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = s.id) AS quoted"
+            " FROM sessions s JOIN mails m ON m.id = s.id"
+            " WHERE s.kind = 'rfq' AND m.direction = 'in' AND m.category = 'rfq'"
+            " ORDER BY s.created_at DESC LIMIT ?",
+            (limit,),
+        )
+    )
 
 
 def expire_overdue() -> list[int]:
@@ -2056,11 +2428,49 @@ def _ts(v: str | None) -> datetime | None:
     return t if t.tzinfo else t.replace(tzinfo=UTC)
 
 
+def clarification_cap_open(limit: int = 20) -> list[dict[str, Any]]:
+    """CLARIFY_CAP_RESOLVE: sessions whose two questions are spent with items still open and
+    no reply to the customer yet; the latest `clarification_cap_open` message names them."""
+    return _rows(
+        conn().execute(
+            "SELECT e.session_id, e.message, s.subject, s.customer, s.status, s.deadline_at"
+            " FROM events e JOIN sessions s ON s.id = e.session_id"
+            " WHERE e.kind = 'clarification_cap_open' AND s.first_reply_at IS NULL"
+            " AND e.id = (SELECT MAX(x.id) FROM events x WHERE x.session_id = e.session_id"
+            " AND x.kind = 'clarification_cap_open') ORDER BY e.id DESC LIMIT ?",
+            (limit,),
+        )
+    )
+
+
 def attention_items(limit: int = 20) -> list[dict[str, Any]]:
-    """What needs a human: errors, expired, board rejections, paused/manual, close deadlines and
-    customer acceptances that are not booked yet."""
+    """What needs a human: question cap reached without a quote (first), errors, expired, board
+    rejections, paused/manual, close deadlines and acceptances that are not booked yet."""
     c = conn()
-    items: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = [
+        {
+            "session_id": r["session_id"],
+            "kind": "clarification_cap_open",
+            "reason": r["message"],
+            "subject": r["subject"],
+            "customer": r["customer"],
+            "status": r["status"],
+        }
+        for r in clarification_cap_open(limit)
+    ]
+    items += [
+        {
+            "session_id": q["session_id"],
+            "mail_id": q["mail_id"],
+            "kind": "quarantine",
+            "reason": "Phishing-Verdacht: keine Antwort gesendet",
+            "subject": q["subject"],
+            "customer": q["sender"],
+            "status": "quarantined",
+            "reasons": q["reasons"],
+        }
+        for q in quarantined(limit)
+    ]
     for s in list_sessions(attention=True, limit=limit):
         reason = (
             "Fehler" if s["status"] == "error" else "pausiert" if s["paused"] else "Deadline < 90 s"
@@ -2105,17 +2515,24 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
         )
     for r in _rows(
         c.execute(
-            "SELECT b.session_id, b.verdict, b.reason, s.subject, s.customer, s.status"
-            " FROM board_results b JOIN sessions s ON s.id = b.session_id"
-            " WHERE b.verdict NOT IN ('accepted','open','pending') ORDER BY b.fetched_at DESC LIMIT ?",
-            (limit,),
+            "SELECT b.round_id, b.session_id, b.verdict, b.reason, b.cause_json, s.subject,"
+            " s.customer, s.status FROM board_results b LEFT JOIN sessions s"
+            " ON s.id = b.session_id WHERE b.verdict NOT IN ('accepted','open','pending')"
+            " AND (b.session_id IS NOT NULL OR b.verdict = ?)"
+            " ORDER BY b.fetched_at DESC LIMIT ?",
+            (NO_ANSWER, limit),
         )
     ):
+        cause = json.loads(r["cause_json"]) if r["cause_json"] else None
         items.append(
             {
                 "session_id": r["session_id"],
                 "kind": "board",
-                "reason": f"5U: {r['verdict']}" + (f" ({r['reason']})" if r["reason"] else ""),
+                "round_id": r["round_id"],
+                "reason": f"5U: {r['verdict']}"
+                + (f" ({r['reason']})" if r["reason"] else "")
+                + (f" · {cause['summary']}" if cause and cause.get("summary") else ""),
+                "cause": cause,
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],
@@ -2162,10 +2579,11 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
                 "status": r["status"],
             }
         )
-    seen: set[tuple[int, str]] = set()
+    seen: set[tuple[Any, str]] = set()
     out = []
     for i in items:
-        key = (i["session_id"], i["kind"])
+        # phishing items carry mail_id, unanswered rounds without a session their round_id
+        key = (i.get("mail_id") or i["session_id"] or i.get("round_id"), i["kind"])
         if key not in seen:
             seen.add(key)
             out.append(i)
@@ -2588,7 +3006,19 @@ def status_overview() -> dict[str, Any]:
     for r in all_rated:
         verdicts[r["verdict"]] = verdicts.get(r["verdict"], 0) + 1
 
-    todo = []
+    # question cap reached, nothing sent: first, while the round can still be answered
+    todo = [
+        {
+            "session_id": r["session_id"],
+            "subject": r["subject"],
+            "customer": r["customer"],
+            "lane": None,
+            "reason": r["message"],
+            "tone": "red",
+        }
+        for r in clarification_cap_open()
+        if r["deadline_at"] and _ts(r["deadline_at"]) > now_dt
+    ]
     for r in every:
         st = r["steps"]
         if r["paused"] or r["mode"] == "manual":
@@ -2619,6 +3049,21 @@ def status_overview() -> dict[str, Any]:
                 }
             )
 
+    for r in unanswered_rounds(limit=50):
+        if not r["sent_at"] or r["sent_at"] < since:
+            continue
+        todo.append(
+            {
+                "session_id": r["session_id"],
+                "subject": r["subject"] or f"Runde {r['round_id']}",
+                "customer": r["customer"],
+                "lane": None,
+                "round_id": r["round_id"],
+                "reason": f"Runde {r['round_id']} unbeantwortet: {r['cause'].get('summary')}",
+                "tone": "red",
+            }
+        )
+
     return {
         "checks": checks,
         "window_hours": int(CHECK_WINDOW.total_seconds() // 3600),
@@ -2636,6 +3081,7 @@ def status_overview() -> dict[str, Any]:
         },
         "requests": every[:12],
         "todo": todo,
+        "quarantine": quarantined(20),
         "global_pause": is_global_paused(),
     }
 

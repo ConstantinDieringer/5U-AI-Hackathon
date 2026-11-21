@@ -15,7 +15,7 @@ from pathlib import Path
 
 from app import db, hackloop
 from app.config import settings
-from app.mail import parse, router, store
+from app.mail import guard, parse, router, screening, store
 from app.models import Category, Mail
 
 log = logging.getLogger(__name__)
@@ -71,10 +71,25 @@ def download_attachments(mail: Mail) -> list[Path]:
 
 
 def handle(raw: dict, *, recover: bool = False) -> None:
-    """Route, store and (if new) process one mail from the poll response."""
+    """Route, screen, store and (if new) process one mail from the poll response. Every
+    delivery path (webhook, poll, retry after restart) comes through here, so the phishing
+    gate runs before anything is queued, downloaded, stored as a tariff or answered."""
     mail = parse.mail_from_api(raw)
     in_reply_to = parse.in_reply_to(raw)
     category, rule = router.classify(mail, _parent(in_reply_to))
+    try:  # empty or automatic mail: held below, never worth a phishing-gate LLM call
+        early = guard.precheck(mail, category)
+    except Exception:
+        log.exception("mail guard precheck failed on mail %s", mail.id)
+        early = None
+    try:
+        check = None if early else screening.screen(mail, category)
+    except Exception:
+        log.exception("phishing gate failed on mail %s: treated as not screened", mail.id)
+        check = None
+    if check is not None and check.blocked:
+        _quarantine(mail, category, in_reply_to, check)
+        return
     if category == Category.TARIFF:
         from app.agents import tariff
 
@@ -83,13 +98,83 @@ def handle(raw: dict, *, recover: bool = False) -> None:
     if not saved.is_new and not recover:
         log.info("mail %s already stored, skipped", mail.id)
         return
+    if saved.is_new and check is not None and check.verdict is not screening.Verdict.GENUINE:
+        _flag(mail, check, saved.session_id)
     db.delivery_state(mail.id, "stored")
+    try:
+        held = guard.inbound(mail, category, saved.session_id, early)
+    except Exception:
+        log.exception("mail guard failed on mail %s: processed normally", mail.id)
+        held = None
+    if held is not None:
+        db.delivery_state(mail.id, "done")
+        return
+    _deliver(mail, category, rule, saved.session_id)
+
+
+def _deliver(mail: Mail, category: Category, rule: str, session_id: int | None) -> None:
     files = [] if category == Category.TARIFF else download_attachments(mail)
     note = f", {len(files)} attachment(s) saved" if files else ""
     log.info("mail %s from %s -> %s (%s)%s", mail.id, mail.sender, category.value, rule, note)
-    store.emit("routed", f"Routed as {category.value} ({rule}){note}", saved.session_id)
+    store.emit("routed", f"Routed as {category.value} ({rule}){note}", session_id)
     db.delivery_state(mail.id, "dispatching")
-    dispatch(mail, category, saved.session_id)
+    dispatch(mail, category, session_id)
+
+
+def _quarantine(
+    mail: Mail, category: Category, in_reply_to: int | None, check: screening.Screening
+) -> None:
+    """Store only: no attachment download, no tariff job, no agent, no reply."""
+    saved = store.save_mail(mail, Category.PHISHING, in_reply_to)
+    if not saved.is_new:
+        return
+    log.warning("mail %s from %s quarantined: %s", mail.id, mail.sender, screening.summary(check))
+    db.emit(
+        "phishing",
+        f"Phishing-Verdacht, keine Antwort: {mail.sender} – {mail.subject[:80]}. "
+        f"Gründe: {'; '.join(check.reasons())}"[:900],
+        saved.session_id,
+        level="error",
+        mail_id=mail.id,
+        routed_as=category.value,
+        layer=check.layer,
+        score=check.score,
+    )
+
+
+def _flag(mail: Mail, check: screening.Screening, session_id: int | None) -> None:
+    """Unsure (or phishing in shadow mode): the normal flow goes on, a person can look."""
+    shadow = check.verdict is screening.Verdict.PHISHING
+    db.emit(
+        "screening",
+        ("Phishing-Verdacht (nur protokolliert)" if shadow else "Absender unklar")
+        + f", normale Verarbeitung läuft: {screening.summary(check)}",
+        session_id,
+        level="warn",
+        mail_id=mail.id,
+        verdict=check.verdict.value,
+        layer=check.layer,
+    )
+
+
+def release(mail_id: int) -> dict[str, object]:
+    """A person released a quarantined mail: run the normal flow it was kept from."""
+    if not settings.agents_enabled:
+        raise RuntimeError("agents are disabled: nothing may be processed or sent")
+    released = db.release_quarantined(mail_id)
+    raw = released["raw"]
+    if not isinstance(raw, dict):
+        raise TypeError(f"mail {mail_id} has no stored API copy to process")
+    mail = parse.mail_from_api(raw)
+    category = Category(str(released["category"]))
+    session_id = released["session_id"]
+    if category == Category.TARIFF:
+        from app.agents import tariff
+
+        tariff.enqueue(mail)
+    _deliver(mail, category, "released by a person", session_id)
+    db.delivery_state(mail.id, "done")
+    return {"mail_id": mail_id, "category": category.value, "session_id": session_id}
 
 
 def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
