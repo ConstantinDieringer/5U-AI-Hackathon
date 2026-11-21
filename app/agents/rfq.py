@@ -444,19 +444,21 @@ def quote_text(
     when = _schedule_line(rfq, option, lang, today)
     pickup_note = None
     if truck is not None and rfq.door_to_port:
-        hours = truck.transit_days * 24 if truck.transit_days is not None else None
+        hours = round(truck.transit_days * 24) if truck.transit_days is not None else None
         if lang == "de":
-            lead = (
-                f"Gemeldete Trucker-Vorlaufzeit: {hours:g} Stunden. " if hours is not None else ""
-            )
-            pickup_note = lead + "Der genaue früheste Abholtermin ist noch nicht bestätigt."
-        else:
-            lead = (
-                f"Carrier-reported pickup/road lead time: {hours:g} hours. "
+            pickup_note = (
+                f"Der Lkw braucht etwa {hours} Stunden von Ihnen bis zum Flughafen, "
+                "den genauen Abholtermin bestätigen wir Ihnen nach der Buchung."
                 if hours is not None
-                else ""
+                else "Den genauen Abholtermin bestätigen wir Ihnen nach der Buchung."
             )
-            pickup_note = lead + "The exact earliest collection slot is not yet confirmed."
+        else:
+            pickup_note = (
+                f"The truck takes about {hours} hours from your door to the airport, "
+                "and we'll confirm the exact pickup time once it's booked."
+                if hours is not None
+                else "We'll confirm the exact pickup time once it's booked."
+            )
     if lang == "de":
         hello = f"Hallo {name}," if name else "Guten Tag,"
         intro = (

@@ -188,3 +188,16 @@ def test_no_generic_unverified_line_in_fallback():
     option = RateOption("Test Air", "FRA", "JFK", 2, 147500, "EUR", 147500, "sheet")
     text = rfq._fallback_with_coverage(request, option, 147500, None, 1, None)
     assert "Verified information" not in text
+
+
+@pytest.mark.parametrize("lang", ["de", "en"])
+def test_clarification_is_one_human_paragraph_with_signer(lang: str) -> None:
+    from app.agents import clarification
+    from app.models import RfqDraft
+
+    draft = RfqDraft(issues=[{"field": "weight_kg"}, {"field": "pickup_zip"}])
+    text = clarification.text_for(draft, lang)
+    assert_style(text)
+    assert (
+        "•" not in text and "labelled" not in text and "Before we can quote" not in text
+    )
