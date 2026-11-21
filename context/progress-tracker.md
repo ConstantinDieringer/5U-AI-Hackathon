@@ -13,8 +13,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
-- Live request IDs: permanent session numbers from 1, chronological backfill at startup, original receipt date/time in Europe/Vienna in list/detail and mail headers. Mailbox IDs/references preserved; migration, restart, concurrent ingestion and API covered. Integrated latest main: Python 3.11, 296 passed, 1 skipped; local browser verified with demo data, no production deployment.
+- Live request IDs: permanent session numbers from 1, chronological backfill at startup, original receipt date/time in Europe/Vienna in list/detail and mail headers. Mailbox IDs/references preserved; migration, restart, concurrent ingestion and API covered. Integrated latest main: Python 3.11, 303 passed, 1 skipped; local browser verified with demo data, no production deployment.
 
+- Quote pickup timing: deterministic door quotes show reported truck lead time and explicitly unconfirmed collection slot; composer receives separate truck-lead/slot facts. Round 22 accepted but its fallback omitted the requested earliest pickup; no schedule or price policy changed.
 - Mailbox webhooks: HMAC receiver, durable shared queue, exact-ID deduplication, restart handling, safe subscription CLI and polling backoff. 283 tests pass, 1 skipped; changed files pass Ruff and Python 3.11 syntax parsing (tests ran on local Python 3.12). Provider GET returned no subscription; deployment and live push verification remain outstanding.
 
 - History-first follow-up policy implemented on the existing validation lifecycle: unique same-thread facts can resolve gaps without another mail; incomplete replies trigger targeted follow-ups with cumulative corrections. Durable reply ledger/restart replay, sender checks, booking/tracking questions and default enforce mode added. Original deadlines and human controls retained.

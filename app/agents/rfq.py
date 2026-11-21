@@ -428,6 +428,27 @@ def quote_text(
     days = option.transit_days
     valid = _valid(option)
     when = _schedule_line(rfq, option, lang, today)
+    pickup_note = None
+    if truck is not None and rfq.door_to_port:
+        hours = truck.transit_days * 24 if truck.transit_days is not None else None
+        if lang == "de":
+            lead = (
+                f"Gemeldete Trucker-Vorlaufzeit: {hours:g} Stunden. "
+                if hours is not None
+                else ""
+            )
+            pickup_note = (
+                lead + "Der genaue früheste Abholtermin ist noch nicht bestätigt."
+            )
+        else:
+            lead = (
+                f"Carrier-reported pickup/road lead time: {hours:g} hours. "
+                if hours is not None
+                else ""
+            )
+            pickup_note = (
+                lead + "The exact earliest collection slot is not yet confirmed."
+            )
     if lang == "de":
         hello = f"Hallo {name}," if name else "Guten Tag,"
         intro = (
@@ -448,6 +469,8 @@ def quote_text(
         ]
         if when:
             lines.append(when)
+        if pickup_note:
+            lines.append(pickup_note)
         if valid:
             lines.append(f"Der Preis ist bis {valid} buchbar.")
         lines += [
@@ -476,6 +499,8 @@ def quote_text(
         ]
         if when:
             lines.append(when)
+        if pickup_note:
+            lines.append(pickup_note)
         if valid:
             lines.append(f"The rate can be booked until {valid}.")
         lines += [
@@ -562,7 +587,11 @@ def with_pickup_note(body: str, rfq: Rfq) -> str:
             "Schicken Sie uns kurz die genaue Abholadresse, dann bestätigen wir den Preis."
         )
     else:
-        where = f"postal code {rfq.pickup_zip}" if rfq.pickup_zip else f"the {rfq.pickup_city} area"
+        where = (
+            f"postal code {rfq.pickup_zip}"
+            if rfq.pickup_zip
+            else f"the {rfq.pickup_city} area"
+        )
         note = (
             f"Your mail did not mention the pickup address, so we priced pickup in {where}. "
             "Just send us the exact address and we will confirm the price."
@@ -608,6 +637,12 @@ def compose_quote_text(
         "billed_weight_kg": option.billed_kg,
         "pickup_zip": rfq.pickup_label if truck else None,
         "pickup_included": truck is not None,
+        "carrier_reported_pickup_road_lead_hours": (
+            truck.transit_days * 24
+            if truck and truck.transit_days is not None
+            else None
+        ),
+        "confirmed_collection_slot": None,
         "earliest_departure": when[0].isoformat() if when else None,
         "earliest_arrival": when[1].isoformat() if when else None,
         "bookable_until": option.valid_until,
