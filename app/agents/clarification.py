@@ -218,6 +218,10 @@ def rescue_with_model(
     mail: Mail, sid: int, root: Mail, draft: RfqDraft
 ) -> tuple[Rfq | None, RfqDraft]:
     """Use the stronger model, then accept only evidence-bound deterministically valid facts."""
+    if settings.thread_rescue_enabled:
+        from app.agents import rescue
+
+        return rescue.recover_request(mail, sid, root, draft)
     asked = {issue["field"] for issue in draft.issues}
     allowed = set(_RESCUE_FIELDS) & asked
     if "lots" in asked:
@@ -401,7 +405,13 @@ def request(mail, sid, draft):
     if db.is_paused(sid) or db.is_manual(sid):
         return
     asked = _questions_sent(sid)
-    if settings.clarify_once and asked and draft.evidence.get("workflow", "rfq") == "rfq":
+    rescue_question = draft.evidence.get("rescue_question_mail_id") == mail.id
+    if (
+        settings.clarify_once
+        and asked
+        and draft.evidence.get("workflow", "rfq") == "rfq"
+        and not rescue_question
+    ):
         # CLARIFY_ONCE: never a second question (round 28 asked four times). The answer did not
         # resolve it: quote from real prices if they allow, else stop for a person.
         from app.agents import rfq
@@ -415,17 +425,17 @@ def request(mail, sid, draft):
         if not rfq.quote_without_answer(sid, "Antwort unbrauchbar"):
             db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
         return
-    if not db.clarification_claim(sid):
-        return
     # hard cap: at most two clarifications per thread (one follow-up for a partial answer).
     # More is a loop (round 7237 sent four identical ones); alert a human instead.
-    if asked >= 2:
+    if asked >= 2 and not rescue_question:
         db.emit(
             "clarification_loop",
             "Weitere Rückfrage unterdrückt: Session braucht einen Menschen",
             sid,
             level="error",
         )
+        return
+    if not db.clarification_claim(sid):
         return
     body = text_for(draft, detect(current_message(mail.body).text))
     try:
@@ -641,15 +651,23 @@ def handle_reply(mail, sid, *, resume=False):
 
 
 def catch_up():
+    from app.agents import rescue
+
     for saved in db.clarification_unhandled_replies():
-        handle_reply(_stored_mail(saved), saved["session_id"])
+        if rescue.is_owner(saved["session_id"]):
+            rescue.take_over(_stored_mail(saved), saved["session_id"])
+        else:
+            handle_reply(_stored_mail(saved), saved["session_id"])
     for pending in db.validation_pending():
         sid = pending["session_id"]
         row = db.validation_get(sid)
         if row["state"] == "resolving":
             saved = db.validation_reply(sid)
             if saved:
-                handle_reply(_stored_mail(saved), sid, resume=True)
+                if rescue.is_owner(sid):
+                    rescue.take_over(_stored_mail(saved), sid)
+                else:
+                    handle_reply(_stored_mail(saved), sid, resume=True)
             else:
                 db.validation_save(sid, "manual_review", row["draft"], {})
         elif row["send_state"] == "sending":
@@ -689,10 +707,15 @@ def run(stop):
     """Resume a pending clarification after UI unpause; never touch an in-flight send."""
     import logging
 
+    from app.agents import rescue
+
     while not stop.wait(1):
         try:
             for saved in db.clarification_unhandled_replies():
-                handle_reply(_stored_mail(saved), saved["session_id"])
+                if rescue.is_owner(saved["session_id"]):
+                    rescue.take_over(_stored_mail(saved), saved["session_id"])
+                else:
+                    handle_reply(_stored_mail(saved), saved["session_id"])
             for item in db.validation_pending():
                 row = db.validation_get(item["session_id"])
                 if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":

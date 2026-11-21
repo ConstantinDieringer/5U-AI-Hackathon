@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Thread rescue owner in progress: evidence-bound full-thread plans, obsolete source-hold releases, persistent ownership through pricing/booking/tracking, separate rescue budget and restart leases. Case 17998 reaches pricing with later text replacing MP3; integrating concurrent main updates and verifying the full suite before rollout.
+
 - Extra customer-email LLM reviewer disabled by default at the user's request (`EMAIL_REVIEW_ENABLED=false`); individual composition and deterministic body/subject checks remain active. Python 3.11: 810 passed/4 skipped. Live health still reports review enabled; the signed-in Railway account gets project 404, so live toggle requires the authorized account.
 
 - Mail guard (`app/mail/guard.py`): empty/automatic customer mail and RFQ floods are stored but never processed (no LLM, no reply); outgoing loops to one customer are cut by burst/thread/repeat caps in `hackloop.send` with one #sos error. Screening blocks loop instructions (0 hits on the 175 genuine mails). Seven edge-case flags now default on (SELF_DELIVERY_RECOVERY, CONFLICT_SOURCE_ANSWER, CUTOFF_QUESTION_NOTICE, TARIFF_ON_READY_DATE, UNIT_EVIDENCE, REVISION_NOT_ACCEPTANCE, ALL_EXCLUDED_NOTICE); replay changes only round 28 (quote without question). 826 passed/4 skipped; not verified live.

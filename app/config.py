@@ -48,6 +48,9 @@ class Settings:
     llm_model: str
     llm_retry_model: str
     llm_rescue_model: str
+    thread_rescue_enabled: bool
+    thread_rescue_max_calls: int
+    thread_rescue_after_s: float
     llm_compose_model: str
     llm_review_model: str
     email_review_enabled: bool
@@ -130,6 +133,9 @@ settings = Settings(
     llm_model=_env("LLM_MODEL"),
     llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5"),  # stronger repair when extraction fails
     llm_rescue_model=_env("LLM_RESCUE_MODEL", "gpt-5"),
+    thread_rescue_enabled=_env("THREAD_RESCUE_ENABLED", "true").lower() == "true",
+    thread_rescue_max_calls=max(1, int(_env("THREAD_RESCUE_MAX_CALLS", "6"))),
+    thread_rescue_after_s=max(10.0, float(_env("THREAD_RESCUE_AFTER_S", "45"))),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",

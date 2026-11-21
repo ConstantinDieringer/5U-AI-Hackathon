@@ -91,3 +91,25 @@ def test_calls_logged_before_the_counter_count(sent: list[dict[str, Any]]) -> No
     with pytest.raises(llm.LlmBudgetError):
         llm.complete("again", [{"role": "user", "content": "hi"}], session_id=9)
     assert sent == []
+
+
+def test_rescue_has_a_separate_persisted_budget_after_normal_budget_is_spent(sent):
+    msg = [{"role": "user", "content": "hi"}]
+    for index in range(llm.MAX_CALLS_PER_SESSION):
+        llm.complete(f"normal_{index}", msg, session_id=10)
+    for _ in range(llm.settings.thread_rescue_max_calls):
+        assert llm.complete("thread_rescue", msg, session_id=10) == "OK"
+    with pytest.raises(llm.LlmBudgetError):
+        llm.complete("thread_rescue", msg, session_id=10)
+    with pytest.raises(llm.LlmBudgetError):
+        llm.complete("normal_again", msg, session_id=10)
+    assert db.llm_calls_used(10) == llm.MAX_CALLS_PER_SESSION
+    assert len(sent) == llm.MAX_CALLS_PER_SESSION + llm.settings.thread_rescue_max_calls
+
+
+def test_rescue_spend_does_not_take_away_remaining_composer_calls(sent):
+    msg = [{"role": "user", "content": "hi"}]
+    llm.complete("thread_rescue", msg, session_id=11)
+    for index in range(llm.MAX_CALLS_PER_SESSION):
+        llm.complete(f"normal_{index}", msg, session_id=11)
+    assert db.llm_calls_used(11) == llm.MAX_CALLS_PER_SESSION

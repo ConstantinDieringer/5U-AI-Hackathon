@@ -14,6 +14,7 @@ AGENTS = (
     "tariff",
     "tracking",
     "watchdog",
+    "rescue",
 )
 
 

@@ -778,8 +778,17 @@ def catch_up() -> None:
             received_at=str(r["received_at"]),
         )
         threading.Thread(
-            target=handle_reply,
+            target=_resume_reply,
             args=(mail, int(s["id"])),
             name=f"book-{s['id']}",
             daemon=True,
         ).start()
+
+
+def _resume_reply(mail: Mail, sid: int) -> None:
+    from app.agents import rescue
+
+    if rescue.is_owner(sid):
+        rescue.take_over(mail, sid)
+    else:
+        handle_reply(mail, sid)

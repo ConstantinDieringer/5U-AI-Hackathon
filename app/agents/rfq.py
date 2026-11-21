@@ -1213,6 +1213,12 @@ def _handle(mail: Mail, sid: int) -> None:
             "attachment_texts", cached.get("texts", {})
         )
     checked_rfq, draft = validate(mail, rfq, cached.get("texts", {}), problems, corrections)
+    from app.agents import rescue
+
+    approved = rescue.approved_request(sid, mail)
+    if approved is not None:
+        checked_rfq, draft = approved
+        rfq = checked_rfq
     draft.evidence["attachment_texts"] = cached.get("texts", {})
     draft.evidence["corrections"] = corrections
     mode = settings.rfq_validation_mode
