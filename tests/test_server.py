@@ -69,7 +69,13 @@ def test_dashboard_shape(client):
     } <= d.keys()
 
 
-def test_reply_without_mail_client_is_503(client):
+def test_reply_without_mail_client_is_503(client, monkeypatch):
+    from app import hackloop
+
+    def refused(*_a, **_k):  # was a real POST to the 5U mailbox (401 with a placeholder key)
+        raise hackloop.HackloopError("POST", "/v1/mailbox/messages", 401, "Unauthorized")
+
+    monkeypatch.setattr(hackloop, "send", refused)
     sid = seed()
     r = client.post(f"/api/sessions/{sid}/reply", json={"text": "Hallo"})
     assert r.status_code in (503, 502)

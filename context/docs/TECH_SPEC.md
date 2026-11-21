@@ -84,6 +84,10 @@ requirements.txt
 `.env` (nie committen, das Repo ist öffentlich). **Maßgeblich ist `.env.example` im Repo-Root**: alle Variablen mit Standardwert und Kommentar. `TEAM_API_KEY`, UI-Passwort und Webhook-Signing-Secret sind geheim. Das Signing-Secret bleibt in einer privaten Datei auf dem persistenten Volume oder in `MAILBOX_WEBHOOK_SECRET`. Neue Variable = Eintrag in `.env.example` + Standardwert in `app/config.py` im selben Commit.
 
 - Zugriff nur über `from app.config import settings` (z. B. `settings.api_key`).
+- `UI_PASSWORD` ist vor dem Start von `run.py` verpflichtend. Browser-Schreibzugriffe senden
+  `X-Requested-With: XMLHttpRequest`; die Mailbox-Webhook-Route verwendet separat HMAC-SHA256.
+- Eingehende Mail-Anhänge sind nicht vertrauenswürdig: maximal 12 je Mail und 20 MB insgesamt;
+  Downloads werden bei 20 MB pro Datei abgebrochen.
 - Der eigene OpenAI-Key wird **einmalig per curl** im Gateway hinterlegt und steht **nirgends** im Repo oder in `.env`.
 - `.gitignore` enthält mindestens: `.env`, `.venv/`, `__pycache__/`, `data/forwarder.db`, `data/inbox/`, `*.log`.
 
@@ -248,8 +252,8 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - `enforce` bepreist nur aktuelle, belegte Angaben. Signaturen und frühere Kundensendungen ersetzen keine Abholadresse; weitergeleitete Betreffe und Historie sind keine aktuellen Streckenangaben.
 - Alle Text-/Tabellen-Anhänge vor dem Pricing abgleichen. Bildseiten werden im vorhandenen Extraktionsaufruf transkribiert (bis 2500 Output-Tokens); kein zusätzlicher Call. Preisberechnung bleibt deterministisch.
 - `rfq_validation` ist eine additive Workflow-Tabelle (keine Änderung des bestehenden sessions-CHECK): Draft, Quellen, offene Punkte, Zustand und Rückfrage-Ausgang. Der API-Sessiondetail liefert `validation`; die UI zeigt den Zustand neben dem bisherigen Sessionstatus.
-- Einmal automatisch im Kundenthread nachfragen; ursprüngliche Deadline beibehalten. Das Scoring-Risiko durch die erste Antwort wurde bewusst akzeptiert. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
-- Rückfrageantworten vor Booking behandeln, nur angefragte Werte übernehmen. Unklare Antwort, bestätigtes Gefahrgut ohne passenden Tarif oder unklarer Versandausgang erfordern manuelle Prüfung. Keine weiteren automatischen Rückfragen.
+- Automatische Rückfragen bleiben im Kundenthread und behalten die ursprüngliche Deadline. Das Scoring-Risiko durch die erste Antwort wurde bewusst akzeptiert. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
+- Rückfrageantworten vor Booking behandeln und nur angefragte Werte übernehmen. Bleiben RFQ-Felder nach deterministischer Auswertung offen, liest `LLM_RESCUE_MODEL` den vollständigen aktuellen Kundenthread vor der ersten Rückfrage beziehungsweise vor einem Human-Handoff. Es darf nur explizit belegte Korrekturen mit einem wörtlichen Beleg liefern; Code prüft Beleg, Feldtyp und vollständigen RFQ erneut. Erst ein weiterhin ungelöster, abgelaufener oder ausdrücklich pausierter/manueller Fall benötigt einen Menschen.
 - Bei Gefahrguthinweisen ausdrücklich Gefahrgutunterlagen (DGD/Versendererklärung und SDS,
   soweit zutreffend) anfragen und Prüfung vor Angebot/Buchung erklären. Eine allgemeine
   Bestätigung der Packliste ist weder Dokumenteneingang noch Transportfreigabe.
@@ -259,6 +263,12 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Dedizierter Stilagent `app/agents/email_review.py`: `LLM_REVIEW_MODEL=gpt-5`, `EMAIL_REVIEW_ENABLED=true`, genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens. Kein eigener Versand und keine Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen werden nach dem Review geschützt; bei Fehler/Budgetende bleibt der deterministisch geprüfte Entwurf erhalten. Aufruf und Kosten werden der RFQ zugerechnet. Pause/Handbetrieb und Quote-Deadline werden nach dem Review erneut geprüft.
 
 - Strenge Versanddarstellung: alle Kunden-Sendewege nutzen `hackloop.send_customer`, das den Mailtext unmittelbar vor dem HTTP-Aufruf über `mail/outgoing.py` rendert und prüft. Prosa enthält keine Doppelpunkte, Semikola, Unterstriche, Bindestriche oder Klammern; Referenznummern bleiben zunächst kopierbar. Daten mit ausgeschriebenen Monaten, keine Null-Nachkommastellen, kurze Absätze. Die tatsächlich versandte Fassung wird gespeichert. `/api/health` nennt Stilversion und Build-Revision zur Aktivierungsprüfung. Persönliche Wärme und leichter Humor dürfen keine erfundene Kundentreue, Sonderpreise, Rabatte oder Leistungszusagen behaupten.
+- Bei Portalabfragen Airline-Anfrageplätze für bekannte Portal-Carrier derselben Strecke
+  reservieren. Bei HTTP 503 zuerst diese Carrier direkt anfragen, anschließend verbleibende
+  Plätze mit anderen Kandidaten füllen. Kunden-Ausschlüsse und negative Streckenbeobachtungen
+  gelten weiterhin; bereits versendete Anfragen zählen auch nach Neustarts zum Airline-Limit.
+  Trucker haben ein getrenntes Limit. Fehlende Luftpreise dürfen keinen Truckingpreis als
+  vollständige Quote erzeugen; ein Flughafenwechsel erfordert einen passenden neuen Vorlaufpreis.
 
 - Kundenmails: Euro als €, keine Klammerzusätze oder internen Feld-/Spaltennamen. Termine mit ausgeschriebenem Monatsnamen (`24. November 2026` / `24 November 2026`), kurze Absätze und freundliche vollständige Sätze. Composer-Ausgaben werden auf diese Darstellung geprüft und bei Verstößen repariert; Angebots-, Rückfrage-, Buchungs- und Trackingvorlagen berücksichtigen dieselben Regeln. API-/CRM-Werte und technische IDs bleiben unverändert.
 
@@ -317,6 +327,12 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - Keine `print()`-Aufrufe im App-Code.
 
 ## 10. UI / interne API
+
+- Manuelle Antworten wählen standardmäßig die neueste eingegangene Mail des Session-Kunden,
+  nie automatisch einen Carrier. Eine andere eingegangene Mail derselben Session bleibt
+  ausdrücklich auswählbar; die Versandbestätigung nennt den tatsächlichen Empfänger.
+  Notfall-Quotes dürfen nur an den Session-Kunden gehen. Carrier-Antworten markieren weder
+  `first_reply_at` noch eine Kundenquote; ungültige Auswahl scheitert vor Versand/Übernahme.
 
 - FastAPI auf Port `UI_PORT` (8000), Bindung `0.0.0.0`.
 - Endpunkte: siehe `context/docs/design/aufgabe-c.md` Abschnitt 6. SSE über `fastapi.sse.EventSourceResponse`, ohne `event:`-Feld; Mailinhalte im Frontend nur per `textContent` rendern.

@@ -46,6 +46,7 @@ class Settings:
     tracking_address: str
     llm_model: str
     llm_retry_model: str
+    llm_rescue_model: str
     llm_compose_model: str
     llm_review_model: str
     email_review_enabled: bool
@@ -101,6 +102,7 @@ settings = Settings(
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
     llm_model=_env("LLM_MODEL"),
     llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5"),  # stronger repair when extraction fails
+    llm_rescue_model=_env("LLM_RESCUE_MODEL", "gpt-5"),
     llm_compose_model=_env("LLM_COMPOSE_MODEL", "gpt-5-mini"),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
     email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "true").lower() == "true",

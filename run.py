@@ -21,6 +21,10 @@ def main() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll is noise
     log = logging.getLogger("run")
 
+    if not settings.ui_password:
+        log.critical("UI_PASSWORD must be set before starting the dashboard or mail agents")
+        raise SystemExit(2)
+
     from app import db
     from app.mail import poller, webhook
 

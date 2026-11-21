@@ -60,6 +60,7 @@ def test_one_stronger_review_corrects_the_draft_and_reaches_the_transport(monkey
     "old,new",
     [
         ("911,68", "900"),
+        ("€", "$"),
         ("BK-MCN63DLN", "BK-OTHER"),
         ("November", "December"),
         ("earliest possible", "confirmed"),
@@ -123,6 +124,20 @@ def test_internal_field_cannot_reach_transport(monkeypatch):
     )
     with pytest.raises(CustomerStyleError):
         hackloop.send_customer("sara@example.test", "RFQ", "The value is road_transit.")
+
+
+def test_deadline_expiring_during_review_prevents_sending(monkeypatch):
+    clock = [10.0]
+
+    def complete(*args, **kwargs):
+        clock[0] = 12.0
+        return json.dumps({"body": BODY})
+
+    monkeypatch.setattr(llm, "complete", complete)
+    monkeypatch.setattr(hackloop.time, "time", lambda: clock[0])
+    monkeypatch.setattr(hackloop, "send", lambda **kw: pytest.fail("Expired mail must not be sent"))
+    with pytest.raises(hackloop.CustomerSendBlocked):
+        hackloop.send_customer("sara@example.test", "Re: RFQ", BODY, deadline_at=11.0)
 
 
 def test_screenshot_format_is_fixed_even_when_reviewer_is_unavailable(monkeypatch):

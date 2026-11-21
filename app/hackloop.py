@@ -19,6 +19,7 @@ TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 MAX_RETRIES = 2
 RETRY_PAUSE_S = 1.0
 MAX_RETRY_AFTER_S = 10.0
+MAX_ATTACHMENT_BYTES = 20_000_000
 
 _client = httpx.Client(
     base_url=settings.base_url,
@@ -155,7 +156,42 @@ def get_message(message_id: int) -> dict[str, Any]:
 
 
 def get_attachment(message_id: int, attachment_id: int) -> bytes:
-    return _request("GET", f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}").content
+    method = "GET"
+    path = f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}"
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            with _client.stream(method, path) as resp:
+                retryable = resp.status_code == 429 or (
+                    resp.status_code >= 500 and resp.status_code != 503
+                )
+                if retryable:
+                    if attempt < MAX_RETRIES:
+                        time.sleep(min(MAX_RETRY_AFTER_S, _retry_wait(resp)))
+                        continue
+                    raise HackloopError(method, path, resp.status_code, "retry limit reached")
+                if resp.is_error:
+                    detail = b"".join(resp.iter_bytes())[:300].decode("utf-8", "replace")
+                    raise HackloopError(method, path, resp.status_code, detail)
+                length = resp.headers.get("Content-Length")
+                if length and length.isdecimal() and int(length) > MAX_ATTACHMENT_BYTES:
+                    raise HackloopError(method, path, 413, "attachment exceeds 20 MB")
+                content = bytearray()
+                for chunk in resp.iter_bytes():
+                    if len(content) + len(chunk) > MAX_ATTACHMENT_BYTES:
+                        raise HackloopError(method, path, 413, "attachment exceeds 20 MB")
+                    content.extend(chunk)
+                return bytes(content)
+        except HackloopError:
+            raise
+        except httpx.ConnectError as exc:
+            if attempt == MAX_RETRIES:
+                raise HackloopError(method, path, None, f"connect error: {exc}") from exc
+            time.sleep(RETRY_PAUSE_S)
+        except httpx.TransportError as exc:
+            if attempt == MAX_RETRIES:
+                raise HackloopError(method, path, None, f"transport error: {exc}") from exc
+            time.sleep(RETRY_PAUSE_S)
+    raise HackloopError(method, path, None, "attachment download failed")
 
 
 def send(

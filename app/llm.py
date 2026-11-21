@@ -126,7 +126,7 @@ def complete(
     model_name: str | None = None,
 ) -> str:
     """One chat completion through the gateway. Returns the message text and logs the cost.
-    `model_name` overrides LLM_MODEL for this call (the extraction retry uses LLM_RETRY_MODEL)."""
+    `model_name` overrides LLM_MODEL for configured retry, rescue and compose calls."""
     _reserve(session_id)
     name = model_name or model()
     kw: dict[str, Any] = {

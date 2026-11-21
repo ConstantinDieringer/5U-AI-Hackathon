@@ -47,7 +47,7 @@ def _tokens(body: str) -> Counter[str]:
     """Numeric and reference values are immutable even when the wording changes."""
     return Counter(
         re.findall(
-            r"\b(?:BK-[A-Za-z0-9]+|AP-\d+|R-[A-Za-z0-9_-]+)\b|\b\d+(?:[.,]\d+)*\b|\b[A-Z]{3}\b",
+            r"\b(?:BK-[A-Za-z0-9]+|AP-\d+|R-[A-Za-z0-9_-]+)\b|\b\d+(?:[.,]\d+)*\b|\b[A-Z]{3}\b|[€$£]",
             body,
         )
     )

@@ -82,6 +82,11 @@ monochrome `--ink-2`, active `--blue`.
 
 ## 3. Layout
 
+Overview cards must contain long subjects, status labels and booking references. The recent
+request table uses fixed column proportions with ellipsis and full-text tooltips. Below its
+readable minimum width, only the table scrolls horizontally inside its card. Grid/flex children
+must shrink to the available card width; score labels and verdict badges wrap within the card.
+
 - **App shell:** floating frosted-glass sidebar (240 px, 16 px inset from the edges, radius 28)
   with minimal monochrome icons; main area with a sticky glass **top bar** (page title, search
   pill, date-range segmented control, user avatar).
@@ -117,6 +122,11 @@ RFQ detail includes an API-cost card: total USD estimate, input/output totals, a
 | Empty state | icon in a tinted circle + one sentence |
 
 ## 5. Copy
+
+Manual reply defaults to the latest message from the session customer. The existing mail
+selector labels customer vs. other senders, and the send confirmation names the selected
+recipient. An emergency quote resets the target to the customer; a carrier selection cannot
+receive a customer quote. Intentional carrier replies remain available through the selector.
 
 German UI, short verbs ("Pausieren", "Übernehmen", "Antworten"). Irreversible actions confirm
 and say why ("Nur die erste Quote zählt"). Mail text is untrusted: rendered as text only.

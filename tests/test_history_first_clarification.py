@@ -1,6 +1,7 @@
 """History-first recovery and repeated clarification on the unified validation workflow."""
 
 import dataclasses
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -37,6 +38,11 @@ def isolated(tmp_path, monkeypatch):
         clarification,
         "settings",
         dataclasses.replace(clarification.settings, rfq_validation_mode="enforce"),
+    )
+    monkeypatch.setattr(
+        clarification.llm,
+        "complete",
+        lambda *args, **kwargs: json.dumps({"corrections": []}),
     )
 
 
