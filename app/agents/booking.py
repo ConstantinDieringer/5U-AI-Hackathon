@@ -326,13 +326,15 @@ def _confirm_to_customer(
     return True
 
 
-def handle_reply(mail: Mail, session_id: int | None) -> None:
+def handle_reply(
+    mail: Mail, session_id: int | None, *, consent_evidence: str | None = None
+) -> None:
     """Customer reply in a thread. Never raises (runs in a worker thread)."""
     if session_id is None:
         return
     try:
         with _lock(session_id):
-            _handle(mail, session_id)
+            _handle(mail, session_id, consent_evidence=consent_evidence)
     except Exception as e:
         log.exception("session %s: booking failed", session_id)
         db.emit(
@@ -343,7 +345,23 @@ def handle_reply(mail: Mail, session_id: int | None) -> None:
         )
 
 
-def _handle(mail: Mail, sid: int) -> None:
+def _rescue_acceptance(body: str, evidence: str | None) -> bool | None:
+    verdict = is_acceptance(body)
+    if verdict is not None or not evidence:
+        return verdict
+    own = own_text(body).strip()
+    # The stronger owner may interpret a bare affirmation in the current offer context.
+    # Any added condition, change, question or deferred approval still uses the normal path.
+    if evidence.strip().casefold() in own.casefold() and re.fullmatch(
+        r"(?:yes(?:\s+please)?|ja(?:\s+bitte)?|ok(?:ay)?|i confirm|that works|bestätigt)[.!\s]*",
+        own,
+        re.IGNORECASE,
+    ):
+        return True
+    return None
+
+
+def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> None:
     s = db.get_session(sid)
     if not s or not s.get("quotes"):
         return
@@ -352,13 +370,13 @@ def _handle(mail: Mail, sid: int) -> None:
 
         b = s["bookings"][0]
         if b.get("customer_state") == PRICE_ASKED:  # open price question: answer it first
-            _on_price_change_answer(mail, sid, s, b)
+            _on_price_change_answer(mail, sid, s, b, consent_evidence=consent_evidence)
         elif tracking.is_status_question(mail.body):  # "where is it?" in their own thread
             tracking.handle(mail, sid, booked_session=sid)
         else:
             log.info("session %s already booked, reply %s ignored", sid, mail.id)
         return
-    verdict = is_acceptance(mail.body)
+    verdict = _rescue_acceptance(mail.body, consent_evidence)
     if settings.prebook_answer:
         from app.agents import prebook
 
@@ -691,7 +709,14 @@ def _ask_price_change(sid: int, mail: Mail, actual: tuple[int, str]) -> None:
     )
 
 
-def _on_price_change_answer(mail: Mail, sid: int, s: dict[str, Any], b: dict[str, Any]) -> None:
+def _on_price_change_answer(
+    mail: Mail,
+    sid: int,
+    s: dict[str, Any],
+    b: dict[str, Any],
+    *,
+    consent_evidence: str | None = None,
+) -> None:
     """Yes to the new total: confirm at it. Anything else (no, the alternative, unclear):
     a human decides, because the booking cannot be cancelled or swapped by the agent."""
     quote = s["quotes"][0]
@@ -700,7 +725,7 @@ def _on_price_change_answer(mail: Mail, sid: int, s: dict[str, Any], b: dict[str
     wants_other = bool(_WANTS_OTHER.search(text)) or bool(
         alt and alt["airline"].lower() in text.lower()
     )
-    verdict = is_acceptance(mail.body)
+    verdict = _rescue_acceptance(mail.body, consent_evidence)
     if verdict is True and not wants_other and b.get("customer_total_minor") is not None:
         booking_ref = str(b.get("booking_reference") or b["team_reference"])
         name = (s.get("request") or {}).get("customer_name")
@@ -838,8 +863,10 @@ def catch_up() -> None:
             body=str(r["body"] or ""),
             received_at=str(r["received_at"]),
         )
+        from app.agents import rescue
+
         threading.Thread(
-            target=handle_reply,
+            target=rescue.take_over if rescue.is_owner(int(s["id"])) else handle_reply,
             args=(mail, int(s["id"])),
             name=f"book-{s['id']}",
             daemon=True,
