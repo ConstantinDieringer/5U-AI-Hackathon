@@ -19,6 +19,7 @@ from app.mail.rfq_validation import (
     free_text_answer,
     numeric_facts,
     validate,
+    weight_reading,
 )
 from app.mail.router import address
 from app.mail.style import SIGNATURE
@@ -201,8 +202,17 @@ def known_weights(draft: RfqDraft, sid: int, mail: Mail) -> tuple[Decimal, ...]:
     return tuple(Decimal(str(v)) for v in found if v not in (None, ""))
 
 
-def _rescue_value(field: str, raw: object) -> str | float | int | None:
+def _rescue_value(
+    field: str, raw: object, known: tuple[Decimal, ...] = (), facts: dict | None = None
+) -> str | float | int | None:
     value = str(raw or "").strip()
+    if field == "weight_kg" and settings.thousands_evidence:
+        # the model copies "1,674" from the mail: 1674 when the shipment's figures say so
+        number = value.replace(" ", "")
+        if not re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?", number):
+            return None
+        reading = weight_reading(number, known=known, facts=facts)
+        return float(reading) if reading is not None and reading > 0 else None
     if field in ("origin", "destination"):
         code = value.upper()
         if not re.fullmatch(r"[A-Z]{3}", code):
@@ -271,12 +281,13 @@ def rescue_with_model(
     corrections = dict(draft.evidence.get("corrections", {}))
     accepted = []
     normalized_thread = _normal(transcript)
+    known = known_weights(draft, sid, mail) if settings.thousands_evidence else ()
     for item in result.get("corrections", []):
         field = item.get("field")
         evidence = str(item.get("evidence") or "").strip()
         if field not in allowed or not evidence or _normal(evidence) not in normalized_thread:
             continue
-        value = _rescue_value(field, item.get("value"))
+        value = _rescue_value(field, item.get("value"), known, draft.facts)
         if value is None:
             continue
         corrections[field] = value
