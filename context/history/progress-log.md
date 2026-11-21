@@ -2,6 +2,8 @@
 
 ## Overflow from the lean tracker (newest first)
 
+- Carrier document totals hardened: 18 offer layouts x 5 formats replay exact (was 32/90 with three silent wrong values).
+- Carrier offers in any common attachment; audio transcribed locally, scans via the gateway.
 - Kessler BOM thread fix flags `TOTALS_SAME_LINE`, `THOUSANDS_EVIDENCE`, `CLARIFY_CAP_RESOLVE` (default false, recommended true).
 - Follow-up nudges (`app/agents/followup.py`) for stalled offers and unanswered questions.
 
