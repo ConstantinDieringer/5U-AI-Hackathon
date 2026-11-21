@@ -2,6 +2,7 @@
 
 ## Overflow from the lean tracker (newest first)
 
+- Reply in the customer's language, any language: one checked gateway call in `hackloop.send_customer` names the language and translates; pt no longer read as es; no quote template means English copy translated at send, not no quote (`REPLY_IN_CUSTOMER_LANGUAGE`).
 - Übersicht v0.3: errors first (`GET /api/problems`), ERROR log lines as `log_error` events, "Kontext kopieren" for manual AI sessions (`/api/context`). Checked in Chrome with the demo DB.
 - Context system: lean always-read core, per-area files in `context/areas/`, history archived in `context/history/`, size budgets tested.
 - Required tracking paragraph in every RFQ customer send, plus a 30 s repair worker. 1261 passed/5 skipped; rollout pending.

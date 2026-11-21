@@ -177,11 +177,15 @@ def session_context(sid: int) -> str | None:
         NEXT_MAIL,
         "## Status",
         f"- {_build()}",
-        f"- Art: {s.get('kind')} · Status: {s.get('status')} · Modus: {s.get('mode')}"
-        f" · pausiert: {bool(s.get('paused'))}",
+        (
+            f"- Art: {s.get('kind')} · Status: {s.get('status')} · Modus: {s.get('mode')}"
+            f" · pausiert: {bool(s.get('paused'))}"
+        ),
         f"- Kunde: {s.get('customer')} · Betreff: {s.get('subject')}",
-        f"- Erstellt: {s.get('created_at')} · Frist: {s.get('deadline_at')}"
-        f" · erste Antwort: {s.get('first_reply_at') or 'keine'}",
+        (
+            f"- Erstellt: {s.get('created_at')} · Frist: {s.get('deadline_at')}"
+            f" · erste Antwort: {s.get('first_reply_at') or 'keine'}"
+        ),
         f"- LLM-Kosten: {(s.get('llm_cost_micro_usd') or 0) / 1e6:.4f} USD",
     ]
     if s.get("request"):
@@ -232,8 +236,10 @@ def session_context(sid: int) -> str | None:
         out += [
             "",
             f"### {arrow} Mail {m['id']} · {_t(m.get('received_at'))} · {m.get('category')}",
-            f"Von: {m.get('sender')} · An: {m.get('recipient')}"
-            f" · Antwort auf: {m.get('in_reply_to') or '–'}",
+            (
+                f"Von: {m.get('sender')} · An: {m.get('recipient')}"
+                f" · Antwort auf: {m.get('in_reply_to') or '–'}"
+            ),
             f"Betreff: {m.get('subject')}",
             *_fence(body or "[leerer Text]"),
         ]
@@ -275,22 +281,28 @@ def system_context() -> str:
         "",
         RULES,
         "## Meine Frage",
-        "Was ist gerade das wichtigste Problem, was ist die wahrscheinliche Ursache, und was "
-        "soll ich jetzt tun?",
+        (
+            "Was ist gerade das wichtigste Problem, was ist die wahrscheinliche Ursache, und was "
+            "soll ich jetzt tun?"
+        ),
         "",
         "## System",
         f"- {_build()}",
         f"- Alle Mails gestoppt: {bool(st.get('global_pause'))}",
-        f"- Thread-Rescue: {settings.thread_rescue_enabled} · RFQ-Watchdog: "
-        f"{settings.rfq_watchdog} · Modell: {settings.llm_model}",
+        (
+            f"- Thread-Rescue: {settings.thread_rescue_enabled} · RFQ-Watchdog: "
+            f"{settings.rfq_watchdog} · Modell: {settings.llm_model}"
+        ),
         "",
         f"## Systemcheck (letzte {st['window_hours']} h)",
     ]
     out += [f"- [{c['level']}] {c['name']}: {c['value']} · {c['hint']}" for c in st["checks"]]
     out += [
         "",
-        f"## Fehler und Warnungen (letzte 3 h): {pr['errors']} Fehler, {pr['warnings']}"
-        " Warnungen, gleiche Meldungen zusammengefasst",
+        (
+            f"## Fehler und Warnungen (letzte 3 h): {pr['errors']} Fehler, {pr['warnings']}"
+            " Warnungen, gleiche Meldungen zusammengefasst"
+        ),
     ]
     for g in pr["groups"][:40]:
         sessions = ", ".join(str(x["id"]) for x in g["sessions"]) or "–"

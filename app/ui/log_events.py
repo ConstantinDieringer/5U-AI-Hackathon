@@ -56,7 +56,7 @@ class ErrorEventHandler(logging.Handler):
                 logger=record.name,
                 thread=record.threadName,
             )
-        except Exception:  # noqa: BLE001 - logging must never break the caller
+        except Exception:  # noqa: BLE001, S110 - logging must never break the caller
             pass
         finally:
             self._local.busy = False

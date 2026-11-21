@@ -348,7 +348,7 @@ def test_supervisor_ignores_old_threads(case, monkeypatch):
 
 
 def test_supervisor_caps_parallel_owners(case, monkeypatch):
-    _, answer, _ = case
+    _, _answer, _ = case
     before = datetime.now(UTC) - timedelta(seconds=60)
     with db.tx() as c:
         c.execute("UPDATE mails SET received_at=? WHERE session_id=?", (before.isoformat(), SID))
