@@ -2,6 +2,8 @@
 
 ## Overflow from the lean tracker (newest first)
 
+- Quote PDF only on customer request (team decision): `QUOTE_PDF_ON_REQUEST` on by default, rule-based detection in `app/mail/pdf_request.py`, also for Notfall-Quotes.
+- Faster context: code standards auto-imported into `CLAUDE.md`, area files auto-loaded by path (`.claude/rules/`), per-area test commands, `slow` marker for replay/full-app tests.
 - 5U wants quotes as PDF: every RFQ quote and Notfall-Quote carries `Angebot_AP-n.pdf`, rendered by code from the priced option (`app/mail/quote_pdf.py`, no LLM, no new dependency). Fault = quote without PDF + error event (`QUOTE_PDF`).
 - Audio recovery (PR #56): Groq first with verified gateway/offline fallbacks. Original session-18673 MP3 reads EUR 358.64 / collection 4 h; live Groq still needs GROQ_API_KEY. Suite 1304 passed/5 skipped; latest focused integration 109 passed/1 skipped. Not deployed.
 - Process guardrails: PR + CI (pytest, secrets scan) instead of direct pushes, read-only `REVIEW_TOKEN` for review agents, #sos on repeated mailbox 429, `python -m app.deploy_check` confirms live. CI run on GitHub pending.

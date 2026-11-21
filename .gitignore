@@ -13,3 +13,8 @@ data/demo.db*
 .ruff_cache/
 data/runtime/
 *.secret
+
+# Claude Code: local state (rules in .claude/rules/ are shared)
+.claude/worktrees/
+.claude/settings.local.json
+.claude/launch.json

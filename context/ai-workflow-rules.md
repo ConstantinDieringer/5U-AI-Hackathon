@@ -6,7 +6,8 @@ Build incrementally and spec-driven. Implement against the context files; do not
 
 ## Context Loading
 
-- Read only what the task needs: the always-read core plus the matching rows of the routing table in `CLAUDE.md`.
+- Read only what the task needs: `CLAUDE.md` (auto-loaded with the code standards), the area file that `.claude/rules/` loads by path, and the matching rows of the routing table.
+- Iterate with the area test command; run the full suite once before the PR.
 - Prefer `grep` over full reads for TECH_SPEC, design docs, research notes and `context/history/`.
 - When code and docs disagree, the code plus `app/config.py` describe the actual state; fix the doc (or add an open question) in the same change.
 

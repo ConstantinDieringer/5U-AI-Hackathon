@@ -24,14 +24,18 @@ SONNBERG = (
     [
         (SONNBERG, "en"),
         (
-            "Thank you for your offer. That works for us, please go ahead and book it.\n\n"
-            "Cheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+            (
+                "Thank you for your offer. That works for us, please go ahead and book it.\n\n"
+                "Cheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg"
+            ),
             "en",
         ),
         (
-            "Sehr geehrte Damen und Herren,\n\nbitte senden Sie uns ein Angebot für die "
-            "Luftfracht von 500 kg nach JFK. Die Sendung ist ab Montag abholbereit.\n\n"
-            "Viele Grüße\nMax",
+            (
+                "Sehr geehrte Damen und Herren,\n\nbitte senden Sie uns ein Angebot für die "
+                "Luftfracht von 500 kg nach JFK. Die Sendung ist ab Montag abholbereit.\n\n"
+                "Viele Grüße\nMax"
+            ),
             "de",
         ),
         (
