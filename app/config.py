@@ -34,6 +34,8 @@ class Settings:
     deadline_check_every_s: float
     ui_user: str
     ui_password: str
+    quote_target_s: float
+    bid_max_wait_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -56,4 +58,6 @@ settings = Settings(
     deadline_check_every_s=float(_env("DEADLINE_CHECK_EVERY_S", "10")),
     ui_user=_env("UI_USER", "team"),
     ui_password=_env("UI_PASSWORD"),  # set it whenever the UI is reachable from the internet
+    quote_target_s=float(_env("QUOTE_TARGET_S", "100")),
+    bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "240")),
 )
