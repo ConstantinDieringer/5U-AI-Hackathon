@@ -15,6 +15,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 - Stronger RFQ models: extraction defaults to gpt-5-mini (was nano); failed extraction repair defaults to gpt-5 (was mini), with price accounting. Both passed a synthetic gateway extraction/repair probe; 40 relevant tests pass. Composer stays mini; deployment overrides still take precedence and live rollout is unverified.
 - Startup agent check: `run.py` imports every agent from `app.agents.AGENTS` and logs `agents loaded: ...`; a broken one logs an error, emits `agent_import_failed` (#sos) and does NOT stop the other agents. CI imports every app module. DEPLOY.md has live-round deploy rules. Not verified on Railway; local start with AGENTS_ENABLED=false logged the line.
+- RFQ replay harness (`python -m app.agents.rfq_replay`, `tests/test_rfq_replay.py`): all 27 live rounds through the real flow offline (stored extraction/portal/bids, no network); baseline diff gates option, total, airline, carriers, clarification and mail text. 22/27 match production exactly; rounds 2/12 lack stored data, 18 to 20 now ask for the pickup. Composer output and new portal reads are not replayed.
 - Round 30 review: block unverified cargo cutoff promises (including close of business), retain personal quote repair and state requested cutoff as unconfirmed in composed and fallback text; no current carrier cutoff field exists. Offline suite: 353 passed, 4 skipped; EN/DE promises and rate-validity counterexample covered; deployment not verified.
 
 - Notfall-Quote (Live → "Notfall-Quote", `POST /api/sessions/{id}/draft`, `app/ui/drafts.py`): computes the quote from stored request, sheets, portal (8 s) and the session's bids, fills a house-style mail; sending it records the quote (rate_id) and hands back to the agent so booking works.
@@ -121,12 +122,16 @@ Goal: the first accepted quote end to end before any polish.
 18. (A) Reply format of trucker and airline bids unknown: parsed by regex (`bids.parse_price`); unreadable bids are logged as `bid_unreadable`. Check the first real ones.
 19. (A) Quotes are always in EUR. ~~Door-to-port without a trucker bid~~ → blocked by default;
     `ALLOW_INCOMPLETE_DOOR_QUOTE=true` is the explicit emergency override.
+20. Board points carry `booking: 0.0` on every booked round, also on time; the published rules list no booking points. What earns them?
+21. TECH_SPEC §8 still says `RFQ_VALIDATION_MODE=shadow` is the default; code, tracker and architecture say `enforce`. Which is binding?
 
 ## Architecture Decisions
 
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 19:00: Board accuracy (now visible) is the largest leak on answered rounds: rounds 2, 19, 21, 22, 25, 26 scored 28 to 38 of 45 while accepted. Rounds 15 to 17 (no answer) were forwarded-subject origin AMS and two RFQs without pickup; current code asks instead. LLM cost was about 0.2 points per quote, not a leak.
 
 - 21.11 18:30: `bids.wait(until_kinds=...)` returns once nobody of the awaited kind is left to answer (all airlines declined no longer waits out the timeout). Tested offline only.
 
