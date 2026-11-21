@@ -190,9 +190,12 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
             daemon=True,
         ).start()
     elif category == Category.TRACKING:
-        from app.agents import clarification, tracking
+        from app.agents import clarification, rescue, tracking
 
         def tracking_reply():
+            if session_id is not None and rescue.is_owner(session_id):
+                rescue.take_over(mail, session_id)
+                return
             pending = db.validation_get(session_id) if session_id is not None else None
             workflow = (pending or {}).get("draft", {}).get("evidence", {}).get("workflow")
             if workflow == "tracking" and clarification.handle_reply(mail, session_id):
@@ -205,9 +208,12 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
             daemon=True,
         ).start()
     elif category == Category.CUSTOMER and session_id is not None:
-        from app.agents import booking, clarification
+        from app.agents import booking, clarification, rescue
 
         def customer_reply():
+            if rescue.is_owner(session_id):
+                rescue.take_over(mail, session_id)
+                return
             if not clarification.handle_reply(mail, session_id):
                 booking.handle_reply(mail, session_id)
 

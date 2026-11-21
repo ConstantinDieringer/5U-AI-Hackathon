@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from app import config, db, hackloop
-from app.mail import documents
+from app.mail import documents, links
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RateOption, Rfq
@@ -447,14 +447,17 @@ def session_of(mail: Mail, session_id: int | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _attachment_paths(mail: Mail) -> list[Path]:
-    """The bid's saved attachments. The poller already downloaded them; a mail rebuilt from
-    the db after a restart has no attachment list, so its inbox folder is read instead."""
+def _attachment_paths(mail: Mail, sid: int | None = None) -> list[Path]:
+    """The bid's saved attachments plus files behind safety-checked links (app/mail/links.py).
+    The poller already downloaded the attachments; a mail rebuilt from the db after a restart
+    has no attachment list, so its inbox folder is read instead (saved link files included)."""
     if mail.attachments:
         from app.mail.poller import download_attachments
 
-        return download_attachments(mail)
-    return documents.inbox_files(config.settings.inbox_dir / str(mail.id))
+        paths = download_attachments(mail)
+        return paths + [p for p in links.linked_files(mail, sid) if p not in paths]
+    saved = documents.inbox_files(config.settings.inbox_dir / str(mail.id))
+    return saved + [p for p in links.linked_files(mail, sid) if p not in saved]
 
 
 def _spawn(fn, *args) -> None:  # tests replace this with a direct call
@@ -479,7 +482,7 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
         _evaluate(mail, sid, carrier, body, [], [])
         return
     try:
-        paths = _attachment_paths(mail)
+        paths = _attachment_paths(mail, sid)
     except Exception as exc:  # noqa: BLE001 - reported as unreadable bid below
         log.warning("bid mail %s: attachments not downloaded: %s", mail.id, exc)
         _unreadable(carrier, sid, "Anhang nicht geladen")

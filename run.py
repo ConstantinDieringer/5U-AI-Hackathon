@@ -56,6 +56,10 @@ def main() -> None:
         ).start()
 
     rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
+    if settings.thread_rescue_enabled:
+        from app.agents import rescue
+
+        threading.Thread(target=rescue.run, args=(stop,), name="thread-rescue", daemon=True).start()
     if settings.rfq_watchdog:
         # after catch_up: resumed workers count as live, the rest is due at once
         from app.agents import watchdog
