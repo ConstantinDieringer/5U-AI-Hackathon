@@ -34,7 +34,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## In Progress
 
 - Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
-- Task A, Karim: A1–A7 done. Next: RFQ agent (extract → price → claim_quote_send → reply in thread).
+- Task A, Karim: A1–A8 done. 16:21 PR #5 (Constantin's RFQ agent + bids) merged into main, local `a/rfq-agent` retired; live app now runs main. Next: booking agent, restart resume.
+- PR #4 (UI restyle) NOT merged: it conflicts with Moritz's console redesign 299faf2 on main. Moritz + Constantin decide.
 - Task B, Constantin: B1–B7 in PR #2 (pricing, portal, lanes, reference, dataset_version); next door-to-port trucking, bid selection, tariff mails.
 
 ## Next Up
@@ -86,6 +87,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 16:20: Round 4 (mail 937) lost: LLM gave ICAO origin `EDDL`, Rfq rejected it. Fixed (9b068ab: ICAO→IATA, bad origin dropped when a ZIP is given). Round 2 acceptance (mail 618) not booked: no booking agent yet.
 
 - 21.11 16:01: First real RFQ (mail 265, lindqvist-medtech, fastest to ORD, door pickup 51447, 676 kg / 5.79 cbm) received, routed as customer, session + UI live. `/v1/board/me` rows: `round_no, sent_at, answered_at, verdict, reason, booked`; matched to sessions via `sent_at` = session created_at.
 
