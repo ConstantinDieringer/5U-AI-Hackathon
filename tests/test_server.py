@@ -32,7 +32,7 @@ def seed():
 def test_index_and_lists(client):
     sid = seed()
     health = client.get("/api/health").json()
-    assert health["email_style_version"] == "strict-customer-prose-v3"
+    assert health["email_style_version"] == "strict-customer-prose-v4"
     assert health["email_reviewer_model"] == "gpt-5"
     assert "build_revision" in health
     assert client.get("/").status_code == 200

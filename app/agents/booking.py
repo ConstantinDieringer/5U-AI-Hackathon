@@ -254,6 +254,7 @@ def _confirm_to_customer(
         to, subject, text, in_reply_to=mail.id, session_id=sid, protected_terms=protected_terms
     )
     text = sent["body"]
+    subject = sent["subject"]
     db.record_outgoing(
         mail_id=int(sent["id"]),
         recipient=to,

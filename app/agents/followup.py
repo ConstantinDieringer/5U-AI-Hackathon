@@ -215,7 +215,7 @@ def _send(sid: int) -> None:
         db.record_outgoing(
             mail_id=int(sent["id"]),
             recipient=to,
-            subject=subject,
+            subject=sent["subject"],
             body=sent["body"],
             category=CATEGORY if kind == "offer" else CATEGORY_QUESTION,
             session_id=sid,

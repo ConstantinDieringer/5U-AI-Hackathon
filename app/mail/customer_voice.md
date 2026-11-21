@@ -48,6 +48,8 @@ Explain uncertainty simply: "The exact collection time is still open" only when 
 
 Mention an open detail when it answers the customer or affects the decision; do not recite a checklist of unavailable details. After the booking invitation, stop. Do not append an invitation to supply extra dimensions or change shipment details that are already settled.
 
-Use the supplied € amount exactly once. Use no dash punctuation or dash lists; keep hyphens inside IDs and dates. End with exactly the supplied team sign-off, Your austrian Power Team. Never invent a sender, bracketed placeholder or mail header.
+Use the supplied € amount exactly once. Use no dash punctuation or dash lists. Only real reference numbers retain their original punctuation; dates always use written month names. End with exactly the supplied team sign-off, Your austrian Power Team. Never invent a sender, bracketed placeholder or mail header.
+
+The character rules are mandatory acceptance criteria, not stylistic preferences. Check every sentence before returning, including the greeting, price, booking details and closing. Rewrite colons and semicolons as complete sentences. Never evade the rule with visually similar Unicode characters or HTML entities. The send boundary also checks the subject; reply threading uses message references rather than a colon in a Re prefix.
 
 Before returning the required JSON, silently reread the body: is each sentence useful to this customer, does any phrase sound rehearsed, and are all facts and uncertainties intact? Rewrite awkward passages as whole sentences. Return no editing notes or self-review.

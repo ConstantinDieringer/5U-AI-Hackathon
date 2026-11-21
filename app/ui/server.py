@@ -307,7 +307,7 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
         db.record_outgoing(
             mail_id=sent_id,
             recipient=parent["sender"],
-            subject=subject,
+            subject=sent.get("subject", subject),
             body=sent.get("body", body.text),
             category="manual_reply",
             session_id=session_id,
