@@ -143,6 +143,7 @@ def _body(rfq: Rfq, origin: str, kind: str) -> str:
 def request(session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier]) -> int:
     """Send one bid request per carrier and register them. Returns how many were sent."""
     sent = 0
+    already_sent = db.bid_request_recipients(session_id)
     with _cond:
         req = _open.setdefault(session_id, _Request())
     for c in carriers:
@@ -150,6 +151,9 @@ def request(session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier]) -> 
             break
         with _cond:
             if c.email in req.asked:
+                continue
+            if c.email.lower() in already_sent:
+                req.asked[c.email] = c
                 continue
         subject, body = (
             _subject(session_id, rfq, origin, c.kind),

@@ -4,7 +4,7 @@ An airline asked for a lane it does not serve replies (real mails 1336, 1338, 17
     "We do not serve this lane/zone: STR-EZE.
      We fly CGN-EZE, CGN-SGN, ..., STR-YYZ."
 We keep that list per airline (db kv, with the mail time) and stop asking it for lanes outside
-it. Entries older than SERVED_LANES_TTL_S count as unknown, so an hourly setup change heals
+it. Entries older than CARRIER_OBSERVATION_TTL_S count as unknown, so an hourly setup change heals
 itself: we ask once more and learn the new list from the next refusal.
 """
 

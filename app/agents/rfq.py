@@ -1,13 +1,13 @@
 """RFQ agent: customer request -> one quote in the customer's thread.
 
 Flow (handle_rfq, runs in its own thread, started by the poller):
-  1. extract_rfq      one LLM call through the gateway (schema-validated Rfq)
+  1. extract_rfq      schema-validated Rfq, with one repair attempt when needed
   2. bid requests     truckers for door-to-port pickup, email-only airlines on the lane
   3. prices           rate sheets + portal (B), then carrier bids as they arrive
   4. choose           best bid by price/speed 50/50, then cheapest/fastest over all air options;
                       door-to-port adds the best trucker bid
-  5. claim + send     db.claim_quote_send (one quote per thread), reply with in_reply_to
-Pricing is deterministic; the LLM only reads the mail.
+  5. compose + send   fact-bounded answer, then db.claim_quote_send (one quote per thread)
+Pricing and selection are deterministic; the LLM cannot invent quote facts.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -41,7 +42,10 @@ from app.pricing.reference import (
 log = logging.getLogger(__name__)
 
 RFQ_LIFETIME_S = 360  # 5U expires a request 6 min after it was sent
-TOO_OLD_S = 330  # do not start work on a request that cannot be answered in time any more
+TOO_OLD_S = (
+    330  # do not start work on a request that cannot be answered in time any more
+)
+COMPOSE_RESERVE_S = 15
 
 EXTRACT_PROMPT = (
     "Extract the air freight request from the email as JSON.\n"
@@ -52,7 +56,16 @@ EXTRACT_PROMPT = (
     "dimensions are given, compute pieces x L x W x H in metres.\n"
     "preference: 'fastest' if they ask for the fastest/quickest/express option, else 'cheapest'.\n"
     "ready_date: ISO date or null. language: ISO 639-1 code of the email language.\n"
-    "customer_name: the sender's first name from the signature, or null."
+    "customer_name: the sender's first name from the signature, or null.\n"
+    "customer_questions: every explicit question or requested detail, verbatim and without "
+    "answering it (max 5). service_constraints: every other timing, handling, routing or service "
+    "condition that the quote should respect (max 10)."
+)
+
+REPAIR_PROMPT = (
+    "Repair the proposed RFQ JSON so that it matches the supplied JSON schema. Preserve every "
+    "fact, explicit customer question and service constraint from the email. Do not guess missing "
+    "commercial facts. Return JSON only."
 )
 
 _N = ["string", "null"]
@@ -75,6 +88,8 @@ RFQ_SCHEMA: dict[str, Any] = {
                 "ready_date",
                 "language",
                 "customer_name",
+                "customer_questions",
+                "service_constraints",
             ],
             "properties": {
                 "origin": {"type": _N},
@@ -87,6 +102,16 @@ RFQ_SCHEMA: dict[str, Any] = {
                 "ready_date": {"type": _N},
                 "language": {"type": "string"},
                 "customer_name": {"type": _N},
+                "customer_questions": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {"type": "string"},
+                },
+                "service_constraints": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {"type": "string"},
+                },
             },
         },
     },
@@ -103,25 +128,54 @@ def _clean(body: str) -> str:
 
 
 def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
-    """One gateway call. None if the mail is not a usable air freight request."""
+    """Extract an RFQ, with one structured repair call after invalid model output."""
+    source = f"Subject: {mail.subject}\n\n{_clean(mail.body)}"
     text = llm.complete(
         "extract_rfq",
         [
             {"role": "system", "content": EXTRACT_PROMPT},
             {
                 "role": "user",
-                "content": f"Subject: {mail.subject}\n\n{_clean(mail.body)}",
+                "content": source,
             },
         ],
         session_id,
-        max_tokens=200,
+        max_tokens=350,
         response_format=RFQ_SCHEMA,
     )
     try:
         return Rfq.model_validate(json.loads(text))
     except (json.JSONDecodeError, ValidationError) as e:
-        log.warning("session %s: extraction not usable (%s): %r", session_id, e, text[:300])
-        return None
+        log.warning(
+            "session %s: extraction not usable (%s): %r", session_id, e, text[:300]
+        )
+        try:
+            repaired = llm.complete(
+                "repair_rfq",
+                [
+                    {"role": "system", "content": REPAIR_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"EMAIL:\n{source}\n\nINVALID JSON:\n{text[:3000]}\n\n"
+                            f"VALIDATION ERROR:\n{str(e)[:1000]}"
+                        ),
+                    },
+                ],
+                session_id,
+                max_tokens=350,
+                response_format=RFQ_SCHEMA,
+            )
+            return Rfq.model_validate(json.loads(repaired))
+        except (
+            json.JSONDecodeError,
+            ValidationError,
+            llm.LlmBudgetError,
+        ) as repair_error:
+            log.warning(
+                "session %s: RFQ repair not usable (%s)", session_id, repair_error
+            )
+            return None
 
 
 # ---------------------------------------------------------------- 4. choose
@@ -152,7 +206,8 @@ def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
     return min(
         trucks,
         key=lambda o: (
-            norm(o.total_eur, lo_p, hi_p) / 2 + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
+            norm(o.total_eur, lo_p, hi_p) / 2
+            + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
             o.total_eur,
         ),
     )
@@ -172,15 +227,34 @@ def _valid(option: RateOption) -> str | None:
     if not option.valid_until:
         return None
     try:
-        return datetime.fromisoformat(option.valid_until).astimezone(UTC).strftime("%H:%M UTC")
+        return (
+            datetime.fromisoformat(option.valid_until)
+            .astimezone(UTC)
+            .strftime("%H:%M UTC")
+        )
     except ValueError:
         return None
 
 
-_MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_MONTHS_EN = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
 
 
-def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[date, date] | None:
+def schedule(
+    rfq: Rfq, transit_days: int, today: date | None = None
+) -> tuple[date, date] | None:
     """Earliest departure and arrival: departure on the ready date (one day later when we
     truck it to the airport first, never before today), arrival = departure + transit."""
     if not rfq.ready_date:
@@ -196,10 +270,16 @@ def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[da
 
 
 def _date(d: date, lang: str) -> str:
-    return d.strftime("%d.%m.%Y") if lang == "de" else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
+    return (
+        d.strftime("%d.%m.%Y")
+        if lang == "de"
+        else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
+    )
 
 
-def _schedule_line(rfq: Rfq, option: RateOption, lang: str, today: date | None) -> str | None:
+def _schedule_line(
+    rfq: Rfq, option: RateOption, lang: str, today: date | None
+) -> str | None:
     when = schedule(rfq, option.transit_days, today)
     if when is None:
         return None
@@ -265,9 +345,7 @@ def quote_text(
         )
         what = f"Air freight {option.origin} to {option.destination}"
         if truck is not None and rfq.pickup_zip:
-            what += (
-                f", including pickup at {rfq.pickup_zip} and trucking to {option.origin} airport"
-            )
+            what += f", including pickup at {rfq.pickup_zip} and trucking to {option.origin} airport"
         lines = [
             hello,
             "",
@@ -290,6 +368,165 @@ def quote_text(
     return "\n".join(lines) + "\n"
 
 
+COMPOSE_PROMPT = (
+    "Write a concise freight quote email using only the supplied verified facts. Use the requested "
+    "language. Include the exact all-in price string exactly once and no other monetary amount. "
+    "Answer every indexed customer question when the facts support it; otherwise explicitly say "
+    "that detail is not yet available. Do not promise services absent from the facts. Return JSON "
+    "with question and constraint coverage lists; each pair of index lists must together cover "
+    "every supplied customer question or service constraint exactly once."
+)
+
+COMPOSE_SCHEMA: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "quote_response",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "body",
+                "answered_questions",
+                "unavailable_questions",
+                "addressed_constraints",
+                "unavailable_constraints",
+            ],
+            "properties": {
+                "body": {"type": "string"},
+                "answered_questions": {"type": "array", "items": {"type": "integer"}},
+                "unavailable_questions": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                },
+                "addressed_constraints": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                },
+                "unavailable_constraints": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                },
+            },
+        },
+    },
+}
+
+
+def _fallback_with_coverage(
+    rfq: Rfq,
+    option: RateOption,
+    total_eur_minor: int,
+    truck: bids.Offer | None,
+    variant: int,
+    today: date | None,
+) -> str:
+    body = quote_text(rfq, option, total_eur_minor, truck, variant, today)
+    if not rfq.customer_questions and not rfq.service_constraints:
+        return body
+    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
+    if lang == "de":
+        note = (
+            "Für alle angefragten Details, die oben nicht ausdrücklich bestätigt sind, "
+            "liegen uns noch keine verifizierten Angaben vor."
+        )
+    else:
+        note = (
+            "Verified information is not yet available for any requested detail that is not "
+            "explicitly confirmed above."
+        )
+    closing = "\nViele Grüße\n" if lang == "de" else "\nBest regards\n"
+    return body.replace(closing, f"\n{note}\n{closing}", 1)
+
+
+def compose_quote_text(
+    rfq: Rfq,
+    option: RateOption,
+    total_eur_minor: int,
+    truck: bids.Offer | None,
+    session_id: int,
+    today: date | None = None,
+) -> str:
+    """Generate and verify a general answer; deterministic copy is always available."""
+    fallback = _fallback_with_coverage(
+        rfq, option, total_eur_minor, truck, session_id, today
+    )
+    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
+    price = _amount(total_eur_minor, lang)
+    when = schedule(rfq, option.transit_days, today)
+    facts = {
+        "language": lang,
+        "exact_all_in_price": price,
+        "origin": option.origin,
+        "destination": option.destination,
+        "airline": option.airline,
+        "transit_days_from_departure": option.transit_days,
+        "gross_weight_kg": rfq.weight_kg,
+        "volume_cbm": rfq.volume_cbm,
+        "pieces": rfq.pieces,
+        "chargeable_weight_kg": option.chargeable_kg,
+        "billed_weight_kg": option.billed_kg,
+        "pickup_zip": rfq.pickup_zip if truck else None,
+        "pickup_included": truck is not None,
+        "earliest_departure": when[0].isoformat() if when else None,
+        "earliest_arrival": when[1].isoformat() if when else None,
+        "bookable_until": option.valid_until,
+        "customer_questions": [
+            {"index": index, "question": question}
+            for index, question in enumerate(rfq.customer_questions)
+        ],
+        "service_constraints": [
+            {"index": index, "constraint": constraint}
+            for index, constraint in enumerate(rfq.service_constraints)
+        ],
+    }
+    try:
+        raw = llm.complete(
+            "compose_quote",
+            [
+                {"role": "system", "content": COMPOSE_PROMPT},
+                {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
+            ],
+            session_id,
+            max_tokens=500,
+            response_format=COMPOSE_SCHEMA,
+        )
+        result = json.loads(raw)
+        body = result.get("body")
+        answered = result.get("answered_questions")
+        unavailable = result.get("unavailable_questions")
+        addressed_constraints = result.get("addressed_constraints")
+        unavailable_constraints = result.get("unavailable_constraints")
+        expected = set(range(len(rfq.customer_questions)))
+        expected_constraints = set(range(len(rfq.service_constraints)))
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError("empty body")
+        coverage_lists = (
+            answered,
+            unavailable,
+            addressed_constraints,
+            unavailable_constraints,
+        )
+        if not all(isinstance(items, list) for items in coverage_lists):
+            raise TypeError("missing coverage lists")
+        answered_set, unavailable_set = set(answered), set(unavailable)
+        if answered_set & unavailable_set or answered_set | unavailable_set != expected:
+            raise ValueError("question coverage is incomplete or overlapping")
+        addressed_set = set(addressed_constraints)
+        constraint_unavailable_set = set(unavailable_constraints)
+        if (
+            addressed_set & constraint_unavailable_set
+            or addressed_set | constraint_unavailable_set != expected_constraints
+        ):
+            raise ValueError("constraint coverage is incomplete or overlapping")
+        if body.count(price) != 1 or body.upper().count("EUR") != 1:
+            raise ValueError("answer must contain exactly the verified EUR total")
+        return body.rstrip() + "\n"
+    except Exception as e:  # noqa: BLE001 - quote has a safe deterministic fallback
+        log.warning("session %s: using deterministic quote copy (%s)", session_id, e)
+        return fallback
+
+
 # ---------------------------------------------------------------- flow
 
 
@@ -301,17 +538,29 @@ def _received(mail: Mail) -> float:
 
 
 def _bid_carriers(rfq: Rfq, origin: str) -> tuple[list[Carrier], list[Carrier]]:
+    maximum = max(1, settings.max_bid_carriers)
+    minimum = min(maximum, max(0, settings.min_bid_carriers))
     truckers = truckers_for_zone(zone_for_zip(rfq.pickup_zip)) if rfq.pickup_zip else []
-    airlines: list[Carrier] = []
+    truckers = sorted(truckers, key=lambda carrier: carrier.name)[:maximum]
+    airline_candidates: list[tuple[bool, Carrier]] = []
     for a in airlines_for(origin, rfq.destination):
         if a.channel != "email_only" or not a.email:
             continue
         # skip an airline whose own lane list (from an earlier refusal) lacks this lane
-        if served_lanes.serves(a.email, origin, rfq.destination) is False:
+        observation = served_lanes.serves(a.email, origin, rfq.destination)
+        if observation is False:
             continue
         c = carrier_by_email(a.email)
         if c is not None:
-            airlines.append(c)
+            airline_candidates.append((observation is True, c))
+    airline_candidates.sort(key=lambda item: (not item[0], item[1].name))
+    slots = max(0, maximum - len(truckers))
+    known = [carrier for observed, carrier in airline_candidates if observed]
+    unknown = [carrier for observed, carrier in airline_candidates if not observed]
+    airlines = known[:slots]
+    target = min(maximum, max(minimum, len(truckers) + len(airlines)))
+    unknown_slots = max(0, target - len(truckers) - len(airlines))
+    airlines.extend(unknown[:unknown_slots])
     return truckers, airlines
 
 
@@ -370,8 +619,12 @@ def _handle(mail: Mail, sid: int) -> None:
     if not db.is_manual(sid) and not db.is_paused(sid):
         bids.request(sid, rfq, origin, truckers + email_airlines)
 
+    full_deadline = t0 + settings.quote_full_score_deadline_s
+    final_deadline = t0 + min(settings.quote_final_deadline_s, TOO_OLD_S - 1)
+    pricing_deadline = max(time.time(), full_deadline - COMPOSE_RESERVE_S)
+    last_bid_deadline = max(pricing_deadline, final_deadline - COMPOSE_RESERVE_S)
     portal = portal_result(
-        rfq, deadline=time.monotonic() + max(0, t0 + settings.quote_target_s - time.time())
+        rfq, deadline=time.monotonic() + max(0, pricing_deadline - time.time())
     )
     fallback_codes = set(portal.email_fallbacks)
     fallback = []
@@ -382,19 +635,27 @@ def _handle(mail: Mail, sid: int) -> None:
             carrier = carrier_by_email(airline.email)
             if carrier is not None:
                 fallback.append(carrier)
+    requested_emails = {carrier.email for carrier in truckers + email_airlines}
+    remaining_slots = max(0, settings.max_bid_carriers - len(requested_emails))
+    fallback = [
+        carrier for carrier in fallback if carrier.email not in requested_emails
+    ]
+    fallback = fallback[:remaining_slots]
     if fallback:
         bids.request(sid, rfq, origin, fallback)
         email_airlines += fallback
     if portal.errors:
         db.emit(
-            "portal_warning", "Portal options unavailable", sid, level="warn", errors=portal.errors
+            "portal_warning",
+            "Portal options unavailable",
+            sid,
+            level="warn",
+            errors=portal.errors,
         )
     air = sheet_options(rfq) + portal.options
     db.emit("priced", f"{len(air)} Preise aus Tarifblatt und Portal", sid)
 
-    target = t0 + settings.quote_target_s
-    hard = t0 + min(settings.bid_max_wait_s, TOO_OLD_S - 30)
-    bids.wait(sid, target - time.time())
+    bids.wait(sid, pricing_deadline - time.time())
     need: set[str] = set()
     if truckers and best_truck(bids.offers(sid)) is None:
         need.add("trucker")
@@ -407,10 +668,10 @@ def _handle(mail: Mail, sid: int) -> None:
     if need:
         db.emit(
             "waiting",
-            f"Warte bis {hard - t0:.0f} s auf: {', '.join(sorted(need))}",
+            f"Warte bis {final_deadline - t0:.0f} s auf: {', '.join(sorted(need))}",
             sid,
         )
-        bids.wait(sid, hard - time.time(), until_kinds=need)
+        bids.wait(sid, last_bid_deadline - time.time(), until_kinds=need)
 
     offers = bids.offers(sid)
 
@@ -442,10 +703,21 @@ def _handle(mail: Mail, sid: int) -> None:
         return
     truck = best_truck(offers) if rfq.pickup_zip else None
     if rfq.pickup_zip and truck is None:
-        db.emit("no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn")
+        if not settings.allow_incomplete_door_quote:
+            db.emit(
+                "no_trucking",
+                "Kein Trucker-Gebot: unvollständiges Door-to-Port-Angebot nicht gesendet",
+                sid,
+                level="error",
+            )
+            db.set_status(sid, "error", "kein vollständiger Door-to-Port-Preis")
+            return
+        db.emit(
+            "no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn"
+        )
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
 
-    body = quote_text(rfq, choice, total, truck, sid)
+    body = compose_quote_text(rfq, choice, total, truck, sid)
     from dataclasses import asdict
 
     db.emit(
@@ -466,7 +738,11 @@ def _handle(mail: Mail, sid: int) -> None:
             level="warn",
         )
         return
-    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    subject = (
+        mail.subject
+        if mail.subject.lower().startswith("re:")
+        else f"Re: {mail.subject}"
+    )
     sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -491,7 +767,11 @@ def _handle(mail: Mail, sid: int) -> None:
         rate_id=choice.rate_id,
         valid_until=choice.valid_until,
         alternatives=[asdict(o) for o in air + bid_opts]
-        + ([{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}] if truck else []),
+        + (
+            [{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}]
+            if truck
+            else []
+        ),
         mail_id=int(sent["id"]),
     )
     log.info(
@@ -501,3 +781,58 @@ def _handle(mail: Mail, sid: int) -> None:
         choice.airline,
         time.time() - t0,
     )
+
+
+def _stored_mail(row: dict[str, Any], session_id: int) -> Mail:
+    return Mail(
+        id=int(row["id"]),
+        thread_root=session_id,
+        sender=str(row.get("sender") or ""),
+        to=str(row.get("recipient") or settings.team_mailbox),
+        subject=str(row.get("subject") or ""),
+        body=str(row.get("body") or ""),
+        received_at=str(row.get("received_at") or ""),
+    )
+
+
+def _resume(mail: Mail, session_id: int, replies: list[Mail]) -> None:
+    for reply in replies:
+        bids.on_bid_mail(reply, session_id)
+    handle_rfq(mail, session_id)
+
+
+def catch_up() -> None:
+    """Resume recent, unanswered RFQs after restart without duplicating carrier requests."""
+    seen: set[int] = set()
+    for status in ("new", "pricing", "error"):
+        for summary in db.list_sessions(status=status):
+            sid = int(summary["id"])
+            if (
+                sid in seen
+                or summary.get("first_reply_at")
+                or summary.get("mode") == "manual"
+            ):
+                continue
+            seen.add(sid)
+            full = db.get_session(sid)
+            if not full or full.get("quotes") or full.get("paused"):
+                continue
+            incoming = [m for m in full["mails"] if m["direction"] == "in"]
+            originals = [m for m in incoming if m.get("category") == "rfq"]
+            if not originals:
+                continue
+            mail = _stored_mail(originals[0], sid)
+            if time.time() - _received(mail) > TOO_OLD_S:
+                continue
+            replies = [
+                _stored_mail(row, sid)
+                for row in incoming
+                if row.get("category") == "carrier_bid"
+            ]
+            db.emit("recovery", "Offene Anfrage nach Neustart wieder aufgenommen", sid)
+            threading.Thread(
+                target=_resume,
+                args=(mail, sid, replies),
+                name=f"rfq-recover-{sid}",
+                daemon=True,
+            ).start()

@@ -603,6 +603,16 @@ def incoming_mails_containing(text: str, limit: int = 1000) -> list[dict[str, An
     )
 
 
+def bid_request_recipients(session_id: int) -> set[str]:
+    """Carrier addresses already contacted for this RFQ, used for restart-safe fan-out."""
+    rows = conn().execute(
+        "SELECT recipient FROM mails WHERE session_id = ? AND direction = 'out'"
+        " AND category = 'bid_request'",
+        (session_id,),
+    )
+    return {str(row["recipient"] or "").strip().lower() for row in rows if row["recipient"]}
+
+
 def set_status(session_id: int, status: str, reason: str | None = None) -> None:
     with tx() as c:
         c.execute(

@@ -25,10 +25,11 @@ def main() -> None:
     from app.mail import poller
 
     db.init_db()
-    from app.agents import booking
+    from app.agents import booking, rfq
     from app.pricing import served_lanes
 
     served_lanes.backfill()  # "We fly ..." lists from refusals already in the mailbox
+    rfq.catch_up()  # recent unanswered RFQs that were interrupted by a restart
     booking.catch_up()  # acceptances that arrived while the app was down or had no booking
     stop = threading.Event()
     from app.agents import tariff

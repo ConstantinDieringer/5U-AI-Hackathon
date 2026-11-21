@@ -13,6 +13,10 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- RFQ optimisation: questions/constraints survive extraction with one repair attempt; fact-bounded
+  responses enforce one EUR total and complete coverage. Carrier fan-out is capped at 5, incomplete
+  door quotes are blocked, recent RFQs resume after restart; 169 tests pass.
+
 - B merge integration: preserved main's booking/tracking, language/date replies, served-lane refusals and portal next-weight-break optimisation alongside tariff/FX/429/503 hardening; 161 tests pass on the combined code.
 
 - B hardening: durable tariff worker and reusable monthly parsers (text/table + gateway image transcription), atomic runtime data, dataset/board alerts, bounded portal 429 waits and known-carrier 503 fallback.
@@ -78,7 +82,8 @@ Goal: the first accepted quote end to end before any polish.
 8. ~~Start kit contents~~ → 10 sheets (xlsx/pdf/docx/txt/jpg), 29 airlines + 23 truckers in `carrier-list.csv`, zones = 2-digit postcode → FRA/MUC/DUS/HAM/STR/CGN. Still open: trucking price (assumed: trucker bids by email).
 9. How to tell mail started by 5U's agents from other mail.
 10. The exact "fastest" rule, and the formula for the 50/50 price/speed balance among bids.
-11. How many carriers to ask and how long to wait for bids within the 2-minute target.
+11. ~~How many carriers to ask and how long to wait~~ → 2–5 carriers, full-score deadline 110 s,
+    final deadline 300 s; 15 s are reserved for composing and sending.
 12. Quote currency when the rate and the request differ, and the FX source (the portal returns `fx_eur_per_usd`).
 13. ~~What one UI session is~~ → one customer-started thread (see design C).
 14. 4 airlines (Zephyr, Himalaya Bridge, Lagoon Isles, Pampero) serve only ASU/KTM/PPT/TNR/ULN, on neither sheet nor portal: email bids only.
@@ -87,7 +92,8 @@ Goal: the first accepted quote end to end before any polish.
 17. For C/B (A): **rate desk replies are not threaded** (`in_reply_to` null, `references` []), so they land unassigned. Map them by the quoted subject in the body (see mail-format.md)?
 
 18. (A) Reply format of trucker and airline bids unknown: parsed by regex (`bids.parse_price`); unreadable bids are logged as `bid_unreadable`. Check the first real ones.
-19. (A) Quotes are always in EUR (portal USD converted with `fx_eur_per_usd`, USD bids ignored). Door-to-port without a trucker bid by `BID_MAX_WAIT_S` is sent without trucking.
+19. (A) Quotes are always in EUR. ~~Door-to-port without a trucker bid~~ → blocked by default;
+    `ALLOW_INCOMPLETE_DOOR_QUOTE=true` is the explicit emergency override.
 
 ## Architecture Decisions
 

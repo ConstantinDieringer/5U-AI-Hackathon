@@ -76,6 +76,8 @@ class Rfq(BaseModel):
     ready_date: str | None = None  # ISO date
     language: str = "en"
     customer_name: str | None = None
+    customer_questions: list[str] = Field(default_factory=list, max_length=5)
+    service_constraints: list[str] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="before")
     @classmethod
@@ -102,6 +104,20 @@ class Rfq(BaseModel):
     @classmethod
     def _zip(cls, v: object) -> object:
         return str(v).strip() or None if v is not None else None
+
+    @field_validator("customer_questions", "service_constraints", mode="before")
+    @classmethod
+    def _clean_notes(cls, value: object) -> object:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise TypeError("must be a list")
+        cleaned: list[str] = []
+        for item in value:
+            text = " ".join(str(item).split()).strip()
+            if text and text not in cleaned:
+                cleaned.append(text[:300])
+        return cleaned
 
 
 Source = Literal["sheet", "portal", "bid"]

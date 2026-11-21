@@ -47,10 +47,11 @@ def test_call_is_logged_with_cost(sent: list[dict[str, Any]]) -> None:
     assert ev and ev[0]["cost_micro_usd"] == 250
 
 
-def test_third_call_in_a_session_raises(sent: list[dict[str, Any]]) -> None:
+def test_configured_call_limit_in_a_session(sent: list[dict[str, Any]]) -> None:
     msg = [{"role": "user", "content": "hi"}]
     llm.complete("extract", msg, session_id=7)
     llm.complete("reply", msg, session_id=7)
+    llm.complete("compose", msg, session_id=7)
     with pytest.raises(llm.LlmBudgetError):
         llm.complete("again", msg, session_id=7)
-    assert len(sent) == 2
+    assert len(sent) == 3
