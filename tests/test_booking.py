@@ -180,11 +180,12 @@ def test_accept_books_portal_rate_and_confirms(monkeypatch) -> None:
     monkeypatch.setattr(booking.hackloop, "send", api.send)
     monkeypatch.setattr(booking.hackloop, "book", api.book)
     _quoted_session()
-    booking.handle_reply(_accept(), 1223)
+    booking.handle_reply(replace(_accept(), subject="FW: AMS TLV 104 crates"), 1223)
 
     assert api.booked == [("R-xLidjNtljIRSGuVR", "AP-1223")]
     conf = api.sent[-1]
     assert conf["to"] == CUSTOMER and conf["in_reply_to"] == 1429
+    assert conf["subject"] == "Air freight STR to EZE"
     assert "BK-ABCD1234" in conf["body"] and "Hi Klaus" in conf["body"]
     s = db.get_session(1223)
     assert s["status"] == "booked" and s["bookings"][0]["booking_reference"] == "BK-ABCD1234"

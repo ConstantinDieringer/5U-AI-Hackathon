@@ -276,6 +276,8 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Carrier-Angebote mit Anhängen verwenden denselben begrenzten lokalen TXT/PDF/DOCX/XLSX-Leser wie RFQs. Nur explizite Gesamtpreise mit eindeutiger Währung werden übernommen; Komponenten, Wartezeit-Zuschläge und Referenznummern ersetzen keinen Gesamtpreis. Widersprüche zwischen Mail und Dokumenten sowie unlesbare/Audio-Anhänge bleiben als `bid_unreadable` sichtbar und werden nicht geraten. Der bisherige reine Mailtextpfad bleibt erhalten.
+
 - Stilversion v4 prüft Kundenbetreff UND Text unmittelbar vor dem Transport mit einer unabhängigen finalen Assertion. Unicode-Satzzeichen und HTML-Entities werden normalisiert; Re/Fw-Präfixe entfallen, Threading bleibt über `in_reply_to` erhalten. Auch All-Excluded-Hinweise durchlaufen `send_customer`. Gespeichert werden tatsächlich übergebener Betreff und Text. Direkte Carrier-/Truckerprotokolle bleiben unverändert.
 - Buchungsfreigabe: Vorabfragen wie „Before we book...“ und bedingte Zustimmung gelten
   ebenso wie noch laufende interne Prüfungen („check whether we can proceed“) ausdrücklich
@@ -286,7 +288,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   Unklare Freigaben bleiben im vorhandenen Rückfrageablauf;
   dieselbe Prüfung gilt bei Annahme eines geänderten Buchungspreises.
 
-- Dedizierter Stilagent `app/agents/email_review.py`: `LLM_REVIEW_MODEL=gpt-5`, `EMAIL_REVIEW_ENABLED=true`, genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens. Kein eigener Versand und keine Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen werden nach dem Review geschützt; bei Fehler/Budgetende bleibt der deterministisch geprüfte Entwurf erhalten. Aufruf und Kosten werden der RFQ zugerechnet. Pause/Handbetrieb und Quote-Deadline werden nach dem Review erneut geprüft.
+- Dedizierter Stilagent `app/agents/email_review.py` auf Nutzerwunsch standardmäßig aus: `EMAIL_REVIEW_ENABLED=false`. Kein zusätzlicher Stil-Review-LLM-Aufruf; deterministische Darstellung und finale Versandprüfung bleiben aktiv. Optionaler expliziter Opt-in mit `LLM_REVIEW_MODEL=gpt-5`: genau ein Review pro Kundenmail, bis zu 1200 Output-Tokens, ohne Versand oder Preisentscheidung. Zahlen, Referenzen, volle Daten, Carrier und qualifizierte Aussagen bleiben geschützt; Fehler/Budgetende behält den geprüften Entwurf. Pause/Handbetrieb und Quote-Deadline werden unmittelbar vor dem Versand geprüft.
 
 - Strenge Versanddarstellung: alle Kunden-Sendewege nutzen `hackloop.send_customer`, das den Mailtext unmittelbar vor dem HTTP-Aufruf über `mail/outgoing.py` rendert und prüft. Prosa enthält keine Doppelpunkte, Semikola, Unterstriche, Bindestriche oder Klammern; Referenznummern bleiben zunächst kopierbar. Daten mit ausgeschriebenen Monaten, keine Null-Nachkommastellen, kurze Absätze. Die tatsächlich versandte Fassung wird gespeichert. `/api/health` nennt Stilversion und Build-Revision zur Aktivierungsprüfung. Persönliche Wärme und leichter Humor dürfen keine erfundene Kundentreue, Sonderpreise, Rabatte oder Leistungszusagen behaupten.
 - Bei Portalabfragen Airline-Anfrageplätze für bekannte Portal-Carrier derselben Strecke
@@ -323,6 +325,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   Preise, Carrier-Balance und bestehende Terminauswahl werden dadurch nicht verändert.
   Interne Timing-Feldnamen und Enum-Werte dürfen nicht in Kundentexte gelangen;
   solche Ausgaben durchlaufen die vorhandene Reparatur und gegebenenfalls den Fallback.
+- Automatische Angebotsbetreffe, Buchungsbestätigungen und Angebotsnachfragen nennen die geprüfte aktuelle Flughafenroute, sobald beide Codes vorliegen (`app/mail/subjects.py`). Alte weitergeleitete Routen und Warenmengen werden nicht übernommen. Ohne vollständige Route bleibt der bisherige Betreff; `in_reply_to` bleibt unverändert.
 - Aktuelle Sendungsangaben haben Vorrang vor Betreff und zitierter Mailhistorie. Bei einem
   neuen Sendungsblock werden alte weitergeleitete Angaben aus der Extraktion/Lot-Summe entfernt;
   reine Weiterleitungen bleiben lesbar. Fehlende Abholorte dürfen nicht aus alten Betreffs geraten werden.
