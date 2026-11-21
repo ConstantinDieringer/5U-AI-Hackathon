@@ -26,7 +26,7 @@ from pathlib import Path
 from app.config import settings
 from app.models import RateOption, Rfq
 from app.pricing.fx import eur_rate
-from app.pricing.reference import origin_for_zip
+from app.pricing.reference import origin_for_zip, pickup_zones
 
 log = logging.getLogger(__name__)
 
@@ -149,9 +149,17 @@ def price_lane(lane: SheetLane, weight_kg: float, volume_cbm: float = 0.0) -> Pr
 
 
 def resolve_origin(rfq: Rfq) -> str | None:
-    if rfq.origin:
-        return rfq.origin.upper()
-    return origin_for_zip(rfq.pickup_zip) if rfq.pickup_zip else None
+    """Departure airport. With a pickup ZIP, the LLM's origin counts only if it is one of our
+    pickup-zone airports and not the destination; else the ZIP's airport (round 2530: nano gave
+    origin YYZ = destination for a pickup in 21663 -> HAM)."""
+    origin = rfq.origin.upper() if rfq.origin else None
+    if origin == rfq.destination.upper():
+        origin = None
+    if rfq.pickup_zip:
+        by_zip = origin_for_zip(rfq.pickup_zip)
+        if by_zip and (origin is None or origin not in set(pickup_zones().values())):
+            return by_zip
+    return origin
 
 
 def sheet_options(
