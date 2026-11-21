@@ -1,7 +1,7 @@
 # Systementwurf Aufgabe C – CRM-Datenbank & Sessions-UI
 
 Team Austrian Power · Stand 21.11.2026, 15:20 · Status: **v2** (Recherche zu SSE, SQLite und Eingreif-UI eingearbeitet, siehe Abschnitt 14)
-Bindend daneben: `docs/TECH_SPEC.md`. Wo dieser Entwurf das Schema ändert, wird die Spec im selben Commit angepasst (Abschnitt 9).
+Bindend daneben: `context/docs/TECH_SPEC.md`. Wo dieser Entwurf das Schema ändert, wird die Spec im selben Commit angepasst (Abschnitt 9).
 
 ---
 

@@ -2,7 +2,7 @@
 
 A digital air freight forwarder for the 5U AI challenge (START HACK Munich 2026).
 
-**Technical spec (binding):** [docs/TECH_SPEC.md](docs/TECH_SPEC.md). Read and follow it before writing any code.
+**Technical spec (binding):** [context/docs/TECH_SPEC.md](context/docs/TECH_SPEC.md). Read and follow it before writing any code.
 
 ## Before every task
 
@@ -20,4 +20,4 @@ Follow `context/ai-workflow-rules.md`.
 
 Update `context/progress-tracker.md` after each meaningful change. If an implementation changes scope, standards or architecture, update the relevant context file before continuing.
 
-Challenge sources: [docs/CHALLENGE.md](docs/CHALLENGE.md) and the PDFs in `docs/`.
+Challenge sources: [context/docs/CHALLENGE.md](context/docs/CHALLENGE.md) and the PDFs in `context/docs/`.

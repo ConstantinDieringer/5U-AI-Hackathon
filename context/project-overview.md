@@ -1,6 +1,6 @@
 # Project Overview
 
-Team **Austrian Power**, 5U AI challenge, START HACK Munich 2026. Sources: the challenge brief and [docs/CHALLENGE.md](../docs/CHALLENGE.md).
+Team **Austrian Power**, 5U AI challenge, START HACK Munich 2026. Sources: the challenge brief and [docs/CHALLENGE.md](docs/CHALLENGE.md).
 
 ## Overview
 

@@ -2,7 +2,7 @@
 
 **Verbindlich für alle drei Teammitglieder und für jede Claude-/KI-Session, die Code für dieses Repo schreibt.**
 Wer davon abweichen will, ändert zuerst diese Datei (kurz im Team ansagen), dann den Code.
-Repo: `ConstantinDieringer/5U-AI-Hackathon` · Ablage: `docs/TECH_SPEC.md` · Stand: 21.11.2026, 15:20
+Repo: `ConstantinDieringer/5U-AI-Hackathon` · Ablage: `context/docs/TECH_SPEC.md` · Stand: 21.11.2026, 15:20
 
 ---
 
@@ -67,7 +67,7 @@ data/
   portal_lanes.json    # generiert, eingecheckt
   inbox/               # Anhänge, NICHT eingecheckt
   forwarder.db         # SQLite, NICHT eingecheckt
-docs/
+context/docs/
   TECH_SPEC.md         # diese Datei
   mail-format.md       # echtes Mail-Format (Person A, Aufgabe A3)
 tests/
@@ -116,7 +116,7 @@ In `app/models.py` als `@dataclass` (oder Pydantic, wenn LLM-Output). Feldnamen 
 class Mail:
     id: int
     thread_root: int          # = references[0] falls vorhanden, sonst id (Session-Zuordnung: db.ingest_mail)
-    sender: str               # Feldname der API in docs/mail-format.md prüfen!
+    sender: str               # Feldname der API in context/docs/mail-format.md prüfen!
     to: str
     subject: str
     body: str
@@ -154,7 +154,7 @@ class RateOption:             # Ergebnis aus Sheet, Portal oder Bid – immer gl
 
 ## 7. Datenbank (SQLite, `app/db.py`)
 
-> **Maßgeblich für Schema, Session-Zuordnung und DB-Zugriffsmuster ist `docs/design/aufgabe-c.md` (Abschnitte 3–5).** Das Schema unten ist überholt, wo es davon abweicht.
+> **Maßgeblich für Schema, Session-Zuordnung und DB-Zugriffsmuster ist `context/docs/design/aufgabe-c.md` (Abschnitte 3–5).** Das Schema unten ist überholt, wo es davon abweicht.
 
 ```sql
 CREATE TABLE IF NOT EXISTS mails (
@@ -229,7 +229,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 ## 10. UI / interne API
 
 - FastAPI auf Port `UI_PORT` (8000), Bindung `0.0.0.0`.
-- Endpunkte: siehe `docs/design/aufgabe-c.md` Abschnitt 6. SSE über `fastapi.sse.EventSourceResponse`, ohne `event:`-Feld; Mailinhalte im Frontend nur per `textContent` rendern.
+- Endpunkte: siehe `context/docs/design/aufgabe-c.md` Abschnitt 6. SSE über `fastapi.sse.EventSourceResponse`, ohne `event:`-Feld; Mailinhalte im Frontend nur per `textContent` rendern.
 - JSON-Felder in **snake_case**.
 
 ## 11. Git-Workflow
@@ -249,11 +249,11 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Diese Datei vor jeder Code-Änderung lesen und einhalten.
 - Keine neuen Abhängigkeiten, Sprachen oder Frameworks einführen.
-- Keine API-Felder raten: `docs/mail-format.md` und `openapi.json` sind die Quelle.
+- Keine API-Felder raten: `context/docs/mail-format.md` und `openapi.json` sind die Quelle.
 - Keine Secrets in Code, Logs oder Chats.
 
 ## 14. Offen / zu bestätigen
 
-- [ ] Exakte Feldnamen der Mailbox-Objekte (A3 → `docs/mail-format.md`)
+- [ ] Exakte Feldnamen der Mailbox-Objekte (A3 → `context/docs/mail-format.md`)
 - [ ] Erlaubte Modelle im Gateway (`GET /v1/gateway/models`) → `LLM_MODEL` setzen
 - [ ] Rate-Limit pro Minute für `/v1/portal/rates` (B4)

@@ -13,9 +13,10 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - Context adapted from Ghost AI.
-- Stack decided (`docs/TECH_SPEC.md`), `context/architecture-context.md` added.
+- Stack decided (`context/docs/TECH_SPEC.md`), `context/architecture-context.md` added.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`, pricing module in `app/pricing/` (floats still, to fix).
-- Design for task C (CRM + sessions UI) in `docs/design/aufgabe-c.md`.
+- Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
+- Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 ## In Progress
 
