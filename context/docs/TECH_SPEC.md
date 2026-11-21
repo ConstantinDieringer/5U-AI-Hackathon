@@ -266,6 +266,9 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Door-Angebote nennen die gemeldete Trucker-Vorlaufzeit, sofern vorhanden, und kennzeichnen
   einen nicht bestätigten Abholslot ausdrücklich als offen; Luftlaufzeit ist keine Abholbestätigung.
+  Trucker-Abholvorlauf und Straßentransit bleiben getrennt: nur eine ausdrücklich als Transit/Fahrzeit
+  belegte Dauer darf als Fahrtdauer formuliert werden. Unklare Angaben bleiben allgemeiner Vorlauf;
+  Preise, Carrier-Balance und bestehende Terminauswahl werden dadurch nicht verändert.
 - Aktuelle Sendungsangaben haben Vorrang vor Betreff und zitierter Mailhistorie. Bei einem
   neuen Sendungsblock werden alte weitergeleitete Angaben aus der Extraktion/Lot-Summe entfernt;
   reine Weiterleitungen bleiben lesbar. Fehlende Abholorte dürfen nicht aus alten Betreffs geraten werden.

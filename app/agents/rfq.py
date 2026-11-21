@@ -481,14 +481,14 @@ def quote_text(
         hours = round(truck.transit_days * 24) if truck.transit_days is not None else None
         if lang == "de":
             pickup_note = (
-                f"Der Lkw braucht etwa {hours} Stunden von Ihnen bis zum Flughafen, "
+                f"Der Trucker nennt etwa {hours} Stunden Vorlauf, "
                 "den genauen Abholtermin bestätigen wir Ihnen nach der Buchung."
                 if hours is not None
                 else "Den genauen Abholtermin bestätigen wir Ihnen nach der Buchung."
             )
         else:
             pickup_note = (
-                f"The truck takes about {hours} hours from your door to the airport, "
+                f"The trucker reports a lead time of about {hours} hours, "
                 "and we'll confirm the exact pickup time once it's booked."
                 if hours is not None
                 else "We'll confirm the exact pickup time once it's booked."
@@ -591,6 +591,9 @@ COMPOSE_PROMPT = (
     " No cargo acceptance cutoff is verified. Never turn ready_date, departure date or rate "
     "validity into an acceptance deadline, including close of business. Mark cutoff questions "
     "unavailable. If mentioning a cutoff, use exactly the supplied cutoff_notice sentence."
+    " A trucker's collection lead is not driving time. Only road_transit_hours supports a "
+    "road journey duration. Unspecified lead hours must remain an unspecified carrier lead, "
+    "never a confirmed pickup date or time."
 )
 
 COMPOSE_SCHEMA: dict[str, Any] = {
@@ -671,6 +674,7 @@ def _validate_composed(
     option: RateOption,
     price: str,
     allowed_history_ids: set[int] | None = None,
+    truck: bids.Offer | None = None,
 ) -> str:
     result = json.loads(raw)
     referenced = result.get("referenced_mail_ids", [])
@@ -694,6 +698,17 @@ def _validate_composed(
         without_notices = without_notices.replace(notice, "")
     if _CUTOFF_TERMS.search(without_notices):
         raise ValueError("cargo acceptance deadline is not verified; use cutoff_notice")
+    if (
+        truck is not None
+        and truck.timing_kind != "road_transit"
+        and re.search(
+            r"\b(?:road|driving|drive|fahrzeit|transportdauer)\b[^.!?\n]{0,100}\b(?:hours?|stunden)\b"
+            r"|\b(?:hours?|stunden)\b[^.!?\n]{0,100}\b(?:road|driving|drive|fahrzeit|transportdauer)\b",
+            body,
+            re.IGNORECASE,
+        )
+    ):
+        raise ValueError("carrier collection/unspecified lead is not verified road duration")
     if not all(
         isinstance(items, list)
         for items in (answered, unavailable, addressed, unavailable_constraints)
@@ -765,8 +780,18 @@ def compose_quote_text(
         "billed_weight_kg": option.billed_kg,
         "pickup_zip": rfq.pickup_label if truck else None,
         "pickup_included": truck is not None,
-        "carrier_reported_pickup_road_lead_hours": (
-            truck.transit_days * 24 if truck and truck.transit_days is not None else None
+        "carrier_reported_lead_hours": (
+            truck.transit_days * 24
+            if truck and truck.transit_days is not None
+            else None
+        ),
+        "carrier_timing_kind": truck.timing_kind if truck else None,
+        "road_transit_hours": (
+            truck.transit_days * 24
+            if truck
+            and truck.transit_days is not None
+            and truck.timing_kind == "road_transit"
+            else None
         ),
         "confirmed_collection_slot": None,
         "earliest_departure": when[0].isoformat() if when else None,
@@ -830,6 +855,7 @@ def compose_quote_text(
                 option,
                 price,
                 {entry["mail_id"] for entry in conversation["earlier_messages"]},
+                truck,
             )
             db.emit(
                 "personal_reply",
