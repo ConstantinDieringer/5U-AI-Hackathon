@@ -40,21 +40,22 @@ _ALIASES = {
 def explicit_delivery_origin(mail, destination):
     """Recover a single supported self-delivery airport from current words, never history."""
     active = current_message(mail.body).facts
-    pattern = re.compile(
-        r"\b(?:deliver|bring|tender|liefern|bringen)\b[^\n.!?]{0,120}?"
-        r"\b(?:to|nach|zum)\s+(?:the\s+)?([A-Z]{3})\b"
-        r"[^\n.!?]{0,60}?\b(?:ourselves|myself|selbst)\b",
-        re.IGNORECASE,
-    )
     supported = set(pickup_zones().values())
-    airports = {
-        code.upper()
-        for match in pattern.finditer(active)
-        for code in re.findall(r"\b[A-Z]{3}\b", match[0], re.IGNORECASE)
-        if code.upper() in supported
-    }
-    if not airports and config.settings.self_delivery_recovery:
+    if config.settings.self_delivery_recovery:
         airports = _stated_departures(active, destination, supported)
+    else:  # today's rule (round 5844); it reads "the str" as STR and ignores a "not"
+        pattern = re.compile(
+            r"\b(?:deliver|bring|tender|liefern|bringen)\b[^\n.!?]{0,120}?"
+            r"\b(?:to|nach|zum)\s+(?:the\s+)?([A-Z]{3})\b"
+            r"[^\n.!?]{0,60}?\b(?:ourselves|myself|selbst)\b",
+            re.IGNORECASE,
+        )
+        airports = {
+            code.upper()
+            for match in pattern.finditer(active)
+            for code in re.findall(r"\b[A-Z]{3}\b", match[0], re.IGNORECASE)
+            if code.upper() in supported
+        }
     return (
         next(iter(airports))
         if len(airports) == 1 and destination not in airports
@@ -69,20 +70,53 @@ _SELF_DELIVERY = re.compile(
     r"\b(?:to|at|nach|zum|an)\b[^\n.!?]{0,60}?\b(?:ourselves|myself|selbst)\b",
     re.IGNORECASE,
 )
+# German word order puts "selbst" before the place: "Wir liefern die Ware selbst nach
+# Frankfurt an", "bringen sie selbst zum Flughafen München"
+_SELF_DELIVERY_DE = re.compile(
+    r"\b(?:liefern|bringen)\b[^\n.!?]{0,80}?\bselbst\b[^\n.!?]{0,20}?"
+    r"\b(?:nach|zum|zur|an den|an)\s+[^\n.!?,;]{0,40}",
+    re.IGNORECASE,
+)
 # "the cheapest option from CGN to DFW": codes in capitals only, so words never count
 _ROUTE = re.compile(r"\bfrom\s+([A-Z]{3})\s+(?:to|nach)\s+([A-Z]{3})\b")
+# a negation in the clause before the verb, or between verb and "selbst" in German
+_NEGATION = re.compile(
+    r"\b(?:not|don['’]t|do not|cannot|can['’]t|won['’]t|nicht|kein|keine)\b", re.IGNORECASE
+)
+_CLAUSE_START = re.compile(r"[.!?;:\n,—–]")
+
+
+def _negated(text, match):
+    """True when "We do not deliver to FRA ourselves" or "liefern nicht selbst" negates it."""
+    clause = _CLAUSE_START.split(text[: match.start()])[-1]
+    return bool(_NEGATION.search(clause) or _NEGATION.search(match[0]))
+
+
+def no_pickup(active):
+    """The customer brings the goods to the airport. SELF_DELIVERY_RECOVERY skips negated
+    wording: "We do not deliver to FRA ourselves, please arrange pickup" wants a pickup."""
+    if not config.settings.self_delivery_recovery:
+        return bool(_NO_PICKUP.search(active))
+    return any(
+        re.match(r"(?:no|without|keine)\b", m[0], re.IGNORECASE) or not _negated(active, m)
+        for m in _NO_PICKUP.finditer(active)
+    )
 
 
 def _stated_departures(active, destination, supported):
-    """Departure airports the current message states itself (SELF_DELIVERY_RECOVERY)."""
+    """Departure airports the current message states itself (SELF_DELIVERY_RECOVERY).
+    Codes count in capitals only and negated sentences never count."""
     found = set()
-    for match in _SELF_DELIVERY.finditer(active):
-        found |= {c for c in re.findall(r"\b[A-Z]{3}\b", match[0]) if c in supported}
-        found |= {
-            code
-            for code, names in _ALIASES.items()
-            if code in supported and re.search(rf"\b(?:{names})\b", match[0], re.IGNORECASE)
-        }
+    for pattern in (_SELF_DELIVERY, _SELF_DELIVERY_DE):
+        for match in pattern.finditer(active):
+            if _negated(active, match):
+                continue
+            found |= {c for c in re.findall(r"\b[A-Z]{3}\b", match[0]) if c in supported}
+            found |= {
+                code
+                for code, names in _ALIASES.items()
+                if code in supported and re.search(rf"\b(?:{names})\b", match[0], re.IGNORECASE)
+            }
     found |= {
         origin
         for origin, to in _ROUTE.findall(active)
@@ -154,7 +188,7 @@ def validate(
     data["pickup_city"] = None
     data["pickup_assumed"] = False
     combined = "\n".join(sources.values())
-    pickup = bool(_PICKUP.search(active)) and not _NO_PICKUP.search(active)
+    pickup = bool(_PICKUP.search(active)) and not no_pickup(active)
     zip_match = re.search(r"\b(?:D-)?(\d{5})\b", active)
     current_area = find_area(active) if pickup else None
     attachment_shipper_cities = set()
