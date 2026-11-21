@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -468,3 +469,40 @@ def test_new_business_failure_allows_owner_to_replan_without_new_customer_mail(c
     db.set_status(SID, "error", "temporary portal failure")
     _, second, _ = rescue._decision(answer, SID, root, draft, "owner")
     assert first != second and len(calls) == 2
+
+
+def test_rescue_prompt_keeps_root_latest_mail_and_bounded_size(case, monkeypatch):
+    """Cost: the rescue model sees the root, the latest mails and capped bodies only."""
+    root, answer, draft = case
+    small = dataclasses.replace(
+        rescue.settings, thread_rescue_max_mails=3, thread_rescue_body_chars=600
+    )
+    monkeypatch.setattr(rescue, "settings", small)
+    for n in range(10):
+        filler = dataclasses.replace(
+            answer, id=18200 + n, body=f"Note {n}: " + "pallet details " * 200
+        )
+        ingest(filler, "customer")
+    latest = dataclasses.replace(answer, id=18300, body=ANSWER)
+    ingest(latest, "customer")
+
+    context, evidence = rescue._context(latest, SID, root, draft)
+
+    ids = [row["id"] for row in context["conversation"]]
+    assert ids[0] == SID and ids[-1] == 18300  # root and the current input always present
+    assert len(ids) <= 4  # three latest mails plus the root
+    assert all(len(row["body"]) <= 600 for row in context["conversation"])
+    assert "1804 kg gross" in evidence  # evidence check still sees the full current mail
+
+
+_COST_ENV = ("LLM_RETRY_MODEL", "LLM_RESCUE_MODEL", "THREAD_RESCUE_MAX_CALLS", "COMPOSE_REPAIR")
+
+
+@pytest.mark.skipif(any(os.getenv(n) for n in _COST_ENV), reason="cost settings set in env")
+def test_cost_defaults_avoid_gpt5_and_second_composer_call():
+    from app.config import settings
+
+    assert settings.llm_retry_model == "gpt-5-mini"
+    assert settings.llm_rescue_model == "gpt-5-mini"
+    assert settings.thread_rescue_max_calls == 2
+    assert settings.compose_repair is False

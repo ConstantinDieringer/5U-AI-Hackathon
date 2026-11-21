@@ -56,3 +56,11 @@ def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     )
     yield
     assert not refused, f"live calls attempted: {refused}"
+
+
+@pytest.fixture
+def compose_repair_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Opt into the second composer call (COMPOSE_REPAIR, off by default for cost)."""
+    from app.agents import rfq
+
+    monkeypatch.setattr(rfq, "settings", dataclasses.replace(rfq.settings, compose_repair=True))

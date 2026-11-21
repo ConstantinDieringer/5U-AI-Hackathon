@@ -43,6 +43,7 @@ def test_timestamp_keeps_the_same_instant_and_explicit_zone():
     )
 
 
+@pytest.mark.usefixtures("compose_repair_on")
 @pytest.mark.parametrize(
     "issue",
     [

@@ -96,6 +96,7 @@ def test_fallback_and_actual_customer_wire_preserve_language(lang, month, monkey
     assert NOTICES[("en", False)] not in sent[0]["body"]
 
 
+@pytest.mark.usefixtures("compose_repair_on")
 @pytest.mark.parametrize("lang", ["fr", "es", "it"])
 def test_composer_and_repair_receive_full_language_code(lang, monkeypatch):
     calls = []

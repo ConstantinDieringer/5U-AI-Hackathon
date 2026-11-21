@@ -145,7 +145,9 @@ def _eligible(sid: int, mail: Mail) -> bool:
 
 def _context(mail: Mail, sid: int, root: Mail, draft: RfqDraft) -> tuple[dict, str]:
     session = db.get_session(sid)
-    rows = [m.copy() for m in session["mails"] if m["category"] != "phishing"][-35:]
+    rows = [m.copy() for m in session["mails"] if m["category"] != "phishing"][
+        -settings.thread_rescue_max_mails :
+    ]
     if not any(m["id"] == root.id for m in rows):
         rows.insert(
             0,
@@ -172,7 +174,7 @@ def _context(mail: Mail, sid: int, root: Mail, draft: RfqDraft) -> tuple[dict, s
     customer_evidence = []
     for row in rows:
         own = current_message(row["body"], row["subject"])
-        row["body"] = own.facts[:9000]
+        row["body"] = own.facts[: settings.thread_rescue_body_chars]
         if row["direction"] == "in" and address(row["sender"]) == address(mail.sender):
             customer_evidence.append(own.subject + "\n" + own.facts)
     texts = draft.evidence.get("attachment_texts", {})
@@ -180,7 +182,9 @@ def _context(mail: Mail, sid: int, root: Mail, draft: RfqDraft) -> tuple[dict, s
     context = {
         "request": draft.facts,
         "issues": draft.issues,
-        "attachments": {str(k): str(v)[:12000] for k, v in texts.items()},
+        "attachments": {
+            str(k): str(v)[: settings.thread_rescue_body_chars * 2] for k, v in texts.items()
+        },
         "conversation": rows,
         "latest_customer_mail_id": mail.id,
         "quotes": session["quotes"],
