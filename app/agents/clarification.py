@@ -10,7 +10,7 @@ from app import db, hackloop
 from app.config import settings
 from app.mail.content import current_message
 from app.mail.language import detect
-from app.mail.rfq_validation import numeric_facts, validate
+from app.mail.rfq_validation import explicit_delivery_origin, numeric_facts, validate
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RfqDraft
@@ -283,6 +283,11 @@ def handle_reply(mail, sid, *, resume=False):
             m := re.search(rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", own, re.IGNORECASE)
         ):
             corrections[field] = m[1].upper()
+    if "origin" in asked and "origin" not in corrections and settings.self_delivery_recovery:
+        # "we'll drop it off at CGN ourselves", "quote it from CGN to DFW" (round 28)
+        stated = explicit_delivery_origin(mail, draft.facts.get("destination"))
+        if stated:
+            corrections["origin"] = stated
     if (
         "dangerous_goods" in asked
         and re.search(r"non-dangerous|not dangerous|kein gefahrgut", own, re.IGNORECASE)

@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Self-delivery departure (`SELF_DELIVERY_RECOVERY`, default false = today): reads the airport from "deliver to Cologne airport (CGN) ourselves", "drop it off at CGN ourselves" or "from CGN to DFW" in the current message and in the answer to our origin question. Round 28 replays as a quote without a question; no stored round changes. Live portal price for round 28 not verified (the manual sheet price 416.16 € was too_high).
 - Trucker balance (`TRUCKER_BALANCE`, default `minmax` = today): `ratio` picks price/cheapest + time/fastest, which reproduces the board's best price on all 11 scored door rounds (minmax: 7). Replay with `ratio` moves only rounds 21/22/25/26, each to the implied best (+56.8 accuracy points there). Not verified live.
 - Stronger RFQ models: extraction defaults to gpt-5-mini (was nano); failed extraction repair defaults to gpt-5 (was mini), with price accounting. Both passed a synthetic gateway extraction/repair probe; 40 relevant tests pass. Composer stays mini; deployment overrides still take precedence and live rollout is unverified.
 - Startup agent check: `run.py` imports every agent from `app.agents.AGENTS` and logs `agents loaded: ...`; a broken one logs an error, emits `agent_import_failed` (#sos) and does NOT stop the other agents. CI imports every app module. DEPLOY.md has live-round deploy rules. Not verified on Railway; local start with AGENTS_ENABLED=false logged the line.
