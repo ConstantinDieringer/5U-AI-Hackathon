@@ -48,7 +48,7 @@ def _answer(carrier: Carrier, after_s: float, decline: bool = False) -> None:
             if decline:
                 req.declined.add(carrier.email)
             else:
-                req.offers.append(bids.Offer(carrier, Decimal("100"), 2.0, 1))
+                req.offers.append(bids.Offer(carrier, Decimal(100), 2.0, 1))
             req.last_answer_at = time.monotonic()
             bids._cond.notify_all()
 
