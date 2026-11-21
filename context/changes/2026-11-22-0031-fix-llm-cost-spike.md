@@ -1,0 +1,1 @@
+- LLM cost spike (PR #70): recovery dominated live spend (97% in sampled latest hour). Explicit refusals/confirmed-booking thanks skip paid recovery; compact evidence; incompatible plans report no action. Rollout pending.
