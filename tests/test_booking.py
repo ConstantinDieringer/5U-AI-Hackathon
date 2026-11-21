@@ -152,7 +152,7 @@ class Api:
             "status": "booked",
         }
 
-    def get_rate(self, origin, destination, airline, weight_kg, volume_cbm=0.0):
+    def get_rate(self, origin, destination, airline, weight_kg, volume_cbm=0.0, **_kw):
         return {"rate_id": "R-freshfreshfresh"}
 
 
