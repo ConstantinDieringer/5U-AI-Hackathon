@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Manual replies: explicit recipient and matching parent mail, with starter/airline/trucker/desk/tracking labels. Carrier replies do not mark the customer's first response or register a customer quote; recipient/text survive live updates. API regression tests and isolated browser send/draft checks pass; production has not been changed.
+
 - Round 48 expired after two origin questions despite explicit DUS answers. Origin clarification now reuses the existing negation/ambiguity-aware free-text parser independently of optional recovery/one-question flags. No question-cap, pricing or deployment setting changes; initial extraction/runtime state remain unverified.
 - Customer presentation: €, full EN/DE months, sentence-based copy without parentheses/field names, short paragraphs across quotes/clarifications/bookings/tracking. Composer repairs leaks and safely formats dates/currency/paragraphs. 575 tests pass/4 skipped; 31 replay records unchanged except 18 quote bodies. No live mail sent; deployment unverified.
 

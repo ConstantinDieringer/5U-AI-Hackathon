@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Manual reply recipients:** session detail exposes normalized participants from incoming senders and outgoing recipients, classified against the carrier directory and configured desk addresses. The human explicitly selects recipient and a matching mail in that session. Default is the original requester; the server validates both before sending. Carrier mail does not mark the customer's first reply or register a customer quote. Selection and text survive live refreshes.
+
 - **Customer presentation:** `mail/style.py` provides written EN/DE month dates, safe standalone currency/date formatting and paragraph breaks at sentence boundaries. RFQ validation rejects parentheses, internal labels and unresolved display defects; deterministic customer templates use prose and the same date vocabulary. Technical IDs, filenames, contacts and stored API/CRM values remain intact.
 
 - **Customer writing skill:** `.agents/skills/customer-email-voice/SKILL.md` combines Humanize Writing and Humanizer for this domain; pinned sources and MIT credits accompany it. `app/mail/voice.py` loads the shared `customer_voice.md` locally into the quote composer's system prompt, including repair attempts. No extra rewrite call or runtime download.

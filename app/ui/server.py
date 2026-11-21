@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app import db
 from app.config import settings
 from app.mail import webhook
+from app.ui import recipients
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
@@ -43,9 +44,7 @@ PUBLIC_PATHS = {
     "/api/health",
     webhook.PATH,
 }  # health check or separate mandatory HMAC auth
-app.add_api_route(
-    webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False
-)
+app.add_api_route(webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False)
 
 
 @app.middleware("http")
@@ -64,9 +63,7 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
             pw, settings.ui_password
         ):
             return await call_next(request)
-    return Response(
-        status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'}
-    )
+    return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'})
 
 
 @app.get("/", include_in_schema=False)
@@ -124,6 +121,7 @@ def api_session(session_id: int) -> dict[str, Any]:
     s = db.get_session(session_id)
     if not s:
         raise HTTPException(404, "session not found")
+    s["reply_recipients"] = recipients.for_session(s)
     return s
 
 
@@ -212,6 +210,7 @@ def api_resume_all() -> dict[str, bool]:
 
 class ReplyIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
+    to: str | None = Field(default=None, max_length=320)
     # set when the text came from the emergency draft: recorded as our quote so CRM,
     # booking (rate_id) and tracking work as for an agent quote
     quote: dict[str, Any] | None = None
@@ -233,26 +232,20 @@ def api_draft(session_id: int) -> dict[str, Any]:
 
 @app.post("/api/sessions/{session_id}/reply")
 def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
-    """Human reply in the customer's thread. Takes the session over first."""
+    """Human reply to an explicitly selected thread participant."""
     s = _require(session_id)
-    customer_mails = [m for m in s["mails"] if m["direction"] == "in"]
-    if not customer_mails:
+    if not s["mails"]:
         raise HTTPException(409, "no incoming mail to reply to")
-    if body.mail_id is None:
-        parent = customer_mails[-1]
-    else:
-        parent = next(
-            (m for m in customer_mails if m["id"] == body.mail_id),
-            None,
-        )
-    if parent is None:
-        raise HTTPException(422, "selected mail is not an incoming mail in this session")
+    try:
+        recipient, parent = recipients.resolve(s, body.to, body.mail_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if body.quote and not recipient["is_thread_starter"]:
+        raise HTTPException(422, "Eine Kundenquote kann nur an den Anfragesteller gesendet werden.")
     try:
         from app import hackloop  # owned by task A; may not exist yet
     except ImportError as e:
-        raise HTTPException(
-            503, "mail client (app/hackloop.py) not available yet"
-        ) from e
+        raise HTTPException(503, "mail client (app/hackloop.py) not available yet") from e
 
     db.takeover(session_id)
     subject = parent["subject"] or ""
@@ -260,7 +253,7 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
         subject = f"Re: {subject}"
     try:
         sent = hackloop.send(
-            to=parent["sender"],
+            to=recipient["address"],
             subject=subject,
             body=body.text,
             in_reply_to=parent["id"],
@@ -277,7 +270,7 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     if sent_id:
         db.record_outgoing(
             mail_id=sent_id,
-            recipient=parent["sender"],
+            recipient=recipient["address"],
             subject=subject,
             body=body.text,
             category="manual_reply",
@@ -285,8 +278,9 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
             in_reply_to=parent["id"],
             raw=sent if isinstance(sent, dict) else None,
         )
-    db.mark_manual_reply(session_id)
-    db.emit(db.Ev.HUMAN_ACTION, "Manuelle Antwort gesendet", session_id)
+    if recipient["is_thread_starter"]:
+        db.mark_manual_reply(session_id)
+    db.emit(db.Ev.HUMAN_ACTION, f"Manuelle Antwort an {recipient['address']} gesendet", session_id)
     q = body.quote
     if q and q.get("total_minor") and not s.get("quotes"):
         c = q.get("choice") or {}

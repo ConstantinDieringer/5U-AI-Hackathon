@@ -98,6 +98,12 @@ Screens
 
 ## 4. Components
 
+The manual reply composer has an explicit recipient select before the reply target and body.
+Options show address plus role: thread starter, airline, trucker, rate desk, tracking or other
+thread participant. Default to the thread starter; show only that recipient's messages under
+"Antworten auf". Keep recipient, parent and typed text across live updates. The send confirmation
+names the selected address and role. Emergency quotes select the original requester.
+
 RFQ detail includes an API-cost card: total USD estimate, input/output totals, and expandable calls by purpose/model with token counts, per-million rates and cost components. Cached input and reasoning are labelled as subsets; missing usage/prices and legacy records are explicit.
 
 | Component | Spec |
