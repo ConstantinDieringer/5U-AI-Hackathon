@@ -6,7 +6,7 @@ from decimal import Decimal
 from app.mail.content import current_message
 from app.mail.lots import parse_lots
 from app.models import Rfq, RfqDraft
-from app.pricing.reference import origin_for_zip, pickup_zones
+from app.pricing.reference import find_area, origin_for_zip, pickup_zones
 
 VERSION = 1
 _NUM = r"\d+(?:[.,]\d+)?"
@@ -19,12 +19,12 @@ _SIGNATURE = re.compile(
     re.IGNORECASE,
 )
 _ALIASES = {
-    "FRA": "Frankfurt",
-    "HAM": "Hamburg",
-    "MUC": "Munich|München",
-    "DUS": "Düsseldorf|Duesseldorf",
-    "CGN": "Cologne|Köln",
-    "STR": "Stuttgart",
+    "FRA": "Frankfurt|EDDF",
+    "HAM": "Hamburg|EDDH",
+    "MUC": "Munich|München|EDDM",
+    "DUS": "Düsseldorf|Duesseldorf|EDDL",
+    "CGN": "Cologne|Köln|EDDK",
+    "STR": "Stuttgart|EDDS",
 }
 
 
@@ -44,7 +44,11 @@ def explicit_delivery_origin(mail, destination):
         for code in re.findall(r"\b[A-Z]{3}\b", match[0], re.IGNORECASE)
         if code.upper() in supported
     }
-    return next(iter(airports)) if len(airports) == 1 and destination not in airports else None
+    return (
+        next(iter(airports))
+        if len(airports) == 1 and destination not in airports
+        else None
+    )
 
 
 def numeric_facts(text):
@@ -82,10 +86,16 @@ def numeric_facts(text):
     return result
 
 
-def validate(mail, candidate, attachments=None, attachment_issues=None, corrections=None):
+def validate(
+    mail, candidate, attachments=None, attachment_issues=None, corrections=None
+):
     current = current_message(mail.body, mail.subject)
     active = _SIGNATURE.split(current.facts, 1)[0]
-    data = candidate.facts.copy() if isinstance(candidate, RfqDraft) else candidate.model_dump()
+    data = (
+        candidate.facts.copy()
+        if isinstance(candidate, RfqDraft)
+        else candidate.model_dump()
+    )
     issues = list(attachment_issues or [])
     evidence = {}
     corrections = corrections or {}
@@ -93,7 +103,10 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         recovered = explicit_delivery_origin(mail, data.get("destination"))
         if recovered:
             data["origin"] = recovered
-            evidence["origin"] = {"source": "explicit_self_delivery", "value": recovered}
+            evidence["origin"] = {
+                "source": "explicit_self_delivery",
+                "value": recovered,
+            }
     sources = {"body": active, **(attachments or {})}
     if current.subject:
         sources["subject"] = current.subject
@@ -103,6 +116,27 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
     combined = "\n".join(sources.values())
     pickup = bool(_PICKUP.search(active))
     zip_match = re.search(r"\b(?:D-)?(\d{5})\b", active)
+    current_area = find_area(active) if pickup else None
+    attachment_shipper_cities = set()
+    for text in (attachments or {}).values():
+        match = re.search(r"(?im)^\s*shipper\s*[:|]\s*(.+?)\s*$", text)
+        if not match:
+            continue
+        parts = [part.strip() for part in match[1].lstrip("|").split(",")]
+        if len(parts) >= 3:
+            attachment_shipper_cities.add(parts[-2])
+    if current_area and any(
+        city.casefold() != current_area.casefold() for city in attachment_shipper_cities
+    ):
+        issues.append(
+            {
+                "field": "pickup_zip",
+                "code": "conflict",
+                "detail": (
+                    "Mail pickup location and attachment shipper identify different places"
+                ),
+            }
+        )
     if pickup:
         data["pickup_zip"] = zip_match[1] if zip_match else None
     elif data.get("pickup_zip") and str(data["pickup_zip"]) not in combined:
@@ -134,11 +168,23 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                 re.search(rf"\b{re.escape(origin)}\b", active, re.IGNORECASE)
                 or re.search(_ALIASES.get(origin, r"(?!)"), active, re.IGNORECASE)
             )
-            if not explicit or origin == data.get("destination"):
+            if explicit and origin != airport and origin != data.get("destination"):
+                issues.append(
+                    {
+                        "field": "origin",
+                        "code": "conflict",
+                        "detail": (
+                            f"Named origin {origin} conflicts with pickup-zone airport {airport}"
+                        ),
+                    }
+                )
+            elif not explicit or origin == data.get("destination"):
                 data["origin"] = airport
             evidence["origin"] = {"source": "pickup_zones", "value": data["origin"]}
         evidence["pickup_zip"] = {
-            "source": "body" if "pickup_zip" not in corrections else "customer_correction",
+            "source": "body"
+            if "pickup_zip" not in corrections
+            else "customer_correction",
             "value": data["pickup_zip"],
         }
     origin = data.get("origin")
@@ -167,7 +213,9 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                 }
             )
         else:
-            evidence.setdefault("origin", {"source": "current_request", "value": origin})
+            evidence.setdefault(
+                "origin", {"source": "current_request", "value": origin}
+            )
     elif not pickup:
         issues.append(
             {
@@ -205,7 +253,11 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         )
     )
     values = numeric_facts(active) if not has_lots else {}
-    if has_lots and totals is None and not {"weight_kg", "volume_cbm"} <= corrections.keys():
+    if (
+        has_lots
+        and totals is None
+        and not {"weight_kg", "volume_cbm"} <= corrections.keys()
+    ):
         issues.append(
             {
                 "field": "lots",
@@ -241,7 +293,9 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                     }
                 )
             data[field] = (
-                int(observations[0][1]) if field == "pieces" else float(observations[0][1])
+                int(observations[0][1])
+                if field == "pieces"
+                else float(observations[0][1])
             )
             evidence[field] = {
                 "source": observations[0][0],
@@ -249,7 +303,9 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
                 "observations": [(n, str(v)) for n, v in observations],
             }
         elif field != "pieces":
-            issues.append({"field": field, "code": "missing", "detail": f"Confirm {field}"})
+            issues.append(
+                {"field": field, "code": "missing", "detail": f"Confirm {field}"}
+            )
     # UN markers in any source take precedence over a generic non-dangerous statement.
     dangerous = bool(
         re.search(
@@ -258,7 +314,10 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
             re.IGNORECASE,
         )
     )
-    if dangerous and corrections.get("dangerous_goods") != "not_dangerous_document_corrected":
+    if (
+        dangerous
+        and corrections.get("dangerous_goods") != "not_dangerous_document_corrected"
+    ):
         issues.append(
             {
                 "field": "dangerous_goods",
@@ -274,6 +333,8 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         rfq = Rfq.model_validate(data)
     except ValueError as exc:
         rfq = None
-        issues.append({"field": "shipment", "code": "invalid", "detail": str(exc)[:200]})
+        issues.append(
+            {"field": "shipment", "code": "invalid", "detail": str(exc)[:200]}
+        )
     draft = RfqDraft(facts=data, evidence=evidence, issues=issues, version=VERSION)
     return rfq, draft

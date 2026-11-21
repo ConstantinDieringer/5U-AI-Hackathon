@@ -155,16 +155,18 @@ def price_lane(
 
 
 def resolve_origin(rfq: Rfq) -> str | None:
-    """Departure airport. With a pickup ZIP, the LLM's origin counts only if it is one of our
-    pickup-zone airports and not the destination; else the ZIP's airport (round 2530: nano gave
-    origin YYZ = destination for a pickup in 21663 -> HAM)."""
+    """Departure airport. Door-to-port routing always follows the pickup zone.
+
+    A named or LLM-derived airport must never override the deterministic pickup mapping. This
+    covers both a destination copied into origin and plausible but wrong nearby airports.
+    """
     origin = rfq.origin.upper() if rfq.origin else None
     if origin == rfq.destination.upper():
         origin = None
     zone = rfq.pickup_zone
     if zone:
         by_zone = pickup_zones().get(zone)
-        if by_zone and (origin is None or origin not in set(pickup_zones().values())):
+        if by_zone:
             return by_zone
     return origin
 

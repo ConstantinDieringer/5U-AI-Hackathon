@@ -287,7 +287,10 @@ def test_composer_requires_question_coverage_and_one_verified_total(
         customer_questions=["When do we arrive?"],
     )
     option = RateOption("Fjordline", "MUC", "LAX", 3, 320358, "EUR", 320358, "portal")
-    body = "Hello,\n\n3.203,58 € all-in. Arrival is 2 Dec 2026.\n\nYour austrian Power Team\n"
+    body = (
+        "Hello,\n\nFjordline from MUC to LAX: 3.203,58 € all-in. "
+        "Arrival is 2 Dec 2026.\n\nYour austrian Power Team\n"
+    )
     monkeypatch.setattr(
         rfq.llm,
         "complete",
@@ -321,6 +324,41 @@ def test_composer_requires_question_coverage_and_one_verified_total(
     fallback = rfq.compose_quote_text(request, option, 320358, None, 7)
     assert _amounts(fallback) == ["3.203,58 €"]
     assert "not yet available" not in fallback
+
+
+def test_composer_repairs_mixed_route_phrase_once(monkeypatch) -> None:
+    request = Rfq(origin="FRA", destination="GRU", weight_kg=100)
+    option = RateOption("Test Air", "FRA", "GRU", 2, 147500, "EUR", 147500, "sheet")
+    bodies = [
+        (
+            "Hello,\n\nTest Air from origin to nach GRU: 1.475,00 € all-in."
+            "\n\nYour austrian Power Team"
+        ),
+        (
+            "Hello,\n\nTest Air from FRA to GRU: 1.475,00 € all-in."
+            "\n\nYour austrian Power Team"
+        ),
+    ]
+    purposes: list[str] = []
+
+    def complete(purpose, *args, **kwargs):
+        purposes.append(purpose)
+        return json.dumps(
+            {
+                "body": bodies.pop(0),
+                "answered_questions": [],
+                "unavailable_questions": [],
+                "addressed_constraints": [],
+                "unavailable_constraints": [],
+            }
+        )
+
+    monkeypatch.setattr(rfq.llm, "complete", complete)
+
+    text = rfq.compose_quote_text(request, option, 147500, None, 1)
+
+    assert "FRA to GRU" in text
+    assert purposes == ["compose_quote", "compose_quote_repair"]
 
 
 # ---------------------------------------------------------------- whole flow

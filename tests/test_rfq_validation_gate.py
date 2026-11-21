@@ -123,6 +123,25 @@ def test_2530_zip_wins_and_dg_attachment_blocks():
     assert r.origin == "HAM" and any(i["field"] == "dangerous_goods" for i in d.issues)
 
 
+def test_explicit_icao_origin_conflict_with_pickup_zone_blocks():
+    m = mail(
+        "Pickup from our site in 51896. Origin: EDDL. Destination: ORD. "
+        "679 kg gross, total volume 4.19 cbm."
+    )
+    r, d = validate(
+        m,
+        candidate(
+            origin="EDDL",
+            pickup_zip="51896",
+            destination="ORD",
+            weight_kg=679,
+            volume_cbm=4.19,
+        ),
+    )
+    assert r.origin == "DUS"
+    assert any(i["field"] == "origin" and i["code"] == "conflict" for i in d.issues)
+
+
 def test_2256_xlsx_dg_wins_over_body_nondg():
     m = mail(
         "Please arrange the truck from our site at 61391 to GRU. 715 kg gross, total volume 2.65 cbm. General cargo, non-dangerous."
@@ -137,6 +156,26 @@ def test_2256_xlsx_dg_wins_over_body_nondg():
         },
     )
     assert [i["field"] for i in d.issues] == ["dangerous_goods"]
+
+
+def test_attachment_shipper_conflicting_with_named_pickup_blocks():
+    m = mail(
+        "Please arrange pickup from 21663 Lueneburg to YYZ. "
+        "855 kg gross, total volume 3.74 cbm."
+    )
+    _, d = validate(
+        m,
+        candidate(
+            pickup_zip="21663", destination="YYZ", weight_kg=855, volume_cbm=3.74
+        ),
+        {
+            "SLI.pdf": (
+                "Shipper: Lindqvist Medtech GmbH, Erlangen, Germany\n"
+                "Total gross weight (kg): 855\nTotal volume (cbm): 3.74"
+            )
+        },
+    )
+    assert any(i["field"] == "pickup_zip" and i["code"] == "conflict" for i in d.issues)
 
 
 def test_correct_lot_totals_and_unreadable_lot_block():
