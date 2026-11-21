@@ -25,7 +25,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids
 from app.config import settings
-from app.mail import language
+from app.mail import language, lots
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
@@ -118,7 +118,18 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
         response_format=RFQ_SCHEMA,
     )
     try:
-        return Rfq.model_validate(json.loads(text))
+        data = json.loads(text)
+        totals = lots.parse_lots(_clean(mail.body))
+        if isinstance(data, dict) and totals is not None:
+            # lot sums in code: nano returned weight 0 for "each" lots (mail 1967)
+            data["weight_kg"] = float(totals.weight_kg)
+            data["volume_cbm"] = float(totals.volume_cbm)
+            db.emit(
+                "lots_summed",
+                f"{totals.lots} Lots: {totals.weight_kg:.1f} kg, {totals.volume_cbm:.4f} cbm",
+                session_id,
+            )
+        return Rfq.model_validate(data)
     except (json.JSONDecodeError, ValidationError) as e:
         log.warning("session %s: extraction not usable (%s): %r", session_id, e, text[:300])
         return None
