@@ -141,3 +141,14 @@ def test_conflicting_documents_never_choose_the_larger_amount(monkeypatch):
     mail.attachments.append({"id": 2, "filename": "revision.txt"})
     bids.on_bid_mail(mail, 123)
     assert bids.offers(123) == []
+
+
+@pytest.mark.parametrize("label", ["Total, all-in", "Total all in", "Grand total", "Gesamtbetrag"])
+@pytest.mark.parametrize("separator", [" ", "\n", " | "])
+def test_explicit_total_label_and_adjacent_table_value(label, separator):
+    text = f"Base 90 EUR\nWeight 32.89 EUR\n{label}{separator}122.89 EUR\nWaiting 450 EUR"
+    assert bids.document_price(text) == (Decimal("122.89"), "EUR")
+
+
+def test_missing_total_does_not_scan_past_an_unrelated_row():
+    assert bids.document_price("Total\nValid until Friday\nWaiting 450 EUR") is None

@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Round 64 carrier documents additionally use `Total, all-in` and adjacent label/value rows. Explicit totals now support those ordinary table layouts without scanning past an unrelated row; all four observed document totals replay correctly. Production no-answer cause remains unverified beyond the already reproduced body-only bid gap.
+
 - Round 63 expired without a quote after carrier prices moved into attachments. Carrier bids now reuse bounded document reading and require an explicit unique total/currency, keeping timing from the same evidence. Unsupported audio, unreadable sources and conflicting totals remain visible and unpriced; actual production failure attribution is not verified without logs.
 
 - Round 62 customer explicitly questioned an obsolete forwarded subject despite correct shipment facts in the offer. Quotes, booking confirmations and offer follow-ups now name the verified current airport route; missing route facts preserve the existing subject, and reply identifiers stay unchanged. No price, booking-consent or carrier-selection changes.
