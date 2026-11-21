@@ -657,11 +657,11 @@
    "preference": "fastest"
   },
   "airline": "Meridian Freightways",
-  "trucker": "Spessart Spedition",
+  "trucker": "Schwabenbote Transporte",
   "source": "portal",
   "route": "HAM-EZE",
   "transit_days": 3,
-  "total_minor": 242996,
+  "total_minor": 247048,
   "carriers_asked": [
    "nova-atlas-cargo@hackloop.mail",
    "schwabenbote-transporte@hackloop.mail",
@@ -675,7 +675,7 @@
    "carrier_without_stored_reply"
   ],
   "network_blocked": 0,
-  "quote_body": "Hi Deniz,\n\nthank you for reaching out, here is our offer.\n\nAir freight HAM to EZE, including pickup at 28261 and trucking to HAM airport: 2.429,96 € all-in.\nIt flies with Meridian Freightways, transit time 3 days from departure.\nEarliest departure from HAM is 27 Nov 2026, arriving in EZE on 30 Nov 2026.\nThe trucker reports a lead time of about 17 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:17 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+  "quote_body": "Hi Deniz,\n\nthank you for reaching out, here is our offer.\n\nAir freight HAM to EZE, including pickup at 28261 and trucking to HAM airport: 2.470,48 € all-in.\nIt flies with Meridian Freightways, transit time 3 days from departure.\nEarliest departure from HAM is 27 Nov 2026, arriving in EZE on 30 Nov 2026.\nThe trucker reports a lead time of about 12 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:17 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
  },
  {
   "session_id": 5523,
@@ -691,11 +691,11 @@
    "preference": "fastest"
   },
   "airline": "Juniper Cargo Lines",
-  "trucker": "Ruhrpott Express",
+  "trucker": "Sternmeile Logistik",
   "source": "portal",
   "route": "CGN-SGN",
   "transit_days": 2,
-  "total_minor": 735756,
+  "total_minor": 763701,
   "carriers_asked": [
    "nova-atlas-cargo@hackloop.mail",
    "ruhrpott-express@hackloop.mail",
@@ -710,7 +710,7 @@
    "carrier_without_stored_reply"
   ],
   "network_blocked": 0,
-  "quote_body": "Hi Tobias,\n\nthank you for reaching out, here is our offer.\n\nAir freight CGN to SGN, including pickup at 53088 and trucking to CGN airport: 7.357,56 € all-in.\nIt flies with Juniper Cargo Lines, transit time 2 days from departure.\nEarliest departure from CGN is 29 Nov 2026, arriving in SGN on 1 Dec 2026.\nThe trucker reports a lead time of about 31 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:23 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+  "quote_body": "Hi Tobias,\n\nthank you for reaching out, here is our offer.\n\nAir freight CGN to SGN, including pickup at 53088 and trucking to CGN airport: 7.637,01 € all-in.\nIt flies with Juniper Cargo Lines, transit time 2 days from departure.\nEarliest departure from CGN is 29 Nov 2026, arriving in SGN on 1 Dec 2026.\nThe trucker reports a lead time of about 11 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:23 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
  },
  {
   "session_id": 5844,
@@ -784,11 +784,11 @@
    "preference": "fastest"
   },
   "airline": "Fjordline Air Cargo",
-  "trucker": "Isarwelle Spedition",
+  "trucker": "Spessart Spedition",
   "source": "portal",
   "route": "STR-EZE",
   "transit_days": 4,
-  "total_minor": 245184,
+  "total_minor": 254248,
   "carriers_asked": [
    "isarwelle-spedition@hackloop.mail",
    "nordlicht-haulage@hackloop.mail",
@@ -800,7 +800,7 @@
   "warnings": [],
   "notes": [],
   "network_blocked": 0,
-  "quote_body": "Hi Jonas,\n\nthanks for your request, happy to help.\n\nAir freight STR to EZE, including pickup at 70498 and trucking to STR airport: 2.451,84 € all-in.\nIt flies with Fjordline Air Cargo, transit time 4 days from departure.\nEarliest departure from STR is 29 Nov 2026, arriving in EZE on 3 Dec 2026.\nThe trucker reports a lead time of about 21 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:41 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+  "quote_body": "Hi Jonas,\n\nthanks for your request, happy to help.\n\nAir freight STR to EZE, including pickup at 70498 and trucking to STR airport: 2.542,48 € all-in.\nIt flies with Fjordline Air Cargo, transit time 4 days from departure.\nEarliest departure from STR is 29 Nov 2026, arriving in EZE on 3 Dec 2026.\nThe trucker reports a lead time of about 9 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:41 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
  },
  {
   "session_id": 6629,
@@ -816,11 +816,11 @@
    "preference": "fastest"
   },
   "airline": "Nova Atlas Cargo",
-  "trucker": "Kranich Kurier",
+  "trucker": "Sternmeile Logistik",
   "source": "portal",
   "route": "MUC-BKK",
   "transit_days": 2,
-  "total_minor": 523008,
+  "total_minor": 543480,
   "carriers_asked": [
    "alpenblick-logistik@hackloop.mail",
    "kranich-kurier@hackloop.mail",
@@ -833,7 +833,7 @@
   "warnings": [],
   "notes": [],
   "network_blocked": 0,
-  "quote_body": "Hi Tobias,\n\nthank you for reaching out, here is our offer.\n\nAir freight MUC to BKK, including pickup at 81617 and trucking to MUC airport: 5.230,08 € all-in.\nIt flies with Nova Atlas Cargo, transit time 2 days from departure.\nEarliest departure from MUC is 29 Nov 2026, arriving in BKK on 1 Dec 2026.\nThe trucker reports a lead time of about 21 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:47 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+  "quote_body": "Hi Tobias,\n\nthank you for reaching out, here is our offer.\n\nAir freight MUC to BKK, including pickup at 81617 and trucking to MUC airport: 5.434,80 € all-in.\nIt flies with Nova Atlas Cargo, transit time 2 days from departure.\nEarliest departure from MUC is 29 Nov 2026, arriving in BKK on 1 Dec 2026.\nThe trucker reports a lead time of about 4 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 17:47 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
  },
  {
   "session_id": 6882,
@@ -972,11 +972,11 @@
    "preference": "cheapest"
   },
   "airline": "Ibisair Cargo",
-  "trucker": "Hansekogge Trucking",
+  "trucker": "Alpenblick Logistik",
   "source": "portal",
   "route": "STR-BOM",
   "transit_days": 6,
-  "total_minor": 61469,
+  "total_minor": 63260,
   "carriers_asked": [
    "alpenblick-logistik@hackloop.mail",
    "hansekogge-trucking@hackloop.mail"
@@ -986,6 +986,6 @@
   "warnings": [],
   "notes": [],
   "network_blocked": 0,
-  "quote_body": "Hi Klaus,\n\nthank you for reaching out, here is our offer.\n\nAir freight STR to BOM, including pickup at 72379 and trucking to STR airport: 614,69 € all-in.\nIt flies with Ibisair Cargo, transit time 6 days from departure.\nEarliest departure from STR is 25 Nov 2026, arriving in BOM on 1 Dec 2026.\nThe trucker reports a lead time of about 17 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 18:18 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
+  "quote_body": "Hi Klaus,\n\nthank you for reaching out, here is our offer.\n\nAir freight STR to BOM, including pickup at 72379 and trucking to STR airport: 632,60 € all-in.\nIt flies with Ibisair Cargo, transit time 6 days from departure.\nEarliest departure from STR is 25 Nov 2026, arriving in BOM on 1 Dec 2026.\nThe trucker reports a lead time of about 9 hours, and we'll confirm the exact pickup time once it's booked.\nThe rate can be booked until 18:18 UTC.\n\nIf that works for you, just reply to this email and we will book it right away.\n\nMoritz\nYour austrian Power Team\n"
  }
 ]

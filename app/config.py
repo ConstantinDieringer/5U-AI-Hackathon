@@ -26,12 +26,13 @@ TRUCKER_BALANCES = ("minmax", "ratio")
 
 
 def _trucker_balance() -> str:
-    """How the 50/50 price/speed balance picks a trucker bid. An unknown value falls back to
-    today's `minmax` with a warning: a typo in a variable must never stop the start."""
-    mode = _env("TRUCKER_BALANCE", "minmax").lower()
+    """How the 50/50 price/speed balance picks among carrier bids (truckers and airlines).
+    Default `ratio` (board fit, see pricing.most_balanced); `minmax` is the old rule. An
+    unknown value falls back to `ratio` with a warning: a typo must never stop the start."""
+    mode = _env("TRUCKER_BALANCE", "ratio").lower()
     if mode not in TRUCKER_BALANCES:
-        logging.getLogger(__name__).warning("TRUCKER_BALANCE=%r unknown, using minmax", mode)
-        return "minmax"
+        logging.getLogger(__name__).warning("TRUCKER_BALANCE=%r unknown, using ratio", mode)
+        return "ratio"
     return mode
 
 

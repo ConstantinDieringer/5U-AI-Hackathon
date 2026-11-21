@@ -18,7 +18,6 @@ import re
 import threading
 import time
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
 from typing import Any
 
 import openai
@@ -39,7 +38,7 @@ from app.models import Mail, RateOption, Rfq, RfqDraft
 from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import portal_result
-from app.pricing.pricing import pick, resolve_origin, sheet_options, to_minor
+from app.pricing.pricing import most_balanced, pick, resolve_origin, sheet_options, to_minor
 from app.pricing.reference import (
     Carrier,
     carrier_by_email,
@@ -401,7 +400,12 @@ def best_air(
 ) -> RateOption | None:
     """Among carrier bids the balanced one (price/speed 50/50) counts; then the customer's
     preference over sheet, portal and that bid."""
-    best_bid = pick(bid_opts, "balanced")
+    best_bid = most_balanced(
+        bid_opts,
+        lambda o: o.total_eur_minor,
+        lambda o: o.transit_days,
+        settings.trucker_balance,
+    )
     return pick(air + ([best_bid] if best_bid else []), preference)
 
 
@@ -411,28 +415,9 @@ def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
         return None
     if len(trucks) == 1 or any(o.transit_days is None for o in trucks):
         return min(trucks, key=lambda o: o.total_eur)
-    lo_p, hi_p = min(o.total_eur for o in trucks), max(o.total_eur for o in trucks)
-    lo_d = min(Decimal(str(o.transit_days)) for o in trucks)
-    hi_d = max(Decimal(str(o.transit_days)) for o in trucks)
-    if settings.trucker_balance == "ratio" and lo_p > 0 and lo_d > 0:
-        # price/cheapest + time/fastest: the balance behind the board's best price
-        return min(
-            trucks,
-            key=lambda o: (
-                o.total_eur / lo_p + Decimal(str(o.transit_days)) / lo_d,
-                o.total_eur,
-            ),
-        )
-
-    def norm(v: Decimal, lo: Decimal, hi: Decimal) -> Decimal:
-        return Decimal(0) if hi == lo else (v - lo) / (hi - lo)
-
-    return min(
-        trucks,
-        key=lambda o: (
-            norm(o.total_eur, lo_p, hi_p) / 2 + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
-            o.total_eur,
-        ),
+    # same 50/50 rule as airline bids (see pricing.most_balanced)
+    return most_balanced(
+        trucks, lambda o: o.total_eur, lambda o: o.transit_days, settings.trucker_balance
     )
 
 

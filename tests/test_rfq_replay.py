@@ -40,9 +40,10 @@ def test_replay_never_reaches_the_network(results) -> None:
 def test_replay_reproduces_production_quotes(corpus, results) -> None:
     """The harness itself stays faithful: rounds whose stored data is complete quote exactly
     what production sent. Rounds 2 and 12 lack stored data; 18 to 20 now ask for the pickup;
-    production never priced round 28."""
+    production never priced round 28. Rounds 21, 22, 25, 26 and 31 now pick another trucker
+    (ratio balance); test_trucker_balance_evidence checks them under the old minmax rule."""
     by_round = {c["round_no"]: c for c in corpus["cases"]}
-    for round_no in (3, 5, 6, 7, 8, 13, 14, 21, 22, 23, 24, 25, 26, 27, 29, 30, 31):
+    for round_no in (3, 5, 6, 7, 8, 13, 14, 23, 24, 27, 29, 30):
         sent = by_round[round_no]["production_quote"]
         got = results[round_no]
         assert (got["airline"], got["total_minor"]) == (
@@ -123,26 +124,32 @@ def test_round_28_with_self_delivery_recovery_quotes_the_portal_price(
 
 
 def test_trucker_balance_evidence(corpus, results, tmp_path, monkeypatch) -> None:
-    """TRUCKER_BALANCE (default minmax) on every door-to-port round. Where ratio picks another
-    trucker, the board accuracy of the minmax quote fits 45 - 4.5 points per % deviation from
-    the ratio total (rounds 21, 22, 25, 26); round 31 has no accuracy yet. Evidence for the
-    PR's recommendation; the default stays unchanged."""
+    """TRUCKER_BALANCE=ratio is the default. Under the old minmax rule the harness still
+    reproduces production on the rounds where the trucker differs, and the board accuracy of
+    those production quotes fits 45 - 4.5 points per % deviation from today's (ratio) total
+    (rounds 21, 22, 25, 26): ratio picks the trucker behind the board's best price. Round 31
+    has no accuracy yet."""
     import dataclasses
 
     from app import config
     from app.agents import rfq
 
-    ratio = dataclasses.replace(config.settings, trucker_balance="ratio")
-    monkeypatch.setattr(config, "settings", ratio)
-    monkeypatch.setattr(rfq, "settings", ratio)
+    minmax = dataclasses.replace(config.settings, trucker_balance="minmax")
+    monkeypatch.setattr(config, "settings", minmax)
+    monkeypatch.setattr(rfq, "settings", minmax)
     cases = {c["round_no"]: c for c in corpus["cases"]}
     moved = {}
     for round_no, today in results.items():
         if not today["trucker"]:
             continue
-        got = rfq_replay.replay_case(cases[round_no], tmp_path, corpus["lane_observations"])
-        if got["trucker"] != today["trucker"]:
-            moved[round_no] = (today["total_minor"], got["total_minor"])
+        old = rfq_replay.replay_case(cases[round_no], tmp_path, corpus["lane_observations"])
+        if old["trucker"] != today["trucker"]:
+            moved[round_no] = (old["total_minor"], today["total_minor"])
+            sent = cases[round_no]["production_quote"]
+            assert (old["airline"], old["total_minor"]) == (
+                sent["airline"],
+                sent["total_minor"],
+            ), round_no
     assert sorted(moved) == [21, 22, 25, 26, 31]
     for round_no, (minmax_total, ratio_total) in moved.items():
         board = cases[round_no]["board"]["accuracy"]

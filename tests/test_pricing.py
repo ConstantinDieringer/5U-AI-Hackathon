@@ -197,3 +197,28 @@ def test_resolve_origin_ignores_a_wrong_llm_origin_with_pickup_zip() -> None:
     port = Rfq(origin="MUC", destination="LAX", weight_kg=998)
     assert resolve_origin(port) == "MUC"
     assert resolve_origin(port.model_copy(update={"origin": "LAX"})) is None
+
+
+def test_balanced_two_bids_no_longer_tie_to_the_cheaper():
+    # min-max: 100 EUR/5 d vs 200 EUR/2 d is always .5 vs .5 -> cheaper won by tie-break.
+    # ratio: 1 + 2.5 = 3.5 vs 2 + 1 = 3 -> the much faster offer wins.
+    opts = [_opt("cheap", "100", 5), _opt("fast", "200", 2)]
+    assert pick(opts, "balanced").airline == "fast"
+    # one day slower but much cheaper: 1 + 1.5 = 2.5 vs 3 + 1 = 4 -> cheap wins
+    opts = [_opt("cheap", "100", 3), _opt("fast", "300", 2)]
+    assert pick(opts, "balanced").airline == "cheap"
+
+
+def test_balanced_ignores_far_outlier():
+    # a very expensive third bid must not change which of the first two is balanced
+    two = [_opt("A", "100", 4), _opt("B", "130", 3)]
+    three = two + [_opt("Z", "900", 1)]
+    assert pick(two, "balanced").airline == pick(three, "balanced").airline == "B"
+
+
+def test_balanced_minmax_still_selectable():
+    from app.pricing.pricing import most_balanced
+
+    opts = [_opt("cheap", "100", 5), _opt("fast", "200", 2)]
+    got = most_balanced(opts, lambda o: o.total_eur_minor, lambda o: o.transit_days, "minmax")
+    assert got.airline == "cheap"  # the old tie, decided by price
