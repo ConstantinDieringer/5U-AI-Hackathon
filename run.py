@@ -25,6 +25,9 @@ def main() -> None:
     from app.mail import poller
 
     db.init_db()
+    from app.agents import booking
+
+    booking.catch_up()  # acceptances that arrived while the app was down or had no booking
     stop = threading.Event()
     threading.Thread(target=poller.run, args=(stop,), name="poller", daemon=True).start()
 
