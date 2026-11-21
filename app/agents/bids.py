@@ -15,9 +15,10 @@ import re
 import threading
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 from app import config, db, hackloop
-from app.mail.rfq_sources import read_sources
+from app.mail import documents
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RateOption, Rfq
@@ -69,6 +70,8 @@ class _Request:
 
 _open: dict[int, _Request] = {}
 _cond = threading.Condition()
+_transcriptions: dict[int, int] = {}  # session -> model calls spent on bid attachments
+MAX_BID_TRANSCRIPTIONS = 5  # one per carrier at most (MAX_BID_CARRIERS default 5)
 
 
 # ---------------------------------------------------------------- parsing
@@ -135,7 +138,7 @@ def document_price(text: str) -> tuple[Decimal, str] | None:
         if not label:
             label = re.match(
                 r"\s*(?:(?:our|unser)\s+)?(?:all[- ]?in\s+)?(?:price|preis)\b"
-                r".{0,60}?(?:\bis\b|\bist\b|\bbeträgt\b|:)\s*",
+                r".{0,60}?(?:\bis\b|\bist\b|\bbeträgt\b|:|\|)\s*",
                 line,
                 re.IGNORECASE,
             )
@@ -157,24 +160,30 @@ def document_price(text: str) -> tuple[Decimal, str] | None:
     return next(iter(found)) if len(found) == 1 else None
 
 
-def _bid_evidence(mail: Mail) -> tuple[str, tuple[Decimal, str] | None, str | None]:
-    body = mail.body or ""
-    if not mail.attachments:
+def _bid_evidence(
+    body: str, files: list[tuple[str, str]], spoken: list[tuple[str, str]]
+) -> tuple[str, tuple[Decimal, str] | None, str | None]:
+    """(evidence text, price, issue). `files` are document texts (PDF, Word, Excel, scans):
+    only an explicit, unique total counts there. `spoken` are voice-message transcripts:
+    read like mail text. Every source that names a price must agree with the others."""
+    if not files and not spoken:
         return body, parse_price(body), None
-    texts, media, problems = read_sources(mail)
-    if problems or media or not texts:
-        return body, None, "attachment unreadable or requires transcription"
-    evidence = []
-    for text in texts.values():
+    evidence: list[tuple[str, tuple[Decimal, str]]] = []
+    for name, text in files:
         price = document_price(text)
         if price is None:
-            return body, None, "attachment has no unambiguous explicit total"
+            return body, None, f"{name}: no unambiguous explicit total"
+        evidence.append((text, price))
+    for name, text in spoken:
+        price = parse_price(text)
+        if price is None:
+            return body, None, f"{name}: no price in voice message"
         evidence.append((text, price))
     prices = {price for _, price in evidence}
     body_price = parse_price(body)
     if len(prices) != 1 or (body_price is not None and body_price not in prices):
         return body, None, "conflicting body or attachment totals"
-    timings = {(parse_transit_days(text), timing_kind(text)) for text, _ in evidence}
+    timings = {(parse_transit_days(t), timing_kind(t)) for t, _ in evidence}
     if len(timings) != 1:
         return body, None, "conflicting attachment durations"
     return evidence[0][0], evidence[0][1], None
@@ -318,14 +327,106 @@ def session_of(mail: Mail, session_id: int | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _attachment_paths(mail: Mail) -> list[Path]:
+    """The bid's saved attachments. The poller already downloaded them; a mail rebuilt from
+    the db after a restart has no attachment list, so its inbox folder is read instead."""
+    if mail.attachments:
+        from app.mail.poller import download_attachments
+
+        return download_attachments(mail)
+    return documents.inbox_files(config.settings.inbox_dir / str(mail.id))
+
+
+def _spawn(fn, *args) -> None:  # tests replace this with a direct call
+    threading.Thread(target=fn, args=args, name=f"bid-doc-{args[0].id}", daemon=True).start()
+
+
+def _unreadable(carrier: Carrier, sid: int, issue: str) -> None:
+    db.emit("bid_unreadable", f"Gebot von {carrier.name}: {issue}"[:300], sid, level="warn")
+
+
 def on_bid_mail(mail: Mail, session_id: int | None) -> None:
-    """Called by the poller for every CARRIER_BID mail."""
+    """Called by the poller for every CARRIER_BID mail. The offer may be in the mail text or
+    in attachments: documents are read in code (app/mail/documents.py), voice messages and
+    scans are transcribed in a separate thread."""
     sid = session_of(mail, session_id)
     carrier = carrier_by_email(address(mail.sender))
     if sid is None or carrier is None:
         log.warning("bid mail %s: no session or unknown carrier, ignored", mail.id)
         return
-    refusal = served_lanes.parse_refusal(mail.body or "")
+    body = mail.body or ""
+    if served_lanes.parse_refusal(body) is not None:
+        _evaluate(mail, sid, carrier, body, [], [])
+        return
+    try:
+        paths = _attachment_paths(mail)
+    except Exception as exc:  # noqa: BLE001 - reported as unreadable bid below
+        log.warning("bid mail %s: attachments not downloaded: %s", mail.id, exc)
+        _unreadable(carrier, sid, "Anhang nicht geladen")
+        return
+    files: list[tuple[str, str]] = []
+    pending: list[tuple[Path, documents.Document]] = []
+    for path in paths:
+        try:
+            doc = documents.read(path)
+        except Exception as exc:  # noqa: BLE001 - a broken file must not price the bid
+            _unreadable(carrier, sid, f"Anhang {path.name} nicht lesbar ({str(exc)[:80]})")
+            return
+        if doc.needs_model:
+            pending.append((path, doc))
+        else:
+            files.append((path.name, doc.text))
+    if pending:
+        if not config.settings.attachment_transcription:
+            _unreadable(carrier, sid, "nur Audio/Scan, Transkription aus")
+            return
+        _spawn(_transcribe_then_evaluate, mail, sid, carrier, body, files, pending)
+        return
+    _evaluate(mail, sid, carrier, body, files, [])
+
+
+def _transcribe_then_evaluate(
+    mail: Mail, sid: int, carrier: Carrier, body: str, files: list, pending: list
+) -> None:
+    """Runs in its own thread: a gateway call must not hold up the mail loop. The calls do
+    not use the session's LLM budget (5 voice bids would leave none for extraction and the
+    quote mail); MAX_BID_TRANSCRIPTIONS per session bounds their cost instead."""
+    try:
+        spoken: list[tuple[str, str]] = []
+        files = list(files)
+        for path, doc in pending:
+            if documents.cached_transcript(path) is None:
+                with _cond:
+                    used = _transcriptions.get(sid, 0)
+                    if used >= MAX_BID_TRANSCRIPTIONS:
+                        raise RuntimeError(f"{used} bid attachments already transcribed")
+                    _transcriptions[sid] = used + 1
+            text = documents.transcribe(doc, None, f"bid_attachment s{sid}", path)
+            db.emit(
+                "bid_transcribed",
+                f"Gebot von {carrier.name}: {path.name} gelesen ({doc.kind.lstrip('.')})",
+                sid,
+                transcript=text[:2000],
+            )
+            (spoken if doc.audio else files).append((path.name, text))
+        _evaluate(mail, sid, carrier, body, files, spoken)
+    except Exception as exc:  # noqa: BLE001 - budget, gateway or model refusal
+        log.warning("bid mail %s: transcription failed: %s", mail.id, exc)
+        _unreadable(carrier, sid, f"nicht transkribiert ({str(exc)[:80]})")
+
+
+def _evaluate(
+    mail: Mail,
+    sid: int,
+    carrier: Carrier,
+    body: str,
+    files: list[tuple[str, str]],
+    spoken: list[tuple[str, str]],
+) -> None:
+    """Refusal or offer from the mail text plus everything read from its attachments."""
+    refusal = served_lanes.parse_refusal(
+        "\n".join([body] + [t for _, t in spoken] + [t for _, t in files])
+    )
     if refusal is not None:
         served_lanes.remember(carrier.email, refusal, at=mail.received_at or None)
         with _cond:
@@ -337,7 +438,7 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
             sid,
         )
         return
-    evidence, price, issue = _bid_evidence(mail)
+    evidence, price, issue = _bid_evidence(body, files, spoken)
     if price is None:
         db.emit(
             "bid_unreadable",
@@ -385,7 +486,7 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
         fx_rate=str(fx),
         fx_source=fx_source,
         fx_valid_until=fx_expiry,
-        evidence_sources=[str(a.get("filename", "")) for a in mail.attachments] or ["mail_body"],
+        evidence_sources=[n for n, _ in files + spoken] or ["mail_body"],
     )
 
 

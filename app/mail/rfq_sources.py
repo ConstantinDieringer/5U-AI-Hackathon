@@ -1,16 +1,19 @@
-"""Read RFQ evidence without model calls. Media is passed to the existing extraction call."""
+"""Read RFQ evidence. Files are read in code (app/mail/documents.py); page images go to the
+existing extraction call. Only a voice message costs an extra gateway call (transcription,
+cached next to the file)."""
 
 import base64
-import io
+
+from app.mail import documents
 
 
-def read_sources(mail, *, local_only=False):
+def read_sources(mail, *, local_only=False, session_id=None):
+    from app.config import settings
     from app.mail.poller import download_attachments
 
     texts, media, problems = {}, [], []
     try:
         if local_only:
-            from app.config import settings
             from app.mail.poller import _safe_filename
 
             paths = [
@@ -36,58 +39,15 @@ def read_sources(mail, *, local_only=False):
     for path in paths:
         name = path.name
         try:
-            if path.stat().st_size > 20_000_000:
-                raise ValueError("attachment exceeds 20 MB")
-            suffix = path.suffix.lower()
-            if suffix == ".txt":
-                texts[name] = path.read_text(encoding="utf-8-sig")
-            elif suffix == ".xlsx":
-                import openpyxl
-
-                book = openpyxl.load_workbook(path, data_only=True, read_only=True)
-                try:
-                    texts[name] = "\n".join(
-                        " | ".join(str(v) for v in row if v is not None)
-                        for sheet in book
-                        for row in sheet.values
-                    )
-                finally:
-                    book.close()
-            elif suffix == ".docx":
-                import docx
-
-                doc = docx.Document(path)
-                texts[name] = "\n".join(
-                    [p.text for p in doc.paragraphs]
-                    + [
-                        " | ".join(c.text for c in row.cells)
-                        for t in doc.tables
-                        for row in t.rows
-                    ]
-                )
-            elif suffix == ".pdf":
-                import pdfplumber
-
-                with pdfplumber.open(path) as pdf:
-                    if len(pdf.pages) > 12:
-                        raise ValueError("attachment exceeds 12 pages")
-                    parts = [p.extract_text() or "" for p in pdf.pages]
-                    texts[name] = "\n".join(parts)
-                    for p, text in zip(pdf.pages, parts):
-                        if not text.strip():
-                            buf = io.BytesIO()
-                            p.to_image(resolution=100).original.save(buf, format="PNG")
-                            media.append((name, "image/png", buf.getvalue()))
-            elif suffix in (".jpg", ".jpeg", ".png"):
-                media.append(
-                    (
-                        name,
-                        "image/png" if suffix == ".png" else "image/jpeg",
-                        path.read_bytes(),
-                    )
-                )
-            else:
-                raise ValueError(f"unsupported attachment {suffix}")
+            doc = documents.read(path)
+            if doc.audio:
+                if local_only or not settings.attachment_transcription:
+                    raise ValueError("voice message not transcribed")
+                doc.text = documents.transcribe(doc, session_id, "rfq_audio", path)
+                doc.audio = None
+            if doc.kind not in documents.IMAGES and doc.kind not in documents.CONVERT_IMAGES:
+                texts[name] = doc.text
+            media.extend(doc.media)
         except Exception as exc:  # noqa: BLE001 - a malformed document blocks this RFQ
             problems.append(
                 {
@@ -97,7 +57,7 @@ def read_sources(mail, *, local_only=False):
                     "detail": str(exc)[:200],
                 }
             )
-    if len(media) > 12:
+    if len(media) > documents.MAX_PAGES:
         problems.append({"field": "attachments", "code": "too_many_pages"})
         media = []
     return texts, media, problems

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from email.utils import parseaddr
 
 from app.config import settings
@@ -10,6 +11,8 @@ from app.models import Category, Mail
 from app.pricing.reference import carrier_by_email
 
 log = logging.getLogger(__name__)
+
+_BID_TAG = re.compile(r"\[AP-\d+\]")  # same tag as app/agents/bids.py puts in our requests
 
 
 def address(raw: str) -> str:
@@ -38,7 +41,12 @@ def classify(mail: Mail, parent: Mail | None = None) -> tuple[Category, str]:
 
     carrier = carrier_by_email(sender)
     if carrier is not None:
-        if carrier.kind == "airline" and mail.attachments:
+        # a tariff is a new mail; an answer to our bid request (threaded or carrying our
+        # [AP-n] tag) with its offer as PDF/Word/audio stays a bid
+        is_answer = bool(mail.references) or bool(
+            _BID_TAG.search(mail.subject or "") or _BID_TAG.search(mail.body or "")
+        )
+        if carrier.kind == "airline" and mail.attachments and not is_answer:
             return Category.TARIFF, f"airline {carrier.name} with attachment"
         return Category.CARRIER_BID, f"{carrier.kind} {carrier.name} in carrier list"
 
