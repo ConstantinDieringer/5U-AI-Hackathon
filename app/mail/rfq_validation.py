@@ -122,6 +122,12 @@ def free_text_answer(text, asked, destination):
     for clause in re.split(r"[.!?;\n]", body):
         if _NEGATION.search(clause):
             continue
+        if re.search(
+            r"\b(?:last time|previously|used to|usually|normally|letztes mal|früher|normalerweise)\b",
+            clause,
+            re.IGNORECASE,
+        ):
+            continue  # historical/usual airports do not answer the current shipment question
         codes |= {c for c in re.findall(r"\b[A-Z]{3}\b", clause) if c in supported}
         cities |= {
             code
@@ -149,6 +155,48 @@ def free_text_answer(text, asked, destination):
             found["pickup_city"] = area
     if "weight_kg" in asked and len(weights := set(_KG.findall(body))) == 1:
         found["weight_kg"] = float(next(iter(weights)).replace(",", "."))
+    return found
+
+
+_SOURCE = {
+    "attachment": r"attach\w*|packing\s+(?:spec\w*|list)|spec\w*\s+sheet|anhang|packliste",
+    "body": r"(?:my|our|the)\s+(?:e-?mail|message|request)|meine[rn]?\s+mail|unsere[rn]?\s+mail",
+}
+_CORRECT = (
+    r"(?:is|are|was|were|ist|sind)\s+(?:the\s+)?(?:correct|right|accurate|valid|binding"
+    r"|richtig|korrekt|maßgeblich|gültig)\b|\bstimm(?:t|en)\b"
+)
+
+
+def confirmed_source(text, draft, fields):
+    """CONFLICT_SOURCE_ANSWER: the answer to a mail/attachment conflict names the source that is
+    right ("the attached packing specification is correct", rounds 33 to 35) instead of a
+    number. Returns the confirmed source's value for each conflicting field. Nothing when the
+    answer names both sources, negates the statement, or the attachments disagree."""
+    body = _SIGNATURE.split(text, 1)[0]
+    named = set()
+    for clause in re.split(r"[.!?;,\n]|\b(?:but|aber)\b", body):
+        if _NEGATION.search(clause) or re.search(
+            r"\b(?:incorrect|wrong|falsch)\b", clause, re.IGNORECASE
+        ):
+            continue
+        for source, words in _SOURCE.items():
+            if re.search(rf"(?:{words})\b.{{0,60}}?(?:{_CORRECT})", clause, re.IGNORECASE):
+                named.add(source)
+    if len(named) != 1:
+        return {}
+    source = next(iter(named))
+    found = {}
+    for field in fields:
+        observations = (draft.evidence.get(field) or {}).get("observations") or []
+        values = {
+            Decimal(str(value))
+            for name, value in observations
+            if (name == "body") == (source == "body") and name != "customer_correction"
+        }
+        if len(values) == 1:
+            value = next(iter(values))
+            found[field] = int(value) if field == "pieces" else float(value)
     return found
 
 

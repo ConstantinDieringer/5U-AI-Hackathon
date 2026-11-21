@@ -138,8 +138,17 @@ def test_no_departure_is_guessed(recovery, body, destination) -> None:
     assert explicit_delivery_origin(_mail(body), destination) is None
 
 
+@pytest.mark.parametrize(
+    "enabled,answer_text,expected_origin",
+    [
+        (True, ANSWERS[0], "CGN"),
+        (False, "The departure airport is DUS. We will deliver it there ourselves.", "DUS"),
+        (False, "The departure airport code is DUS. We deliver to the airport ourselves.", "DUS"),
+        (False, "Der Abflughafen ist Frankfurt. Wir liefern selbst an.", "FRA"),
+    ],
+)
 def test_answer_resolves_the_open_origin_question(
-    recovery, tmp_path, monkeypatch
+    recovery, tmp_path, monkeypatch, enabled, answer_text, expected_origin
 ) -> None:
     """The thread state after our first question: the answer now completes the request."""
     recovery(False)  # the request was blocked under today's rules
@@ -164,24 +173,35 @@ def test_answer_resolves_the_open_origin_question(
     assert db.clarification_claim(7237)
     db.clarification_sent(7237, "sent", 7289)  # our question, as in round 28
     resumed = []
-    monkeypatch.setattr(
-        "app.agents.rfq.handle_rfq", lambda mail, sid: resumed.append(sid)
-    )
-    recovery(True)
-    answer = _mail(ANSWERS[0], 7307)
+    monkeypatch.setattr("app.agents.rfq.handle_rfq", lambda mail, sid: resumed.append(sid))
+    recovery(enabled)
+    answer = _mail(answer_text, 7307)
     db.ingest_mail(
         mail_id=7307,
         sender=CUSTOMER,
         recipient=answer.to,
         subject=answer.subject,
-        body=ANSWERS[0],
+        body=answer_text,
         category="customer",
         references=[7237],
         received_at="2099-01-01T00:00:10+00:00",
     )
     assert clarification.handle_reply(answer, 7237)
     assert db.validation_get(7237)["state"] == "ready" and resumed == [7237]
-    assert db.get_session(7237)["request"]["origin"] == "CGN"
+    assert db.get_session(7237)["request"]["origin"] == expected_origin
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The departure airport is not DUS.",
+        "The departure airport is DUS or FRA.",
+        "Destination is DFW.",
+        "We used FRA last time; not this time.",
+    ],
+)
+def test_origin_answer_parser_does_not_guess(text):
+    assert not rfq_validation.free_text_answer(text, {"origin"}, "DFW")
 
 
 def test_setting_parses_true_false(monkeypatch) -> None:
@@ -288,6 +308,7 @@ def test_round_28_quotes_the_cheapest_real_price(recovery, tmp_path, monkeypatch
 
     def portal(request, **_k):
         assert (request.origin, request.destination) == ("CGN", "DFW")
+
         def rate(airline: str, days: int, minor: int) -> RateOption:
             return RateOption(airline, "CGN", "DFW", days, minor, "EUR", minor, "portal", "R")
 
