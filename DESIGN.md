@@ -1,6 +1,6 @@
 # DESIGN.md – Austrian Power Forwarder Console
 
-Status: **v0.2** (21.11.2026). Replaces the dark v0.1. Direction set by Moritz: light, airy,
+Status: **v0.3** (21.11.2026, Übersicht: Fehler zuerst, Kontext kopieren). Replaces the dark v0.1. Direction set by Moritz: light, airy,
 Apple-inspired bento grid. Values are the source of truth for the `:root` block in
 `app/ui/static/index.html`; components use tokens only, never raw values.
 
@@ -97,7 +97,7 @@ must shrink to the available card width; score labels and verdict badges wrap wi
 Screens
 | Screen | Question | Grid |
 |---|---|---|
-| Übersicht (default) | What works, what does not, what must a human do? | Systemcheck: 9 traffic-light tiles per pipeline part, last 2 h (span 8) + Zu tun, only rescuable sessions plus quarantined phishing mails first (red stop icon, reasons, one "Freigeben" button) (span 4) · Letzte Anfragen: one row per RFQ with step chips Quote → 5U → Buchung (span 8) + Punkte: Ø points per accepted quote with cost/time bars (span 4). No charts, no range selector. |
+| Übersicht (default) | Läuft alles, welche Fehler gibt es, was muss ein Mensch tun? | Status-Leiste (span 12): Ampel + Urteil, ein Pill je Pipeline-Teil (Tooltip: Wert und Hinweis), Ø Punkte, Button „Lagebild kopieren“ · Fehler & Warnungen (span 8): Error- und Warn-Events der letzten 3 h inkl. ERROR-Logzeilen (`log_error`), gleiche Meldung = eine Zeile mit Anzahl, Zeit, Session-Chips; Filter Fehler/Warnungen/Alle; neue Fehler rot hinterlegt · Zu tun (span 4), Quarantäne zuerst · Letzte Anfragen (span 12) mit Step-Chips. Kein Punkte-Card, keine Charts. Session-Detail: Button „Kontext kopieren“ (ganze Session als Markdown für ein AI-Modell). |
 | Live | What needs me now? | session list card (span 4) + session detail (span 8) |
 | CRM | Who did we quote, win, lose? | 4 KPIs · table card with segmented tabs · customer drawer |
 

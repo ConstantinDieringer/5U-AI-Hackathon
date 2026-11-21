@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS events (
   created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_events_session ON events(session_id, id);
+CREATE INDEX IF NOT EXISTS ix_events_level ON events(level, id);
 
 CREATE TABLE IF NOT EXISTS board_results (
   round_id    TEXT PRIMARY KEY,
@@ -2958,6 +2959,55 @@ def secs_label(s: float | None) -> str:
     if s is None:
         return "–"
     return f"{round(s)} s" if s < 60 else f"{int(s // 60)}:{round(s % 60):02d} min"
+
+
+_PROBLEM_NUMBER = re.compile(r"\d[\d.,:]*")
+
+
+def problems(hours: float = 3, limit: int = 400) -> dict[str, Any]:
+    """Übersicht: every error and warning event of the last `hours`, grouped by kind and
+    message with the numbers taken out (same failure, different session = one group).
+
+    Each group: level, kind, latest message, count, first/last time, affected sessions."""
+    since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
+    rows = _rows(
+        conn().execute(
+            "SELECT e.id, e.session_id, e.kind, e.level, e.message, e.created_at, s.subject, "
+            "s.customer FROM events e LEFT JOIN sessions s ON s.id = e.session_id "
+            "WHERE e.level IN ('warn','error') AND e.created_at >= ? ORDER BY e.id DESC LIMIT ?",
+            (since, limit),
+        )
+    )
+    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for r in rows:  # newest first
+        message = r["message"] or ""
+        key = (r["level"], r["kind"], _PROBLEM_NUMBER.sub("#", message))
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {
+                "level": r["level"],
+                "kind": r["kind"],
+                "message": message,
+                "count": 0,
+                "last_at": r["created_at"],
+                "first_at": r["created_at"],
+                "last_event_id": r["id"],
+                "sessions": [],
+            }
+        g["count"] += 1
+        g["first_at"] = r["created_at"]
+        sid = r["session_id"]
+        if sid is not None and all(x["id"] != sid for x in g["sessions"]):
+            if len(g["sessions"]) < 6:
+                g["sessions"].append({"id": sid, "subject": r["subject"], "customer": r["customer"]})
+    ordered = sorted(groups.values(), key=lambda g: (g["level"] != "error", -g["last_event_id"]))
+    return {
+        "hours": hours,
+        "errors": sum(g["count"] for g in ordered if g["level"] == "error"),
+        "warnings": sum(g["count"] for g in ordered if g["level"] == "warn"),
+        "truncated": len(rows) >= limit,
+        "groups": ordered,
+    }
 
 
 def status_overview() -> dict[str, Any]:

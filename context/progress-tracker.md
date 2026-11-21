@@ -16,6 +16,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Voice recovery (PR #56): Groq Whisper first, allowed gateway audio second, existing local Whisper in a bounded child last; atomic caching, replay provenance, spoken money/time normalization and model/quota cooldowns. Integrated suite 1304 passed/5 skipped; 32 provider-failure tests pass. Original session-18673 MP3 yields EUR 358.64 / collection 4 h in 22 s with the integrated recognizer. Groq live test is HTTP 401 until GROQ_API_KEY is configured; Docker image build unverified (daemon unavailable), no deployment.
 
 - Writer tone: the composer's shared profile now asks for a close, cheerful best-friend voice throughout each mail, including first contact without invented history. German defaults to du unless formal address is explicitly requested. Latest main's subject rules, separate reviewer and factual/send controls preserved. Integrated full suite passes on Python 3.11 and 3.12: 1104 passed, 5 skipped; no manual live sends.
+
+- Reply in the customer's language (`app/mail/reply_language.py`, hooked in `hackloop.send_customer`): fr/es/it replies translated by one checked gateway call, English original plus warn event on any doubt. Rollback `REPLY_IN_CUSTOMER_LANGUAGE=false`. 1291 passed/5 skipped.
+
 - Required tracking paragraph in every RFQ customer send, before and after optional rewriting, with a final gate. Conditional before booking, direct afterwards; no extra LLM. A 30-second worker repairs one missing invitation per active session with durable receipt/unknown states, pause/manual/decline controls and orphan-message evidence. Verification on integrated main: 1261 passed/5 skipped; all 31 replay facts unchanged, only 19 quote texts updated. Offline audit recognizes all 45 actual confirmations, preventing mass reminders. Rollout pending.
 
 - Carrier document totals hardened (PR, `bids.document_price` / `document_timing`): 18 offer layouts x 5 formats (txt, pipe table, PDF, DOCX paragraphs, DOCX table) replay exact. Tier 1 total labels with qualifiers (Total amount, Total (EUR), Gesamtpreis (netto), Summe, Total due, incl. fuel), value in the next row, column-header currency, empty/merged table cells, NBSP thousands. Tier 2 price labels only without a total line and only with the currency at the amount. Never: per-unit rates, waiting/optional/excluded charges, sub-totals, offer/reference numbers, two different totals. Duration from the transit/collection line, never validity/payment/storage; number words. Before: 32/90 layouts and three silent wrong values (0.07 EUR per-kg rate as total, 1.00 EUR from NBSP thousands, 7-day validity as transit).
@@ -204,6 +207,8 @@ Goal: the first accepted quote end to end before any polish.
 - See `context/architecture-context.md`.
 
 ## Session Notes
+
+- 21.11 23:25: Übersicht v0.3: status strip (verdict, check pills, score), "Fehler & Warnungen" (warn/error events of 3 h grouped, `GET /api/problems`), ERROR log lines stored as `log_error` events (`app/ui/log_events.py`, session from thread name, 30 s dedupe). "Lagebild kopieren" / "Kontext kopieren" put markdown for a manual AI session on the clipboard (`/api/context`, `/api/sessions/{id}/context`). Punkte card removed. Checked in Chrome with the demo DB.
 
 - 21.11 23:15: Thread rescue woke ~40 hours-old threads on every restart (no age limit, unbounded parallel gpt-5 calls): gateway 429 bursts, mails into stale threads, a Kessler loop stopped by the mail guard. Now only input younger than `THREAD_RESCUE_MAX_AGE_S` (600 s), max `THREAD_RESCUE_MAX_PARALLEL` (2) owners at once. Offline tests only.
 
