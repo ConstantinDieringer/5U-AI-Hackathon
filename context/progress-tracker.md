@@ -168,6 +168,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 21:20: `tests/conftest.py` refuses every 5U and gateway call from tests and fails the test that tries. `test_reply_without_mail_client_is_503` posted to the real mailbox on every pytest run (a real mail with the key from `.env`); it now stubs the send.
+
 - 21.11 20:55: Rounds 47 and 48 unanswered: the mailbox allows one poll per 5 s per team key, extra reads with our key (an analysis session bulk-read the mailbox) gave the live poller 429s, and its backoff doubled to minutes. Fix: a 429 keeps the server's wait and never doubles. Rule: nobody polls the mailbox with the team key except the live system. No webhook subscription exists (GET /v1/mailbox/webhook -> 404), so polling is the only intake.
 
 - 21.11 20:35: Carrier exclusions hardened (`carrier_prefs.parse`): two-letter codes ("ZS") and short names ("Zephyr Steppe") count, a negation only reaches its own clause ("we do not mind ..., but we prefer X" no longer bans X), "no objection to X" refuses nothing, country codes in brackets are ignored. Offline tests only; no live round with an exclusion since.
