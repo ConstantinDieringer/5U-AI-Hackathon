@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_updated ON sessions(updated_at DESC);
 CREATE INDEX IF NOT EXISTS ix_sessions_status ON sessions(status);
+CREATE INDEX IF NOT EXISTS ix_sessions_created ON sessions(created_at);
 
 CREATE TABLE IF NOT EXISTS mails (
   id           INTEGER PRIMARY KEY,
@@ -106,6 +107,10 @@ CREATE TABLE IF NOT EXISTS mails (
   raw_json     TEXT CHECK (raw_json IS NULL OR json_valid(raw_json))
 );
 CREATE INDEX IF NOT EXISTS ix_mails_session ON mails(session_id, received_at);
+-- category first: background loops filter by category (+direction, +session); an index led
+-- by direction alone would pull direction-only queries off the cheaper table scan
+CREATE INDEX IF NOT EXISTS ix_mails_category ON mails(category, direction, session_id);
+CREATE INDEX IF NOT EXISTS ix_mails_reply ON mails(in_reply_to);
 
 CREATE TABLE IF NOT EXISTS quotes (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,

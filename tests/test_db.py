@@ -455,3 +455,42 @@ def test_backfill_booking_from_airline_confirmation():
     assert rec["airline"] == "Ultraviolet Air Freight" and rec["price_minor"] == 32436
     assert rec["request"] == {"origin": "FRA", "destination": "DOH"}
     assert db.backfill_bookings_from_confirmations() == 0
+
+
+def test_loop_query_indexes_exist_and_are_used():
+    c = db.conn()
+    names = {r["name"] for r in c.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    assert {"ix_mails_category", "ix_mails_reply", "ix_sessions_created"} <= names
+
+    def plan(sql: str, *args: object) -> str:
+        return " | ".join(r["detail"] for r in c.execute("EXPLAIN QUERY PLAN " + sql, args))
+
+    seen: list[str] = []
+    c.set_trace_callback(seen.append)
+    db.rescue_candidates(db.now())
+    db.session_by_created_at(db.now())
+    c.set_trace_callback(None)
+    rescue, by_created = (plan(sql) for sql in seen)
+    assert "SCAN root" not in rescue and "ix_mails_category" in rescue
+    assert "ix_mails_reply" in rescue
+    assert "ix_sessions_created" in by_created
+
+
+def test_indexes_are_added_to_an_existing_database(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "old.db")
+    old_schema = "\n".join(
+        line
+        for line in db.SCHEMA.splitlines()
+        if not any(
+            n in line for n in ("ix_mails_category", "ix_mails_reply", "ix_sessions_created")
+        )
+    )
+    with sqlite3.connect(path) as connection:
+        connection.executescript(old_schema)
+    db.init_db(path)
+    names = {
+        r["name"] for r in db.conn().execute("SELECT name FROM sqlite_master WHERE type='index'")
+    }
+    assert {"ix_mails_category", "ix_mails_reply", "ix_sessions_created"} <= names
