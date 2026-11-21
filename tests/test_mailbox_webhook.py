@@ -148,6 +148,8 @@ def test_out_of_order_and_poll_push_overlap_processed_once(client, monkeypatch):
         },
     )
     assert poller.poll_once(0) == (502, 2)
+    assert handled == [502]  # the poller only enqueues; the single consumer processes
+    assert webhook.process_once() and not webhook.process_once()
     assert handled == [502, 501]
     assert db.delivery_get(502)["status"] == "done" and db.delivery_get(501)["status"] == "done"
 
