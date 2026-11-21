@@ -28,6 +28,25 @@ _ALIASES = {
 }
 
 
+def explicit_delivery_origin(mail, destination):
+    """Recover a single supported self-delivery airport from current words, never history."""
+    active = current_message(mail.body).facts
+    pattern = re.compile(
+        r"\b(?:deliver|bring|tender|liefern|bringen)\b[^\n.!?]{0,120}?"
+        r"\b(?:to|nach|zum)\s+(?:the\s+)?([A-Z]{3})\b"
+        r"[^\n.!?]{0,60}?\b(?:ourselves|myself|selbst)\b",
+        re.IGNORECASE,
+    )
+    supported = set(pickup_zones().values())
+    airports = {
+        code.upper()
+        for match in pattern.finditer(active)
+        for code in re.findall(r"\b[A-Z]{3}\b", match[0], re.IGNORECASE)
+        if code.upper() in supported
+    }
+    return next(iter(airports)) if len(airports) == 1 and destination not in airports else None
+
+
 def numeric_facts(text):
     result = {}
     patterns = {
@@ -63,19 +82,18 @@ def numeric_facts(text):
     return result
 
 
-def validate(
-    mail, candidate, attachments=None, attachment_issues=None, corrections=None
-):
+def validate(mail, candidate, attachments=None, attachment_issues=None, corrections=None):
     current = current_message(mail.body, mail.subject)
     active = _SIGNATURE.split(current.facts, 1)[0]
-    data = (
-        candidate.facts.copy()
-        if isinstance(candidate, RfqDraft)
-        else candidate.model_dump()
-    )
+    data = candidate.facts.copy() if isinstance(candidate, RfqDraft) else candidate.model_dump()
     issues = list(attachment_issues or [])
     evidence = {}
     corrections = corrections or {}
+    if not data.get("origin"):
+        recovered = explicit_delivery_origin(mail, data.get("destination"))
+        if recovered:
+            data["origin"] = recovered
+            evidence["origin"] = {"source": "explicit_self_delivery", "value": recovered}
     sources = {"body": active, **(attachments or {})}
     if current.subject:
         sources["subject"] = current.subject
@@ -120,9 +138,7 @@ def validate(
                 data["origin"] = airport
             evidence["origin"] = {"source": "pickup_zones", "value": data["origin"]}
         evidence["pickup_zip"] = {
-            "source": "body"
-            if "pickup_zip" not in corrections
-            else "customer_correction",
+            "source": "body" if "pickup_zip" not in corrections else "customer_correction",
             "value": data["pickup_zip"],
         }
     origin = data.get("origin")
@@ -151,9 +167,7 @@ def validate(
                 }
             )
         else:
-            evidence.setdefault(
-                "origin", {"source": "current_request", "value": origin}
-            )
+            evidence.setdefault("origin", {"source": "current_request", "value": origin})
     elif not pickup:
         issues.append(
             {
@@ -191,11 +205,7 @@ def validate(
         )
     )
     values = numeric_facts(active) if not has_lots else {}
-    if (
-        has_lots
-        and totals is None
-        and not {"weight_kg", "volume_cbm"} <= corrections.keys()
-    ):
+    if has_lots and totals is None and not {"weight_kg", "volume_cbm"} <= corrections.keys():
         issues.append(
             {
                 "field": "lots",
@@ -231,9 +241,7 @@ def validate(
                     }
                 )
             data[field] = (
-                int(observations[0][1])
-                if field == "pieces"
-                else float(observations[0][1])
+                int(observations[0][1]) if field == "pieces" else float(observations[0][1])
             )
             evidence[field] = {
                 "source": observations[0][0],
@@ -241,9 +249,7 @@ def validate(
                 "observations": [(n, str(v)) for n, v in observations],
             }
         elif field != "pieces":
-            issues.append(
-                {"field": field, "code": "missing", "detail": f"Confirm {field}"}
-            )
+            issues.append({"field": field, "code": "missing", "detail": f"Confirm {field}"})
     # UN markers in any source take precedence over a generic non-dangerous statement.
     dangerous = bool(
         re.search(
@@ -252,10 +258,7 @@ def validate(
             re.IGNORECASE,
         )
     )
-    if (
-        dangerous
-        and corrections.get("dangerous_goods") != "not_dangerous_document_corrected"
-    ):
+    if dangerous and corrections.get("dangerous_goods") != "not_dangerous_document_corrected":
         issues.append(
             {
                 "field": "dangerous_goods",
@@ -271,8 +274,6 @@ def validate(
         rfq = Rfq.model_validate(data)
     except ValueError as exc:
         rfq = None
-        issues.append(
-            {"field": "shipment", "code": "invalid", "detail": str(exc)[:200]}
-        )
+        issues.append({"field": "shipment", "code": "invalid", "detail": str(exc)[:200]})
     draft = RfqDraft(facts=data, evidence=evidence, issues=issues, version=VERSION)
     return rfq, draft

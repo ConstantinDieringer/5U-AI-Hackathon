@@ -17,9 +17,7 @@ from app.models import Mail, RfqDraft
 
 def expired(sid):
     session = db.get_session(sid)
-    return not session or datetime.fromisoformat(
-        session["deadline_at"]
-    ) <= datetime.now(UTC)
+    return not session or datetime.fromisoformat(session["deadline_at"]) <= datetime.now(UTC)
 
 
 def text_for(draft, lang):
@@ -146,8 +144,7 @@ def request(mail, sid, draft):
     )
     db.emit(
         "validation_blocked",
-        "Rückfrage erforderlich: "
-        + ", ".join(sorted({i["field"] for i in draft.issues})),
+        "Rückfrage erforderlich: " + ", ".join(sorted({i["field"] for i in draft.issues})),
         sid,
         level="warn",
     )
@@ -216,12 +213,14 @@ def handle_reply(mail, sid, *, resume=False):
     if not session or address(session.get("customer") or "") != address(mail.sender):
         return True
     workflow = row["draft"].get("evidence", {}).get("workflow", "rfq")
-    if workflow == "rfq" and settings.rfq_validation_mode != "enforce":
+    if (
+        workflow == "rfq"
+        and settings.rfq_validation_mode != "enforce"
+        and not row["draft"].get("evidence", {}).get("blocking_clarification")
+    ):
         db.validation_save(sid, "manual_review", row["draft"], {})
         return True
-    resuming = (
-        resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
-    )
+    resuming = resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
     if not resuming and not db.clarification_reply_claim(sid, mail.id):
         return True
     draft = RfqDraft.model_validate(row["draft"])
@@ -294,6 +293,8 @@ def handle_reply(mail, sid, *, resume=False):
         **corrections,
     }
     checked.evidence["attachment_texts"] = old_texts
+    if draft.evidence.get("blocking_clarification"):
+        checked.evidence["blocking_clarification"] = True
     if checked.issues or rfq is None:
         db.clarification_reopen(sid, checked.model_dump(mode="json"))
         request(mail, sid, checked)
@@ -363,10 +364,7 @@ def run(stop):
                 handle_reply(_stored_mail(saved), saved["session_id"])
             for item in db.validation_pending():
                 row = db.validation_get(item["session_id"])
-                if (
-                    row["state"] == "awaiting_clarification"
-                    and row["send_state"] == "pending"
-                ):
+                if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
                     request(
                         Mail(**row["root"]),
                         item["session_id"],
