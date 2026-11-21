@@ -570,3 +570,29 @@ def test_expire_overdue_still_expires_a_waiting_question_of_a_closed_session():
     assert validation is not None and validation["state"] == "expired"
     ids, seen = _statements(db.expire_overdue)
     assert ids == [] and not any(s.startswith("BEGIN") for s in seen)
+
+
+def test_init_db_without_path_runs_once_per_database(tmp_path, monkeypatch):
+    runs: list[str] = []
+    remap = db.remap_unassigned
+    monkeypatch.setattr(db, "remap_unassigned", lambda: runs.append(db._db_path) or remap())
+
+    _, seen = _statements(db.init_db)  # the fixture already initialised this path
+    assert runs == [] and seen == []
+
+    first = str(tmp_path / "test.db")
+    db.init_db(first)  # an explicit path always initialises in full (import, tests)
+    assert runs == [first]
+
+    other = str(tmp_path / "other.db")
+    db.init_db(other)
+    db.init_db()
+    assert runs == [first, other]
+    assert rfq() == 100  # the new file has the schema and is the active database
+
+    db.close_thread_connection()
+    for suffix in ("", "-wal", "-shm"):
+        (tmp_path / f"other.db{suffix}").unlink(missing_ok=True)
+    db.init_db()  # the file is gone: initialise again rather than trust the flag
+    assert runs == [first, other, other]
+    assert db.get_session(100) is None

@@ -250,6 +250,7 @@ CREATE INDEX IF NOT EXISTS ix_mail_screening_thread ON mail_screening(thread_roo
 _local = threading.local()
 _db_path: str = settings.db_path  # from .env via app/config.py (default data/forwarder.db)
 _generation = 0  # bumped by init_db so threads reopen after a path change (tests)
+_initialised: str | None = None  # path init_db last completed for in this process
 
 
 def now() -> str:
@@ -297,8 +298,14 @@ def close_thread_connection() -> None:
 
 
 def init_db(path: str | None = None) -> None:
-    """Create the database file and schema. Call once at startup (and per test)."""
-    global _db_path, _generation
+    """Create the database file and schema. Call once at startup (and per test).
+
+    Startup reaches this from several entry points (run.py, the poller's store, the UI
+    lifespan). A repeat call without a path is a no-op once this process has initialised
+    the current file; an explicit path always initialises in full (tests, import)."""
+    global _db_path, _generation, _initialised
+    if path is None and _initialised == _db_path and os.path.exists(_db_path):
+        return
     path_changed = path is not None
     if path is not None:
         _db_path = path
@@ -337,6 +344,7 @@ def init_db(path: str | None = None) -> None:
             migration.execute("ALTER TABLE board_results ADD COLUMN cause_json TEXT")
     remap_unassigned()
     backfill_bookings_from_confirmations()
+    _initialised = _db_path
     if path_changed:
         # A database path can later be replaced by the UI import endpoint, which runs in a
         # different thread. Do not leave the initializing thread holding its WAL on Windows.
