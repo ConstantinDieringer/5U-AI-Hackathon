@@ -494,3 +494,79 @@ def test_indexes_are_added_to_an_existing_database(tmp_path):
         r["name"] for r in db.conn().execute("SELECT name FROM sqlite_master WHERE type='index'")
     }
     assert {"ix_mails_category", "ix_mails_reply", "ix_sessions_created"} <= names
+
+
+def _statements(fn):
+    """Run fn and return (result, SQL statements this thread's connection executed)."""
+    seen: list[str] = []
+    c = db.conn()
+    c.set_trace_callback(seen.append)
+    try:
+        return fn(), seen
+    finally:
+        c.set_trace_callback(None)
+
+
+def test_delivery_claim_on_empty_queue_opens_no_write_transaction():
+    row, seen = _statements(lambda: db.delivery_claim(1000.0))
+    assert row is None
+    assert not any(s.startswith("BEGIN") for s in seen)
+    assert db.conn().total_changes == 0
+
+    assert db.delivery_enqueue(7, {"id": 7}, "webhook")
+    db.delivery_state(7, "pending", retry_at=2000.0)  # backoff: not due yet
+    row, seen = _statements(lambda: db.delivery_claim(1000.0))
+    assert row is None and not any(s.startswith("BEGIN") for s in seen)
+
+
+def test_delivery_claim_returns_the_same_row_as_before_and_only_once():
+    assert db.delivery_enqueue(8, {"id": 8}, "poll")
+    assert db.delivery_enqueue(7, {"id": 7}, "webhook")
+    row = db.delivery_claim(1000.0)
+    assert row is not None
+    assert (row["mail_id"], row["status"], row["attempts"]) == (7, "pending", 1)
+    stored = db.delivery_get(7)
+    assert stored is not None
+    assert (stored["status"], stored["attempts"]) == ("processing", 1)
+    second = db.delivery_claim(1000.0)
+    assert second is not None and second["mail_id"] == 8
+    assert db.delivery_claim(1000.0) is None
+
+
+def test_delivery_claim_is_atomic_under_race():
+    assert db.delivery_enqueue(7, {"id": 7}, "webhook")
+    barrier = threading.Barrier(8)
+    claimed: list[dict | None] = []
+
+    def worker():
+        barrier.wait()
+        claimed.append(db.delivery_claim(1000.0))
+        db.close_thread_connection()
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len([r for r in claimed if r]) == 1
+    stored = db.delivery_get(7)
+    assert stored is not None and stored["attempts"] == 1
+
+
+def test_expire_overdue_with_nothing_due_opens_no_write_transaction():
+    rfq()  # open session, deadline still ahead
+    ids, seen = _statements(db.expire_overdue)
+    assert ids == []
+    assert not any(s.startswith("BEGIN") for s in seen)
+
+
+def test_expire_overdue_still_expires_a_waiting_question_of_a_closed_session():
+    old = (datetime.now(UTC) - timedelta(minutes=10)).isoformat(timespec="seconds")
+    sid = rfq(received_at=old)
+    db.set_status(sid, "error")  # not new/pricing: only the validation row is due
+    db.validation_save(sid, "awaiting_clarification", {}, {})
+    assert db.expire_overdue() == []
+    validation = db.validation_get(sid)
+    assert validation is not None and validation["state"] == "expired"
+    ids, seen = _statements(db.expire_overdue)
+    assert ids == [] and not any(s.startswith("BEGIN") for s in seen)

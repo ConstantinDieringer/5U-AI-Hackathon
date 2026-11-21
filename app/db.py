@@ -536,6 +536,14 @@ def delivery_enqueue(mail_id: int, raw: dict, source: str) -> bool:
 
 
 def delivery_claim(at: float) -> dict | None:
+    # the worker polls about once a second: an empty queue costs one indexed read, no write
+    # lock. The claim itself re-reads inside the transaction, so it stays atomic.
+    if not _one(
+        conn().execute(
+            "SELECT 1 FROM mail_delivery WHERE status='pending' AND retry_at<=? LIMIT 1", (at,)
+        )
+    ):
+        return None
     with tx() as c:
         row = _one(
             c.execute(
@@ -2406,6 +2414,18 @@ def recent_rfqs(limit: int = 12) -> list[dict[str, Any]]:
 def expire_overdue() -> list[int]:
     """Mark open RFQ sessions past their deadline as expired. Returns their ids."""
     t = now()
+    # the deadline loop calls this every few seconds: take the write lock only when a row
+    # would change. Both writes below re-select inside the transaction.
+    due = conn().execute(
+        "SELECT EXISTS(SELECT 1 FROM sessions WHERE status IN ('new','pricing')"
+        " AND deadline_at IS NOT NULL AND deadline_at < ? AND first_reply_at IS NULL)"
+        " OR EXISTS(SELECT 1 FROM rfq_validation v JOIN sessions s ON s.id = v.session_id"
+        " WHERE v.state IN ('awaiting_clarification','resolving') AND s.deadline_at <= ?"
+        " AND s.first_reply_at IS NULL)",
+        (t, t),
+    )
+    if not due.fetchone()[0]:
+        return []
     with tx() as c:
         c.execute(
             "UPDATE rfq_validation SET state='expired',updated_at=? WHERE "
