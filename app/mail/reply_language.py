@@ -201,7 +201,7 @@ def localize(
         )
         validate_customer_text(new_body)
         validate_customer_text(new_subject)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure keeps the untranslated reply
         log.warning("reply translation to %s rejected: %s", target, exc)
         emit(
             "reply_language",

@@ -28,7 +28,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids, carrier_prefs
 from app.config import settings
-from app.mail import language, lots, parse
+from app.mail import language, lots, parse, pdf_request
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.quote_locales import COPY as QUOTE_LOCALES
@@ -1503,11 +1503,19 @@ def _tell_all_excluded(mail: Mail, sid: int, rfq: Rfq) -> None:
 
 
 def _quote_pdf(
-    sid: int, rfq: Rfq, choice: RateOption, total: int, truck: bids.Offer | None
+    sid: int,
+    rfq: Rfq,
+    choice: RateOption,
+    total: int,
+    truck: bids.Offer | None,
+    asked: bool = True,
 ) -> list[dict[str, str]] | None:
     """QUOTE_PDF: the quote as a PDF attachment, rendered by code (no LLM call). A failure
-    never blocks the quote: it goes out without the PDF and the session gets an error event."""
+    never blocks the quote: it goes out without the PDF and the session gets an error event.
+    QUOTE_PDF_ON_REQUEST: only when the RFQ asked for a PDF (`asked`, rule-based)."""
     if not settings.quote_pdf:
+        return None
+    if settings.quote_pdf_on_request and not asked:
         return None
     from app.mail import quote_pdf
 
@@ -1735,7 +1743,8 @@ def _price_and_quote(
         return
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     subject = shipment_subject(choice.origin, choice.destination, rfq.language, subject)
-    attachments = _quote_pdf(sid, rfq, choice, total, truck)
+    asked = pdf_request.asks_for_pdf(mail.body, mail.subject)
+    attachments = _quote_pdf(sid, rfq, choice, total, truck, asked=asked)
     try:
         sent = hackloop.send_customer(
             mail.sender,

@@ -6,7 +6,7 @@ import io
 import json
 import re
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pdfplumber
@@ -143,7 +143,7 @@ def test_quote_answers_earliest_departure_and_arrival() -> None:
         customer_name="Deniz",
     )
     o = RateOption("Fjordline Air Cargo", "MUC", "LAX", 3, 320358, "EUR", 320358, "portal")
-    today = datetime(2026, 11, 21).date()
+    today = date(2026, 11, 21)
     text = rfq.quote_text(r, o, 320358, None, 0, today=today)
     assert _amounts(text) == ["3.203,58 €"]
     assert (
@@ -160,11 +160,11 @@ def test_quote_answers_earliest_departure_and_arrival() -> None:
 
 
 def test_schedule_door_to_port_and_past_ready_date() -> None:
-    today = datetime(2026, 11, 21).date()
+    today = date(2026, 11, 21)
     door = Rfq(pickup_zip="51447", destination="ORD", weight_kg=676, ready_date="2026-11-25")
     assert rfq.schedule(door, 2, today) == (
-        datetime(2026, 11, 26).date(),
-        datetime(2026, 11, 28).date(),
+        date(2026, 11, 26),
+        date(2026, 11, 28),
     )  # +1 day for the trucking leg
     past = door.model_copy(update={"pickup_zip": None, "origin": "CGN", "ready_date": "2026-11-01"})
     assert rfq.schedule(past, 2, today)[0] == today  # never before today
@@ -288,7 +288,7 @@ def test_composer_requires_question_coverage_and_one_verified_total(
         ),
     )
     assert rfq.compose_quote_text(
-        request, option, 320358, None, 7, today=datetime(2026, 11, 21).date()
+        request, option, 320358, None, 7, today=date(2026, 11, 21)
     ) == body.replace("Your austrian Power Team", "Moritz\nYour austrian Power Team")
 
     monkeypatch.setattr(
@@ -451,7 +451,11 @@ def test_handle_rfq_door_to_port_with_trucker_bid(stub, monkeypatch) -> None:
             [],
         ),
     )
-    mail = dataclasses.replace(_rfq_mail(), subject="FW: AMS TLV 104 crates")
+    mail = dataclasses.replace(
+        _rfq_mail(),
+        subject="FW: AMS TLV 104 crates",
+        body=f"{BODY}\nPlease send the offer as PDF.",  # QUOTE_PDF_ON_REQUEST
+    )
 
     def reply() -> None:  # the trucker answers while the agent waits
         while not stub.sent:

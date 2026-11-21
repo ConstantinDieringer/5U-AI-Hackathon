@@ -14,6 +14,7 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 | `app/agents/email_review.py` | optional style reviewer (`EMAIL_REVIEW_ENABLED=false`) |
 | `app/agents/tracking_notice.py` | repairs a missing tracking paragraph |
 | `app/mail/quote_pdf.py` | quote PDF attachment (`QUOTE_PDF`), rendered by code from the priced option, no LLM |
+| `app/mail/pdf_request.py` | did the customer ask for the PDF? rules only (`QUOTE_PDF_ON_REQUEST`) |
 | `app/mail/reply_language.py` | send-time translation into any customer language but de/en (`REPLY_IN_CUSTOMER_LANGUAGE`), original plus warn event on doubt |
 
 ## Hard style rules (customer body and subject)
@@ -34,9 +35,10 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 
 ## Quote PDF
 
-- 5U requires the offer as a PDF. Every RFQ quote (and a Notfall-Quote from the UI) is sent with `Angebot_AP-n.pdf` (title/labels in de/en/fr/es/it, else en) via `attachments[]` on the mailbox API.
+- Team decision 22.11.: the offer goes out as a PDF **only when the customer asks for one** (`QUOTE_PDF_ON_REQUEST`, default on). Detection is rule-based in `app/mail/pdf_request.py`, no LLM: current message and non-reply subject only ("as PDF", "PDF format", "als PDF", "PDF-Angebot", "en PDF", "in formato PDF" ...). The customer's own attached PDFs, "no PDF needed", file names, quoted history and signatures do not count. A Notfall-Quote from the UI follows the same rule (any customer mail in the session).
+- The PDF is `Angebot_AP-n.pdf` (title/labels in de/en/fr/es/it, else en), sent via `attachments[]` on the mailbox API.
 - Only code-priced facts: reference, route, airline, transit, pickup, cargo, billed kg, validity and the same all-in total as the body (`style.amount`). No LLM call, no extra cost; the body keeps the total too.
-- A PDF fault never blocks the quote: it is sent without the attachment and an error event (#sos) is written. Off switch `QUOTE_PDF=false`.
+- A PDF fault never blocks the quote: it is sent without the attachment and an error event (#sos) is written. `QUOTE_PDF=false` turns PDFs off entirely; `QUOTE_PDF_ON_REQUEST=false` attaches it to every quote again.
 
 ## Composer
 
@@ -51,5 +53,5 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 ## Tests (run these while iterating; the full suite only before the PR)
 
 ```
-python -m pytest -q tests/test_customer_presentation.py tests/test_quote_pdf.py tests/test_customer_voice.py tests/test_mail_style.py tests/test_subjects.py tests/test_email_review.py tests/test_personal_replies.py tests/test_quote_languages.py tests/test_reply_language.py tests/test_language.py tests/test_quote_cutoff.py tests/test_quote_pickup_timing.py tests/test_tracking_notice.py
+python -m pytest -q tests/test_customer_presentation.py tests/test_quote_pdf.py tests/test_pdf_request.py tests/test_customer_voice.py tests/test_mail_style.py tests/test_subjects.py tests/test_email_review.py tests/test_personal_replies.py tests/test_quote_languages.py tests/test_reply_language.py tests/test_language.py tests/test_quote_cutoff.py tests/test_quote_pickup_timing.py tests/test_tracking_notice.py
 ```
