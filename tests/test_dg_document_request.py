@@ -16,10 +16,10 @@ def test_dg_question_explicitly_requests_documents_and_prior_review(lang):
         ]
     )
     text = text_for(draft, lang)
-    assert "DGD" in text and "SDS" in text and "UN" in text and "Pickup ZIP" in text
-    assert (
-        "before we can quote or book" if lang == "en" else "bevor wir ein Angebot"
-    ) in text
+    assert "DGD" in text and "SDS" in text and "UN" in text
+    assert ("postal code" if lang == "en" else "Postleitzahl") in text
+    assert "(" not in text and ")" not in text
+    assert ("before we can quote or book" if lang == "en" else "bevor wir ein Angebot") in text
     assert "quote right away" not in text
 
 
@@ -33,9 +33,7 @@ def test_correct_packing_totals_do_not_clear_dg_evidence():
         "Please quote FRA to MIA. 240 kg gross, total volume 2 cbm, 4 pieces.",
         "2026-11-21T18:00:00Z",
     )
-    candidate = Rfq(
-        origin="FRA", destination="MIA", weight_kg=240, volume_cbm=2, pieces=4
-    )
+    candidate = Rfq(origin="FRA", destination="MIA", weight_kg=240, volume_cbm=2, pieces=4)
     _, draft = validate(
         mail,
         candidate,
@@ -43,7 +41,8 @@ def test_correct_packing_totals_do_not_clear_dg_evidence():
         corrections={"weight_kg": 240, "volume_cbm": 2, "pieces": 4},
     )
     assert any(issue["field"] == "dangerous_goods" for issue in draft.issues)
-    assert "dangerous goods documents" in text_for(draft, "en")
+    assert "shipper's declaration" in text_for(draft, "en")
+    assert "DGD" in text_for(draft, "en") and "SDS" in text_for(draft, "en")
 
 
 def test_ordinary_missing_weight_does_not_request_dg_documents():

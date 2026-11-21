@@ -21,7 +21,7 @@ from app.mail.content import current_message
 from app.mail.language import detect
 from app.mail.router import address
 from app.mail.signature import first_name
-from app.mail.style import SIGNATURE, amount
+from app.mail.style import SIGNATURE, amount, written_date
 from app.models import Mail, Rfq
 
 log = logging.getLogger(__name__)
@@ -45,20 +45,14 @@ def is_status_question(body: str) -> bool:
 
 def _name_tokens(customer: str) -> set[str]:
     local = address(customer).split("@")[0]
-    return {
-        t
-        for t in re.split(r"[^a-z0-9]+", local.lower())
-        if len(t) >= 4 and t not in _STOP
-    }
+    return {t for t in re.split(r"[^a-z0-9]+", local.lower()) if len(t) >= 4 and t not in _STOP}
 
 
 def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The booking the mail asks about, or None."""
     for m in _BK.finditer(text):
         ref = m.group(0).upper()
-        hit = next(
-            (r for r in records if (r["booking_reference"] or "").upper() == ref), None
-        )
+        hit = next((r for r in records if (r["booking_reference"] or "").upper() == ref), None)
         if hit:
             return hit
     for m in _AP.finditer(text):
@@ -94,9 +88,7 @@ def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     if best[0] < 2:
         return None
     if len(scored) > 1 and scored[1][0] == best[0]:
-        log.info(
-            "tracking: %s bookings match equally, asking for the reference", len(scored)
-        )
+        log.info("tracking: %s bookings match equally, asking for the reference", len(scored))
         return None  # ambiguous: asking beats answering for the wrong shipment
     return best[1]
 
@@ -120,15 +112,12 @@ def _weight(text: str) -> float | None:
         return None
 
 
-_MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-
 def _today() -> date:
     return datetime.now(UTC).date()
 
 
 def _day(d: date, lang: str) -> str:
-    return d.strftime("%d.%m.%Y") if lang == "de" else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
+    return written_date(d, lang)
 
 
 def _kg(weight: Any, lang: str) -> str:
@@ -164,45 +153,45 @@ class _Facts:
 _VARIANTS: dict[str, tuple[str, ...]] = {
     "en": (
         (
-            "{hello}\n\nthanks for checking in. Your shipment {ref} ({route}, {weight}) is {status}. "
-            "{where}\n\n{plan} The all-in price remains {price}.\n\n"
+            "{hello}\n\nthanks for checking in. Your shipment {ref} from {route}, weighing {weight}, is {status}. "
+            "\n\n{where}\n\n{plan}\n\nThe all-in price remains {price}.\n\n"
             "I'll keep you posted if anything changes."
         ),
         (
-            "{hello}\n\nhappy to give you an update on {ref}. The {route} shipment ({weight}) is "
-            "{status}. {where}\n\n{plan} The price stays at {price} all-in.\n\n"
+            "{hello}\n\nhappy to give you an update on {ref}. The {route} shipment, weighing {weight}, is "
+            "{status}.\n\n{where}\n\n{plan}\n\nThe price stays at {price} all-in.\n\n"
             "Just reply here if you need anything else."
         ),
         (
-            "{hello}\n\nhere is where things stand with {ref} ({route}, {weight}): it is {status}. "
-            "{where}\n\n{plan} Nothing changes on the price: {price} all-in.\n\n"
+            "{hello}\n\nhere is the update on {ref}. Your shipment from {route}, weighing {weight}, is {status}. "
+            "\n\n{where}\n\n{plan}\n\nThe total remains {price}, including all agreed services.\n\n"
             "I'll let you know as soon as there is news."
         ),
         (
             "{hello}\n\nthanks for your message. {ref}, your {route} shipment of {weight}, is "
-            "{status}. {where}\n\n{plan} The all-in price is {price}, as quoted.\n\n"
+            "{status}.\n\n{where}\n\n{plan}\n\nThe all-in price is {price}, as quoted.\n\n"
             "Let me know if you have any questions."
         ),
     ),
     "de": (
         (
-            "{hello}\n\ndanke für Ihre Nachricht. Ihre Sendung {ref} ({route}, {weight}) ist "
-            "{status}. {where}\n\n{plan} Der All-in-Preis bleibt bei {price}.\n\n"
+            "{hello}\n\ndanke für Ihre Nachricht. Ihre Sendung {ref} von {route} mit {weight} ist "
+            "{status}.\n\n{where}\n\n{plan}\n\nDer All-in-Preis bleibt bei {price}.\n\n"
             "Sobald sich etwas ändert, melde ich mich."
         ),
         (
-            "{hello}\n\ngern ein kurzes Update zu {ref}: Die Sendung {route} ({weight}) ist "
-            "{status}. {where}\n\n{plan} Am Preis ändert sich nichts, er liegt bei {price} all-in."
+            "{hello}\n\ngern ein kurzes Update zu {ref}. Die Sendung von {route} mit {weight} ist "
+            "{status}.\n\n{where}\n\n{plan}\n\nAm Preis ändert sich nichts, er liegt bei {price} all-in."
             "\n\nBei Fragen antworten Sie einfach auf diese Mail."
         ),
         (
-            "{hello}\n\nhier der aktuelle Stand zu {ref} ({route}, {weight}): Die Sendung ist "
-            "{status}. {where}\n\n{plan} Der Preis beträgt {price} all-in.\n\n"
+            "{hello}\n\nhier der aktuelle Stand zu {ref}. Ihre Sendung von {route} mit {weight} ist "
+            "{status}.\n\n{where}\n\n{plan}\n\nDer Preis beträgt {price} all-in.\n\n"
             "Ich halte Sie auf dem Laufenden."
         ),
         (
             "{hello}\n\nvielen Dank für die Nachfrage. {ref}, Ihre Sendung {route} mit {weight}, "
-            "ist {status}. {where}\n\n{plan} Der Preis liegt unverändert bei {price} all-in.\n\n"
+            "ist {status}.\n\n{where}\n\n{plan}\n\nDer Preis liegt unverändert bei {price} all-in.\n\n"
             "Melden Sie sich gern, wenn Sie noch etwas brauchen."
         ),
     ),
@@ -241,12 +230,13 @@ def _where_and_plan(r: dict[str, Any], lang: str, today: date) -> tuple[str, str
             plan = f"Transit time is about {days} days from departure; I'll confirm the flight dates as soon as we have the ready date."
         return where, plan
     dep, arr = when
+    ready_raw = _day(ready, lang)
     dep_s, arr_s = _day(dep, lang), _day(arr, lang)
     if today < ready:
         if de:
             where = (
                 f"Aktuell hat sie sich noch nicht bewegt: Die Ware steht noch bei Ihnen am "
-                f"Standort ({pickup}), unser Lkw holt sie am Bereitstellungstag {ready_raw} ab "
+                f"Standort mit der Postleitzahl {pickup}. Unser Lkw holt sie am {ready_raw} ab "
                 f"und bringt sie zum Flughafen {o}."
                 if pickup
                 else "Aktuell hat sie sich noch nicht bewegt: Die Ware steht noch bei Ihnen am "
@@ -255,8 +245,8 @@ def _where_and_plan(r: dict[str, Any], lang: str, today: date) -> tuple[str, str
             )
         else:
             where = (
-                f"Right now it has not moved yet: the cargo is still at your site ({pickup}), "
-                f"and our trucker collects it on the ready date, {ready_raw}, and brings it to "
+                f"Right now the cargo is still at your site in postal area {pickup}. "
+                f"Our trucker collects it on {ready_raw} and brings it to "
                 f"{o} airport."
                 if pickup
                 else "Right now it has not moved yet: the cargo is still at your site, waiting "
@@ -292,10 +282,10 @@ def _where_and_plan(r: dict[str, Any], lang: str, today: date) -> tuple[str, str
         )
     else:
         plan = (
-            f"Gebuchter Plan: Abflug ab {o} am {dep_s}, Ankunft in {d} am {arr_s} ({days} Tage)."
+            f"Laut Buchungsplan ist der Abflug ab {o} am {dep_s} und die Ankunft in {d} am {arr_s}. Die Laufzeit beträgt {days} Tage."
             if de
-            else f"Booked schedule: departure from {o} on {dep_s}, arrival in {d} on {arr_s} "
-            f"({days} days in transit)."
+            else f"The booked schedule has departure from {o} on {dep_s} and arrival in {d} on {arr_s}. "
+            f"The transit time is {days} days."
         )
     return where, plan
 
@@ -342,7 +332,12 @@ def answer_text(
     )
     templates = _VARIANTS[lang]
     text = templates[variant % len(templates)].format(**facts.__dict__)
-    for gap, fill in ((", )", ")"), (" of ,", ","), (" mit ,", ",")):
+    for gap, fill in (
+        (", weighing ,", ","),
+        (" of ,", ","),
+        (" mit ,", ","),
+        (" mit  ist", " ist"),
+    ):
         text = text.replace(gap, fill)  # a missing weight leaves no gap
     return f"{text}\n\n{SIGNATURE}\n"
 
@@ -352,13 +347,15 @@ def _not_found_text(lang: str, name: str | None = None) -> str:
         return (
             f"{'Hallo ' + name if name else 'Guten Tag'},\n\n"
             "zu Ihrer Anfrage finde ich leider keine gebuchte Sendung. Könnten Sie mir die "
-            "Buchungsnummer (BK-…) oder unsere Referenz (AP-…) nennen? Dann melde ich mich "
+            "Buchungsnummer oder unsere Referenz nennen? Die Buchungsnummer beginnt mit BK, "
+            "unsere Referenz mit AP.\n\nDann melde ich mich "
             f"sofort.\n\n{SIGNATURE}\n"
         )
     return (
         f"{'Hi ' + name if name else 'Hello'},\n\n"
         "I couldn't find a booked shipment for your request. Could you send me the booking "
-        "reference (BK-…) or our reference (AP-…)? I'll get back to you right away.\n\n"
+        "reference or our team reference? The booking reference starts with BK and our "
+        "team reference starts with AP.\n\nI'll get back to you right away.\n\n"
         f"{SIGNATURE}\n"
     )
 
@@ -373,11 +370,7 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> bool
         )
         return False
     to = address(mail.sender)
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(to, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -393,9 +386,7 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> bool
     return True
 
 
-def handle(
-    mail: Mail, session_id: int | None, booked_session: int | None = None
-) -> None:
+def handle(mail: Mail, session_id: int | None, booked_session: int | None = None) -> None:
     """Answer one tracking question. `booked_session` is set when a customer asks in the
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:
@@ -421,11 +412,7 @@ def handle(
                 for item in history
                 for match in _BK.finditer(current_message(item["body"]).facts)
             }
-            if (
-                len(refs) == 1
-                and _weight(text) is None
-                and not re.search(r"\b[A-Z]{3}\b", text)
-            ):
+            if len(refs) == 1 and _weight(text) is None and not re.search(r"\b[A-Z]{3}\b", text):
                 rec = find(next(iter(refs)), records)
         if rec is None:
             log.warning("tracking mail %s: no booking matched", mail.id)
