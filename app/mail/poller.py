@@ -16,7 +16,7 @@ from pathlib import Path
 from app import hackloop
 from app.config import settings
 from app.mail import parse, router, store
-from app.models import Mail
+from app.models import Category, Mail
 
 log = logging.getLogger(__name__)
 
@@ -59,15 +59,57 @@ def handle(raw: dict) -> None:
     mail = parse.mail_from_api(raw)
     in_reply_to = parse.in_reply_to(raw)
     category, rule = router.classify(mail, _parent(in_reply_to))
+    if category == Category.TARIFF:
+        from app.agents import tariff
+
+        tariff.enqueue(mail)
     saved = store.save_mail(mail, category, in_reply_to)
     if not saved.is_new:
         log.info("mail %s already stored, skipped", mail.id)
         return
-    files = download_attachments(mail)
+    files = [] if category == Category.TARIFF else download_attachments(mail)
     note = f", {len(files)} attachment(s) saved" if files else ""
     log.info("mail %s from %s -> %s (%s)%s", mail.id, mail.sender, category.value, rule, note)
     store.emit("routed", f"Routed as {category.value} ({rule}){note}", saved.session_id)
-    # Phase 2: hand the mail to the agent for its category here.
+    dispatch(mail, category, saved.session_id)
+
+
+def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
+    """Hand a new mail to its agent. RFQs run in their own thread so polling goes on (bid
+    replies for a waiting RFQ arrive through this same loop)."""
+    if category == Category.RFQ and session_id is not None:
+        from app.agents import rfq
+
+        threading.Thread(
+            target=rfq.handle_rfq,
+            args=(mail, session_id),
+            name=f"rfq-{session_id}",
+            daemon=True,
+        ).start()
+    elif category == Category.TRACKING:
+        from app.agents import tracking
+
+        threading.Thread(
+            target=tracking.handle,
+            args=(mail, session_id),
+            name=f"track-{mail.id}",
+            daemon=True,
+        ).start()
+    elif category == Category.CUSTOMER and session_id is not None:
+        from app.agents import booking
+
+        threading.Thread(
+            target=booking.handle_reply,
+            args=(mail, session_id),
+            name=f"book-{session_id}",
+            daemon=True,
+        ).start()
+    elif category == Category.CARRIER_BID:
+        from app.agents import bids, booking
+
+        if booking.on_airline_mail(mail):  # "Booking BK-… confirmed" is not a bid
+            return
+        bids.on_bid_mail(mail, session_id)
 
 
 def poll_once(since_id: int) -> tuple[int, int]:

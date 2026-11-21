@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -36,20 +39,38 @@ class HackloopError(RuntimeError):
 def _retry_wait(resp: httpx.Response | None) -> float:
     if resp is not None and resp.status_code == 429:
         try:
-            return min(float(resp.headers.get("Retry-After", RETRY_PAUSE_S)), MAX_RETRY_AFTER_S)
+            return max(0.0, float(resp.headers.get("Retry-After", RETRY_PAUSE_S)))
         except ValueError:
-            return RETRY_PAUSE_S
+            try:
+                return max(
+                    0.0,
+                    (
+                        parsedate_to_datetime(resp.headers["Retry-After"]) - datetime.now(UTC)
+                    ).total_seconds(),
+                )
+            except (KeyError, ValueError, TypeError):
+                return RETRY_PAUSE_S
     return RETRY_PAUSE_S
 
 
-def _request(method: str, path: str, *, safe: bool = True, **kw: Any) -> httpx.Response:
+def _request(
+    method: str, path: str, *, safe: bool = True, deadline: float | None = None, **kw: Any
+) -> httpx.Response:
     """Send with retries. `safe=False` (sending mail) retries only when the request surely did
     not arrive (connect error) or was rejected by the rate limit (429), never on 5xx/timeouts,
     so a mail is never sent twice."""
     last: httpx.Response | None = None
     for attempt in range(MAX_RETRIES + 1):
+        if path == "/v1/portal/rates":
+            _wait_rate_gate(deadline)
         try:
-            resp = _client.request(method, path, **kw)
+            request_kw = dict(kw)
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise HackloopError(method, path, 429, "RFQ portal budget exhausted")
+                request_kw["timeout"] = min(10.0, remaining)
+            resp = _client.request(method, path, **request_kw)
         except httpx.ConnectError as e:
             last, err = None, f"connect error: {e}"
         except httpx.TransportError as e:
@@ -57,6 +78,8 @@ def _request(method: str, path: str, *, safe: bool = True, **kw: Any) -> httpx.R
                 raise HackloopError(method, path, None, f"transport error: {e}") from e
             last, err = None, f"transport error: {e}"
         else:
+            if path == "/v1/portal/rates":
+                _update_rate_gate(resp)
             # 503 is an answer, not an outage: it says where to get the rate/booking instead.
             retryable = resp.status_code == 429 or (
                 safe and resp.status_code >= 500 and resp.status_code != 503
@@ -68,6 +91,13 @@ def _request(method: str, path: str, *, safe: bool = True, **kw: Any) -> httpx.R
             last, err = resp, f"status {resp.status_code}"
         if attempt < MAX_RETRIES:
             wait = _retry_wait(last)
+            if deadline is not None and time.monotonic() + wait >= deadline:
+                raise HackloopError(
+                    method,
+                    path,
+                    last.status_code if last is not None else None,
+                    "Retry would exceed RFQ portal budget",
+                )
             log.warning("%s %s failed (%s), retry in %.1fs", method, path, err, wait)
             time.sleep(wait)
     raise HackloopError(method, path, last.status_code if last else None, err)
@@ -136,6 +166,41 @@ def send(
 # ---------------------------------------------------------------- portal
 
 rate_limit: dict[str, str] = {}  # last X-RateLimit-* headers seen on /v1/portal/rates
+_rate_lock = threading.Lock()
+_rate_blocked_until = 0.0
+_rate_window_start = 0.0
+_rate_used = 0
+_rate_cap = 10
+
+
+def _wait_rate_gate(deadline: float | None) -> None:
+    global _rate_window_start, _rate_used
+    now = time.monotonic()
+    if now - _rate_window_start >= 60:
+        _rate_window_start, _rate_used = now, 0
+    until = max(_rate_blocked_until, _rate_window_start + 60 if _rate_used >= _rate_cap else now)
+    if deadline is not None and until >= deadline:
+        raise HackloopError("GET", "/v1/portal/rates", 429, "Rate limit exceeds RFQ budget")
+    if until > now:
+        time.sleep(until - now)
+    if time.monotonic() - _rate_window_start >= 60:
+        _rate_window_start, _rate_used = time.monotonic(), 0
+    _rate_used += 1
+
+
+def _update_rate_gate(resp: httpx.Response) -> None:
+    global _rate_blocked_until, _rate_cap
+    rate_limit.update(
+        {k: v for k, v in resp.headers.items() if k.lower().startswith("x-ratelimit")}
+    )
+    try:
+        _rate_cap = max(1, int(resp.headers.get("X-RateLimit-Limit", _rate_cap)))
+        if int(resp.headers.get("X-RateLimit-Remaining", "1")) == 0:
+            _rate_blocked_until = max(_rate_blocked_until, _rate_window_start + 60)
+    except ValueError:
+        pass
+    if resp.status_code == 429:
+        _rate_blocked_until = max(_rate_blocked_until, time.monotonic() + _retry_wait(resp))
 
 
 def get_ports() -> dict[str, Any]:
@@ -149,7 +214,13 @@ def get_brackets(airline: str) -> dict[str, Any]:
 
 
 def get_rate(
-    origin: str, destination: str, airline: str, weight_kg: float, volume_cbm: float = 0.0
+    origin: str,
+    destination: str,
+    airline: str,
+    weight_kg: float,
+    volume_cbm: float = 0.0,
+    *,
+    deadline: float | None = None,
 ) -> dict[str, Any]:
     """One priced rate (rate-limited per minute; 429 is retried after Retry-After)."""
     params: dict[str, Any] = {
@@ -159,11 +230,33 @@ def get_rate(
         "weight_kg": weight_kg,
         "volume_cbm": volume_cbm,
     }
-    resp = _request("GET", "/v1/portal/rates", params=params)
+    acquired = (
+        _rate_lock.acquire(timeout=max(0.0, deadline - time.monotonic()))
+        if deadline is not None
+        else _rate_lock.acquire()
+    )
+    if not acquired:
+        raise HackloopError("GET", "/v1/portal/rates", 429, "Portal queue exceeded RFQ budget")
+    try:
+        resp = _request("GET", "/v1/portal/rates", params=params, deadline=deadline)
+    finally:
+        _rate_lock.release()
     rate_limit.update(
         {k: v for k, v in resp.headers.items() if k.lower().startswith("x-ratelimit")}
     )
     return _json_obj(resp)
+
+
+def book(rate_id: str, team_reference: str) -> dict[str, Any]:
+    """Book a portal rate. 201 = booked, 200 = same booking again (idempotent).
+    404/409/410/503 raise HackloopError (status + detail; 503 says how to book by email)."""
+    return _json_obj(
+        _request(
+            "POST",
+            "/v1/portal/bookings",
+            json={"rate_id": rate_id, "team_reference": team_reference},
+        )
+    )
 
 
 # ---------------------------------------------------------------- board

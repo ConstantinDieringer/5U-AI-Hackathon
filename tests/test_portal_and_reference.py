@@ -58,14 +58,15 @@ def test_portal_options_skips_failing_airline(monkeypatch):
         calls.append(airline)
         if airline == "UV":
             raise RuntimeError("503 book by email")
-        return {**RATE, "airline_code": airline}
+        return {**RATE, "airline_code": airline, "valid_until": "2099-01-01T00:00:00+00:00"}
 
     assert [a["code"] for a in portal_airlines("CGN", "DEL")] == ["JP", "UV"]
     opts = portal_options(Rfq(origin="CGN", destination="DEL", weight_kg=120), fetch=fake_fetch)
-    assert calls == ["JP", "UV"] and len(opts) == 1
+    # each airline twice: exact weight and the next weight break
+    assert sorted(calls) == ["JP", "JP", "UV", "UV"] and len(opts) == 1
     # second call within the cache window does not hit the rate-limited endpoint for JP again
     portal_options(Rfq(origin="CGN", destination="DEL", weight_kg=120), fetch=fake_fetch)
-    assert calls == ["JP", "UV", "UV"]
+    assert sorted(calls) == ["JP", "JP", "UV", "UV", "UV", "UV"]
 
 
 def test_lane_index_channels():
@@ -115,7 +116,7 @@ def test_portal_options_parallel_and_ignores_wrong_lane(monkeypatch):
         return {**RATE, "airline_code": airline}
 
     opts = portal_options(Rfq(origin="CGN", destination="DEL", weight_kg=120), fetch=slow_fetch)
-    assert peak[0] == 2  # both airlines fetched at the same time
+    assert peak[0] == 4  # both airlines x (exact + next break) fetched at the same time
     assert [o.destination for o in opts] == ["DEL"]
 
 
@@ -131,3 +132,30 @@ def test_plan_aliases():
 
     assert airline_email("Cobalt Skylift") == "cobalt-skylift@hackloop.mail"
     assert airport_for_zone("80") == "MUC" and airport_for_zone("99") is None
+
+
+def test_portal_options_takes_cheaper_next_break(monkeypatch):
+    """Live round 7 (MUC-LAX, 998 kg) was rejected 'too_high': FQ at 998 kg = 3203.58 EUR,
+    at the 1000 kg break = 2780.00 EUR. Both are fetched, the cheaper one is quoted."""
+    monkeypatch.setattr(portal_sync, "_cache", {})
+    monkeypatch.setattr(
+        portal_sync,
+        "load_portal_lanes",
+        lambda: {
+            "lanes": [{"origin": "MUC", "destination": "LAX",
+                       "airlines": [{"code": "FQ", "name": "Fjordline Air Cargo"}]}],
+            "brackets": {"FQ": [0, 45, 100, 250, 500, 1000, 2000]},
+        },
+    )
+    totals = {998.0: ("3203.58", "R-exact998exact"), 1000.0: ("2780.00", "R-break1000brk")}
+
+    def fetch(o, d, airline, kg, cbm):
+        total, rid = totals[kg]
+        return {**RATE, "origin": o, "destination": d, "airline": "Fjordline Air Cargo",
+                "airline_code": airline, "total": total, "currency": "EUR",
+                "chargeable_weight_kg": str(kg), "rate_id": rid}
+
+    opts = portal_options(Rfq(origin="MUC", destination="LAX", weight_kg=998, volume_cbm=2.39),
+                          fetch=fetch)
+    assert len(opts) == 1
+    assert (opts[0].total_eur_minor, opts[0].rate_id) == (278000, "R-break1000brk")

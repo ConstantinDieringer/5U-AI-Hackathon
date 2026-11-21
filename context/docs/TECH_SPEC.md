@@ -64,7 +64,8 @@ app/
 data/
   start-kit/           # Originaldateien (eingecheckt)
   tariffs.json         # generiert, eingecheckt
-  portal_lanes.json    # generiert, eingecheckt
+  portal_lanes.json    # eingecheckter Startwert; Laufzeitdaten in RUNTIME_DIR
+  runtime/            # generierte Tarife und Portal-Snapshots, NICHT eingecheckt
   inbox/               # Anhänge, NICHT eingecheckt
   forwarder.db         # SQLite, NICHT eingecheckt
 context/docs/
@@ -241,7 +242,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - `main` ist immer lauffähig. Arbeit auf Branches `a/...`, `b/...`, `c/...`.
 - Kleine PRs, Merge nach kurzem Blick einer zweiten Person (oder selbst, wenn es eilt – dann im Chat ansagen).
 - Commit-Messages englisch, Präfix: `feat:`, `fix:`, `chore:`, `docs:`, `test:`.
-- Generierte Daten (`tariffs.json`, `portal_lanes.json`) werden eingecheckt, damit alle denselben Stand haben.
+- Die eingecheckten `data/tariffs.json` und `data/portal_lanes.json` sind Startwerte. Neue Tarife und Portal-Snapshots werden atomar in `RUNTIME_DIR` geschrieben (lokal `data/runtime`, im Container `/data/runtime`) und nicht committed.
 - **Ab 15:50 und während der Live-Runden:** nur noch Fixes auf `main`, nach jedem Merge Neustart und kurzer Check.
 
 ## 12. Tests

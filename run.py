@@ -25,7 +25,20 @@ def main() -> None:
     from app.mail import poller
 
     db.init_db()
+    from app.agents import booking
+    from app.pricing import served_lanes
+
+    served_lanes.backfill()  # "We fly ..." lists from refusals already in the mailbox
+    from app.agents import rfq
+
+    rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
+    booking.catch_up()  # acceptances that arrived while the app was down or had no booking
     stop = threading.Event()
+    from app.agents import tariff
+
+    db.queue_stored_tariffs()
+
+    threading.Thread(target=tariff.run, args=(stop,), name="tariffs", daemon=True).start()
     threading.Thread(target=poller.run, args=(stop,), name="poller", daemon=True).start()
 
     try:

@@ -6,7 +6,9 @@ Run standalone:  uvicorn app.ui.server:app --port 8000   (no --reload at night)
 
 from __future__ import annotations
 
+import base64
 import logging
+import secrets
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -14,12 +16,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import db
+from app.config import settings
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
@@ -34,6 +37,27 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Austrian Power · Forwarder", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+PUBLIC_PATHS = {"/api/health"}  # for the platform health check
+
+
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """HTTP Basic auth for everything when UI_PASSWORD is set (always set it online: the UI
+    can stop all mail and send replies). EventSource reuses the browser's credentials."""
+    if not settings.ui_password or request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("basic "):
+        try:
+            user, _, pw = base64.b64decode(header[6:]).decode().partition(":")
+        except (ValueError, UnicodeDecodeError):
+            user, pw = "", ""
+        if secrets.compare_digest(user, settings.ui_user) and secrets.compare_digest(
+            pw, settings.ui_password
+        ):
+            return await call_next(request)
+    return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'})
 
 
 @app.get("/", include_in_schema=False)
@@ -52,6 +76,26 @@ def api_stats() -> dict[str, Any]:
 @app.get("/api/dashboard")
 def api_dashboard() -> dict[str, Any]:
     return db.dashboard()
+
+
+@app.get("/api/overview")
+def api_overview(hours: int = 6) -> dict[str, Any]:
+    return db.overview(hours=max(0, min(hours, 24 * 7)))
+
+
+@app.get("/api/attention")
+def api_attention() -> list[dict[str, Any]]:
+    return db.attention_items()
+
+
+@app.get("/api/crm")
+def api_crm() -> dict[str, Any]:
+    return db.crm()
+
+
+@app.get("/api/customers/{customer}/sessions")
+def api_customer_sessions(customer: str) -> list[dict[str, Any]]:
+    return db.customer_sessions(customer)
 
 
 @app.get("/api/sessions")

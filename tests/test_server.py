@@ -67,3 +67,120 @@ def test_reply_without_mail_client_is_503(client):
     sid = seed()
     r = client.post(f"/api/sessions/{sid}/reply", json={"text": "Hallo"})
     assert r.status_code in (503, 502)
+
+
+def test_basic_auth_when_password_set(client, monkeypatch):
+    import base64
+    import dataclasses
+
+    monkeypatch.setattr(
+        server, "settings", dataclasses.replace(server.settings, ui_user="team", ui_password="pw")
+    )
+    assert client.get("/api/stats").status_code == 401
+    assert client.get("/api/health").status_code == 200
+    good = base64.b64encode(b"team:pw").decode()
+    bad = base64.b64encode(b"team:nope").decode()
+    assert client.get("/api/stats", headers={"Authorization": f"Basic {bad}"}).status_code == 401
+    assert client.get("/api/stats", headers={"Authorization": f"Basic {good}"}).status_code == 200
+
+
+def test_crm_won_lost(client):
+    sid = seed()
+    db.record_quote(
+        sid,
+        total_minor=10000,
+        currency="EUR",
+        airline="X",
+        origin="FRA",
+        destination="DFW",
+        transit_days=2,
+        source="sheet",
+    )
+    db.record_booking(
+        sid,
+        booking_reference="BK-1",
+        rate_id="R-12345678",
+        airline="X",
+        price_minor=10000,
+        currency="EUR",
+    )
+    lost = db.ingest_mail(
+        mail_id=2, sender="c@d.example", recipient=TEAM, subject="RFQ 2", body="b", category="rfq"
+    )
+    db.set_status(lost, "expired")
+    d = client.get("/api/crm").json()
+    assert d["totals"]["won"] == 1 and d["totals"]["lost"] == 1 and d["booked_minor"] == 10000
+    a = next(c for c in d["customers"] if c["customer"] == "a@b.example")
+    assert a["won"] == 1 and a["booked_minor"] == 10000
+    assert d["quotes"][0]["outcome"] == "won"
+    assert client.get("/api/customers/a@b.example/sessions").json()[0]["id"] == sid
+
+
+def test_overview_and_attention(client):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    old = (now - timedelta(minutes=30)).isoformat(timespec="seconds")
+    sid = db.ingest_mail(
+        mail_id=10,
+        sender="a@b.example",
+        recipient=TEAM,
+        subject="RFQ A",
+        body="b",
+        category="rfq",
+        received_at=old,
+    )
+    db.claim_quote_send(sid)
+    db.record_llm_call(
+        sid,
+        purpose="x",
+        model="m",
+        prompt_tokens=1,
+        completion_tokens=1,
+        cost_micro_usd=300,
+        latency_ms=1,
+    )
+    db.record_quote(
+        sid,
+        total_minor=10000,
+        currency="EUR",
+        airline="X",
+        origin="FRA",
+        destination="JFK",
+        transit_days=2,
+        source="portal",
+    )
+    db.record_outgoing(
+        mail_id=11,
+        recipient="a@b.example",
+        subject="Re: RFQ A",
+        body="q",
+        category="quote",
+        session_id=sid,
+    )
+    db.ingest_mail(
+        mail_id=12,
+        sender="a@b.example",
+        recipient=TEAM,
+        subject="Re: RFQ A",
+        body="yes please book",
+        category="customer",
+        references=[10, 11],
+        in_reply_to=11,
+    )
+    d = client.get("/api/overview", params={"hours": 6}).json()
+    assert d["current"]["rfqs"] == 1 and d["current"]["quoted"] == 1
+    assert d["current"]["avg_cost_micro_usd"] == 300 and len(d["series"]) == 12
+    assert sum(b["rfqs"] for b in d["series"]) == 1
+    kinds = {a["kind"] for a in client.get("/api/attention").json()}
+    assert "to_book" in kinds
+    db.record_booking(
+        sid,
+        booking_reference="BK-1",
+        rate_id="R-12345678",
+        airline="X",
+        price_minor=10000,
+        currency="EUR",
+    )
+    assert "to_book" not in {a["kind"] for a in client.get("/api/attention").json()}
+    assert client.get("/api/overview", params={"hours": 0}).json()["current"]["won"] == 1

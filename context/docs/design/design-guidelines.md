@@ -1,6 +1,9 @@
-# Design Guidelines (Sessions UI)
+# Design Guidelines (historical Sessions UI exploration)
 
-Binding for every change to `app/ui/static/index.html`. Derived on 21.11.2026 from the open-source CRM
+> Historical reference only. `DESIGN.md` v0.2 is the current source of truth. Where this document
+> differs from `DESIGN.md`, follow `DESIGN.md`.
+
+Derived on 21.11.2026 from the open-source CRM
 [Twenty](https://github.com/twentyhq/twenty) (`packages/twenty-ui/src/theme`, `Button.module.scss`,
 `Tag.module.scss`, `twenty-front/src/index.css`). We take its design language (calm, dense, flat,
 neutral greys, one blue accent), not its code, logo or name.

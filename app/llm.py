@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 import time
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -31,8 +30,6 @@ _client = OpenAI(
     timeout=20.0,
     max_retries=1,
 )
-_calls: dict[int, int] = {}  # per-session call count (in memory: resets on restart)
-_lock = threading.Lock()
 
 
 class LlmBudgetError(RuntimeError):
@@ -70,18 +67,18 @@ def cost_micro_usd(name: str, prompt_tokens: int, completion_tokens: int) -> int
 
 
 def _reserve(session_id: int | None) -> None:
+    """Per-session call budget, counted in the db (survives a restart of run.py)."""
     if session_id is None:
         return
-    with _lock:
-        n = _calls.get(session_id, 0)
-        if n >= MAX_CALLS_PER_SESSION:
-            raise LlmBudgetError(f"session {session_id} already made {n} LLM calls")
-        _calls[session_id] = n + 1
+    if db.reserve_llm_call(session_id, MAX_CALLS_PER_SESSION) is None:
+        raise LlmBudgetError(
+            f"session {session_id} already made {MAX_CALLS_PER_SESSION} LLM calls"
+        )
 
 
 def complete(
     purpose: str,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     session_id: int | None,
     max_tokens: int = 200,
     response_format: dict[str, Any] | None = None,

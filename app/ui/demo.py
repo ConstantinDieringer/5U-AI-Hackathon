@@ -42,10 +42,14 @@ def seed() -> None:
     db.init_db()
     rnd = random.Random(7)
     mid = 1000
-    for i, (o, d, kg, pref) in enumerate(LANES):
+    companies = ["weidner-spielwaren", "auer-maschinenbau", "sonnberg-roesterei", "lindqvist-medtech",
+                 "kessler-feinmechanik", "rheintal-elektronik"]
+    n = 26
+    for i in range(n):
+        o, d, kg, pref = LANES[i % len(LANES)]
         mid += 10
-        ago = 55 - i * 8
-        customer = f"buyer{i}@shipper-{i}.example"
+        ago = 355 - i * 13.5
+        customer = f"{companies[i % len(companies)]}@hackloop.mail"
         sid = db.ingest_mail(
             mail_id=mid,
             sender=customer,
@@ -57,7 +61,7 @@ def seed() -> None:
         )
         assert sid is not None
         db.set_request(sid, {"origin": o, "destination": d, "weight_kg": kg, "mode": pref})
-        if i == len(LANES) - 1:
+        if i == n - 1:
             continue  # still pricing (fresh)
         alts = []
         for a in rnd.sample(AIRLINES, 3):
@@ -133,7 +137,7 @@ def seed() -> None:
             raw={},
             session_id=sid,
         )
-        if i in (0, 2):
+        if i % 3 == 0:
             db.ingest_mail(
                 mail_id=mid + 2,
                 sender=customer,
@@ -152,7 +156,7 @@ def seed() -> None:
                 price_minor=best["total_minor"],
                 currency="EUR",
             )
-    db.set_paused(1040, True)
+    db.set_paused(1000 + 10 * (n - 3), True)
     db.ingest_mail(
         mail_id=5000,
         sender="elbflug-air-freight@hackloop.mail",

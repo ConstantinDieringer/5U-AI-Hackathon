@@ -42,8 +42,11 @@ def classify(mail: Mail, parent: Mail | None = None) -> tuple[Category, str]:
             return Category.TARIFF, f"airline {carrier.name} with attachment"
         return Category.CARRIER_BID, f"{carrier.kind} {carrier.name} in carrier list"
 
-    log.warning("unknown sender %s (not in carrier list) -> customer", sender)
-    return Category.CUSTOMER, "unknown sender"
+    # Unknown sender = a customer. A new thread is a request (RFQ); a reply in an existing
+    # thread is a follow-up (acceptance, question) for that session.
+    if mail.references or parent is not None:
+        return Category.CUSTOMER, "customer reply in a thread"
+    return Category.RFQ, "customer, new thread"
 
 
 def route(mail: Mail, parent: Mail | None = None) -> Category:

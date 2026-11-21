@@ -13,15 +13,19 @@ scorer counts this as "best price" is NOT confirmed -> `use_breakpoints` switch.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from functools import lru_cache
 from pathlib import Path
 
+from app.config import settings
 from app.models import RateOption, Rfq
+from app.pricing.fx import eur_rate
 from app.pricing.reference import origin_for_zip
 
 log = logging.getLogger(__name__)
@@ -29,6 +33,8 @@ log = logging.getLogger(__name__)
 VOLUME_FACTOR = Decimal(167)
 CENT = Decimal("0.01")
 TARIFFS = Path(__file__).resolve().parents[2] / "data" / "tariffs.json"
+RUNTIME_TARIFFS = settings.runtime_dir / "tariffs.json"
+_lanes_lock = threading.RLock()
 
 
 def money(x: Decimal) -> Decimal:
@@ -58,6 +64,8 @@ class SheetLane:
     currency: str
     valid_from: date
     valid_to: date
+    version: str = ""
+    received_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -70,8 +78,11 @@ class PricedLane:
 
 
 @lru_cache(maxsize=4)
-def load_lanes(path: Path = TARIFFS) -> tuple[SheetLane, ...]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+def _load_lanes(path: Path | None = None) -> tuple[SheetLane, ...]:
+    path = path or (RUNTIME_TARIFFS if RUNTIME_TARIFFS.exists() else TARIFFS)
+    raw = Path(path).read_bytes()
+    data = json.loads(raw)
+    version = hashlib.sha256(raw).hexdigest()
     currency = data.get("currency", "EUR")
     valid_from = date.fromisoformat(data["valid_from"])
     valid_to = date.fromisoformat(data["valid_to"])
@@ -88,14 +99,22 @@ def load_lanes(path: Path = TARIFFS) -> tuple[SheetLane, ...]:
             currency=lane.get("currency", currency),
             valid_from=date.fromisoformat(lane.get("valid_from", valid_from.isoformat())),
             valid_to=date.fromisoformat(lane.get("valid_to", valid_to.isoformat())),
+            version=lane.get("attachment_hash", version),
+            received_at=lane.get("received_at", ""),
         )
         for lane in data["lanes"]
     )
 
 
+def load_lanes(path: Path | None = None) -> tuple[SheetLane, ...]:
+    with _lanes_lock:
+        return _load_lanes(path)
+
+
 def reload_lanes() -> None:
     """Drop the cached tariffs, e.g. after new monthly tariffs were written."""
-    load_lanes.cache_clear()
+    with _lanes_lock:
+        _load_lanes.cache_clear()
 
 
 def chargeable_kg(weight_kg: float, volume_cbm: float = 0.0) -> Decimal:
@@ -136,7 +155,7 @@ def resolve_origin(rfq: Rfq) -> str | None:
 
 
 def sheet_options(
-    rfq: Rfq, use_breakpoints: bool = True, on: date | None = None
+    rfq: Rfq, use_breakpoints: bool | None = None, on: date | None = None
 ) -> list[RateOption]:
     """All rate-sheet offers for the RFQ's lane (airport to airport, trucking not included).
 
@@ -148,14 +167,27 @@ def sheet_options(
     dest = rfq.destination.upper()
     day = on or datetime.now(UTC).date()
     out: list[RateOption] = []
-    for lane in load_lanes():
+    use_breakpoints = settings.use_breakpoints if use_breakpoints is None else use_breakpoints
+    # A newer overlapping tariff replaces the older offer for that airline on this day.
+    applicable = {}
+    for candidate in load_lanes():
+        if candidate.valid_from <= day <= candidate.valid_to:
+            key = (candidate.airline, candidate.origin, candidate.destination)
+            old = applicable.get(key)
+            if old is None or candidate.received_at > old.received_at:
+                applicable[key] = candidate
+    for lane in applicable.values():
         if lane.origin != origin or lane.destination != dest:
             continue
         if not lane.valid_from <= day <= lane.valid_to:
             log.warning("tariff not valid on %s: %s %s-%s", day, lane.airline, origin, dest)
             continue
-        if lane.currency != "EUR":  # no FX source for sheets yet -> never guess a rate
-            log.warning("skipping non-EUR tariff %s %s-%s", lane.airline, origin, dest)
+        try:
+            fx, fx_source, fx_expiry = eur_rate(lane.currency)
+        except ValueError as exc:
+            from app import db
+
+            db.emit("fx_missing", f"{lane.airline}: {exc}", level="warn")
             continue
         p = price_lane(lane, rfq.weight_kg, rfq.volume_cbm)
         total = p.best_total if use_breakpoints else p.plain_total
@@ -168,10 +200,17 @@ def sheet_options(
                 transit_days=lane.transit_days,
                 total_minor=to_minor(total),
                 currency=lane.currency,
-                total_eur_minor=to_minor(total),  # all sheets are EUR
+                total_eur_minor=to_minor(total * fx),
                 source="sheet",
                 chargeable_kg=float(p.chargeable_kg),
                 billed_kg=float(billed),
+                fx_eur_per_unit=str(fx) if lane.currency != "EUR" else None,
+                fx_source=fx_source,
+                fx_valid_until=fx_expiry,
+                observed_at=datetime.now(UTC).isoformat(),
+                tariff_version=lane.version,
+                plain_total_minor=to_minor(p.plain_total),
+                breakpoint_total_minor=to_minor(p.best_total),
             )
         )
     return out
