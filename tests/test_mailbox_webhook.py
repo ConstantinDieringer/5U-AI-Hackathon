@@ -71,7 +71,9 @@ def test_signed_ping_bypasses_ui_auth_but_not_hmac(client):
     assert client.post(webhook.PATH, json={"event": "ping"}).status_code == 401
 
 
-@pytest.mark.parametrize("offset", [-301, 61])
+# 62, not 61: the stamp is whole seconds, so int(time.time()) + 61 can lie only 60.01 s
+# ahead and pass the 60 s window (seen once in 120 suite runs)
+@pytest.mark.parametrize("offset", [-301, 62])
 def test_reject_stale_and_future_signatures(client, offset):
     assert (
         post(client, {"event": "ping"}, stamp=int(time.time()) + offset).status_code

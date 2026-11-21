@@ -31,6 +31,7 @@ from app.mail import language, lots, parse
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.rfq_sources import extraction_content, read_sources
+from app.mail.rfq_validation import _SIGNATURE
 from app.mail.style import SIGNATURE, TEAM_LINE, amount, has_template_artifacts
 from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
@@ -208,6 +209,8 @@ def locate_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
     text = _clean(mail.body)
     if not _WANTS_PICKUP.search(text) or _SELF_DELIVERY.search(text):
         return rfq
+    if settings.ask_pickup_zip:
+        return _stated_pickup(rfq, mail, sid)
     area = find_area(text)
     if area:
         db.emit(
@@ -228,6 +231,66 @@ def locate_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
         key = "pickup_zip" if last[:1].isdigit() else "pickup_city"
         return rfq.model_copy(update={key: last, "pickup_assumed": True})
     return rfq
+
+
+_ZIP = re.compile(r"\b(?:D-)?(\d{5})\b")
+
+
+def _stated_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
+    """ASK_PICKUP_ZIP: only a site the customer named for this shipment counts: an area in the
+    current text (signature cut off), else a ZIP or area in earlier customer mail of this
+    thread. The customer's other shipments are never used (Weidner sent 61391, 41007 and
+    72379; round 20 priced 61391 from an older request and lost too_high)."""
+    area = find_area(_SIGNATURE.split(_clean(mail.body), 1)[0])
+    source = "aus der Mail"
+    update: dict[str, str] = {"pickup_city": area} if area else {}
+    if not update:
+        zips: set[str] = set()
+        areas: set[str] = set()
+        for row in db.customer_mail_history(sid, mail.sender, mail.id):
+            text = _SIGNATURE.split(current_message(row["body"] or "").facts, 1)[0]
+            zips |= {z for z in _ZIP.findall(text) if pickup_zones().get(z[:2])}
+            if (found := find_area(text)) is not None:
+                areas.add(found)
+        if len(zips) == 1:
+            update = {"pickup_zip": zips.pop()}
+        elif not zips and len(areas) == 1:
+            update = {"pickup_city": areas.pop()}
+        source = "frühere Mail in diesem Thread"
+    if not update:
+        return rfq
+    where = next(iter(update.values()))
+    db.emit("pickup_assumed", f"Abholort ohne PLZ: {where} ({source})", sid, level="warn")
+    return rfq.model_copy(update={**update, "pickup_assumed": "pickup_city" in update})
+
+
+def needs_pickup_site(rfq: Rfq, mail: Mail) -> bool:
+    """A door-to-port request that still names no pickup site (ASK_PICKUP_ZIP asks for it)."""
+    text = _clean(mail.body)
+    wants = _WANTS_PICKUP.search(text) and not _SELF_DELIVERY.search(text)
+    return bool(wants) and not (rfq.pickup_zip or rfq.pickup_city)
+
+
+def ask_pickup_zip(mail: Mail, sid: int, rfq: Rfq) -> None:
+    """One question for the pickup ZIP instead of a quote from a guessed airport."""
+    from app.agents import clarification
+
+    db.emit("pickup_missing", "Abholung ohne PLZ/Ort: frage nach der PLZ", sid, level="warn")
+    clarification.request(
+        mail,
+        sid,
+        RfqDraft(
+            facts=rfq.model_dump(),
+            evidence={"blocking_clarification": True},
+            issues=[
+                {
+                    "field": "pickup_zip",
+                    "code": "missing",
+                    "detail": "Pickup postal code is required",
+                }
+            ],
+        ),
+    )
 
 
 def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
@@ -1073,6 +1136,9 @@ def _handle(mail: Mail, sid: int) -> None:
     rfq = rfq.model_copy(update={"language": language.detect(mail.body)})
     if mode != "enforce":
         rfq = locate_pickup(rfq, mail, sid)
+        if settings.ask_pickup_zip and needs_pickup_site(rfq, mail):
+            ask_pickup_zip(mail, sid, rfq)
+            return
     rfq = locate_origin(rfq, mail, sid)
     db.set_request(sid, rfq.model_dump())
     db.emit(
@@ -1102,7 +1168,86 @@ def _handle(mail: Mail, sid: int) -> None:
             ),
         )
         return
+    _price_and_quote(mail, sid, rfq, origin, t0, mode)
 
+
+_FALLBACK_BLOCKERS = {"dangerous_goods", "pickup_zip", "weight_kg", "volume_cbm", "lots"}
+
+
+def quote_without_answer(sid: int, reason: str) -> bool:
+    """CLARIFY_ONCE: the answer to our one question is unusable or has not come. Send the best
+    quote that real prices allow before the full-score deadline and flag the session for a
+    person. Nothing is guessed: the departure must be stated in the request (self-delivery
+    wording, or the one network airport the current text names) or follow from a pickup ZIP.
+    A pickup without a site, unproven weight/volume or open dangerous goods get no quote."""
+    if not db.kv_claim(f"clarify.fallback.{sid}"):
+        return False
+    row = db.validation_get(sid)
+    if not row or row["draft"].get("evidence", {}).get("workflow", "rfq") != "rfq":
+        return False
+    mail = Mail(**row["root"])
+    draft = RfqDraft.model_validate(row["draft"])
+    open_fields = sorted({i["field"] for i in draft.issues})
+    why = ""
+    request: Rfq | None = None
+    origin: str | None = None
+    if blockers := _FALLBACK_BLOCKERS & set(open_fields):
+        why = "offen: " + ", ".join(sorted(blockers))
+    else:
+        try:
+            request = Rfq.model_validate(draft.facts)
+        except ValidationError:
+            why = "Sendungsdaten unvollständig"
+    if request is not None:
+        from app.mail.rfq_validation import explicit_delivery_origin
+
+        request = request.model_copy(update={"language": language.detect(mail.body)})
+        if not request.origin and not request.door_to_port:
+            stated = explicit_delivery_origin(mail, request.destination)
+            request = (
+                request.model_copy(update={"origin": stated})
+                if stated
+                else locate_origin(request, mail, sid)
+            )
+        origin = resolve_origin(request)
+        if origin is None or origin == request.destination:
+            why = "Abflughafen nicht genannt"
+    if why or request is None or origin is None:
+        db.emit(
+            "needs_human",
+            f"Rückfrage ohne brauchbare Antwort ({reason}), kein Angebot: {why}",
+            sid,
+            level="error",
+            open=open_fields,
+        )
+        return False
+    db.emit(
+        "needs_human",
+        f"Angebot ohne Antwort auf die Rückfrage ({reason}): bitte prüfen",
+        sid,
+        level="error",
+        open=open_fields,
+    )
+    draft.evidence["quoted_without_answer"] = reason
+    db.validation_save(sid, "ready", draft.model_dump(mode="json"), row["root"])
+    db.set_request(sid, request.model_dump())
+    session = db.get_session(sid) or {}
+    t0 = min(
+        _received(mail),
+        datetime.fromisoformat(session.get("created_at") or mail.received_at).timestamp(),
+    )
+    try:
+        _price_and_quote(mail, sid, request, origin, t0, settings.rfq_validation_mode)
+    except Exception as e:
+        log.exception("session %s: quote without answer failed", sid)
+        db.set_status(sid, "error", f"{type(e).__name__}: {e}")
+    finally:
+        bids.close(sid)
+    return True
+
+
+def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str) -> None:
+    """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send."""
     truckers, email_airlines = _bid_carriers(rfq, origin)
     if rfq.door_to_port and not truckers:
         db.emit(

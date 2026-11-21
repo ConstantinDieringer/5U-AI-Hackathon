@@ -338,6 +338,29 @@ def test_customer_can_decline_further_reminders(env):
     assert len(sent) == 1 and db.validation_get(1)["state"] == "manual_review"
 
 
+def test_holding_reply_waits_and_rephrases_with_clarify_once_enabled(env, monkeypatch):
+    sent, _ = env
+    monkeypatch.setattr(
+        clarification,
+        "settings",
+        dataclasses.replace(
+            clarification.settings,
+            clarify_once=True,
+            clarify_fallback_after_s=1,
+        ),
+    )
+    fallback = []
+    monkeypatch.setattr(rfq, "quote_without_answer", lambda *a: fallback.append(a))
+    dg_request()
+    hold()
+    advance(14)
+    assert clarification.fallback_due(Clock.now(UTC)) == []
+    assert not fallback and len(sent) == 1
+    advance(1)
+    clarification.follow_up_due()
+    assert len(sent) == 2 and "dangerous goods documents" in sent[-1]["body"]
+
+
 def test_second_question_cap_does_not_leave_send_in_flight(env):
     sent, _ = env
     dg_request()
@@ -348,3 +371,20 @@ def test_second_question_cap_does_not_leave_send_in_flight(env):
     clarification.handle_reply(answer, 1)
     assert len(sent) == 2 and db.validation_get(1)["state"] == "manual_review"
     assert db.validation_get(1)["send_state"] != "sending"
+
+
+def test_background_worker_processes_due_timer(env):
+    sent, _ = env
+    dg_request()
+    hold()
+    advance(15)
+
+    class Stop:
+        iterations = 0
+
+        def wait(self, delay):
+            self.iterations += 1
+            return self.iterations > 1
+
+    clarification.run(Stop())
+    assert len(sent) == 2 and timer()["state"] == "sent"

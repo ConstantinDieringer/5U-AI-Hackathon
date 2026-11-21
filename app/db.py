@@ -517,6 +517,30 @@ def validation_save(sid: int, state: str, draft: dict, root: dict) -> None:
             )
 
 
+def clarification_count(sid: int) -> int:
+    return (
+        conn()
+        .execute(
+            "SELECT COUNT(*) FROM mails WHERE session_id=? AND direction='out' "
+            "AND category='clarification'",
+            (sid,),
+        )
+        .fetchone()[0]
+    )
+
+
+def clarification_followup_pending(sid: int) -> bool:
+    return (
+        conn()
+        .execute(
+            "SELECT 1 FROM clarification_followups WHERE session_id=? AND state IN ('pending','sending')",
+            (sid,),
+        )
+        .fetchone()
+        is not None
+    )
+
+
 def _clarification_limit(c: sqlite3.Connection, sid: int) -> bool:
     count = c.execute(
         "SELECT COUNT(*) FROM mails WHERE session_id=? AND direction='out' "
@@ -803,6 +827,26 @@ def kv_set(key: str, value: str) -> None:
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
+
+def kv_claim(key: str) -> bool:
+    """Atomic once-only marker: True for the first caller, False for every later one."""
+    with tx() as c:
+        return (
+            c.execute("INSERT OR IGNORE INTO kv(key, value) VALUES (?, ?)", (key, now())).rowcount
+            == 1
+        )
+
+
+def clarification_waiting() -> list[dict[str, Any]]:
+    """Sessions whose question went out and whose answer has not resolved it yet."""
+    return _rows(
+        conn().execute(
+            "SELECT v.session_id, s.created_at, v.draft_json FROM rfq_validation v"
+            " JOIN sessions s ON s.id = v.session_id"
+            " WHERE v.state = 'awaiting_clarification' AND v.send_state IN ('sent','unknown')"
+        )
+    )
 
 
 def validation_reply(sid: int) -> dict[str, Any] | None:
@@ -2164,6 +2208,24 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
                 "session_id": r["id"],
                 "kind": "to_book",
                 "reason": "Kunde hat geantwortet, noch nicht gebucht",
+                "subject": r["subject"],
+                "customer": r["customer"],
+                "status": r["status"],
+            }
+        )
+    for r in _rows(
+        c.execute(
+            "SELECT e.session_id, MAX(e.id) AS last, s.subject, s.customer, s.status"
+            " FROM events e JOIN sessions s ON s.id = e.session_id WHERE e.kind = 'needs_human'"
+            " GROUP BY e.session_id ORDER BY last DESC LIMIT ?",
+            (limit,),
+        )
+    ):
+        items.append(
+            {
+                "session_id": r["session_id"],
+                "kind": "needs_human",
+                "reason": "Rückfrage ohne brauchbare Antwort: prüfen",
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],
