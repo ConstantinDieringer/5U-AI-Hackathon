@@ -55,5 +55,7 @@ def save_mail(mail: Mail, category: Category, in_reply_to: int | None) -> Saved:
     return Saved(is_new, session_id)
 
 
-def emit(kind: str, message: str, session_id: int | None = None, level: str = "info") -> None:
+def emit(
+    kind: str, message: str, session_id: int | None = None, level: str = "info"
+) -> None:
     db.emit(kind, message, session_id, level=level)

@@ -28,7 +28,12 @@ LANES = [
     ("DUS", "JFK", 180, "cheapest"),
     ("FRA", "SGN", 1200, "cheapest"),
 ]
-AIRLINES = ["Elbflug Air Freight", "Yellowtail Air Freight", "Kestrel Airways", "Helix Air Freight"]
+AIRLINES = [
+    "Elbflug Air Freight",
+    "Yellowtail Air Freight",
+    "Kestrel Airways",
+    "Helix Air Freight",
+]
 
 
 def ts(minutes_ago: float) -> str:
@@ -42,8 +47,14 @@ def seed() -> None:
     db.init_db()
     rnd = random.Random(7)
     mid = 1000
-    companies = ["weidner-spielwaren", "auer-maschinenbau", "sonnberg-roesterei", "lindqvist-medtech",
-                 "kessler-feinmechanik", "rheintal-elektronik"]
+    companies = [
+        "weidner-spielwaren",
+        "auer-maschinenbau",
+        "sonnberg-roesterei",
+        "lindqvist-medtech",
+        "kessler-feinmechanik",
+        "rheintal-elektronik",
+    ]
     n = 26
     for i in range(n):
         o, d, kg, pref = LANES[i % len(LANES)]
@@ -60,7 +71,9 @@ def seed() -> None:
             received_at=ts(ago),
         )
         assert sid is not None
-        db.set_request(sid, {"origin": o, "destination": d, "weight_kg": kg, "mode": pref})
+        db.set_request(
+            sid, {"origin": o, "destination": d, "weight_kg": kg, "mode": pref}
+        )
         if i == n - 1:
             continue  # still pricing (fresh)
         alts = []
@@ -74,7 +87,8 @@ def seed() -> None:
                 }
             )
         best = min(
-            alts, key=lambda a: a["total_minor"] if pref == "cheapest" else a["transit_days"]
+            alts,
+            key=lambda a: a["total_minor"] if pref == "cheapest" else a["transit_days"],
         )
         db.record_llm_call(
             sid,
@@ -191,9 +205,13 @@ def live() -> None:
             body="please quote",
             category="rfq",
         )
-        db.set_request(sid, {"origin": o, "destination": d, "weight_kg": kg, "mode": pref})
+        db.set_request(
+            sid, {"origin": o, "destination": d, "weight_kg": kg, "mode": pref}
+        )
         time.sleep(3)
-        db.emit(db.Ev.PRICED, "3 Optionen geprüft", sid, duration_ms=rnd.randint(50, 400))
+        db.emit(
+            db.Ev.PRICED, "3 Optionen geprüft", sid, duration_ms=rnd.randint(50, 400)
+        )
         time.sleep(3)
 
 

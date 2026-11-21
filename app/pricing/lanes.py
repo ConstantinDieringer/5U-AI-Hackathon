@@ -28,11 +28,15 @@ def airlines_for(origin: str, destination: str) -> list[LaneAirline]:
     for lane in load_lanes():
         if lane.origin == o and lane.destination == d:
             c = carrier_by_name(lane.airline)
-            found[lane.airline] = LaneAirline(lane.airline, "sheet", email=c.email if c else None)
+            found[lane.airline] = LaneAirline(
+                lane.airline, "sheet", email=c.email if c else None
+            )
     for a in portal_airlines(o, d):
         if a["name"] not in found:
             c = carrier_by_name(a["name"])
-            found[a["name"]] = LaneAirline(a["name"], "portal", a["code"], c.email if c else None)
+            found[a["name"]] = LaneAirline(
+                a["name"], "portal", a["code"], c.email if c else None
+            )
     for c in airlines_serving(d):
         if c.name not in found:
             found[c.name] = LaneAirline(c.name, "email_only", email=c.email)

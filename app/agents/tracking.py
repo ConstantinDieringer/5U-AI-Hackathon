@@ -40,14 +40,20 @@ def is_status_question(body: str) -> bool:
 
 def _name_tokens(customer: str) -> set[str]:
     local = address(customer).split("@")[0]
-    return {t for t in re.split(r"[^a-z0-9]+", local.lower()) if len(t) >= 4 and t not in _STOP}
+    return {
+        t
+        for t in re.split(r"[^a-z0-9]+", local.lower())
+        if len(t) >= 4 and t not in _STOP
+    }
 
 
 def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The booking the mail asks about, or None."""
     for m in _BK.finditer(text):
         ref = m.group(0).upper()
-        hit = next((r for r in records if (r["booking_reference"] or "").upper() == ref), None)
+        hit = next(
+            (r for r in records if (r["booking_reference"] or "").upper() == ref), None
+        )
         if hit:
             return hit
     for m in _AP.finditer(text):
@@ -83,7 +89,9 @@ def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     if best[0] < 2:
         return None
     if len(scored) > 1 and scored[1][0] == best[0]:
-        log.info("tracking: %s bookings match equally, asking for the reference", len(scored))
+        log.info(
+            "tracking: %s bookings match equally, asking for the reference", len(scored)
+        )
         return None  # ambiguous: asking beats answering for the wrong shipment
     return best[1]
 
@@ -189,7 +197,9 @@ def _not_found_text(lang: str) -> str:
 
 
 def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None:
-    if session_id is not None and (db.is_paused(session_id) or db.is_manual(session_id)):
+    if session_id is not None and (
+        db.is_paused(session_id) or db.is_manual(session_id)
+    ):
         db.emit(
             db.Ev.WARN,
             "Tracking-Antwort nicht gesendet: Session pausiert/manuell",
@@ -197,7 +207,11 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None
         )
         return
     to = address(mail.sender)
-    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    subject = (
+        mail.subject
+        if mail.subject.lower().startswith("re:")
+        else f"Re: {mail.subject}"
+    )
     sent = hackloop.send(to, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -212,7 +226,9 @@ def _reply(mail: Mail, body: str, session_id: int | None, category: str) -> None
     )
 
 
-def handle(mail: Mail, session_id: int | None, booked_session: int | None = None) -> None:
+def handle(
+    mail: Mail, session_id: int | None, booked_session: int | None = None
+) -> None:
     """Answer one tracking question. `booked_session` is set when a customer asks in the
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:

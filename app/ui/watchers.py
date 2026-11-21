@@ -25,8 +25,17 @@ def deadline_loop() -> None:
             for sid in db.expire_overdue():
                 log.warning("session %s expired without quote", sid)
             for s in db.list_sessions(attention=True):
-                if s["status"] in db.OPEN_STATUSES and not s["paused"] and s["id"] not in warned:
-                    db.emit(db.Ev.WARN, "Weniger als 90 s bis zur Deadline", s["id"], level="warn")
+                if (
+                    s["status"] in db.OPEN_STATUSES
+                    and not s["paused"]
+                    and s["id"] not in warned
+                ):
+                    db.emit(
+                        db.Ev.WARN,
+                        "Weniger als 90 s bis zur Deadline",
+                        s["id"],
+                        level="warn",
+                    )
                     warned.add(s["id"])
         except Exception:
             log.exception("deadline loop")
@@ -52,7 +61,9 @@ def is_failure(verdict: object, reason: object) -> bool:
     accepted, or any reason code at all."""
     if reason:
         return True
-    return isinstance(verdict, str) and verdict not in UNDECIDED and verdict != "accepted"
+    return (
+        isinstance(verdict, str) and verdict not in UNDECIDED and verdict != "accepted"
+    )
 
 
 def board_loop() -> None:
@@ -63,7 +74,11 @@ def board_loop() -> None:
             data = hackloop.get_board_me()
             for r in _board_rows(data):
                 round_id = str(
-                    r.get("round_no") or r.get("round") or r.get("round_id") or r.get("id") or ""
+                    r.get("round_no")
+                    or r.get("round")
+                    or r.get("round_id")
+                    or r.get("id")
+                    or ""
                 )
                 if not round_id:
                     continue
@@ -76,7 +91,9 @@ def board_loop() -> None:
                     verdict=verdict,
                     reason=reason,  # fields: round_no, sent_at,
                     # answered_at, verdict (open|pending|accepted|rejected|...), reason, booked
-                    points=r.get("points") if isinstance(r.get("points"), dict) else None,
+                    points=r.get("points")
+                    if isinstance(r.get("points"), dict)
+                    else None,
                     raw=r,
                     session_id=sid,
                     failed=failed,

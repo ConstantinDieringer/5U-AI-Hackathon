@@ -60,7 +60,9 @@ def build_portal_lanes(
         {
             "origin": str(lane["origin"]).upper(),
             "destination": str(lane["destination"]).upper(),
-            "airlines": [{"code": a["code"], "name": a["name"]} for a in lane["airlines"]],
+            "airlines": [
+                {"code": a["code"], "name": a["name"]} for a in lane["airlines"]
+            ],
         }
         for lane in ports["lanes"]
     ]
@@ -68,7 +70,8 @@ def build_portal_lanes(
         "synced_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "lanes": lanes,
         "brackets": {
-            code: [int(b) for b in br["breaks_kg"]] for code, br in sorted(brackets.items())
+            code: [int(b) for b in br["breaks_kg"]]
+            for code, br in sorted(brackets.items())
         },
     }
 
@@ -156,7 +159,9 @@ def _note_dataset_version(version: object) -> None:
             log.exception("could not persist portal dataset observation")
             changed = _seen_dataset_version is not None
         if _seen_dataset_version is not None:
-            log.warning("portal dataset_version changed %s -> %s", _seen_dataset_version, v)
+            log.warning(
+                "portal dataset_version changed %s -> %s", _seen_dataset_version, v
+            )
         _seen_dataset_version = v
         if changed:
             with _lock:
@@ -190,7 +195,12 @@ def parse_rate(raw: dict[str, Any]) -> RateOption:
         raise ValueError(f"implausible portal rate: {raw!r}")
     if currency == "EUR":
         total_eur, fx_rate = total, None
-    elif currency == "USD" and fx_rate is not None and fx_rate.is_finite() and fx_rate > 0:
+    elif (
+        currency == "USD"
+        and fx_rate is not None
+        and fx_rate.is_finite()
+        and fx_rate > 0
+    ):
         total_eur = money(total * fx_rate)
     else:
         raise ValueError(f"{currency} rate without a usable fx_eur_per_usd: {raw!r}")
@@ -251,7 +261,11 @@ def _one_rate(
         return None
     if (opt.origin, opt.destination) != (origin, dest):
         log.warning(
-            "portal answered %s-%s for %s-%s, ignored", opt.origin, opt.destination, origin, dest
+            "portal answered %s-%s for %s-%s, ignored",
+            opt.origin,
+            opt.destination,
+            origin,
+            dest,
         )
         return None
     return opt
@@ -290,7 +304,9 @@ def portal_result(
         return result
     with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL, len(keys))) as pool:
         results = list(pool.map(lambda k: _one_rate(fetch, k, result), keys))
-    best: dict[str, RateOption] = {}  # per airline the cheaper of exact weight / next break
+    best: dict[
+        str, RateOption
+    ] = {}  # per airline the cheaper of exact weight / next break
     for r in results:
         if r is not None and (
             r.airline not in best or r.total_eur_minor < best[r.airline].total_eur_minor
@@ -306,7 +322,11 @@ def portal_options(rfq: Rfq, fetch: RateFetcher | None = None) -> list[RateOptio
 
 def next_break(code: str, chargeable: Decimal) -> float | None:
     """The airline's lowest weight break above the chargeable weight (portal brackets)."""
-    above = [b for b in load_portal_lanes().get("brackets", {}).get(code, []) if b > chargeable]
+    above = [
+        b
+        for b in load_portal_lanes().get("brackets", {}).get(code, [])
+        if b > chargeable
+    ]
     return float(min(above)) if above else None
 
 

@@ -26,7 +26,7 @@ from pathlib import Path
 from app.config import settings
 from app.models import RateOption, Rfq
 from app.pricing.fx import eur_rate
-from app.pricing.reference import origin_for_zip, pickup_zones
+from app.pricing.reference import pickup_zones
 
 log = logging.getLogger(__name__)
 
@@ -93,11 +93,15 @@ def _load_lanes(path: Path | None = None) -> tuple[SheetLane, ...]:
             destination=lane["destination"],
             transit_days=int(lane["transit_days"]),
             minimum=dec(lane["minimum"]),
-            breaks=tuple(sorted((dec(b["from_kg"]), dec(b["rate"])) for b in lane["breaks"])),
+            breaks=tuple(
+                sorted((dec(b["from_kg"]), dec(b["rate"])) for b in lane["breaks"])
+            ),
             fuel=dec(lane["fuel"]),
             security=dec(lane["security"]),
             currency=lane.get("currency", currency),
-            valid_from=date.fromisoformat(lane.get("valid_from", valid_from.isoformat())),
+            valid_from=date.fromisoformat(
+                lane.get("valid_from", valid_from.isoformat())
+            ),
             valid_to=date.fromisoformat(lane.get("valid_to", valid_to.isoformat())),
             version=lane.get("attachment_hash", version),
             received_at=lane.get("received_at", ""),
@@ -134,7 +138,9 @@ def _total(lane: SheetLane, billed_kg: Decimal) -> Decimal:
     return money(freight + (lane.fuel + lane.security) * billed_kg)
 
 
-def price_lane(lane: SheetLane, weight_kg: float, volume_cbm: float = 0.0) -> PricedLane:
+def price_lane(
+    lane: SheetLane, weight_kg: float, volume_cbm: float = 0.0
+) -> PricedLane:
     cw = chargeable_kg(weight_kg, volume_cbm)
     if cw <= 0:
         raise ValueError(f"chargeable weight must be > 0, got {cw}")
@@ -155,10 +161,11 @@ def resolve_origin(rfq: Rfq) -> str | None:
     origin = rfq.origin.upper() if rfq.origin else None
     if origin == rfq.destination.upper():
         origin = None
-    if rfq.pickup_zip:
-        by_zip = origin_for_zip(rfq.pickup_zip)
-        if by_zip and (origin is None or origin not in set(pickup_zones().values())):
-            return by_zip
+    zone = rfq.pickup_zone
+    if zone:
+        by_zone = pickup_zones().get(zone)
+        if by_zone and (origin is None or origin not in set(pickup_zones().values())):
+            return by_zone
     return origin
 
 
@@ -175,7 +182,9 @@ def sheet_options(
     dest = rfq.destination.upper()
     day = on or datetime.now(UTC).date()
     out: list[RateOption] = []
-    use_breakpoints = settings.use_breakpoints if use_breakpoints is None else use_breakpoints
+    use_breakpoints = (
+        settings.use_breakpoints if use_breakpoints is None else use_breakpoints
+    )
     # A newer overlapping tariff replaces the older offer for that airline on this day.
     applicable = {}
     for candidate in load_lanes():
@@ -188,7 +197,9 @@ def sheet_options(
         if lane.origin != origin or lane.destination != dest:
             continue
         if not lane.valid_from <= day <= lane.valid_to:
-            log.warning("tariff not valid on %s: %s %s-%s", day, lane.airline, origin, dest)
+            log.warning(
+                "tariff not valid on %s: %s %s-%s", day, lane.airline, origin, dest
+            )
             continue
         try:
             fx, fx_source, fx_expiry = eur_rate(lane.currency)

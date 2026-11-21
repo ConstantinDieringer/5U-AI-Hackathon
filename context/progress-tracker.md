@@ -14,6 +14,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - RFQ cost card: input/cached input/output/reasoning per model and purpose, frozen price/usage snapshots and USD totals. Legacy estimates retained; missing prices/usage visible. Accounting migration adds one nullable column; no extra API calls.
+- RFQ history isolation: current cargo blocks exclude obsolete forwarded specifications and thread subjects from extraction/lot sums; pure forwarding remains supported. Round 15 carrier requests used historical AMS; actual pickup location was absent, so this fix cannot reconstruct it or recover the expired round.
+- Door-to-port without ZIP (rounds 3627, 3930 lost): pickup area from the mail/signature (pickup_zones.csv) or the customer's last pickup → zone → airport → truck + air. No email-only airline bids for origins outside our 6 airports.
 - Mail template guard: generated RFQ bodies reject unfilled placeholders and embedded mail headers, falling back to verified copy; placeholder customer names use a generic greeting. Observed live mail 3495 still used pre-style-fix output, so production rollout requires confirmation.
 - UI v4 Übersicht (`/api/status`, `db.status_overview`): Systemcheck traffic lights (mail, quotes, speed, 5U, cost, bookings, tracking, bids, errors), step chips per RFQ, Zu tun, Punkte; charts/rings removed. Bid replies and BK confirmations now map by AP/BK reference (were 23 unassigned).
 - Online: Railway runs the agents (AGENTS_ENABLED=true) since 17:17 on the imported laptop DB; nobody runs `run.py` against the live mailbox anymore.

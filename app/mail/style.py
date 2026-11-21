@@ -9,7 +9,11 @@ def has_template_artifacts(text: str) -> bool:
     """Detect unfilled template fields and mail headers inside generated body text."""
     return bool(
         re.search(r"\[[^\]\r\n]+\]|\{[^{}\r\n]+\}|<[^<>\r\n]+>", text)
-        or re.search(r"^\s*(?:subject|betreff|from|von|to|an):", text, re.MULTILINE | re.IGNORECASE)
+        or re.search(
+            r"^\s*(?:subject|betreff|from|von|to|an):",
+            text,
+            re.MULTILINE | re.IGNORECASE,
+        )
     )
 
 

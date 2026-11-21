@@ -820,6 +820,23 @@ def bid_request_recipients(session_id: int) -> set[str]:
     }
 
 
+def last_pickup(customer: str, before_session: int | None = None) -> str | None:
+    """Pickup ZIP (or area) of this customer's most recent earlier request, for a new
+    door-to-port request that names none."""
+    rows = _rows(
+        conn().execute(
+            "SELECT request_json FROM sessions WHERE customer = ? AND kind = 'rfq'"
+            " AND request_json IS NOT NULL AND id != ? ORDER BY created_at DESC LIMIT 20",
+            (customer, before_session or -1),
+        )
+    )
+    for r in rows:
+        req = json.loads(r["request_json"]) or {}
+        if req.get("pickup_zip") or req.get("pickup_city"):
+            return str(req.get("pickup_zip") or req.get("pickup_city"))
+    return None
+
+
 def set_status(session_id: int, status: str, reason: str | None = None) -> None:
     with tx() as c:
         c.execute(

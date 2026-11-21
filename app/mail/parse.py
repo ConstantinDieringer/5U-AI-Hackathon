@@ -42,7 +42,9 @@ def messages(batch: dict[str, Any]) -> list[dict[str, Any]]:
         raise MailFormatError("poll list key not confirmed yet (A3)")
     items = batch.get(MESSAGES_KEY)
     if not isinstance(items, list) or not all(isinstance(m, dict) for m in items):
-        raise MailFormatError(f"poll response has no list of objects under {MESSAGES_KEY!r}")
+        raise MailFormatError(
+            f"poll response has no list of objects under {MESSAGES_KEY!r}"
+        )
     return items
 
 

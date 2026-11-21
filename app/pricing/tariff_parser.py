@@ -108,7 +108,9 @@ def rows_from_file(path: Path) -> list[list[object]]:
 
         with pdfplumber.open(path) as pdf:
             return [
-                [line] for page in pdf.pages for line in (page.extract_text() or "").splitlines()
+                [line]
+                for page in pdf.pages
+                for line in (page.extract_text() or "").splitlines()
             ]
     raise ValueError(f"Unsupported tariff file: {path.suffix}")
 
@@ -157,7 +159,10 @@ def parse_rows(rows: list[list[object]]) -> TariffDocument:
         # XLSX and DOCX tables retain cell boundaries, including empty heading cells.
         if len(row) > 3:
             heads = row[3:]
-            if any(re.search(r"from\s+\d+\s*kg|^[+-]\d+$|^\d+\s*kg\+$", str(x)) for x in heads):
+            if any(
+                re.search(r"from\s+\d+\s*kg|^[+-]\d+$|^\d+\s*kg\+$", str(x))
+                for x in heads
+            ):
                 breaks = [
                     Decimal(0) if str(x).strip().startswith("-") else number(x)
                     for x in heads
@@ -177,20 +182,30 @@ def parse_rows(rows: list[list[object]]) -> TariffDocument:
                         "destination": route[1],
                         "transit_days": integer(row[1]),
                         "minimum": number(row[2]),
-                        "breaks": [{"from_kg": b, "rate": r} for b, r in zip(breaks, values)],
+                        "breaks": [
+                            {"from_kg": b, "rate": r} for b, r in zip(breaks, values)
+                        ],
                     }
                     extras = row[3 + len(breaks) :]
-                    if len(extras) >= 2 and extras[0] is not None and extras[1] is not None:
+                    if (
+                        len(extras) >= 2
+                        and extras[0] is not None
+                        and extras[1] is not None
+                    ):
                         lane.update(fuel=number(extras[0]), security=number(extras[1]))
                     lanes[tuple(route)] = lane
                     continue
         # Single-line text/PDF tables (Helix and Yellowtail).
         if text.startswith("Lane "):
             found = re.findall(r"from\s+(\d+)\s*kg|([+-]\d+)\b", text)
-            breaks = [Decimal(0) if b.startswith("-") else number(a or b) for a, b in found]
+            breaks = [
+                Decimal(0) if b.startswith("-") else number(a or b) for a, b in found
+            ]
             continue
         if len(codes) >= 2 and re.search(r"(?:EUR|USD)\s*" + NUMBER, text):
-            amounts = [number(x) for x in re.findall(r"(?:EUR|USD)\s*(" + NUMBER + ")", text)]
+            amounts = [
+                number(x) for x in re.findall(r"(?:EUR|USD)\s*(" + NUMBER + ")", text)
+            ]
             # Only a row with a route and the exact header's number of price columns counts.
             if breaks and len(amounts) == len(breaks) + 1:
                 prefix = text[: re.search(r"(?:EUR|USD)\s*" + NUMBER, text).start()]
@@ -202,11 +217,16 @@ def parse_rows(rows: list[list[object]]) -> TariffDocument:
                         "destination": route[1],
                         "transit_days": int(transit[1]),
                         "minimum": amounts[0],
-                        "breaks": [{"from_kg": b, "rate": r} for b, r in zip(breaks, amounts[1:])],
+                        "breaks": [
+                            {"from_kg": b, "rate": r}
+                            for b, r in zip(breaks, amounts[1:])
+                        ],
                     }
                     continue
         # Multi-line block PDF layouts (Orion and Cobalt).
-        if re.fullmatch(r"[A-Z]{3}-[A-Z]{3}", text) or re.match(r"^[A-Z]{3} .+ > [A-Z]{3} ", text):
+        if re.fullmatch(r"[A-Z]{3}-[A-Z]{3}", text) or re.match(
+            r"^[A-Z]{3} .+ > [A-Z]{3} ", text
+        ):
             active = {"origin": codes[0], "destination": codes[1], "breaks": []}
             lanes[(codes[0], codes[1])] = active
         elif active and text.startswith("Transit "):

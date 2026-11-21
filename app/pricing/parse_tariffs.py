@@ -25,15 +25,22 @@ def parse_kit(directory: Path, *, allow_image_gateway: bool = False) -> dict:
         p
         for p in directory.iterdir()
         if "tariff" in p.name.lower()
-        and p.suffix.lower() in (".xlsx", ".docx", ".txt", ".pdf", ".jpg", ".jpeg", ".png")
+        and p.suffix.lower()
+        in (".xlsx", ".docx", ".txt", ".pdf", ".jpg", ".jpeg", ".png")
     )
     images = [p for p in paths if p.suffix.lower() in (".jpg", ".jpeg", ".png")]
     documents = [parse_attachment(p) for p in paths if p not in images]
     lanes = []
     periods = []
-    if images and {hashlib.sha256(p.read_bytes()).hexdigest() for p in images} == original_hashes:
+    if (
+        images
+        and {hashlib.sha256(p.read_bytes()).hexdigest() for p in images}
+        == original_hashes
+    ):
         lanes.extend(
-            lane.copy() for lane in seed["lanes"] if lane.get("source") == "transcribed-from-jpg"
+            lane.copy()
+            for lane in seed["lanes"]
+            if lane.get("source") == "transcribed-from-jpg"
         )
         periods.append((seed["valid_from"], seed["valid_to"]))
     elif images:

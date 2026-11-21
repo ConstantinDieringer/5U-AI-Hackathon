@@ -73,7 +73,10 @@ def publish(update: TariffUpdate, path: Path | None = None) -> bool:
                 == key
             ]
             if any(
-                datetime.fromisoformat(lane.get("received_at", "1970-01-01T00:00:00+00:00")) > stamp
+                datetime.fromisoformat(
+                    lane.get("received_at", "1970-01-01T00:00:00+00:00")
+                )
+                > stamp
                 for lane in matches
             ):
                 continue
@@ -90,7 +93,10 @@ def publish(update: TariffUpdate, path: Path | None = None) -> bool:
                     "received_at": update.received_at,
                 }
             )
-        manifest[version] = {"mail_id": update.mail_id, "received_at": update.received_at}
+        manifest[version] = {
+            "mail_id": update.mail_id,
+            "received_at": update.received_at,
+        }
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
@@ -119,15 +125,23 @@ def process(mail: Mail) -> None:
         runtime = settings.runtime_dir / "tariffs.json"
         if runtime.exists():
             with _write_lock:
-                manifest = json.loads(runtime.read_text(encoding="utf-8")).get("imports", {})
+                manifest = json.loads(runtime.read_text(encoding="utf-8")).get(
+                    "imports", {}
+                )
             if f"{carrier.name}:{digest}" in manifest:
                 continue
-        document = parse_images(group[0], group) if group == images else parse_attachment(group[0])
+        document = (
+            parse_images(group[0], group)
+            if group == images
+            else parse_attachment(group[0])
+        )
         if document.airline.casefold() != carrier.name.casefold():
             raise ValueError("Tariff airline does not match sender")
         for lane in document.lanes:
             if lane.destination not in carrier.serves:
-                raise ValueError(f"Tariff destination {lane.destination} is not served by sender")
+                raise ValueError(
+                    f"Tariff destination {lane.destination} is not served by sender"
+                )
         document.airline = carrier.name
         updates.append(TariffUpdate(document, mail.id, digest, mail.received_at))
     for update in updates:

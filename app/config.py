@@ -52,7 +52,9 @@ class Settings:
     served_lanes_ttl_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
-        return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
+        return (
+            f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
+        )
 
 
 settings = Settings(
@@ -62,7 +64,9 @@ settings = Settings(
     ratedesk_address=_env("RATEDESK_ADDRESS", "ratedesk@hackloop.mail").lower(),
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
     llm_model=_env("LLM_MODEL"),
-    llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5-mini"),  # 2nd try when extraction fails
+    llm_retry_model=_env(
+        "LLM_RETRY_MODEL", "gpt-5-mini"
+    ),  # 2nd try when extraction fails
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
@@ -74,7 +78,8 @@ settings = Settings(
     ui_user=_env("UI_USER", "team"),
     ui_password=_env("UI_PASSWORD"),
     # false = UI only: no polling, no sending, no catch-up (used while moving the DB online)
-    agents_enabled=_env("AGENTS_ENABLED", "true").lower() not in ("0", "false", "no", "off"),
+    agents_enabled=_env("AGENTS_ENABLED", "true").lower()
+    not in ("0", "false", "no", "off"),
     quote_target_s=float(_env("QUOTE_TARGET_S", "110")),
     bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "300")),
     quote_full_score_deadline_s=float(
@@ -93,7 +98,9 @@ settings = Settings(
     runtime_dir=Path(
         _env(
             "RUNTIME_DIR",
-            str(Path(_env("DB_PATH", "data/forwarder.db")).resolve().parent / "runtime"),
+            str(
+                Path(_env("DB_PATH", "data/forwarder.db")).resolve().parent / "runtime"
+            ),
         )
     ),
     usd_eur_rate=_env("USD_EUR_RATE"),
