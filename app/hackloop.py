@@ -328,9 +328,24 @@ def send_customer(
         options["in_reply_to"] = in_reply_to
     if references is not None:
         options["references"] = references
-    if attachments:
-        options["attachments"] = attachments
-    sent = dict(send(to=to, subject=subject, body=rendered, **options))
+    extra: dict[str, Any] = {"attachments": attachments} if attachments else {}
+    try:
+        sent = dict(send(to=to, subject=subject, body=rendered, **options, **extra))
+    except HackloopError as e:
+        # a refused attachment must never cost the quote: a 4xx means nothing was stored,
+        # so the same mail goes out once more without it (429 and 5xx are not retried here)
+        if not attachments or e.status is None or not 400 <= e.status < 500 or e.status == 429:
+            raise
+        log.error("attachment refused (%s): sending without it", e.status)
+        if session_id is not None:
+            db.emit(
+                "attachment_refused",
+                f"Anhang von der Mailbox abgelehnt ({e.status}), Mail ohne Anhang gesendet",
+                session_id,
+                level="error",
+                detail=e.detail[:300],
+            )
+        sent = dict(send(to=to, subject=subject, body=rendered, **options))
     sent["body"] = rendered
     sent["subject"] = subject
     return sent
