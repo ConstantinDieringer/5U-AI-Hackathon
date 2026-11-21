@@ -80,18 +80,7 @@ requirements.txt
 
 ## 4. Konfiguration & Secrets
 
-`.env` (nie committen), Vorlage in `.env.example`:
-
-```
-TEAM_API_KEY=
-HACKLOOP_BASE_URL=https://api.start-hack.5u.ai
-TEAM_MAILBOX=austrian-power@hackloop.mail
-LLM_MODEL=gpt-4o-mini        # vorläufig, nach GET /v1/gateway/models bestätigen
-POLL_INTERVAL_S=1.5
-DB_PATH=data/forwarder.db
-UI_PORT=8000
-LOG_LEVEL=INFO
-```
+`.env` (nie committen, das Repo ist öffentlich). **Maßgeblich ist `.env.example` im Repo-Root**: alle Variablen mit Standardwert und Kommentar. Nur `TEAM_API_KEY` ist geheim und wird von jedem selbst eingetragen. Neue Variable = Eintrag in `.env.example` + Standardwert in `app/config.py` im selben Commit.
 
 - Zugriff nur über `from app.config import settings` (z. B. `settings.api_key`).
 - Der eigene OpenAI-Key wird **einmalig per curl** im Gateway hinterlegt und steht **nirgends** im Repo oder in `.env`.

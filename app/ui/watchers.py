@@ -11,10 +11,11 @@ import time
 from typing import Any
 
 from app import db
+from app.config import settings
 
 log = logging.getLogger(__name__)
-DEADLINE_EVERY_S = 10
-BOARD_EVERY_S = 60
+DEADLINE_EVERY_S = settings.deadline_check_every_s
+BOARD_EVERY_S = settings.board_sync_every_s
 
 
 def deadline_loop() -> None:

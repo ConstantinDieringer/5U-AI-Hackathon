@@ -28,6 +28,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.config import settings
+
 log = logging.getLogger(__name__)
 
 DEADLINE = timedelta(minutes=6)
@@ -179,7 +181,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 # ---------------------------------------------------------------- connection
 
 _local = threading.local()
-_db_path: str = os.getenv("DB_PATH") or "data/forwarder.db"  # empty value -> default
+_db_path: str = settings.db_path  # from .env via app/config.py (default data/forwarder.db)
 _generation = 0  # bumped by init_db so threads reopen after a path change (tests)
 
 

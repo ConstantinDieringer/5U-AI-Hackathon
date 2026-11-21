@@ -30,6 +30,8 @@ class Settings:
     log_level: str
     inbox_dir: Path
     carrier_list: Path
+    board_sync_every_s: float
+    deadline_check_every_s: float
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -48,4 +50,6 @@ settings = Settings(
     log_level=_env("LOG_LEVEL", "INFO"),
     inbox_dir=ROOT / "data" / "inbox",
     carrier_list=ROOT / "data" / "start-kit" / "carrier-list.csv",
+    board_sync_every_s=float(_env("BOARD_SYNC_EVERY_S", "60")),
+    deadline_check_every_s=float(_env("DEADLINE_CHECK_EVERY_S", "10")),
 )
