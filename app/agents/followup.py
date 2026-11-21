@@ -142,6 +142,7 @@ def due(s: dict[str, Any], now: datetime | None = None) -> tuple[str, int] | Non
 
 def _due_offer(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
     from app.agents import booking
+    from app.mail import multilingual
 
     quote = s["quotes"][0]
     if _age_s(quote["sent_at"], now) > settings.followup_window_s:
@@ -152,7 +153,12 @@ def _due_offer(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
     quote_mail = int(quote.get("mail_id") or 0)
     after_quote = [m for m in conv if int(m["id"]) >= quote_mail] if quote_mail else conv
     replies = [m for m in after_quote if m["direction"] == "in"]
-    if any(booking._DECLINE.search(booking.own_text(str(m["body"] or ""))) for m in replies):
+    if any(
+        booking._DECLINE.search(
+            booking.own_text(multilingual.working_text(m["id"], str(m["body"] or "")))
+        )
+        for m in replies
+    ):
         return None  # explicit decline: never nudge again ("not sure yet" is no decline)
     from app.agents import prebook
 
@@ -164,7 +170,11 @@ def _due_offer(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
     if sent + answers >= settings.followup_max:
         return None
     last = conv[-1]
-    if last["direction"] == "in" and booking.is_acceptance(str(last["body"] or "")) is True:
+    if (
+        last["direction"] == "in"
+        and booking.is_acceptance(multilingual.working_text(last["id"], str(last["body"] or "")))
+        is True
+    ):
         return None  # the booking agent handles it
     if _age_s(last["received_at"], now) < settings.followup_after_s:
         return None
@@ -209,7 +219,7 @@ def _send(sid: int) -> None:
         lang = (
             booking.language(str(last_in["body"] or ""))
             if last_in
-            else ("de" if str(request.get("language") or "").startswith("de") else "en")
+            else (request.get("language") or "en")
         )
         body = text(lang, request.get("customer_name"), n, kind)
         to = address(str(s["customer"]))
@@ -219,9 +229,7 @@ def _send(sid: int) -> None:
         quotes = s.get("quotes") or []
         if quotes:
             quote = quotes[0]
-            subject = shipment_subject(
-                quote.get("origin"), quote.get("destination"), lang, subject
-            )
+            subject = shipment_subject(quote.get("origin"), quote.get("destination"), lang, subject)
         sent = hackloop.send_customer(
             to, subject, body, in_reply_to=reply_to, session_id=sid, review=False
         )

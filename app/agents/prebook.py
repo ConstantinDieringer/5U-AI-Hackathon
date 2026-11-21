@@ -670,11 +670,12 @@ def reply(mail: Any, sid: int, session: dict[str, Any]) -> bool:
     from app import db, hackloop
     from app.agents import booking, followup
     from app.config import settings
+    from app.mail import multilingual
     from app.mail.router import address
     from app.mail.signature import first_name
 
     request = session.get("request") or {}
-    lang = booking.language(mail.body)
+    lang = multilingual.mail_language(mail, request.get("language") or "en")
     name = request.get("customer_name") or first_name(mail.body)
     result = answer(booking.own_text(mail.body), facts_for(session), lang, name)
     if result.body is None:
@@ -715,7 +716,13 @@ def reply(mail: Any, sid: int, session: dict[str, Any]) -> bool:
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     try:
         sent = hackloop.send_customer(
-            customer, subject, result.body, in_reply_to=mail.id, session_id=sid, review=False
+            customer,
+            subject,
+            result.body,
+            in_reply_to=mail.id,
+            session_id=sid,
+            review=False,
+            language_code=lang,
         )
     except hackloop.CustomerSendBlocked:
         db.emit("prebook_held", "Vorabfrage: Versand gesperrt (pausiert/manuell)", sid)

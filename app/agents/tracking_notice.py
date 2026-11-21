@@ -7,11 +7,12 @@ from datetime import datetime
 
 from app import db, hackloop
 from app.config import settings
+from app.mail import multilingual
 from app.mail.language import detect
 from app.mail.outgoing import CustomerStyleError
 from app.mail.router import address
 from app.mail.style import SIGNATURE
-from app.mail.tracking_notice import customer_context, ensure_notice, has_notice
+from app.mail.tracking_notice import customer_context, has_notice
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +67,13 @@ def repair(sid: int) -> bool:
         ]
         if any(has_notice(m.get("body", "")) for m in outgoing):
             return False
-        if not incoming or booking.classify_reply(incoming[-1]["body"]) == "no":
+        if (
+            not incoming
+            or booking.classify_reply(
+                multilingual.working_text(incoming[-1]["id"], incoming[-1]["body"])
+            )
+            == "no"
+        ):
             return False
         if not booked:
             quotes = session.get("quotes") or []
@@ -93,7 +100,7 @@ def repair(sid: int) -> bool:
         greeting = {"de": "Hallo,", "fr": "Bonjour,", "es": "Hola,", "it": "Buongiorno,"}.get(
             lang, "Hi,"
         )
-        body = ensure_notice(f"{greeting}\n\n{SIGNATURE}\n", lang, booked)
+        body = f"{greeting}\n\n{SIGNATURE}\n"  # shared send boundary inserts the required notice
         db.kv_set("tracking.notice.recovery.last_attempt", f"{sid}:{time.time_ns()}")
         try:
             sent = hackloop.send_customer(

@@ -28,7 +28,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids, carrier_prefs
 from app.config import settings
-from app.mail import language, lots, parse, pdf_request
+from app.mail import language, lots, multilingual, parse, pdf_request
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.quote_locales import COPY as QUOTE_LOCALES
@@ -126,9 +126,12 @@ EXTRACT_PROMPT = (
     "weight_kg: total gross weight in kg (convert lb/t). volume_cbm: total volume in cbm; if only "
     "dimensions are given, compute pieces x L x W x H in metres.\n"
     "preference: 'fastest' if they ask for the fastest/quickest/express option, else 'cheapest'.\n"
-    "ready_date: ISO date or null. language: ISO 639-1 code of the email language.\n"
+    "ready_date: ISO date or null. language: BCP 47 code of the customer's language, with no "
+    "language restrictions. Read requests in any language and script. Keep customer_questions "
+    "and service_constraints in English for the deterministic safety checks.\n"
     "customer_name: the sender's first name from the signature, or null.\n"
-    "customer_questions: every explicit question or requested detail, verbatim and without "
+    "customer_questions: every explicit question or requested detail, faithfully translated "
+    "into English and without "
     "answering it (max 5). service_constraints: every other timing, handling, routing or service "
     "condition that the quote should respect (max 10)."
 )
@@ -432,6 +435,21 @@ def _parse_extraction(text: str, mail: Mail, session_id: int) -> tuple[Rfq | Non
             cached = json.loads(db.kv_get(f"rfq.sources.{session_id}", "{}"))
             if cached.get("media"):
                 cached.setdefault("texts", {})["image_transcription"] = str(transcript)
+                originals = json.loads(db.kv_get(f"rfq.original_sources.{session_id}", "{}"))
+                originals["image_transcription"] = str(transcript)
+                db.kv_set(
+                    f"rfq.original_sources.{session_id}", json.dumps(originals, ensure_ascii=False)
+                )
+                try:
+                    cached["texts"] = multilingual.english_sources(cached["texts"], session_id)
+                except Exception as exc:  # noqa: BLE001 - untranslated OCR must block pricing
+                    cached.setdefault("problems", []).append(
+                        {
+                            "field": "attachments",
+                            "code": "translation_failed",
+                            "detail": type(exc).__name__,
+                        }
+                    )
                 cached["media"] = False
                 db.kv_set(f"rfq.sources.{session_id}", json.dumps(cached))
         totals = lots.parse_lots(_clean(mail.body))
@@ -562,7 +580,7 @@ def _with_cutoff_notice(body: str, rfq: Rfq) -> str:
         settings.cutoff_question_notice and any(_CUTOFF_QUESTIONS.search(q) for q in asked)
     ):
         return body
-    lang = (rfq.language or "en").lower().split("-")[0]
+    lang = language.base(rfq.language)
     notice = _CUTOFF_NOTICES.get(lang, _CUTOFF_NOTICES["en"])
     if notice in body:
         return body
@@ -581,21 +599,16 @@ def quote_text(
     """The quote mail: one all-in total with its currency, in the customer's language."""
     if option.airline.lower() in rfq.excluded_airlines:
         raise ValueError("selected carrier is excluded by the customer")
-    requested_language = (rfq.language or "en").lower().split("-")[0]
-    if requested_language in QUOTE_LOCALES:
+    lang = language.base(rfq.language)
+    if lang in QUOTE_LOCALES:
         return localized_quote(
             rfq,
             option,
-            _amount(total_eur_minor, requested_language),
+            _amount(total_eur_minor, lang),
             truck,
             schedule(rfq, option.transit_days, today),
             _valid(option),
         )
-    if requested_language not in {"en", "de"}:
-        # no verified copy: the English quote, translated at send (app/mail/reply_language.py)
-        # rather than no quote at all
-        log.warning("no verified quote copy for %s: English template", requested_language)
-    lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
     name = rfq.customer_name
     if name and has_template_artifacts(name):
         name = None
@@ -906,7 +919,7 @@ def compose_quote_text(
     today: date | None = None,
 ) -> str:
     """Generate and verify a general answer; deterministic copy is always available."""
-    lang = (rfq.language or "en").lower().split("-")[0]
+    lang = language.normalize(rfq.language)
     price = _amount(total_eur_minor, lang)
     when = schedule(rfq, option.transit_days, today)
     facts = {
@@ -956,7 +969,7 @@ def compose_quote_text(
         if option.valid_until
         else None,
         "confirmed_cargo_acceptance_cutoff": None,
-        "cutoff_notice": _CUTOFF_NOTICES.get(lang, _CUTOFF_NOTICES["en"]),
+        "cutoff_notice": _CUTOFF_NOTICES.get(language.base(lang), _CUTOFF_NOTICES["en"]),
         "customer_questions": [
             {"index": index, "question": question}
             for index, question in enumerate(rfq.customer_questions)
@@ -1205,12 +1218,12 @@ def _handle(mail: Mail, sid: int) -> None:
         )
         return
     db.set_status(sid, "pricing")
+    mail = multilingual.prepare(mail, sid)
 
     start = time.monotonic()
     rfq = _stored_request(sid) or extract_rfq(mail, sid)  # stored = resumed after a restart
     if rfq is None:
         from app.agents import clarification
-        from app.models import RfqDraft
 
         draft = RfqDraft(
             issues=[
@@ -1238,6 +1251,15 @@ def _handle(mail: Mail, sid: int) -> None:
             }
         )
     corrections = (prior or {}).get("draft", {}).get("evidence", {}).get("corrections", {})
+    extracted_language = (
+        rfq.facts.get("language", "en") if isinstance(rfq, RfqDraft) else rfq.language
+    )
+    response_language = conversation_language(mail, sid, extracted_language)
+    rfq = (
+        rfq.model_copy(update={"facts": {**rfq.facts, "language": response_language}})
+        if isinstance(rfq, RfqDraft)
+        else rfq.model_copy(update={"language": response_language})
+    )
     if prior and prior["state"] == "ready":
         cached["texts"] = prior["draft"]["evidence"].get(
             "attachment_texts", cached.get("texts", {})
@@ -1281,7 +1303,7 @@ def _handle(mail: Mail, sid: int) -> None:
                 sid,
             )
     # the LLM guesses the language from names/places (English mail from a German firm -> "de")
-    rfq = rfq.model_copy(update={"language": _request_language(mail, sid, rfq.language)})
+    rfq = rfq.model_copy(update={"language": conversation_language(mail, sid, rfq.language)})
     if mode != "enforce":
         rfq = locate_pickup(rfq, mail, sid)
         if settings.ask_pickup_zip and needs_pickup_site(rfq, mail):
@@ -1298,8 +1320,6 @@ def _handle(mail: Mail, sid: int) -> None:
 
     origin = resolve_origin(rfq)
     if origin is None:
-        from app.models import RfqDraft
-
         clarification.request(
             mail,
             sid,
@@ -1409,10 +1429,27 @@ def quote_without_answer(sid: int, reason: str, dg_asked: bool = False) -> bool:
 def _request_language(mail: Mail, sid: int, default: str) -> str:
     """Current source prose wins over names, old threads and a short attachment wrapper."""
     cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}"))
-    texts = (cached.get("texts") or {}).values()
-    current = current_message(mail.body).facts
+    original_sources = db.kv_get(f"rfq.original_sources.{sid}")
+    texts = (
+        json.loads(original_sources) if original_sources else cached.get("texts") or {}
+    ).values()
+    metadata = mail.raw.get("_processing_language") or {}
+    current = current_message(metadata.get("original_body", mail.body)).facts
     evidence = "\n\n".join([current, *(str(text) for text in texts)])
-    return language.detect(evidence, default=default or "en")
+    return language.detect(evidence, default=multilingual.mail_language(mail, default or "en"))
+
+
+def conversation_language(mail: Mail, sid: int, default: str) -> str:
+    source = _request_language(mail, sid, default)
+    session = db.get_session(sid) or {}
+    incoming = [
+        m
+        for m in session.get("mails", [])
+        if m["direction"] == "in" and address(m.get("sender") or "") == address(mail.sender)
+    ]
+    if not incoming or incoming[-1]["id"] == mail.id:
+        return source
+    return multilingual.reply_language(mail.sender, sid, None, source)
 
 
 def with_stated_origin(request: Rfq, mail: Mail, sid: int) -> Rfq:
@@ -1421,7 +1458,7 @@ def with_stated_origin(request: Rfq, mail: Mail, sid: int) -> Rfq:
     from app.mail.rfq_validation import explicit_delivery_origin
 
     request = request.model_copy(
-        update={"language": _request_language(mail, sid, request.language)}
+        update={"language": conversation_language(mail, sid, request.language)}
     )
     if not request.origin and not request.door_to_port:
         stated = explicit_delivery_origin(mail, request.destination)
@@ -1753,6 +1790,7 @@ def _price_and_quote(
             in_reply_to=mail.id,
             session_id=sid,
             protected_terms=(choice.airline, choice.origin, choice.destination),
+            language_code=rfq.language,
             deadline_at=t0 + RFQ_LIFETIME_S,
             review=not template,
             # from here the quote may be out: the watchdog never frees this claim again

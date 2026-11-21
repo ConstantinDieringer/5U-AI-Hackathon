@@ -13,9 +13,10 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 | `app/mail/voice.py` + `customer_voice.md` | shared voice profile loaded into the composer prompt |
 | `app/agents/email_review.py` | optional style reviewer (`EMAIL_REVIEW_ENABLED=false`) |
 | `app/agents/tracking_notice.py` | repairs a missing tracking paragraph |
+| `app/mail/multilingual.py` | cached incoming normalization and native outgoing text with protected facts; unverifiable translations are held |
+| `app/mail/reply_language.py` | compatibility helper for older standalone callers; not part of live transport |
 | `app/mail/quote_pdf.py` | quote PDF attachment (`QUOTE_PDF`), rendered by code from the priced option, no LLM |
 | `app/mail/pdf_request.py` | did the customer ask for the PDF? rules only (`QUOTE_PDF_ON_REQUEST`) |
-| `app/mail/reply_language.py` | send-time translation into any customer language but de/en (`REPLY_IN_CUSTOMER_LANGUAGE`), original plus warn event on doubt |
 
 ## Hard style rules (customer body and subject)
 
@@ -43,7 +44,7 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 ## Composer
 
 - Every quote uses `LLM_COMPOSE_MODEL` (`gpt-5-mini`) with bounded current-thread and earlier same-customer correspondence; older monetary amounts are removed. A failed check sends the deterministic quote copy; the second composer call is opt-in (`COMPOSE_REPAIR`, off for cost). Only verified current facts support price/service promises.
-- Language: the request language (ISO code, current mail/attachment prose before signature/history) reaches composer and repair; mismatched output triggers repair. Deterministic quotes, months and subjects support EN/DE/FR/ES/IT; other languages use the English copy, translated at send by `reply_language.py` (English plus warn event if the checks fail), never no quote.
+- Language: current request/attachment prose and the latest meaningful reply set the language; short acknowledgements inherit it. Composer/repair receive the full code. EN/DE/FR/ES/IT retain verified native templates; other languages use checked, cached translation at the shared send boundary. No unverified English fallback. Native tracking paragraphs survive translation and recovery. Details, costs and limits: `context/docs/multilingual-mail.md`.
 - Voice: close, cheerful best-friend tone; German defaults to du unless formal address is requested. No invented shared history.
 - One validated repair attempt, then the deterministic template fallback. Fallback templates reject placeholders and embedded headers.
 - Never promise unverified cargo cutoffs; a requested cutoff is stated as unconfirmed.

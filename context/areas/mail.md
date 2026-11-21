@@ -14,6 +14,7 @@ API fields: `context/docs/mail-format.md`, `context/docs/5u-api.md`.
 | `app/mail/screening.py` | phishing gate |
 | `app/mail/guard.py` | inbound flood/auto-mail guard and outbound loop caps |
 | `app/mail/documents.py`, `speech.py` | attachment reading, audio transcription |
+| `app/mail/multilingual.py` | cached working copies; originals remain in the CRM; foreign readable documents translated in one batch |
 | `app/db.py` | session mapping (`ingest_mail`), `record_outgoing()` |
 
 ## Rules
@@ -28,6 +29,7 @@ API fields: `context/docs/mail-format.md`, `context/docs/5u-api.md`.
 - Airline replies with attachments route as bids when threaded or `[AP-n]`-tagged.
 - Processing is idempotent by message ID. Reply in the customer's thread (`in_reply_to`). Mail to our own address gets 422.
 - Tests never call 5U or the gateway: `tests/conftest.py` fails any test that tries.
+- Voice defaults to multilingual Whisper `base`, auto-detecting the language. Legacy `.en` settings map to multilingual models; Docker rebuild required. Normalization of foreign text preserves values, references, units, negations and original messages.
 
 ## Tests (run these while iterating; the full suite only before the PR)
 
