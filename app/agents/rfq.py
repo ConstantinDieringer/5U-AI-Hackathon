@@ -185,7 +185,12 @@ def locate_origin(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
     if rfq.origin or rfq.door_to_port:
         return rfq
     network = set(pickup_zones().values())
-    text = f"{mail.subject or ''}\n{_clean(mail.body)}"
+    # the subject counts only if it belongs to this request: a reply/forward subject above a
+    # quoted older request is history (same rule as the extraction prompt)
+    boundary = _HISTORY.search(mail.body or "")
+    historical = bool(boundary and _SHIPMENT_DATA.search((mail.body or "")[: boundary.start()]))
+    subject = "" if historical else (mail.subject or "")
+    text = f"{subject}\n{_clean(mail.body)}"
     found = {c for c in re.findall(r"\b[A-Z]{3}\b", text) if c in network}
     low = text.lower()
     found |= {

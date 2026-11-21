@@ -168,3 +168,10 @@ def test_5844_origin_from_text_when_llm_left_it_empty():
     assert (
         agent.locate_origin(Rfq(destination="DEL", weight_kg=1), two, 1).origin is None
     )
+
+
+def test_origin_ignores_subject_of_quoted_old_request():
+    body = ("Please quote cheapest to DEL, 300 kg, we deliver to the airport ourselves.\n\n"
+            "-----Original Message-----\nSubject: HAM - HKG\n\nold request 120 kg")
+    m = mail(7, "x@y.example", "RE: FW: HAM - HKG / 120 KGS", body)
+    assert agent.locate_origin(Rfq(destination="DEL", weight_kg=300), m, 7).origin is None
