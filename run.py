@@ -20,6 +20,9 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s [%(threadName)s] %(message)s",
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll is noise
+    from app.ui import logbuffer
+
+    logbuffer.install()  # recent log lines for the manual context export
     log = logging.getLogger("run")
 
     if not settings.ui_password:

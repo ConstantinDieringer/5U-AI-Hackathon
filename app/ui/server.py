@@ -151,6 +151,21 @@ def api_session_context(session_id: int) -> dict[str, str]:
     return {"text": text}
 
 
+@app.get("/api/sessions/{session_id}/context.zip")
+def api_session_context_zip(session_id: int) -> Response:
+    """The session context plus the original attachment files (images, scans, voice)."""
+    from app.ui import ai_context
+
+    data = ai_context.session_zip(session_id)
+    if data is None:
+        raise HTTPException(404, "session not found")
+    return Response(
+        data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="session-{session_id}-context.zip"'},
+    )
+
+
 @app.get("/api/attention")
 def api_attention() -> list[dict[str, Any]]:
     return db.attention_items()

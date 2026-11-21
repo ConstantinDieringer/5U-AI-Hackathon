@@ -288,6 +288,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
   <symbol id="i-cart" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
 </svg>
 
@@ -584,7 +585,8 @@ function renderDetail() {
       s.paused ? el("button", { class: "btn", onclick: act("resume") }, icon("play"), "Fortsetzen") : el("button", { class: "btn", onclick: act("pause") }, icon("pause"), "Pausieren"),
       s.mode === "manual" ? el("button", { class: "btn", onclick: act("handback") }, icon("undo"), "An Agent zurückgeben") : el("button", { class: "btn", onclick: act("takeover", "Session übernehmen? Der Agent sendet danach nichts mehr in diesem Thread.") }, icon("hand"), "Übernehmen"),
       el("button", { class: "btn", onclick: loadDraft, title: "Preis aus Tarifblatt, Portal und Geboten berechnen und eine fertige Quote ins Antwortfeld setzen" }, icon("coin"), "Notfall-Quote"),
-      el("button", { class: "btn", title: "Ganze Session (Anfrage, Mails, Quotes, Agent-Schritte, Fehler) als Text kopieren, zum Einfügen in ChatGPT/Claude", onclick: (e) => copyText(`/api/sessions/${s.id}/context`, e.currentTarget) }, icon("inbox"), "Kontext kopieren"),
+      el("button", { class: "btn", title: "Ganze Session (Mails mit Anhängen, Quotes, Agent-Schritte, Logs) als Text kopieren. In eine normale Claude-Session einfügen, sie schreibt die nächste Mail", onclick: (e) => copyText(`/api/sessions/${s.id}/context`, e.currentTarget) }, icon("inbox"), "Kontext kopieren"),
+      el("a", { class: "btn ghost", href: `/api/sessions/${s.id}/context.zip`, download: "", title: "Kontext plus Original-Anhänge (Bilder, Scans, Sprachnachrichten) als ZIP herunterladen" }, icon("download"), "ZIP"),
       el("button", { class: "btn primary", onclick: () => toggleReply(true) }, icon("send"), "Antworten")),
     ...notices,
     el("div", { id: "reply", style: "display:none;margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
