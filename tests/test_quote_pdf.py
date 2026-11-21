@@ -127,3 +127,45 @@ def test_rfq_quote_pdf_flag_and_failure(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(rfq_agent, "settings", dataclasses.replace(on, quote_pdf=False))
     assert rfq_agent._quote_pdf(3, _rfq(), _choice(), 147500, None) is None
+
+
+def test_refused_attachment_still_sends_the_quote(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Round 81: if the mailbox refuses the PDF (4xx), the quote goes out without it."""
+    payloads: list[dict[str, Any]] = []
+
+    def fake_request(method: str, path: str, safe: bool = True, **kw: Any) -> Any:
+        payloads.append(kw["json"])
+        if "attachments" in kw["json"]:
+            raise hackloop.HackloopError("POST", path, 422, "attachments not allowed")
+        return {"id": 77, "references": []}
+
+    events: list[str] = []
+    monkeypatch.setattr(db, "reply_blocked", lambda _mid: False)
+    monkeypatch.setattr(db, "emit", lambda kind, *a, **k: events.append(kind))
+    monkeypatch.setattr(hackloop, "_request", fake_request)
+    monkeypatch.setattr(hackloop, "_json_obj", lambda x: x)
+    att = {"filename": "a.pdf", "content_type": "application/pdf", "content_base64": "JVBE"}
+    sent = hackloop.send_customer(
+        "customer@hackloop.mail", "Re: Request", "Hello,\n\nThe offer.\n\nMoritz",
+        in_reply_to=5, session_id=None, review=False, attachments=[att],
+    )  # fmt: skip
+    assert sent["id"] == 77
+    assert len(payloads) == 2 and "attachments" not in payloads[1]
+
+
+def test_server_error_with_attachment_is_not_resent(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def fake_request(method: str, path: str, safe: bool = True, **kw: Any) -> Any:
+        calls.append(1)
+        raise hackloop.HackloopError("POST", path, 503, "down")
+
+    monkeypatch.setattr(db, "reply_blocked", lambda _mid: False)
+    monkeypatch.setattr(hackloop, "_request", fake_request)
+    att = {"filename": "a.pdf", "content_type": "application/pdf", "content_base64": "JVBE"}
+    with pytest.raises(hackloop.HackloopError):
+        hackloop.send_customer(
+            "customer@hackloop.mail", "Re: Request", "Hello,\n\nThe offer.\n\nMoritz",
+            in_reply_to=5, session_id=None, review=False, attachments=[att],
+        )  # fmt: skip
+    assert len(calls) == 1
