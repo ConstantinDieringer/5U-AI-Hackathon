@@ -25,6 +25,8 @@ but adds image size and CPU/RAM usage. `AUDIO_TIMEOUT_S=60` bounds the provider 
 `LOCAL_AUDIO_ENABLED=false` disables the offline safety net. `ATTACHMENT_TRANSCRIPTION=false`
 disables all speech/scan recognition. Do not redeploy during an active RFQ; use the gate
 below. Verify a saved MP3 before rollout, without resending mail or booking again.
+Use the bundled `SPEECH_MODEL=base`; an existing service override such as `base.en`
+must either be cleared/changed to `base` or explicitly baked into the new image too.
 
 ## RFQ input validation rollout
 

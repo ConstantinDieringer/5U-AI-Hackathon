@@ -1,10 +1,9 @@
-"""Voice messages to text, locally. The 5U gateway refuses audio input on every model
-("Audio input is not available", 21 Nov 2026), so voice offers and voice RFQs are read by a
-small Whisper model in this process: no gateway call, no cost, a few seconds per message.
+"""Existing local Whisper recognizer, reused by audio_local's bounded worker.
 
-The model is loaded once (Docker bakes it into the image, see Dockerfile) and shared by all
-threads; `preload()` warms it at startup so the first voice offer of a round does not pay
-the load time."""
+The image bakes in the model; the active audio chain runs this in a child process so a
+timeout can terminate inference. Direct callers may still share _load()/preload(), but
+the mail process no longer keeps a second unused model while Groq is primary.
+"""
 
 from __future__ import annotations
 

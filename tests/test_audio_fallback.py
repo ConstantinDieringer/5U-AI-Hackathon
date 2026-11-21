@@ -57,6 +57,7 @@ def test_groq_success_does_not_use_fallback(monkeypatch):
     assert len(seen) == 1
     assert seen[0].url.path == "/openai/v1/audio/transcriptions"
     assert seen[0].headers["authorization"] == "Bearer test-secret"
+    assert b"Content-Type: audio/mpeg" in seen[0].content
 
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 413, 422, 429, 500, 503])
@@ -96,6 +97,7 @@ def test_network_failure_is_bounded_then_falls_back(monkeypatch):
     seen = response_client(monkeypatch, timeout)
     assert audio.transcribe("mp3", b"audio", None, "bid") == OFFER
     assert len(seen) == 2
+    assert seen[0].extensions["timeout"]["read"] == 8.0
 
 
 @pytest.mark.parametrize("payload", [{"text": ""}, {"text": 42}, [], {"text": "Thank you."}])
@@ -131,6 +133,7 @@ def test_existing_gateway_fallback_is_used_if_allowed(monkeypatch):
     monkeypatch.setattr(audio, "_local", lambda *a: pytest.fail("unexpected offline call"))
     assert audio.transcribe("wav", b"audio", None, "bid") == OFFER
     assert seen[0][1]["model_name"] == "gpt-4o-mini-audio-preview"
+    assert seen[0][1]["timeout_s"] <= 8.0
     assert seen[0][0][1][0]["content"][1]["input_audio"]["format"] == "wav"
 
 

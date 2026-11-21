@@ -97,13 +97,20 @@ def _groq(fmt: str, data: bytes, deadline: float) -> str:
             response = _client.post(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
                 headers={"Authorization": f"Bearer {settings.groq_api_key}"},
-                files={"file": (f"voice.{fmt}", data, f"audio/{fmt}")},
+                files={
+                    "file": (
+                        f"voice.{fmt}",
+                        data,
+                        "audio/mpeg" if fmt == "mp3" else "audio/wav",
+                    )
+                },
                 data={
                     "model": settings.groq_audio_model,
                     "response_format": "json",
                     "temperature": "0",
                 },
-                timeout=_remaining(deadline, 12.0),
+                # Leave the offline worker its full 30 s even after two network timeouts.
+                timeout=_remaining(deadline, 8.0),
             )
         except httpx.TransportError:
             if attempt == 0:
@@ -189,7 +196,7 @@ def _gateway(fmt: str, data: bytes, deadline: float, session_id: int | None, pur
                 session_id,
                 model_name=name,
                 max_tokens=1200,
-                timeout_s=_remaining(deadline, 12.0),
+                timeout_s=_remaining(deadline, 8.0),
             )
         )
     except Exception as exc:  # noqa: BLE001 - provider boundary; never expose its raw error
