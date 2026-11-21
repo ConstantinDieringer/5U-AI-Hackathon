@@ -101,6 +101,9 @@ def test_attachments_saved_under_mail_id(box: FakeMailbox, tmp_path: Path) -> No
     att = [{"id": 7, "filename": "../../evil tariff.xlsx", "content_type": "x", "size": 5}]
     box.mails = [real_mail(501, sender="kestrel-airways@hackloop.mail", attachments=att)]
     poller.poll_once(0)
+    # Tariff downloads now belong to the durable background worker.
+    assert db.pending_tariffs()[0]["mail_id"] == 501
+    poller.download_attachments(poller.parse.mail_from_api(box.mails[0]))
     assert (tmp_path / "inbox" / "501" / "7-evil_tariff.xlsx").read_bytes() == b"bytes"
     assert box.downloads == [(501, 7)]
 

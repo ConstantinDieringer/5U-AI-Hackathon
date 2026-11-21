@@ -25,7 +25,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.config import settings
@@ -175,6 +175,12 @@ CREATE TABLE IF NOT EXISTS board_results (
 );
 
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS tariff_jobs (
+  mail_id INTEGER PRIMARY KEY,
+  raw_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT
+);
 """
 
 
@@ -186,7 +192,7 @@ _generation = 0  # bumped by init_db so threads reopen after a path change (test
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _parse(ts: str) -> datetime:
@@ -354,7 +360,7 @@ def _session_by_subject(c: sqlite3.Connection, subject: str, body: str) -> int |
     stripped = _RE_PREFIX.sub("", subject or "").strip()
     if stripped:
         candidates.append(stripped)
-    since = (datetime.now(timezone.utc) - SUBJECT_MATCH_WINDOW).isoformat(timespec="seconds")
+    since = (datetime.now(UTC) - SUBJECT_MATCH_WINDOW).isoformat(timespec="seconds")
     for cand in candidates:
         r = _one(
             c.execute(
@@ -931,12 +937,76 @@ def save_board_result(
                 Ev.BOARD_VERDICT,
                 f"Board: {verdict}" + (f" ({reason})" if reason else ""),
                 session_id,
-                level="warn"
-                if verdict in ("rejected", "no_answer", "no answer", "voided")
-                else "info",
+                level="warn" if verdict != "accepted" else "info",
                 payload={"round_id": round_id, "points": points},
             )
         return changed
+
+
+def note_dataset_version(version: str) -> bool:
+    """Persist transitions and their alert atomically; the first observation is a baseline."""
+    with tx() as c:
+        old = _one(c.execute("SELECT value FROM kv WHERE key='portal.dataset_version'"))
+        if old and old["value"] == version:
+            return False
+        c.execute(
+            "INSERT INTO kv(key,value) VALUES ('portal.dataset_version',?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (version,),
+        )
+        if old:
+            _emit(
+                c,
+                "dataset_changed",
+                f"Portal dataset_version changed {old['value']} -> {version}",
+                level="warn",
+                payload={"old": old["value"], "new": version},
+            )
+        return bool(old)
+
+
+def queue_tariff(mail_id: int, raw: dict[str, Any]) -> None:
+    with tx() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO tariff_jobs(mail_id,raw_json) VALUES (?,?)",
+            (mail_id, _json(raw)),
+        )
+
+
+def pending_tariffs() -> list[dict[str, Any]]:
+    return _rows(
+        conn().execute(
+            "SELECT mail_id,raw_json FROM tariff_jobs WHERE status='pending' ORDER BY mail_id"
+        )
+    )
+
+
+def queue_stored_tariffs() -> None:
+    """Backfill tariff mails stored by older pollers without touching their cursor."""
+    with tx() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO tariff_jobs(mail_id,raw_json) "
+            "SELECT id,raw_json FROM mails WHERE category='tariff' AND raw_json IS NOT NULL"
+        )
+
+
+def finish_tariff(mail_id: int, error: str | None = None) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE tariff_jobs SET status=?,error=? WHERE mail_id=?",
+            ("failed" if error else "done", error, mail_id),
+        )
+
+
+def pricing_evidence() -> list[dict[str, Any]]:
+    """Read-only audit/board join for breakpoint investigations."""
+    return _rows(
+        conn().execute(
+            "SELECT e.session_id,e.created_at,e.payload_json,b.verdict,b.reason,b.points_json "
+            "FROM events e LEFT JOIN board_results b ON b.session_id=e.session_id "
+            "WHERE e.kind='pricing_audit' ORDER BY e.id"
+        )
+    )
 
 
 # ---------------------------------------------------------------- watchers & stats

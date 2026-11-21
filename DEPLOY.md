@@ -29,3 +29,30 @@ poll the mailbox, otherwise mails are processed twice. Once it runs online, nobo
 - Health check: `GET /api/health` (no login).
 - First start polls from `since_id=0` and stores old mail once; that is expected.
 - Keep `numReplicas` at 1.
+
+## Tariffs and portal updates
+
+- `RUNTIME_DIR` defaults to a `runtime` directory beside `DB_PATH`: `/data/runtime` in
+  the container. Keep this on the same persistent volume as SQLite. Do not set it to
+  the tracked `data` directory. Tracked JSON snapshots bootstrap a fresh installation.
+- `python run.py` starts the tariff worker as well as the poller. Old stored tariff mails
+  are backfilled once; pending jobs resume after restart. `tariff_updated` and
+  `tariff_failed` events show the outcome. A malformed file leaves the last valid data.
+- Unknown layouts fail visibly; they are not guessed. JPG/PNG and scanned PDF extraction
+  uses the existing gateway and configured model, with separately logged tariff costs.
+- Portal 429 waits are shared across rate calls; requests stop waiting when their RFQ
+  budget runs out. Portal 503 asks the known airline for an email bid. The booking
+  agent remains responsible for booking-specific errors.
+- Board transitions other than `accepted` generate warning events (including `open`
+  and `pending`); unchanged polls do not duplicate alerts. Dataset changes invalidate
+  rates and trigger background snapshot refresh.
+- For USD sheets/bids set `USD_EUR_RATE` (EUR per USD, from a documented source) and
+  `USD_EUR_VALID_UNTIL` (UTC ISO timestamp with offset). Both are required; expired or
+  missing rates exclude the USD option with a warning. Portal USD prices use only
+  their own supplied `fx_eur_per_usd`. Other currencies are unsupported.
+- `USE_BREAKPOINTS=true` preserves existing pricing. `python -m app.pricing.audit` prints
+  the stored pricing/board evidence without sending quotes. Accepted verdicts alone
+  do not establish which breakpoint formula the scorer uses; keep the default until
+  comparable best-price evidence is available.
+- Before deploying, run `python -m pytest -q`; then restart the sole live instance and
+  check `/api/health`, poller logs and tariff events. Do not run a second production poller.

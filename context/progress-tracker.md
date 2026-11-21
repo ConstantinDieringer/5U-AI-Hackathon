@@ -13,6 +13,10 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- B hardening: durable tariff worker and reusable monthly parsers (text/table + gateway image transcription), atomic runtime data, dataset/board alerts, bounded portal 429 waits and known-carrier 503 fallback.
+- B pricing: explicit expiring EUR/USD conversion for sheets/bids, original amounts and breakpoint audit retained; `python -m app.pricing.audit` joins board evidence. Scorer breakpoint semantics remain unconfirmed; existing default preserved.
+- B verification: 118 tests pass, including isolated full-app startup, 158 kit lanes, monthly reload, replay and 429/503; targeted Ruff checks/formatting pass. No live restart or live image-model extraction performed; authoritative production instance still needs identification.
+
 - Context adapted from Ghost AI.
 - Stack decided (`context/docs/TECH_SPEC.md`), `context/architecture-context.md` added.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`.

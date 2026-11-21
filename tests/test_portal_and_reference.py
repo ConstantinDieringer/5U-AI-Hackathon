@@ -58,7 +58,7 @@ def test_portal_options_skips_failing_airline(monkeypatch):
         calls.append(airline)
         if airline == "UV":
             raise RuntimeError("503 book by email")
-        return {**RATE, "airline_code": airline}
+        return {**RATE, "airline_code": airline, "valid_until": "2099-01-01T00:00:00+00:00"}
 
     assert [a["code"] for a in portal_airlines("CGN", "DEL")] == ["JP", "UV"]
     opts = portal_options(Rfq(origin="CGN", destination="DEL", weight_kg=120), fetch=fake_fetch)

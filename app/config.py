@@ -36,6 +36,10 @@ class Settings:
     ui_password: str
     quote_target_s: float
     bid_max_wait_s: float
+    runtime_dir: Path
+    usd_eur_rate: str
+    usd_eur_valid_until: str
+    use_breakpoints: bool
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -60,4 +64,13 @@ settings = Settings(
     ui_password=_env("UI_PASSWORD"),  # set it whenever the UI is reachable from the internet
     quote_target_s=float(_env("QUOTE_TARGET_S", "100")),
     bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "240")),
+    runtime_dir=Path(
+        _env(
+            "RUNTIME_DIR",
+            str(Path(_env("DB_PATH", "data/forwarder.db")).resolve().parent / "runtime"),
+        )
+    ),
+    usd_eur_rate=_env("USD_EUR_RATE"),
+    usd_eur_valid_until=_env("USD_EUR_VALID_UNTIL"),
+    use_breakpoints=_env("USE_BREAKPOINTS", "true").lower() == "true",
 )

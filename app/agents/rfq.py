@@ -27,7 +27,7 @@ from app.agents import bids
 from app.config import settings
 from app.models import Mail, RateOption, Rfq
 from app.pricing.lanes import airlines_for
-from app.pricing.portal_sync import portal_options
+from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import pick, resolve_origin, sheet_options, to_minor
 from app.pricing.reference import (
     Carrier,
@@ -39,9 +39,7 @@ from app.pricing.reference import (
 log = logging.getLogger(__name__)
 
 RFQ_LIFETIME_S = 360  # 5U expires a request 6 min after it was sent
-TOO_OLD_S = (
-    330  # do not start work on a request that cannot be answered in time any more
-)
+TOO_OLD_S = 330  # do not start work on a request that cannot be answered in time any more
 
 EXTRACT_PROMPT = (
     "Extract the air freight request from the email as JSON.\n"
@@ -120,9 +118,7 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
     try:
         return Rfq.model_validate(json.loads(text))
     except (json.JSONDecodeError, ValidationError) as e:
-        log.warning(
-            "session %s: extraction not usable (%s): %r", session_id, e, text[:300]
-        )
+        log.warning("session %s: extraction not usable (%s): %r", session_id, e, text[:300])
         return None
 
 
@@ -154,8 +150,7 @@ def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
     return min(
         trucks,
         key=lambda o: (
-            norm(o.total_eur, lo_p, hi_p) / 2
-            + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
+            norm(o.total_eur, lo_p, hi_p) / 2 + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
             o.total_eur,
         ),
     )
@@ -175,11 +170,7 @@ def _valid(option: RateOption) -> str | None:
     if not option.valid_until:
         return None
     try:
-        return (
-            datetime.fromisoformat(option.valid_until)
-            .astimezone(UTC)
-            .strftime("%H:%M UTC")
-        )
+        return datetime.fromisoformat(option.valid_until).astimezone(UTC).strftime("%H:%M UTC")
     except ValueError:
         return None
 
@@ -233,7 +224,9 @@ def quote_text(
         )
         what = f"Air freight {option.origin} to {option.destination}"
         if truck is not None and rfq.pickup_zip:
-            what += f", including pickup at {rfq.pickup_zip} and trucking to {option.origin} airport"
+            what += (
+                f", including pickup at {rfq.pickup_zip} and trucking to {option.origin} airport"
+            )
         lines = [
             hello,
             "",
@@ -328,7 +321,24 @@ def _handle(mail: Mail, sid: int) -> None:
     if not db.is_manual(sid) and not db.is_paused(sid):
         bids.request(sid, rfq, origin, truckers + email_airlines)
 
-    air = sheet_options(rfq) + portal_options(rfq)
+    portal = portal_result(
+        rfq, deadline=time.monotonic() + max(0, t0 + settings.quote_target_s - time.time())
+    )
+    fallback_codes = set(portal.email_fallbacks)
+    fallback = []
+    for airline in airlines_for(origin, rfq.destination):
+        if airline.code in fallback_codes and airline.email:
+            carrier = carrier_by_email(airline.email)
+            if carrier is not None:
+                fallback.append(carrier)
+    if fallback:
+        bids.request(sid, rfq, origin, fallback)
+        email_airlines += fallback
+    if portal.errors:
+        db.emit(
+            "portal_warning", "Portal options unavailable", sid, level="warn", errors=portal.errors
+        )
+    air = sheet_options(rfq) + portal.options
     db.emit("priced", f"{len(air)} Preise aus Tarifblatt und Portal", sid)
 
     target = t0 + settings.quote_target_s
@@ -352,6 +362,22 @@ def _handle(mail: Mail, sid: int) -> None:
         bids.wait(sid, hard - time.time(), until_kinds=need)
 
     offers = bids.offers(sid)
+
+    # A rate or FX observation may expire while carrier replies are arriving.
+    def current(expiry: str | None) -> bool:
+        if expiry is None:
+            return True
+        try:
+            stamp = datetime.fromisoformat(expiry)
+            return stamp.tzinfo is not None and stamp > datetime.now(UTC)
+        except ValueError:
+            return False
+
+    air = [o for o in air if current(o.valid_until) and current(o.fx_valid_until)]
+    valid_offers = [o for o in offers if current(o.fx_valid_until)]
+    if len(valid_offers) != len(offers):
+        db.emit("fx_expired", "Carrier bid FX expired while waiting", sid, level="warn")
+    offers = valid_offers
     chargeable = air[0].chargeable_kg if air else 0.0
     bid_opts = [
         bids.airline_option(o, rfq, origin, chargeable)
@@ -365,12 +391,22 @@ def _handle(mail: Mail, sid: int) -> None:
         return
     truck = best_truck(offers) if rfq.pickup_zip else None
     if rfq.pickup_zip and truck is None:
-        db.emit(
-            "no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn"
-        )
+        db.emit("no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn")
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
 
     body = quote_text(rfq, choice, total, truck, sid)
+    from dataclasses import asdict
+
+    db.emit(
+        "pricing_audit",
+        "Pricing inputs and selected option",
+        sid,
+        request=rfq.model_dump(),
+        selected=asdict(choice),
+        options=[asdict(o) for o in air + bid_opts],
+        trucking=asdict(truck) if truck else None,
+        use_breakpoints=settings.use_breakpoints,
+    )
     if not db.claim_quote_send(sid):
         db.emit(
             "not_sent",
@@ -379,11 +415,7 @@ def _handle(mail: Mail, sid: int) -> None:
             level="warn",
         )
         return
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -407,20 +439,8 @@ def _handle(mail: Mail, sid: int) -> None:
         source=choice.source,  # trucking is listed in alternatives
         rate_id=choice.rate_id,
         valid_until=choice.valid_until,
-        alternatives=[
-            {
-                "airline": o.airline,
-                "source": o.source,
-                "total_eur_minor": o.total_eur_minor,
-                "transit_days": o.transit_days,
-            }
-            for o in air + bid_opts
-        ]
-        + (
-            [{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}]
-            if truck
-            else []
-        ),
+        alternatives=[asdict(o) for o in air + bid_opts]
+        + ([{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}] if truck else []),
         mail_id=int(sent["id"]),
     )
     log.info(

@@ -25,9 +25,10 @@ from app.pricing.reference import Carrier, carrier_by_email
 log = logging.getLogger(__name__)
 
 TAG = re.compile(r"\[AP-(\d+)\]")
+_MONEY = r"(?:\d{1,3}(?:[ ,.'’]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
 _AMOUNT = re.compile(
-    r"(?:(?P<cur1>EUR|USD|€|\$)\s*(?P<num1>\d[\d.,' ]*\d|\d))"
-    r"|(?:(?P<num2>\d[\d.,' ]*\d|\d)\s*(?P<cur2>EUR|USD|€|\$))",
+    rf"(?:(?P<cur1>EUR|USD|€|\$)\s*(?P<num1>{_MONEY}))"
+    rf"|(?:(?P<num2>{_MONEY})\s*(?P<cur2>EUR|USD|€|\$))",
     re.IGNORECASE,
 )
 _DAYS = re.compile(
@@ -35,9 +36,7 @@ _DAYS = re.compile(
     re.IGNORECASE,
 )
 _HOURS = re.compile(r"(\d+)\s*(?:h|hours?|stunden)\b", re.IGNORECASE)
-_TOTAL_HINT = re.compile(
-    r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE
-)
+_TOTAL_HINT = re.compile(r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -46,6 +45,11 @@ class Offer:
     total_eur: Decimal
     transit_days: float | None
     mail_id: int
+    original_amount: Decimal | None = None
+    currency: str = "EUR"
+    fx_rate: str | None = None
+    fx_source: str | None = None
+    fx_valid_until: str | None = None
 
 
 @dataclass
@@ -71,11 +75,7 @@ def _number(raw: str) -> Decimal | None:
         )
     elif "," in s:
         head, _, tail = s.rpartition(",")
-        s = (
-            f"{head.replace(',', '')}.{tail}"
-            if len(tail) in (1, 2)
-            else s.replace(",", "")
-        )
+        s = f"{head.replace(',', '')}.{tail}" if len(tail) in (1, 2) else s.replace(",", "")
     elif s.count(".") > 1 or (s.count(".") == 1 and len(s.rpartition(".")[2]) == 3):
         s = s.replace(".", "")  # 1.234 / 1.234.567 = thousands
     try:
@@ -144,6 +144,11 @@ def request(session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier]) -> 
     with _cond:
         req = _open.setdefault(session_id, _Request())
     for c in carriers:
+        if db.is_manual(session_id) or db.is_paused(session_id):
+            break
+        with _cond:
+            if c.email in req.asked:
+                continue
         subject, body = (
             _subject(session_id, rfq, origin, c.kind),
             _body(rfq, origin, c.kind),
@@ -197,23 +202,42 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
         )
         return
     amount, currency = price
-    if currency != "EUR":
+    from app.pricing.fx import eur_rate
+
+    try:
+        fx, fx_source, fx_expiry = eur_rate(currency)
+    except ValueError as exc:
         db.emit(
             "bid_skipped",
-            f"Gebot von {carrier.name} in {currency}: ohne Kurs ignoriert",
+            f"Gebot von {carrier.name}: {exc}",
             sid,
             level="warn",
         )
         return
-    offer = Offer(carrier, amount, parse_transit_days(mail.body or ""), mail.id)
+    offer = Offer(
+        carrier,
+        money(amount * fx),
+        parse_transit_days(mail.body or ""),
+        mail.id,
+        amount,
+        currency,
+        str(fx),
+        fx_source,
+        fx_expiry,
+    )
     with _cond:
         _open.setdefault(sid, _Request()).offers.append(offer)
         _cond.notify_all()
     db.emit(
         "bid_received",
-        f"Gebot {carrier.name}: {amount} EUR"
+        f"Gebot {carrier.name}: {offer.total_eur} EUR"
         + (f", {offer.transit_days:g} Tage" if offer.transit_days is not None else ""),
         sid,
+        original_amount=str(amount),
+        currency=currency,
+        fx_rate=str(fx),
+        fx_source=fx_source,
+        fx_valid_until=fx_expiry,
     )
 
 
@@ -226,9 +250,7 @@ def offers(session_id: int) -> list[Offer]:
         return list(req.offers) if req else []
 
 
-def wait(
-    session_id: int, timeout_s: float, until_kinds: set[str] | None = None
-) -> list[Offer]:
+def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None) -> list[Offer]:
     """Block until every asked carrier answered (or, with `until_kinds`, until at least one
     offer of each kind is in), or the timeout passes. Returns the offers so far."""
 
@@ -260,9 +282,7 @@ def close(session_id: int) -> None:
 # ---------------------------------------------------------------- conversion
 
 
-def airline_option(
-    offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float
-) -> RateOption:
+def airline_option(offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float) -> RateOption:
     total = to_minor(offer.total_eur)
     days = offer.transit_days if offer.transit_days is not None else 99
     return RateOption(
@@ -270,10 +290,13 @@ def airline_option(
         origin=origin,
         destination=rfq.destination,
         transit_days=round(days),
-        total_minor=total,
-        currency="EUR",
+        total_minor=to_minor(offer.original_amount) if offer.original_amount is not None else total,
+        currency=offer.currency,
         total_eur_minor=total,
         source="bid",
         chargeable_kg=chargeable_kg,
         billed_kg=chargeable_kg,
+        fx_eur_per_unit=offer.fx_rate,
+        fx_source=offer.fx_source,
+        fx_valid_until=offer.fx_valid_until,
     )

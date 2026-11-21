@@ -81,7 +81,7 @@ def _reserve(session_id: int | None) -> None:
 
 def complete(
     purpose: str,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     session_id: int | None,
     max_tokens: int = 200,
     response_format: dict[str, Any] | None = None,

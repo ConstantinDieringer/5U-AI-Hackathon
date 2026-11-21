@@ -12,6 +12,7 @@ import pytest
 from app import db
 from app.agents import bids, rfq
 from app.models import Mail, RateOption, Rfq
+from app.pricing.portal_sync import PortalResult
 
 TEAM = "austrian-power@hackloop.mail"
 CUSTOMER = "lindqvist-medtech@hackloop.mail"
@@ -73,9 +74,7 @@ def test_best_air_fastest_and_balanced_bid() -> None:
         opt("Z", 1400, 3, "bid"),
     ]  # Y is the balanced bid
     assert rfq.best_air(air, bids_, "fastest").airline == "Y"
-    assert (
-        rfq.best_air(air, bids_, "cheapest").airline == "A"
-    )  # X loses the balanced bid pick
+    assert rfq.best_air(air, bids_, "cheapest").airline == "A"  # X loses the balanced bid pick
 
 
 def test_best_truck_cheapest_when_no_transit() -> None:
@@ -105,9 +104,7 @@ def test_quote_text_has_exactly_one_total() -> None:
         customer_name="Sara",
     )
     o = opt("Cobalt Skylift", 2345, 2)
-    t = bids.Offer(
-        bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",)), Decimal(200), 1, 9
-    )
+    t = bids.Offer(bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",)), Decimal(200), 1, 9)
     text = rfq.quote_text(r, o, 254500, t, 1)
     assert _amounts(text) == ["EUR 2,545.00"]
     assert "Hi Sara" in text and "51447" in text and "all-in" in text
@@ -158,11 +155,11 @@ def stub(monkeypatch):
     monkeypatch.setattr(rfq.hackloop, "send", s.send)
     monkeypatch.setattr(bids.hackloop, "send", s.send)
     monkeypatch.setattr(
-        rfq, "portal_options", lambda r: [opt("Aurelia Air Cargo", 2000, 3, "portal")]
+        rfq,
+        "portal_result",
+        lambda r, **kw: PortalResult([opt("Aurelia Air Cargo", 2000, 3, "portal")]),
     )
-    monkeypatch.setattr(
-        rfq, "settings", dataclasses.replace(rfq.settings, quote_target_s=5.0)
-    )
+    monkeypatch.setattr(rfq, "settings", dataclasses.replace(rfq.settings, quote_target_s=5.0))
     return s
 
 
@@ -229,3 +226,29 @@ def test_old_rfq_is_skipped(stub) -> None:
     mail.received_at = "2026-11-21T15:00:00+00:00"
     rfq.handle_rfq(mail, 265)
     assert stub.sent == []
+
+
+def test_503_fallback_requests_known_carrier_once(stub, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.pricing.reference import carrier_by_name
+
+    carrier = carrier_by_name("Juniper Cargo Lines")
+    monkeypatch.setattr(
+        rfq,
+        "airlines_for",
+        lambda *args: [SimpleNamespace(channel="portal", code="JP", email=carrier.email)],
+    )
+    monkeypatch.setattr(
+        rfq,
+        "portal_result",
+        lambda *args, **kw: PortalResult(
+            [opt("Aurelia Air Cargo", 2000, 3, "portal")], ["JP", "JP"], ["503"]
+        ),
+    )
+    monkeypatch.setattr(bids, "wait", lambda *args, **kw: [])
+    mail = _rfq_mail()
+    rfq.handle_rfq(mail, 265)
+    requests = [x for x in stub.sent if x["to"] == carrier.email]
+    assert len(requests) == 1
+    assert stub.sent[-1]["to"] == CUSTOMER

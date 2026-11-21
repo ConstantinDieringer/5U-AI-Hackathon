@@ -18,18 +18,21 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from app.config import settings
 from app.models import RateOption, Rfq
 from app.pricing.pricing import money, resolve_origin, to_minor
 
 log = logging.getLogger(__name__)
 
-PORTAL_LANES = Path(__file__).resolve().parents[2] / "data" / "portal_lanes.json"
+SEED_PORTAL_LANES = Path(__file__).resolve().parents[2] / "data" / "portal_lanes.json"
+PORTAL_LANES = settings.runtime_dir / "portal_lanes.json"
 CACHE_TTL_S = 300  # a rate_id lives 15 min; reuse a read for at most 5 min
 SNAPSHOT_MAX_AGE_S = 1800  # 5U changes the setup about hourly; ports/brackets are free
 MAX_PARALLEL = 4  # at most 4 airlines per lane
@@ -41,6 +44,9 @@ _lock = threading.Lock()
 _seen_dataset_version: str | None = None
 _last_sync_attempt = float("-inf")  # monotonic seconds
 SYNC_RETRY_S = 300
+_force_refresh = False
+_sync_thread: threading.Thread | None = None
+_sync_lock = threading.Lock()
 
 
 # ---------- lane snapshot ----------
@@ -74,6 +80,7 @@ def sync_portal_lanes(path: Path = PORTAL_LANES) -> dict[str, Any]:
     ports = hackloop.get_ports()
     codes = sorted({a["code"] for lane in ports["lanes"] for a in lane["airlines"]})
     snapshot = build_portal_lanes(ports, {c: hackloop.get_brackets(c) for c in codes})
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(path).with_suffix(".tmp")
     tmp.write_text(json.dumps(snapshot, indent=1), encoding="utf-8")
     tmp.replace(path)  # readers never see a half-written file
@@ -84,6 +91,8 @@ def sync_portal_lanes(path: Path = PORTAL_LANES) -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def load_portal_lanes(path: Path = PORTAL_LANES) -> dict[str, Any]:
     if not Path(path).exists():
+        if path == PORTAL_LANES:
+            return json.loads(SEED_PORTAL_LANES.read_text(encoding="utf-8"))
         return {"lanes": [], "brackets": {}}
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -97,15 +106,29 @@ def snapshot_age_s(now: datetime | None = None) -> float:
 
 def refresh_if_stale(max_age_s: float = SNAPSHOT_MAX_AGE_S) -> None:
     """Re-sync lanes when the snapshot is old. Never raises: a stale snapshot beats none."""
-    global _last_sync_attempt
+    global _last_sync_attempt, _force_refresh
     now = time.monotonic()
-    if snapshot_age_s() < max_age_s or now - _last_sync_attempt < SYNC_RETRY_S:
+    if (
+        not _force_refresh and snapshot_age_s() < max_age_s
+    ) or now - _last_sync_attempt < SYNC_RETRY_S:
         return
     _last_sync_attempt = now  # a failing sync must not slow down every RFQ
     try:
         sync_portal_lanes()
+        _force_refresh = False
     except Exception as exc:  # noqa: BLE001 - keep quoting with the old snapshot
         log.warning("portal lane sync failed, keeping old snapshot: %s", exc)
+
+
+def schedule_refresh() -> None:
+    """A ports/brackets refresh must not consume the customer's quote time budget."""
+    global _sync_thread
+    with _sync_lock:
+        if _sync_thread is None or not _sync_thread.is_alive():
+            _sync_thread = threading.Thread(
+                target=refresh_if_stale, name="portal-snapshot", daemon=True
+            )
+            _sync_thread.start()
 
 
 def portal_airlines(origin: str, destination: str) -> list[dict[str, str]]:
@@ -122,12 +145,24 @@ def portal_airlines(origin: str, destination: str) -> list[dict[str, str]]:
 
 def _note_dataset_version(version: object) -> None:
     """A new dataset_version is the earliest sign of one of 5U's hourly setup changes."""
-    global _seen_dataset_version
+    global _seen_dataset_version, _force_refresh, _last_sync_attempt
     v = str(version) if version is not None else None
     if v and v != _seen_dataset_version:
+        from app import db
+
+        try:
+            changed = db.note_dataset_version(v)
+        except Exception:
+            log.exception("could not persist portal dataset observation")
+            changed = _seen_dataset_version is not None
         if _seen_dataset_version is not None:
             log.warning("portal dataset_version changed %s -> %s", _seen_dataset_version, v)
         _seen_dataset_version = v
+        if changed:
+            with _lock:
+                _cache.clear()
+            _force_refresh = True
+            _last_sync_attempt = float("-inf")
 
 
 def parse_rate(raw: dict[str, Any]) -> RateOption:
@@ -144,11 +179,18 @@ def parse_rate(raw: dict[str, Any]) -> RateOption:
         valid_until = str(raw["valid_until"])
     except (KeyError, InvalidOperation, TypeError, ValueError) as exc:
         raise ValueError(f"unexpected portal rate shape: {raw!r}") from exc
-    if total <= 0 or chargeable <= 0 or transit < 0 or len(currency) != 3:
+    if (
+        not total.is_finite()
+        or total <= 0
+        or not Decimal(str(chargeable)).is_finite()
+        or chargeable <= 0
+        or transit < 0
+        or len(currency) != 3
+    ):
         raise ValueError(f"implausible portal rate: {raw!r}")
     if currency == "EUR":
         total_eur, fx_rate = total, None
-    elif fx_rate is not None and fx_rate > 0:
+    elif currency == "USD" and fx_rate is not None and fx_rate.is_finite() and fx_rate > 0:
         total_eur = money(total * fx_rate)
     else:
         raise ValueError(f"{currency} rate without a usable fx_eur_per_usd: {raw!r}")
@@ -167,6 +209,10 @@ def parse_rate(raw: dict[str, Any]) -> RateOption:
         chargeable_kg=chargeable,
         billed_kg=chargeable,
         fx_eur_per_unit=str(fx_rate) if fx_rate is not None else None,
+        fx_source="portal:fx_eur_per_usd" if currency == "USD" else "identity",
+        fx_valid_until=valid_until if currency == "USD" else None,
+        observed_at=datetime.now(UTC).isoformat(),
+        tariff_version=str(raw.get("dataset_version", "")),
     )
 
 
@@ -177,19 +223,31 @@ def _fetch_cached(fetch: RateFetcher, key: CacheKey) -> dict[str, Any]:
             del _cache[k]
         hit = _cache.get(key)
     if hit:
-        return hit[1]
+        try:
+            if datetime.fromisoformat(hit[1]["valid_until"]) > datetime.now(UTC):
+                return hit[1]
+        except (KeyError, ValueError, TypeError):
+            pass
     raw = fetch(*key)  # outside the lock: network
     with _lock:
         _cache[key] = (time.monotonic(), raw)
     return raw
 
 
-def _one_rate(fetch: RateFetcher, key: CacheKey) -> RateOption | None:
+def _one_rate(
+    fetch: RateFetcher, key: CacheKey, result: PortalResult | None = None
+) -> RateOption | None:
     origin, dest, code = key[0], key[1], key[2]
     try:
         opt = parse_rate(_fetch_cached(fetch, key))
     except Exception as exc:  # noqa: BLE001 - one failing airline must not lose the quote
         log.warning("portal rate failed %s %s-%s: %s", code, origin, dest, exc)
+        if result is not None:
+            from app import hackloop
+
+            result.errors.append(f"{code}: {type(exc).__name__}: {exc}")
+            if isinstance(exc, hackloop.HackloopError) and exc.status == 503:
+                result.email_fallbacks.append(code)
         return None
     if (opt.origin, opt.destination) != (origin, dest):
         log.warning(
@@ -199,27 +257,43 @@ def _one_rate(fetch: RateFetcher, key: CacheKey) -> RateOption | None:
     return opt
 
 
-def portal_options(rfq: Rfq, fetch: RateFetcher | None = None) -> list[RateOption]:
+@dataclass
+class PortalResult:
+    options: list[RateOption] = field(default_factory=list)
+    email_fallbacks: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
+def portal_result(
+    rfq: Rfq, fetch: RateFetcher | None = None, *, deadline: float | None = None
+) -> PortalResult:
     """One portal rate per airline on the lane, fetched in parallel (each call can take up to
     the 10 s timeout). Failing airlines are skipped and logged."""
     origin = resolve_origin(rfq)
+    result = PortalResult()
     if origin is None:
-        return []
+        return result
     if fetch is None:
         from app import hackloop
 
-        refresh_if_stale()
-        fetch = hackloop.get_rate
+        schedule_refresh()
+        fetch = lambda *args: hackloop.get_rate(*args, deadline=deadline)
     dest = rfq.destination.upper()
     keys: list[CacheKey] = [
         (origin, dest, a["code"], float(rfq.weight_kg), float(rfq.volume_cbm))
         for a in portal_airlines(origin, dest)
     ]
     if not keys:
-        return []
+        return result
     with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL, len(keys))) as pool:
-        results = list(pool.map(lambda k: _one_rate(fetch, k), keys))
-    return [r for r in results if r is not None]
+        results = list(pool.map(lambda k: _one_rate(fetch, k, result), keys))
+    result.options = [r for r in results if r is not None]
+    # A detected version transition is picked up on the next request's background refresh.
+    return result
+
+
+def portal_options(rfq: Rfq, fetch: RateFetcher | None = None) -> list[RateOption]:
+    return portal_result(rfq, fetch).options
 
 
 if __name__ == "__main__":

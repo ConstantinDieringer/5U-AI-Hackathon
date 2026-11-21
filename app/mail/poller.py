@@ -31,9 +31,7 @@ def _parent(in_reply_to: int | None) -> Mail | None:
     try:
         return parse.mail_from_api(hackloop.get_message(in_reply_to))
     except (hackloop.HackloopError, parse.MailFormatError) as e:
-        log.warning(
-            "parent mail %s not readable (%s); routing by sender only", in_reply_to, e
-        )
+        log.warning("parent mail %s not readable (%s); routing by sender only", in_reply_to, e)
         return None
 
 
@@ -61,15 +59,17 @@ def handle(raw: dict) -> None:
     mail = parse.mail_from_api(raw)
     in_reply_to = parse.in_reply_to(raw)
     category, rule = router.classify(mail, _parent(in_reply_to))
+    if category == Category.TARIFF:
+        from app.agents import tariff
+
+        tariff.enqueue(mail)
     saved = store.save_mail(mail, category, in_reply_to)
     if not saved.is_new:
         log.info("mail %s already stored, skipped", mail.id)
         return
-    files = download_attachments(mail)
+    files = [] if category == Category.TARIFF else download_attachments(mail)
     note = f", {len(files)} attachment(s) saved" if files else ""
-    log.info(
-        "mail %s from %s -> %s (%s)%s", mail.id, mail.sender, category.value, rule, note
-    )
+    log.info("mail %s from %s -> %s (%s)%s", mail.id, mail.sender, category.value, rule, note)
     store.emit("routed", f"Routed as {category.value} ({rule}){note}", saved.session_id)
     dispatch(mail, category, saved.session_id)
 
@@ -121,9 +121,7 @@ def run(stop: threading.Event | None = None) -> None:
     stop = stop or threading.Event()
     store.init()
     since_id = store.get_since_id()
-    log.info(
-        "poller started at since_id=%s, every %.1fs", since_id, settings.poll_interval_s
-    )
+    log.info("poller started at since_id=%s, every %.1fs", since_id, settings.poll_interval_s)
     while not stop.is_set():
         count = 0
         try:

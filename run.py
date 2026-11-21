@@ -26,6 +26,11 @@ def main() -> None:
 
     db.init_db()
     stop = threading.Event()
+    from app.agents import tariff
+
+    db.queue_stored_tariffs()
+
+    threading.Thread(target=tariff.run, args=(stop,), name="tariffs", daemon=True).start()
     threading.Thread(target=poller.run, args=(stop,), name="poller", daemon=True).start()
 
     try:

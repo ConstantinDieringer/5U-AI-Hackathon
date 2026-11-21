@@ -11,3 +11,4 @@ data/poller_state.json
 data/demo.db*
 .pytest_cache/
 .ruff_cache/
+data/runtime/

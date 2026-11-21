@@ -13,7 +13,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ICAO -> IATA for the six German origin airports of the pickup zones. US ICAO codes are
 # "K" + IATA (KJFK -> JFK) and are handled in _to_iata.
-_ICAO_DE = {"EDDF": "FRA", "EDDM": "MUC", "EDDL": "DUS", "EDDH": "HAM", "EDDS": "STR", "EDDK": "CGN"}
+_ICAO_DE = {
+    "EDDF": "FRA",
+    "EDDM": "MUC",
+    "EDDL": "DUS",
+    "EDDH": "HAM",
+    "EDDS": "STR",
+    "EDDK": "CGN",
+}
 
 
 def _to_iata(v: object) -> str | None:
@@ -117,3 +124,9 @@ class RateOption:
     chargeable_kg: float = 0.0
     billed_kg: float = 0.0  # > chargeable_kg when billing at a higher weight break is cheaper
     fx_eur_per_unit: str | None = None  # rate used for total_eur_minor when currency != EUR
+    fx_source: str | None = None
+    fx_valid_until: str | None = None
+    observed_at: str | None = None
+    tariff_version: str | None = None
+    plain_total_minor: int | None = None
+    breakpoint_total_minor: int | None = None
