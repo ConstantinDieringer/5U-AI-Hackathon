@@ -416,7 +416,7 @@ def quote_text(
             intro,
             "",
             f"{what}: {price} all-in.",
-            f"Wir fliegen mit {option.airline}, die Laufzeit beträgt {days} {"Tag" if days == 1 else "Tage"} ab Abflug.",
+            f"Wir fliegen mit {option.airline}, die Laufzeit beträgt {days} {'Tag' if days == 1 else 'Tage'} ab Abflug.",
         ]
         if when:
             lines.append(when)
@@ -446,7 +446,7 @@ def quote_text(
             intro,
             "",
             f"{what}: {price} all-in.",
-            f"It flies with {option.airline}, transit time {days} {"day" if days == 1 else "days"} from departure.",
+            f"It flies with {option.airline}, transit time {days} {'day' if days == 1 else 'days'} from departure.",
         ]
         if when:
             lines.append(when)
