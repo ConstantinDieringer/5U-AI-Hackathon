@@ -321,7 +321,8 @@ def test_legacy_question_cap_does_not_leave_sending_state(case, monkeypatch):
         clarification.hackloop, "send_customer", lambda *a, **k: pytest.fail("capped")
     )
     clarification.request(answer, SID, draft)
-    assert db.validation_get(SID)["send_state"] == "pending"
+    # neither "sending" nor "pending": the 1 s worker must not retry a capped question
+    assert db.validation_get(SID)["send_state"] == "capped"
 
 
 def test_supervisor_reclaims_stalled_thread_but_not_live_rfq(case, monkeypatch):
