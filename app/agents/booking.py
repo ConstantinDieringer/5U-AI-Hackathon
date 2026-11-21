@@ -111,14 +111,20 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
     code = _airline_code(quote["origin"], quote["destination"], quote["airline"])
     if code is None:
         return None
-    raw = hackloop.get_rate(
-        quote["origin"],
-        quote["destination"],
-        code,
-        float(request["weight_kg"]),
-        float(request.get("volume_cbm") or 0.0),
-    )
-    return str(raw["rate_id"])
+    from app.pricing.portal_sync import next_break
+    from app.pricing.pricing import chargeable_kg
+
+    weight = float(request["weight_kg"])
+    volume = float(request.get("volume_cbm") or 0.0)
+    best: dict[str, Any] | None = None
+    # same weights as the quote: exact and the next break (whichever was cheaper is quoted)
+    for w in (weight, next_break(code, chargeable_kg(weight, volume))):
+        if w is None:
+            continue
+        raw = hackloop.get_rate(quote["origin"], quote["destination"], code, w, volume)
+        if best is None or Decimal(str(raw["total"])) < Decimal(str(best["total"])):
+            best = raw
+    return str(best["rate_id"]) if best else None
 
 
 def _book_portal(
