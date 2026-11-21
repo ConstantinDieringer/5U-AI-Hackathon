@@ -275,3 +275,30 @@ def test_confirmed_customer_notice_does_not_change_quote_metrics(monkeypatch):
     assert before["first_reply_at"] == after["first_reply_at"]
     assert before["quotes"] == after["quotes"]
     assert before["bookings"] == after["bookings"]
+
+
+def test_final_gate_blocks_if_notice_insertion_regresses(monkeypatch):
+    from app.mail import tracking_notice as wording
+    from app.mail.outgoing import CustomerStyleError
+
+    session()
+    monkeypatch.setattr(wording, "ensure_notice", lambda body, *args: body)
+    sent = transport(monkeypatch)
+    with pytest.raises(CustomerStyleError, match="Required tracking"):
+        hackloop.send_customer(
+            CUSTOMER, "Quote", "Our quote is 100 €.", session_id=SID, review=False
+        )
+    assert not sent
+
+
+def test_definitive_rate_rejection_is_retried_without_changing_the_quote(monkeypatch):
+    session(booked=True)
+
+    def reject(**kwargs):
+        raise hackloop.HackloopError("POST", "/v1/mailbox/messages", 429, "rate limit")
+
+    monkeypatch.setattr(hackloop, "send", reject)
+    assert not tracking_notice.repair(SID)
+    assert db.kv_get(f"tracking.notice.recovery.{SID}") is None
+    sent = transport(monkeypatch)
+    assert tracking_notice.repair(SID) and len(sent) == 1

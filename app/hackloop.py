@@ -264,8 +264,13 @@ def send_customer(
     from app import db
     from app.agents.email_review import review_customer_mail
     from app.mail.language import detect
-    from app.mail.outgoing import customer_body, customer_subject, validate_customer_text
-    from app.mail.tracking_notice import customer_context, ensure_notice
+    from app.mail.outgoing import (
+        CustomerStyleError,
+        customer_body,
+        customer_subject,
+        validate_customer_text,
+    )
+    from app.mail.tracking_notice import customer_context, ensure_notice, has_notice
 
     def allowed() -> None:
         if session_id is not None and (
@@ -292,6 +297,8 @@ def send_customer(
             lang,
         )
     validate_customer_text(rendered)
+    if context is not None and not has_notice(rendered):
+        raise CustomerStyleError("Required tracking invitation missing from customer mail")
     validate_customer_text(subject)
     allowed()
     if before_transport is not None:

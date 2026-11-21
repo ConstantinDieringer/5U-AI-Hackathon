@@ -8,6 +8,7 @@ from datetime import datetime
 from app import db, hackloop
 from app.config import settings
 from app.mail.language import detect
+from app.mail.outgoing import CustomerStyleError
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.mail.tracking_notice import customer_context, ensure_notice, has_notice
@@ -91,6 +92,7 @@ def repair(sid: int) -> bool:
         lang = detect(parent["body"])
         greeting = "Hallo," if lang == "de" else "Hi,"
         body = ensure_notice(f"{greeting}\n\n{SIGNATURE}\n", lang, booked)
+        db.kv_set("tracking.notice.recovery.last_attempt", f"{sid}:{time.time_ns()}")
         try:
             sent = hackloop.send_customer(
                 customer,
@@ -100,10 +102,19 @@ def repair(sid: int) -> bool:
                 session_id=sid,
                 review=False,
             )
-        except (hackloop.CustomerSendBlocked, OutboundLoopBlocked):
+        except (hackloop.CustomerSendBlocked, OutboundLoopBlocked, CustomerStyleError):
             db.release_tracking_notice(sid)
             return False
         except Exception as exc:  # noqa: BLE001 - ambiguous delivery must never be retried blindly
+            if isinstance(exc, hackloop.HackloopError) and exc.status == 429:
+                db.release_tracking_notice(sid)
+                db.emit(
+                    "tracking_notice_deferred",
+                    "Trackinghinweis wegen Ratenlimit zurückgestellt",
+                    sid,
+                    level="warn",
+                )
+                return False
             db.kv_set(key, "unknown")
             db.emit(
                 "tracking_notice_unknown",
@@ -131,8 +142,7 @@ def repair(sid: int) -> bool:
 
 def tick() -> None:
     for sid in db.tracking_notice_candidates():
-        key = f"tracking.notice.recovery.{sid}"
-        before = db.kv_get(key)
+        before = db.kv_get("tracking.notice.recovery.last_attempt")
         try:
             if repair(sid):
                 break  # low priority, at most one repair per interval
@@ -145,8 +155,8 @@ def tick() -> None:
                     sid,
                     level="error",
                 )
-        if before is None and db.kv_get(key) is not None:
-            break  # an ambiguous attempt also consumes this interval's send slot
+        if before != db.kv_get("tracking.notice.recovery.last_attempt"):
+            break  # rejected and ambiguous attempts also consume the interval's slot
 
 
 def run(stop: threading.Event) -> None:

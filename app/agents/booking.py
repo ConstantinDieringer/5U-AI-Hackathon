@@ -314,7 +314,7 @@ def _confirm_to_customer(
         in_reply_to=mail.id,
         session_id=sid,
         protected_terms=protected_terms,
-        tracking_booked=True if category == "booking_confirmation" else None,
+        tracking_booked=category == "booking_confirmation",
     )
     text = sent["body"]
     subject = sent["subject"]
