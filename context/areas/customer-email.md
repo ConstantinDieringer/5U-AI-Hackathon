@@ -40,7 +40,7 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 
 ## Composer
 
-- Every quote uses `LLM_COMPOSE_MODEL` (`gpt-5-mini`) with bounded current-thread and earlier same-customer correspondence; older monetary amounts are removed. Only verified current facts support price/service promises.
+- Every quote uses `LLM_COMPOSE_MODEL` (`gpt-5-mini`) with bounded current-thread and earlier same-customer correspondence; older monetary amounts are removed. A failed check sends the deterministic quote copy; the second composer call is opt-in (`COMPOSE_REPAIR`, off for cost). Only verified current facts support price/service promises.
 - Language: the request language (ISO code, current mail/attachment prose before signature/history) reaches composer and repair; mismatched output triggers repair. Deterministic quotes, months and subjects support EN/DE/FR/ES/IT; other languages use the English copy, translated at send by `reply_language.py` (English plus warn event if the checks fail), never no quote.
 - Voice: close, cheerful best-friend tone; German defaults to du unless formal address is requested. No invented shared history.
 - One validated repair attempt, then the deterministic template fallback. Fallback templates reject placeholders and embedded headers.

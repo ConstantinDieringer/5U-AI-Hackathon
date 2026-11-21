@@ -1,0 +1,1 @@
+- LLM cost cuts (PR #69): retry/rescue on `gpt-5-mini` (was `gpt-5`), rescue budget 2 calls and bounded prompt (8 mails x 2500 chars), composer repair off (`COMPOSE_REPAIR`). Railway env must not still set `LLM_RETRY_MODEL`/`LLM_RESCUE_MODEL=gpt-5`.

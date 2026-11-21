@@ -10,6 +10,7 @@ from app.mail.voice import customer_voice
 from app.models import RateOption, Rfq
 
 
+@pytest.mark.usefixtures("compose_repair_on")
 @pytest.mark.parametrize("language", ["en", "de"])
 @pytest.mark.parametrize(
     "preference,criterion",

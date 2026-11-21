@@ -242,8 +242,8 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - Einziger Einstieg: `llm.complete(purpose, messages, thread_id, max_tokens=...)` in `app/llm.py`. Jeder Call wird in `llm_calls` geloggt.
 - Standardmodell aus `LLM_MODEL`; kein anderes Modell im Code hartkodieren.
-- Standard für Extraktion ist `gpt-5-mini`, für die Reparatur `LLM_RETRY_MODEL=gpt-5`. Beide wurden über die Gateway-Modellliste bestätigt. Explizite Umgebungswerte überschreiben diese Defaults weiterhin; Kostenpreise für `gpt-5` sind hinterlegt.
-- **Normales Limit: max. 8 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken. Zusätzlich bekommt der ausdrücklich gewünschte Thread-Rettungsagent ein eigenes dauerhaftes Budget von `THREAD_RESCUE_MAX_CALLS=6`; ausgeschöpftes Extraktionsbudget verhindert seine Übernahme nicht. Sämtliche Calls und Kosten bleiben protokolliert. Sichere Textvorlagen und deterministische Versandprüfung bleiben Fehlerfallback.
+- Standard für Extraktion ist `gpt-5-mini`, für die Reparatur `LLM_RETRY_MODEL=gpt-5-mini` (vorher `gpt-5`, aus Kostengründen gesenkt). Ein zweiter Composer-Call nach gescheiterter Prüfung ist nur mit `COMPOSE_REPAIR=true` aktiv; sonst geht die geprüfte Vorlage raus. Beide wurden über die Gateway-Modellliste bestätigt. Explizite Umgebungswerte überschreiben diese Defaults weiterhin; Kostenpreise für `gpt-5` sind hinterlegt.
+- **Normales Limit: max. 8 LLM-Calls pro Thread**, `LLM_MAX_CALLS_PER_SESSION` kann das Limit senken. Zusätzlich bekommt der ausdrücklich gewünschte Thread-Rettungsagent ein eigenes dauerhaftes Budget von `THREAD_RESCUE_MAX_CALLS=2` (Modell `gpt-5-mini`, Kontext: Root plus die letzten 8 Mails mit je 2500 Zeichen); ausgeschöpftes Extraktionsbudget verhindert seine Übernahme nicht. Sämtliche Calls und Kosten bleiben protokolliert. Sichere Textvorlagen und deterministische Versandprüfung bleiben Fehlerfallback.
 - `max_tokens` immer setzen (Extraktion/Reparatur ≤ 350, individueller Mailtext ≤ 750).
   Der strukturierte Thread-Rettungsplan bekommt bis zu 1800 Output-Tokens.
   `temperature=0` für strukturierte Outputs.
