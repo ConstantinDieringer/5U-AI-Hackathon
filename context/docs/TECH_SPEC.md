@@ -266,6 +266,8 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
+- Carrier-Angebote mit Anhängen verwenden denselben begrenzten lokalen TXT/PDF/DOCX/XLSX-Leser wie RFQs. Nur explizite Gesamtpreise mit eindeutiger Währung werden übernommen; Komponenten, Wartezeit-Zuschläge und Referenznummern ersetzen keinen Gesamtpreis. Widersprüche zwischen Mail und Dokumenten sowie unlesbare/Audio-Anhänge bleiben als `bid_unreadable` sichtbar und werden nicht geraten. Der bisherige reine Mailtextpfad bleibt erhalten.
+
 - Stilversion v4 prüft Kundenbetreff UND Text unmittelbar vor dem Transport mit einer unabhängigen finalen Assertion. Unicode-Satzzeichen und HTML-Entities werden normalisiert; Re/Fw-Präfixe entfallen, Threading bleibt über `in_reply_to` erhalten. Auch All-Excluded-Hinweise durchlaufen `send_customer`. Gespeichert werden tatsächlich übergebener Betreff und Text. Direkte Carrier-/Truckerprotokolle bleiben unverändert.
 - Buchungsfreigabe: Vorabfragen wie „Before we book...“ und bedingte Zustimmung gelten
   ebenso wie noch laufende interne Prüfungen („check whether we can proceed“) ausdrücklich
@@ -313,6 +315,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   Preise, Carrier-Balance und bestehende Terminauswahl werden dadurch nicht verändert.
   Interne Timing-Feldnamen und Enum-Werte dürfen nicht in Kundentexte gelangen;
   solche Ausgaben durchlaufen die vorhandene Reparatur und gegebenenfalls den Fallback.
+- Automatische Angebotsbetreffe, Buchungsbestätigungen und Angebotsnachfragen nennen die geprüfte aktuelle Flughafenroute, sobald beide Codes vorliegen (`app/mail/subjects.py`). Alte weitergeleitete Routen und Warenmengen werden nicht übernommen. Ohne vollständige Route bleibt der bisherige Betreff; `in_reply_to` bleibt unverändert.
 - Aktuelle Sendungsangaben haben Vorrang vor Betreff und zitierter Mailhistorie. Bei einem
   neuen Sendungsblock werden alte weitergeleitete Angaben aus der Extraktion/Lot-Summe entfernt;
   reine Weiterleitungen bleiben lesbar. Fehlende Abholorte dürfen nicht aus alten Betreffs geraten werden.

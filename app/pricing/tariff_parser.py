@@ -112,7 +112,13 @@ def rows_from_file(path: Path) -> list[list[object]]:
                 for page in pdf.pages
                 for line in (page.extract_text() or "").splitlines()
             ]
-    raise ValueError(f"Unsupported tariff file: {path.suffix}")
+    # csv, xls, odt/ods, rtf, doc, eml, ... (and files whose extension lies)
+    from app.mail import documents
+
+    doc = documents.read(path)
+    if doc.rows is None:
+        raise ValueError(f"Unsupported tariff file: {path.suffix}")
+    return doc.rows
 
 
 def parse_rows(rows: list[list[object]]) -> TariffDocument:
@@ -294,7 +300,9 @@ def parse_images(path: Path, siblings: list[Path] | None = None) -> TariffDocume
 def parse_attachment(path: Path) -> TariffDocument:
     if path.stat().st_size > 20_000_000:
         raise ValueError("Tariff attachment exceeds 20 MB")
-    suffix = path.suffix.lower()
+    from app.mail import documents
+
+    suffix = documents.sniff(path.name, path.read_bytes()[:4096])
     if suffix in (".jpg", ".jpeg", ".png"):
         return parse_images(path)
     rows = rows_from_file(path)

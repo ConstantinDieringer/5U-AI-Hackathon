@@ -33,6 +33,7 @@ from app.config import settings
 from app.mail.language import detect
 from app.mail.router import address
 from app.mail.style import SIGNATURE, amount, booked_joke, has_template_artifacts
+from app.mail.subjects import shipment_subject
 from app.models import Mail
 from app.pricing.pricing import to_minor
 from app.pricing.reference import airline_email
@@ -260,6 +261,13 @@ def _confirm_to_customer(
         return False
     to = address(mail.sender)
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    session = db.get_session(sid) or {}
+    quotes = session.get("quotes") or []
+    if quotes:
+        quote = quotes[0]
+        subject = shipment_subject(
+            quote.get("origin"), quote.get("destination"), language(mail.body), subject
+        )
     sent = hackloop.send_customer(
         to, subject, text, in_reply_to=mail.id, session_id=sid, protected_terms=protected_terms
     )
