@@ -12,3 +12,9 @@ Full guide: `DEPLOY.md`. Why/history: grep `context/history/`.
 - Stopping `run.py` with an open SSE client needs `kill -9` or closing the UI first.
 - **Live check:** after a merge `python -m app.deploy_check` waits until `build_revision` equals `origin/main`; only then "live" in #update.
 - Git: branch + PR for every change, never a direct push to `main` (agents included); CI (`.github/workflows/ci.yml`: pytest + secrets scan) must be green; one merge owner per hour; commit messages in English with `feat:`/`fix:`/`chore:`/`docs:`/`test:` (TECH_SPEC §11).
+
+## Tests (run these while iterating; the full suite only before the PR)
+
+```
+python -m pytest -q tests/test_imports.py tests/test_ops_guardrails.py tests/test_alerts.py tests/test_board_watch.py tests/test_server.py
+```
