@@ -13,6 +13,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- RFQ 5844 regression: explicit self-delivery to FRA is recovered deterministically from the current body even if LLM origin is null. The final missing-origin guard now asks a durable clarification instead of setting error, including in shadow mode; its answers can continue without enabling the full strict gate.
 - Quote pickup timing: deterministic door quotes show reported truck lead time and explicitly unconfirmed collection slot; composer receives separate truck-lead/slot facts. Round 22 accepted but its fallback omitted the requested earliest pickup; no schedule or price policy changed.
 - Mailbox webhooks: HMAC receiver, durable shared queue, exact-ID deduplication, restart handling, safe subscription CLI and polling backoff. 283 tests pass, 1 skipped; changed files pass Ruff and Python 3.11 syntax parsing (tests ran on local Python 3.12). Provider GET returned no subscription; deployment and live push verification remain outstanding.
 
