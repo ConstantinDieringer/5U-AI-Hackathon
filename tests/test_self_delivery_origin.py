@@ -210,7 +210,8 @@ def test_setting_parses_true_false(monkeypatch) -> None:
         ("TRUE", True),
         ("false", False),
         ("", False),
-        ("yes", False),
+        ("yes", True),
+        ("maybe", False),
     ):
         monkeypatch.setenv("SELF_DELIVERY_RECOVERY", raw)
         assert config._flag("SELF_DELIVERY_RECOVERY") is value
