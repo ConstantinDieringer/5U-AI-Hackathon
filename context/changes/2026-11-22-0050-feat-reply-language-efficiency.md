@@ -1,0 +1,1 @@
+- Fewer translation calls (PR #84): verified NL/PL/TR quote copy, months, subjects and tracking notices; the legacy `reply_language` helper skips replies already in the target language and caches checked paragraphs in `kv`.

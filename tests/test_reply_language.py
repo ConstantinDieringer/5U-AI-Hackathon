@@ -63,6 +63,11 @@ def _answer(lang: str, subject: str | None = None, body: str | None = None) -> s
     return json.dumps({"language": lang, "subject": subject or sub, "body": body or text})
 
 
+@pytest.fixture(autouse=True)
+def fresh_db(tmp_path: Any) -> None:
+    db.init_db(str(tmp_path / "test.db"))  # the paragraph cache lives in kv
+
+
 @pytest.fixture
 def mailbox(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     state: dict[str, Any] = {
@@ -85,7 +90,9 @@ def mailbox(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr(llm, "complete", complete)
     monkeypatch.setattr(
-        store, "emit", lambda kind, msg, sid=None, level="info": state["events"].append((level, msg))
+        store,
+        "emit",
+        lambda kind, msg, sid=None, level="info": state["events"].append((level, msg)),
     )
     return state
 
@@ -217,3 +224,103 @@ def test_reformatted_euro_amount_sends_original(mailbox: dict[str, Any]) -> None
     mailbox["answer"] = _answer("fr", body=french.replace("1240 €", "1,475.50 €"))
     assert _localize(body) == (SUBJECT, body)
     assert [level for level, _ in mailbox["events"]] == ["warn"]
+
+
+# ---------------------------------------------------------------- no call where none is needed
+
+VI_CUSTOMER = "Xin chào, vui lòng báo giá vận chuyển hàng không 500 kg từ FRA đến JFK. Cảm ơn."
+VI_BODY = (
+    "Xin chào chị Dupont,\n\nCảm ơn chị đã gửi yêu cầu. Chúng tôi có thể vận chuyển lô hàng "
+    "500 kg từ FRA đến JFK vào 25 tháng 11 năm 2026. Tổng giá là 1240 € và mã tham chiếu là "
+    "R-4821.\n\nTrân trọng\nAustrian Power\n"
+)
+
+
+def _stored(monkeypatch: pytest.MonkeyPatch, lang: str) -> None:
+    monkeypatch.setattr(db, "get_session", lambda sid: {"request": {"language": lang}})
+
+
+def test_reply_already_in_stored_language_makes_no_call(
+    mailbox: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Vietnamese has no word list: the stored request language plus non-English prose decide."""
+    _stored(monkeypatch, "vi")
+    mailbox["customer"] = [VI_CUSTOMER]
+    assert _localize(VI_BODY) == (SUBJECT, VI_BODY)
+    assert mailbox["calls"] == [] and mailbox["events"] == []
+
+
+def test_english_reply_for_stored_language_is_still_translated(
+    mailbox: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stored(monkeypatch, "vi")
+    mailbox["customer"], mailbox["answer"] = (
+        [VI_CUSTOMER],
+        _answer("vi", "Báo giá FRA JFK", VI_BODY),
+    )
+    _, body = _localize()
+    assert len(mailbox["calls"]) == 1 and "Cảm ơn" in body
+
+
+def test_polish_reply_from_composer_makes_no_call(mailbox: dict[str, Any]) -> None:
+    mailbox["customer"] = ["Dzień dobry, proszę o wycenę przesyłki 500 kg z FRA do JFK. Pozdrawiam"]
+    polish = (
+        "Dzień dobry,\n\nDziękujemy za zapytanie. Oferujemy fracht lotniczy z FRA do JFK za "
+        "1240 € i nie ma dodatkowych kosztów dla Twojej przesyłki.\n\nPozdrawiam\nAustrian Power\n"
+    )
+    assert _localize(polish) == (SUBJECT, polish)
+    assert mailbox["calls"] == []
+
+
+# ---------------------------------------------------------------- paragraph cache
+
+
+def test_same_template_is_translated_only_once(mailbox: dict[str, Any]) -> None:
+    first = _localize()
+    second = _localize()
+    assert first == second and first[0] != SUBJECT
+    assert len(mailbox["calls"]) == 1
+    assert mailbox["events"][-1][1].endswith("(Cache)")
+
+
+def test_changed_paragraph_sends_only_that_paragraph(mailbox: dict[str, Any]) -> None:
+    _localize()
+    changed = BODY.replace("Thank you for your request.", "Thank you for your quick answer.")
+    fr_intro = (
+        ANSWERS["fr"][1]
+        .split("\n\n")[1]
+        .replace("Merci pour votre demande.", "Merci pour votre réponse rapide.")
+    )
+    mailbox["answer"] = _answer("fr", body=f"[[1]]\n\n{fr_intro}\n\n[[2]]")
+    _, body = _localize(changed)
+    sent = json.loads(mailbox["calls"][1][1]["content"])["body"]
+    assert sent.startswith("[[1]]\n\n") and sent.endswith("\n\n[[2]]")
+    assert "Dear Ms Dupont" not in sent and "réponse rapide" in body
+    assert body.startswith("Madame Dupont")
+
+
+def test_lost_cache_marker_sends_original(mailbox: dict[str, Any]) -> None:
+    _localize()
+    changed = BODY.replace("Thank you for your request.", "Thank you for your quick answer.")
+    mailbox["answer"] = _answer("fr")  # full text, markers dropped
+    assert _localize(changed) == (SUBJECT, changed)
+    assert _levels(mailbox)[-1] == "warn"
+
+
+def test_signature_is_never_sent_for_translation(mailbox: dict[str, Any]) -> None:
+    from app.mail.style import SIGNATURE
+
+    body = BODY.replace("Kind regards\nAustrian Power\n", SIGNATURE + "\n")
+    answer = ANSWERS["fr"][1].replace("Cordialement\nAustrian Power", "[[1]]")
+    mailbox["answer"] = _answer("fr", body=answer)
+    _, out = _localize(body)
+    assert SIGNATURE not in mailbox["calls"][0][1]["content"]
+    assert out.rstrip().endswith(SIGNATURE)
+
+
+def test_rejected_translation_is_not_cached(mailbox: dict[str, Any]) -> None:
+    mailbox["answer"] = _answer("fr", body=ANSWERS["fr"][1].replace("500 kg", "kg"))
+    assert _localize() == (SUBJECT, BODY)
+    mailbox["answer"] = _answer("fr")
+    _localize()
+    assert len(mailbox["calls"]) == 2  # nothing from the rejected answer was reused
