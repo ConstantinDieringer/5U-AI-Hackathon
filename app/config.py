@@ -17,6 +17,11 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, "").strip() or default
 
 
+def _flag(name: str) -> bool:
+    """An on/off switch; only "true" switches on, anything else keeps today's behaviour."""
+    return _env(name, "false").lower() == "true"
+
+
 TRUCKER_BALANCES = ("minmax", "ratio")
 
 
@@ -62,6 +67,7 @@ class Settings:
     carrier_observation_ttl_s: float
     allow_incomplete_door_quote: bool
     trucker_balance: str
+    self_delivery_recovery: bool
     llm_max_calls_per_session: int
     runtime_dir: Path
     usd_eur_rate: str
@@ -114,6 +120,7 @@ settings = Settings(
     carrier_observation_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", "3600")),
     allow_incomplete_door_quote=(_env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"),
     trucker_balance=_trucker_balance(),
+    self_delivery_recovery=_flag("SELF_DELIVERY_RECOVERY"),
     llm_max_calls_per_session=max(1, int(_env("LLM_MAX_CALLS_PER_SESSION", "4"))),
     runtime_dir=Path(
         _env(

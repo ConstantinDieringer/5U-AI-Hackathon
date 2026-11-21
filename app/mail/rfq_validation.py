@@ -3,6 +3,7 @@
 import re
 from decimal import Decimal
 
+from app import config
 from app.mail.content import current_message
 from app.mail.lots import parse_lots
 from app.models import Rfq, RfqDraft
@@ -52,11 +53,42 @@ def explicit_delivery_origin(mail, destination):
         for code in re.findall(r"\b[A-Z]{3}\b", match[0], re.IGNORECASE)
         if code.upper() in supported
     }
+    if not airports and config.settings.self_delivery_recovery:
+        airports = _stated_departures(active, destination, supported)
     return (
         next(iter(airports))
         if len(airports) == 1 and destination not in airports
         else None
     )
+
+
+# "we'll deliver the goods to Cologne airport (CGN) ourselves", "drop the shipment off at CGN
+# ourselves" (round 28): the airport may be a city name, a code in brackets, or follow "at"
+_SELF_DELIVERY = re.compile(
+    r"\b(?:deliver|bring|drop|tender|take|liefern|bringen)\b[^\n.!?]{0,120}?"
+    r"\b(?:to|at|nach|zum|an)\b[^\n.!?]{0,60}?\b(?:ourselves|myself|selbst)\b",
+    re.IGNORECASE,
+)
+# "the cheapest option from CGN to DFW": codes in capitals only, so words never count
+_ROUTE = re.compile(r"\bfrom\s+([A-Z]{3})\s+(?:to|nach)\s+([A-Z]{3})\b")
+
+
+def _stated_departures(active, destination, supported):
+    """Departure airports the current message states itself (SELF_DELIVERY_RECOVERY)."""
+    found = set()
+    for match in _SELF_DELIVERY.finditer(active):
+        found |= {c for c in re.findall(r"\b[A-Z]{3}\b", match[0]) if c in supported}
+        found |= {
+            code
+            for code, names in _ALIASES.items()
+            if code in supported and re.search(rf"\b(?:{names})\b", match[0], re.IGNORECASE)
+        }
+    found |= {
+        origin
+        for origin, to in _ROUTE.findall(active)
+        if origin in supported and to == destination
+    }
+    return found
 
 
 def numeric_facts(text):
