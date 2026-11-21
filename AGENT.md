@@ -3,6 +3,8 @@
 We are building a digital air forwarder for the 5U AI challenge: an autonomous system that reads one mailbox, routes every mail, prices air export RFQs (rate sheets, rate portal, carrier bids), quotes, books by rate ID and answers tracking questions.
 
 **Full challenge context:** [docs/CHALLENGE.md](docs/CHALLENGE.md) — read it before designing or changing anything.
+**Technical spec (binding):** [docs/TECH_SPEC.md](docs/TECH_SPEC.md) — read and follow it before writing any code.
+
 Original PDFs: [docs/5U-AI-challenge-brief.pdf](docs/5U-AI-challenge-brief.pdf), [docs/5U-AI-challenge-deep-dive.pdf](docs/5U-AI-challenge-deep-dive.pdf).
 
 ## Key constraints
