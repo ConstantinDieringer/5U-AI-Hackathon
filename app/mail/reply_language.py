@@ -1,13 +1,8 @@
-"""Reply in the customer's own language, whatever it is.
+"""Legacy standalone reply translator, retained for older callers.
 
-Many mail paths only write de/en, and detect() only knows a few languages, so customers in
-other languages got English. Right before transport, one gateway call names the customer's
-language and translates the finished subject and body into it. The result is checked: every
-number, airport code and reference must survive, and the text must read as that language
-(function words for the languages detect() knows, otherwise clearly no longer English).
-On any doubt the original goes out unchanged (warn event). The tracking invitation is masked
-and put back verbatim, or in the customer's language where a verified wording exists, so
-has_notice() and repair() still see it. Rollback: REPLY_IN_CUSTOMER_LANGUAGE=false.
+Live customer transport uses app.mail.multilingual, with native tracking invitations and
+no unverified English fallback. This compatibility helper preserves its earlier API and
+REPLY_IN_CUSTOMER_LANGUAGE switch; it is not called by send_customer.
 """
 
 from __future__ import annotations
@@ -53,16 +48,30 @@ def _customer_text(session_id: int, in_reply_to: int | None, recipient: str) -> 
     short to tell (an "ok, go ahead"), the customer's earlier mails in this session decide."""
     from app import db
     from app.mail.content import current_message
-    from app.mail.language import detect
+    from app.mail.language import _TOKEN, _WORDS, detect
 
-    # newest first; includes in_reply_to itself when it is the customer's mail
+    # newest first; includes in_reply_to itself when it is the customer's mail. A short reply
+    # ("Oui, allez-y", "Sí, gracias", "OK") names no language: the newest mail that does
+    # decides, so a French customer's booking confirmation stays French.
     mails = db.customer_mail_history(session_id, recipient, (in_reply_to or 2**62) + 1)
     texts = [current_message(m["body"] or "").text for m in mails]
     texts = [t for t in texts if re.search(r"\w{2,}", t)]
     if not texts:
         return "", ""
     joined = "\n\n".join(texts)
-    hint = detect(texts[0], default="") or detect(joined, default="")
+    words = [w.lower() for w in _TOKEN.findall(texts[0])]
+    foreign_words = any(
+        w in vocabulary
+        for code, vocabulary in _WORDS.items()
+        if code not in {"en", "de"}
+        for w in words
+    )
+    if len(words) < 8 and texts[0].isascii() and not foreign_words:
+        if len(texts) == 1:
+            return "", ""
+        hint = detect(joined, default="")
+    else:
+        hint = detect(texts[0], default="") or detect(joined, default="")
     # no call without evidence of another language: a few plain ASCII words are not
     if not hint and not _NON_ASCII_LETTER.search(joined) and len(re.findall(r"\w+", joined)) < 8:
         return "", ""

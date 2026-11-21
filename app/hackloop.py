@@ -263,15 +263,18 @@ def send_customer(
     deadline_at: float | None = None,
     review: bool = True,
     before_transport: Callable[[], None] | None = None,
+    language_code: str | None = None,
     tracking_booked: bool | None = None,
     attachments: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """All customer replies pass the final prose renderer before transport. review=False skips
-    the LLM style reviewer for fixed, pre-written templates (no gateway cost).
+    the LLM style reviewer for fixed templates. Non-English/German templates still use
+    the shared, budgeted translation boundary. Human-written replies keep their chosen language.
     `before_transport` runs after the last control check, right before the HTTP send: from
     then on the mail may have gone out, so a caller can record that durably."""
     from app import db
     from app.agents.email_review import review_customer_mail
+    from app.mail import multilingual
     from app.mail.language import detect
     from app.mail.outgoing import (
         CustomerStyleError,
@@ -279,7 +282,7 @@ def send_customer(
         customer_subject,
         validate_customer_text,
     )
-    from app.mail.tracking_notice import customer_context, ensure_notice, has_notice
+    from app.mail.tracking_notice import customer_context, ensure_notice, has_notice, notice_for
 
     def allowed() -> None:
         if session_id is not None and (
@@ -290,10 +293,30 @@ def send_customer(
             raise CustomerSendBlocked("Customer reply deadline has expired")
 
     allowed()
-    lang = detect(body)
+    lang = language_code or (
+        detect(body)
+        if allow_manual
+        else multilingual.reply_language(to, session_id, in_reply_to, detect(body))
+    )
     context = customer_context(db.get_session(session_id) if session_id is not None else None, to)
+    notice = None
     if context is not None:
-        body = ensure_notice(body, lang, context if tracking_booked is None else tracking_booked)
+        try:
+            booked = context if tracking_booked is None else tracking_booked
+            notice = notice_for(lang, booked, session_id)
+            body = ensure_notice(body, lang, booked)
+        except Exception as exc:
+            db.emit(
+                "language_error",
+                "Trackinghinweis konnte nicht in Kundensprache geprüft werden",
+                session_id,
+                level="error",
+                language=lang,
+                reason=type(exc).__name__,
+            )
+            raise CustomerSendBlocked(
+                "Tracking invitation translation could not be verified"
+            ) from exc
     subject = customer_subject(subject, lang)
     rendered = customer_body(body, lang)
     if review:
@@ -301,25 +324,33 @@ def send_customer(
             review_customer_mail(rendered, lang, session_id, protected_terms), lang
         )
     if context is not None:
-        rendered = customer_body(
-            ensure_notice(rendered, lang, context if tracking_booked is None else tracking_booked),
-            lang,
+        rendered = customer_body(ensure_notice(rendered, lang, booked), lang)
+    try:
+        if not allow_manual or language_code is not None:
+            subject, rendered = multilingual.localize(
+                subject,
+                rendered,
+                lang,
+                session_id,
+                (*protected_terms, *((notice,) if notice else ())),
+            )
+        subject = customer_subject(subject, lang)
+        rendered = customer_body(rendered, lang)
+    except Exception as exc:
+        db.emit(
+            "language_error",
+            "Kundenmail wegen ungeprüfter Übersetzung zurückgehalten",
+            session_id,
+            level="error",
+            language=lang,
+            reason=type(exc).__name__,
         )
+        raise CustomerSendBlocked("Customer language translation could not be verified") from exc
     validate_customer_text(rendered)
     if context is not None and not has_notice(rendered):
         raise CustomerStyleError("Required tracking invitation missing from customer mail")
     validate_customer_text(subject)
-    from app.mail.reply_language import localize
-
-    # fr/es/it customers: one checked translation, English original on any doubt
-    subject, rendered = localize(
-        subject,
-        rendered,
-        session_id=session_id,
-        in_reply_to=in_reply_to,
-        recipient=to,
-        deadline_at=deadline_at,
-    )
+    # The shared multilingual boundary already localized and validated this wire text.
     allowed()
     if before_transport is not None:
         try:

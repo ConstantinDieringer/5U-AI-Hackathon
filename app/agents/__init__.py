@@ -17,6 +17,8 @@ AGENTS = (
     "tracking_notice",
     "watchdog",
     "rescue",
+    "bid_reader",
+    "consent_check",
 )
 
 

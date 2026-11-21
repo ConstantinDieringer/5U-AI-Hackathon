@@ -1,6 +1,6 @@
 # Progress Tracker
 
-Read when planning or updating, so it stays small (budget enforced by `tests/test_context_budget.py`).
+Read on every task, so it stays small (budget enforced by `tests/test_context_budget.py`).
 Current state only. **Only the context owner (Moritz) edits this file**, in his own PR.
 Everyone else, AI sessions included, records a change as one new file in `context/changes/`
 (see its README) and never edits this tracker. Subsystem behavior belongs in `context/areas/*.md`.

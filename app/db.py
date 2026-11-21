@@ -502,6 +502,16 @@ def kv_get(key: str, default: str | None = None) -> str | None:
     return r["value"] if r else default
 
 
+def kv_values(prefix: str) -> list[str]:
+    """Read cached values in a literal key namespace, without treating wildcards as SQL."""
+    return [
+        r["value"]
+        for r in conn().execute(
+            "SELECT value FROM kv WHERE substr(key, 1, ?) = ?", (len(prefix), prefix)
+        )
+    ]
+
+
 def delivery_enqueue(mail_id: int, raw: dict, source: str) -> bool:
     """Ack only after commit. A short lock timeout fits the webhook's 5s window."""
     c = conn()
