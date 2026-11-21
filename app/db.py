@@ -1336,6 +1336,18 @@ def session_export_extras(session_id: int) -> dict[str, Any]:
     }
 
 
+# shared by list_sessions and session_ids: both must pick and order the same rows
+_NEEDS_ATTENTION = """CASE WHEN s.status = 'error' OR s.paused = 1
+             OR EXISTS (SELECT 1 FROM rfq_validation v WHERE v.session_id=s.id
+                        AND v.state IN ('awaiting_clarification','manual_review','resolving'))
+             OR (s.status IN ('new','pricing') AND s.deadline_at IS NOT NULL
+                 AND (julianday(s.deadline_at) - julianday('now')) * 86400 < ?)
+           THEN 1 ELSE 0 END"""
+_LIST_ORDER = """ ORDER BY needs_attention DESC,
+               CASE WHEN s.status IN ('new','pricing') THEN s.deadline_at END ASC,
+               s.updated_at DESC LIMIT ?"""
+
+
 def list_sessions(
     status: str | None = None,
     q: str | None = None,
@@ -1344,18 +1356,13 @@ def list_sessions(
 ) -> list[dict[str, Any]]:
     """Sessions for the list view. Attention first (error, paused, deadline close), then by
     deadline, then most recently updated."""
-    sql = """
+    sql = f"""
     SELECT s.*,
       (SELECT message FROM events e WHERE e.session_id = s.id ORDER BY e.id DESC LIMIT 1) AS last_event,
       (SELECT COALESCE(SUM(cost_micro_usd),0) FROM llm_calls l WHERE l.session_id = s.id) AS llm_cost_micro_usd,
       (SELECT total_minor FROM quotes qq WHERE qq.session_id = s.id ORDER BY qq.id LIMIT 1) AS quote_total_minor,
       (SELECT currency FROM quotes qq WHERE qq.session_id = s.id ORDER BY qq.id LIMIT 1) AS quote_currency,
-      CASE WHEN s.status = 'error' OR s.paused = 1
-             OR EXISTS (SELECT 1 FROM rfq_validation v WHERE v.session_id=s.id
-                        AND v.state IN ('awaiting_clarification','manual_review','resolving'))
-             OR (s.status IN ('new','pricing') AND s.deadline_at IS NOT NULL
-                 AND (julianday(s.deadline_at) - julianday('now')) * 86400 < ?)
-           THEN 1 ELSE 0 END AS needs_attention
+      {_NEEDS_ATTENTION} AS needs_attention
     FROM sessions s WHERE 1=1
     """
     args: list[Any] = [ATTENTION_WINDOW_S]
@@ -1367,14 +1374,22 @@ def list_sessions(
         args += [f"%{q}%", f"%{q}%", q]
     if attention:
         sql += " AND needs_attention = 1"
-    sql += """ ORDER BY needs_attention DESC,
-               CASE WHEN s.status IN ('new','pricing') THEN s.deadline_at END ASC,
-               s.updated_at DESC LIMIT ?"""
+    sql += _LIST_ORDER
     args.append(limit)
     rows = _rows(conn().execute(sql, args))
     for r in rows:
         r.pop("request_json", None)
     return rows
+
+
+def session_ids(status: str, limit: int = 200) -> list[int]:
+    """Ids of list_sessions(status=status, limit=limit), same rows in the same order, without
+    the per-row display columns. For background loops that only walk the sessions."""
+    sql = (
+        f"SELECT s.id, {_NEEDS_ATTENTION} AS needs_attention FROM sessions s"
+        f" WHERE s.status = ? {_LIST_ORDER}"
+    )
+    return [int(r["id"]) for r in conn().execute(sql, (ATTENTION_WINDOW_S, status, limit))]
 
 
 def list_unassigned(limit: int = 100) -> list[dict[str, Any]]:

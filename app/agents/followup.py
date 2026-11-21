@@ -252,9 +252,8 @@ def _send(sid: int) -> None:
 
 
 def tick() -> None:
-    rows = [r for st in ("quoted", "new", "pricing") for r in db.list_sessions(status=st)]
-    for row in rows:
-        sid = int(row["id"])
+    # ids only: same sessions and order as db.list_sessions, without its display columns
+    for sid in [i for st in ("quoted", "new", "pricing") for i in db.session_ids(st)]:
         try:
             _send(sid)
         except hackloop.CustomerSendBlocked:

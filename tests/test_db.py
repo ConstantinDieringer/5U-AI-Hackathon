@@ -596,3 +596,20 @@ def test_init_db_without_path_runs_once_per_database(tmp_path, monkeypatch):
     db.init_db()  # the file is gone: initialise again rather than trust the flag
     assert runs == [first, other, other]
     assert db.get_session(100) is None
+
+
+def test_session_ids_match_list_sessions_rows_and_order():
+    past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat(timespec="seconds")
+    for i in range(1, 13):
+        sid = rfq(i, received_at=past if i % 4 == 0 else None)
+        db.set_status(sid, ("new", "pricing", "quoted")[i % 3])
+        if i % 5 == 0:
+            db.set_paused(sid, True)
+        if i == 7:
+            db.validation_save(sid, "awaiting_clarification", {}, {})
+    for status in ("quoted", "new", "pricing", "booked"):
+        assert db.session_ids(status) == [r["id"] for r in db.list_sessions(status=status)]
+        assert db.session_ids(status, limit=2) == [
+            r["id"] for r in db.list_sessions(status=status, limit=2)
+        ]
+    assert len(db.session_ids("quoted")) == 4
