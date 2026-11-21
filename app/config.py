@@ -23,6 +23,12 @@ def _flag(name: str, default: bool = False) -> bool:
     return value == "true" if value in ("true", "false") else default
 
 
+def _domains(name: str, default: str) -> frozenset[str]:
+    """A comma-separated domain list, lower case, without leading dots."""
+    raw = _env(name, default)
+    return frozenset(d.strip().lower().lstrip(".") for d in raw.split(",") if d.strip())
+
+
 TRUCKER_BALANCES = ("minmax", "ratio")
 
 
@@ -125,6 +131,9 @@ class Settings:
     llm_audio_model: str
     llm_vision_model: str
     attachment_transcription: bool
+    link_fetch: bool
+    link_allowed_domains: frozenset[str]
+    link_file_hosts: frozenset[str]
 
     def __repr__(self) -> str:  # never leak the key into logs
         return f"Settings(base_url={self.base_url!r}, team_mailbox={self.team_mailbox!r})"
@@ -256,6 +265,16 @@ settings = Settings(
     llm_vision_model=_env("LLM_VISION_MODEL"),
     # false = never spend gateway calls on audio/scan attachments (text files still read)
     attachment_transcription=_env("ATTACHMENT_TRANSCRIPTION", "true").lower() != "false",
+    # links in mail (app/mail/links.py): safety-checked, then downloaded like an attachment.
+    # false = never open a link. Allowed domains empty = every domain that passes the check.
+    link_fetch=_flag("LINK_FETCH", True),
+    link_allowed_domains=_domains("LINK_ALLOWED_DOMAINS", ""),
+    # links without a file extension are only opened on these file hosts
+    link_file_hosts=_domains(
+        "LINK_FILE_HOSTS",
+        "drive.google.com,docs.google.com,dropbox.com,dropboxusercontent.com,"
+        "sharepoint.com,onedrive.live.com,box.com,hackloop.mail,5u.ai",
+    ),
 )
 
 if settings.rfq_validation_mode not in ("shadow", "enforce"):
