@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -25,7 +26,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids
 from app.config import settings
-from app.mail import language, lots
+from app.mail import language, lots, parse
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
@@ -41,7 +42,9 @@ from app.pricing.reference import (
 log = logging.getLogger(__name__)
 
 RFQ_LIFETIME_S = 360  # 5U expires a request 6 min after it was sent
-TOO_OLD_S = 330  # do not start work on a request that cannot be answered in time any more
+TOO_OLD_S = (
+    330  # do not start work on a request that cannot be answered in time any more
+)
 
 EXTRACT_PROMPT = (
     "Extract the air freight request from the email as JSON.\n"
@@ -131,7 +134,9 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
             )
         return Rfq.model_validate(data)
     except (json.JSONDecodeError, ValidationError) as e:
-        log.warning("session %s: extraction not usable (%s): %r", session_id, e, text[:300])
+        log.warning(
+            "session %s: extraction not usable (%s): %r", session_id, e, text[:300]
+        )
         return None
 
 
@@ -163,7 +168,8 @@ def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
     return min(
         trucks,
         key=lambda o: (
-            norm(o.total_eur, lo_p, hi_p) / 2 + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
+            norm(o.total_eur, lo_p, hi_p) / 2
+            + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
             o.total_eur,
         ),
     )
@@ -183,15 +189,34 @@ def _valid(option: RateOption) -> str | None:
     if not option.valid_until:
         return None
     try:
-        return datetime.fromisoformat(option.valid_until).astimezone(UTC).strftime("%H:%M UTC")
+        return (
+            datetime.fromisoformat(option.valid_until)
+            .astimezone(UTC)
+            .strftime("%H:%M UTC")
+        )
     except ValueError:
         return None
 
 
-_MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_MONTHS_EN = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
 
 
-def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[date, date] | None:
+def schedule(
+    rfq: Rfq, transit_days: int, today: date | None = None
+) -> tuple[date, date] | None:
     """Earliest departure and arrival: departure on the ready date (one day later when we
     truck it to the airport first, never before today), arrival = departure + transit."""
     if not rfq.ready_date:
@@ -207,10 +232,16 @@ def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[da
 
 
 def _date(d: date, lang: str) -> str:
-    return d.strftime("%d.%m.%Y") if lang == "de" else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
+    return (
+        d.strftime("%d.%m.%Y")
+        if lang == "de"
+        else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
+    )
 
 
-def _schedule_line(rfq: Rfq, option: RateOption, lang: str, today: date | None) -> str | None:
+def _schedule_line(
+    rfq: Rfq, option: RateOption, lang: str, today: date | None
+) -> str | None:
     when = schedule(rfq, option.transit_days, today)
     if when is None:
         return None
@@ -276,9 +307,7 @@ def quote_text(
         )
         what = f"Air freight {option.origin} to {option.destination}"
         if truck is not None and rfq.pickup_zip:
-            what += (
-                f", including pickup at {rfq.pickup_zip} and trucking to {option.origin} airport"
-            )
+            what += f", including pickup at {rfq.pickup_zip} and trucking to {option.origin} airport"
         lines = [
             hello,
             "",
@@ -326,6 +355,48 @@ def _bid_carriers(rfq: Rfq, origin: str) -> tuple[list[Carrier], list[Carrier]]:
     return truckers, airlines
 
 
+def _stored_request(sid: int) -> Rfq | None:
+    stored = (db.get_session(sid) or {}).get("request")
+    if not isinstance(stored, dict):
+        return None
+    try:
+        return Rfq.model_validate(stored)
+    except ValidationError:
+        return None
+
+
+def catch_up() -> int:
+    """RFQs left mid-flight by a restart (new/pricing, no quote, still answerable): run them
+    again. Extraction and bid requests already done are reused, not repeated."""
+    since = datetime.fromtimestamp(time.time() - TOO_OLD_S, UTC).isoformat()
+    n = 0
+    for r in db.resumable_rfqs(since):
+        mail = (
+            parse.mail_from_api(json.loads(r["raw_json"]))
+            if r.get("raw_json")
+            else Mail(
+                id=int(r["id"]),
+                thread_root=int(r["id"]),
+                sender=str(r["sender"]),
+                to=str(r["recipient"] or settings.team_mailbox),
+                subject=str(r["subject"] or ""),
+                body=str(r["body"] or ""),
+                received_at=str(r["received_at"]),
+            )
+        )
+        db.emit("resumed", "Nach Neustart fortgesetzt", int(r["session_id"]))
+        threading.Thread(
+            target=handle_rfq,
+            args=(mail, int(r["session_id"])),
+            name=f"rfq-{r['session_id']}",
+            daemon=True,
+        ).start()
+        n += 1
+    if n:
+        log.info("resumed %d open RFQ(s) after restart", n)
+    return n
+
+
 def handle_rfq(mail: Mail, session_id: int) -> None:
     """Whole flow for one RFQ. Never raises (runs in a worker thread)."""
     try:
@@ -351,7 +422,9 @@ def _handle(mail: Mail, sid: int) -> None:
     db.set_status(sid, "pricing")
 
     start = time.monotonic()
-    rfq = extract_rfq(mail, sid)
+    rfq = _stored_request(sid) or extract_rfq(
+        mail, sid
+    )  # stored = resumed after a restart
     if rfq is None:
         db.set_status(sid, "error", "Anfrage nicht lesbar")
         return
@@ -382,7 +455,8 @@ def _handle(mail: Mail, sid: int) -> None:
         bids.request(sid, rfq, origin, truckers + email_airlines)
 
     portal = portal_result(
-        rfq, deadline=time.monotonic() + max(0, t0 + settings.quote_target_s - time.time())
+        rfq,
+        deadline=time.monotonic() + max(0, t0 + settings.quote_target_s - time.time()),
     )
     fallback_codes = set(portal.email_fallbacks)
     fallback = []
@@ -398,7 +472,11 @@ def _handle(mail: Mail, sid: int) -> None:
         email_airlines += fallback
     if portal.errors:
         db.emit(
-            "portal_warning", "Portal options unavailable", sid, level="warn", errors=portal.errors
+            "portal_warning",
+            "Portal options unavailable",
+            sid,
+            level="warn",
+            errors=portal.errors,
         )
     air = sheet_options(rfq) + portal.options
     db.emit("priced", f"{len(air)} Preise aus Tarifblatt und Portal", sid)
@@ -453,7 +531,9 @@ def _handle(mail: Mail, sid: int) -> None:
         return
     truck = best_truck(offers) if rfq.pickup_zip else None
     if rfq.pickup_zip and truck is None:
-        db.emit("no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn")
+        db.emit(
+            "no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn"
+        )
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
 
     body = quote_text(rfq, choice, total, truck, sid)
@@ -477,7 +557,11 @@ def _handle(mail: Mail, sid: int) -> None:
             level="warn",
         )
         return
-    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    subject = (
+        mail.subject
+        if mail.subject.lower().startswith("re:")
+        else f"Re: {mail.subject}"
+    )
     sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -502,7 +586,11 @@ def _handle(mail: Mail, sid: int) -> None:
         rate_id=choice.rate_id,
         valid_until=choice.valid_until,
         alternatives=[asdict(o) for o in air + bid_opts]
-        + ([{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}] if truck else []),
+        + (
+            [{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}]
+            if truck
+            else []
+        ),
         mail_id=int(sent["id"]),
     )
     log.info(

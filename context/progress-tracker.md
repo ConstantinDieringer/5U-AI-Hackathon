@@ -95,6 +95,8 @@ Goal: the first accepted quote end to end before any polish.
 
 ## Session Notes
 
+- 21.11 16:57: Restart-safe RFQs: `rfq.catch_up()` at startup resumes new/pricing RFQs younger than TOO_OLD_S without a quote, reusing the stored extraction; `bids.request` doesn't re-mail carriers asked before the restart and replays their stored replies. LLM budget (2/session) now counted in the db (`db.reserve_llm_call`).
+
 - 21.11 16:54: Round 1967 lost: nano gave weight_kg 0 for lots with "each" (4 × 48 kg, 110×110×52 cm). Lot totals now summed in code (`app/mail/lots.py`, gross not net, dims per piece) and override the LLM.
 
 - 21.11 16:50: Every email-only airline asked so far declined ("We do not serve this lane", 19 mails). `app/pricing/served_lanes.py` keeps each airline's "We fly ..." list (kv, 1 h TTL, backfilled at startup) and we skip airlines that don't fly the lane. A decline now counts as an answer, so we no longer wait the full 100 s for bids that never come.

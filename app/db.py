@@ -592,6 +592,22 @@ def list_unassigned(limit: int = 100) -> list[dict[str, Any]]:
     )
 
 
+def resumable_rfqs(created_after: str) -> list[dict[str, Any]]:
+    """RFQ sessions left mid-flight (new/pricing, no quote, created after `created_after`),
+    each with its first customer mail (the RFQ itself), oldest first."""
+    return _rows(
+        conn().execute(
+            "SELECT s.id AS session_id, m.id, m.sender, m.recipient, m.subject, m.body,"
+            " m.received_at, m.raw_json FROM sessions s JOIN mails m ON m.id = s.id"
+            " WHERE s.kind = 'rfq' AND s.status IN ('new','pricing') AND s.first_reply_at IS NULL"
+            " AND s.created_at > ? AND m.direction = 'in'"
+            " AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.session_id = s.id)"
+            " ORDER BY s.created_at",
+            (created_after,),
+        )
+    )
+
+
 def incoming_mails_containing(text: str, limit: int = 1000) -> list[dict[str, Any]]:
     """Incoming mails whose body contains `text` (case-insensitive), oldest first."""
     return _rows(
@@ -901,6 +917,27 @@ def find_booking(
     if session_id is not None:
         return _one(c.execute("SELECT * FROM bookings WHERE session_id = ?", (session_id,)))
     return None
+
+
+def reserve_llm_call(session_id: int, limit: int) -> int | None:
+    """Count one more gateway call for the session, persisted so a restart cannot reset it.
+    Returns the new count, or None if the session already made `limit` calls. Calls logged in
+    llm_calls before this counter existed count too."""
+    key = f"llm_calls:{session_id}"
+    with tx() as c:
+        kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (key,)))
+        logged = _one(
+            c.execute("SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ?", (session_id,))
+        )
+        n = max(int(kv["value"]) if kv else 0, int(logged["n"]) if logged else 0)
+        if n >= limit:
+            return None
+        c.execute(
+            "INSERT INTO kv(key, value) VALUES (?,?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(n + 1)),
+        )
+    return n + 1
 
 
 def record_llm_call(

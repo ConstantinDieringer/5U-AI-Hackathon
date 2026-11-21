@@ -37,7 +37,9 @@ _DAYS = re.compile(
     re.IGNORECASE,
 )
 _HOURS = re.compile(r"(\d+)\s*(?:h|hours?|stunden)\b", re.IGNORECASE)
-_TOTAL_HINT = re.compile(r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE)
+_TOTAL_HINT = re.compile(
+    r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,9 @@ class Offer:
 class _Request:
     asked: dict[str, Carrier] = field(default_factory=dict)  # email -> carrier
     offers: list[Offer] = field(default_factory=list)
-    declined: set[str] = field(default_factory=set)  # emails that said "we do not serve"
+    declined: set[str] = field(
+        default_factory=set
+    )  # emails that said "we do not serve"
 
 
 _open: dict[int, _Request] = {}
@@ -77,7 +81,11 @@ def _number(raw: str) -> Decimal | None:
         )
     elif "," in s:
         head, _, tail = s.rpartition(",")
-        s = f"{head.replace(',', '')}.{tail}" if len(tail) in (1, 2) else s.replace(",", "")
+        s = (
+            f"{head.replace(',', '')}.{tail}"
+            if len(tail) in (1, 2)
+            else s.replace(",", "")
+        )
     elif s.count(".") > 1 or (s.count(".") == 1 and len(s.rpartition(".")[2]) == 3):
         s = s.replace(".", "")  # 1.234 / 1.234.567 = thousands
     try:
@@ -145,7 +153,10 @@ def request(session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier]) -> 
     sent = 0
     with _cond:
         req = _open.setdefault(session_id, _Request())
+    before = _resume(session_id, req)
     for c in carriers:
+        if c.email in before:
+            continue  # asked before a restart: its reply is replayed, no second mail
         if db.is_manual(session_id) or db.is_paused(session_id):
             break
         with _cond:
@@ -175,6 +186,29 @@ def request(session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier]) -> 
     if sent:
         db.emit("bid_request", f"Gebote angefragt bei {sent} Carrier(n)", session_id)
     return sent
+
+
+def _resume(session_id: int, req: _Request) -> set[str]:
+    """After a restart: re-register carriers we already asked for this session (from the db)
+    and replay the replies they already sent. Returns their emails (empty on a fresh RFQ)."""
+    s = db.get_session(session_id) or {}
+    mails = s.get("mails") or []
+    asked: set[str] = set()
+    for m in mails:
+        if m["direction"] == "out" and m["category"] == "bid_request":
+            c = carrier_by_email(str(m["recipient"] or ""))
+            if c is not None:
+                asked.add(c.email)
+                with _cond:
+                    req.asked[c.email] = c
+    for m in mails:
+        if m["direction"] == "in" and m["category"] == "carrier_bid":
+            on_bid_mail(
+                Mail(int(m["id"]), session_id, str(m["sender"] or ""), "", str(m["subject"] or ""),
+                     str(m["body"] or ""), str(m["received_at"] or "")),
+                session_id,
+            )  # fmt: skip
+    return asked
 
 
 # ---------------------------------------------------------------- replies
@@ -264,7 +298,9 @@ def offers(session_id: int) -> list[Offer]:
         return list(req.offers) if req else []
 
 
-def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None) -> list[Offer]:
+def wait(
+    session_id: int, timeout_s: float, until_kinds: set[str] | None = None
+) -> list[Offer]:
     """Block until every asked carrier answered (or, with `until_kinds`, until at least one
     offer of each kind is in), or the timeout passes. Returns the offers so far."""
 
@@ -297,7 +333,9 @@ def close(session_id: int) -> None:
 # ---------------------------------------------------------------- conversion
 
 
-def airline_option(offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float) -> RateOption:
+def airline_option(
+    offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float
+) -> RateOption:
     total = to_minor(offer.total_eur)
     days = offer.transit_days if offer.transit_days is not None else 99
     return RateOption(
@@ -305,7 +343,9 @@ def airline_option(offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float) ->
         origin=origin,
         destination=rfq.destination,
         transit_days=round(days),
-        total_minor=to_minor(offer.original_amount) if offer.original_amount is not None else total,
+        total_minor=to_minor(offer.original_amount)
+        if offer.original_amount is not None
+        else total,
         currency=offer.currency,
         total_eur_minor=total,
         source="bid",

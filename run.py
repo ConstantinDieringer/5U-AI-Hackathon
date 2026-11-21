@@ -29,6 +29,9 @@ def main() -> None:
     from app.pricing import served_lanes
 
     served_lanes.backfill()  # "We fly ..." lists from refusals already in the mailbox
+    from app.agents import rfq
+
+    rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
     booking.catch_up()  # acceptances that arrived while the app was down or had no booking
     stop = threading.Event()
     from app.agents import tariff
