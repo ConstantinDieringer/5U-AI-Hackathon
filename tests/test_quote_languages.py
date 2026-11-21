@@ -152,7 +152,9 @@ def test_attachment_request_prose_outweighs_short_english_wrapper():
     assert rfq._request_language(mail, 1, "fr") == "fr"
 
 
-def test_unknown_template_never_silently_becomes_english(monkeypatch):
+def test_unknown_template_still_quotes_in_english_for_send_translation(monkeypatch):
+    # no quote at all loses the round; the English copy is translated at send
+    # (app/mail/reply_language.py), with a warn event when that is not safe
     monkeypatch.setattr(rfq.llm, "complete", lambda *a, **k: "invalid json")
     body = rfq.compose_quote_text(request("ja"), option(), 202000, None, 1)
     monkeypatch.setattr(hackloop, "send", lambda **kw: pytest.fail("untranslated fallback sent"))

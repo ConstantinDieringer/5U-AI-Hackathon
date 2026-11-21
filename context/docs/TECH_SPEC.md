@@ -4,6 +4,8 @@
 Wer davon abweichen will, ändert zuerst diese Datei (kurz im Team ansagen), dann den Code.
 Repo: `ConstantinDieringer/5U-AI-Hackathon` · Ablage: `context/docs/TECH_SPEC.md` · Stand: 21.11.2026, 18:00
 
+**Section index (read only the section your change touches):** §1 language/runtime · §2 libraries · §3 folder structure · §4 config/secrets · §5 external interfaces · §6 data models · §7 database · §8 LLM rules, thread rescue, RFQ validation · §8a RFQ answer contract, booking consent, tracking notice, deploy light · §9 logging · §10 UI/internal API · §11 git · §12 tests · §13 AI assistants · §14 open items.
+
 ---
 
 ## 1. Sprache & Laufzeit
@@ -31,6 +33,8 @@ pydantic>=2.6        # Datenmodelle / strukturierte LLM-Outputs
 openpyxl>=3.1        # xlsx-Tarife
 python-docx>=1.1     # docx-Tarife
 pdfplumber>=0.11     # pdf-Tarife (pdftotext-Fallback erlaubt)
+lingua-language-detector>=2.1,<3 # lokale Spracherkennung; keine Begrenzung der Modellsprachen
+Babel>=2.17,<3      # lokalisierte Datumsdarstellung
 pytest>=8            # Tests
 ```
 
@@ -284,7 +288,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
 
-- Angebots-Sprache bleibt als ISO-Code bis zum Composer/Reparatur erhalten, statt Nicht-Deutsch pauschal in Englisch umzuwandeln. Aktuelle Mail-/Anhangsprosa entscheidet vor Signatur/Historie; erkennbare Sprachabweichungen lösen Reparatur aus. Deterministische Angebote, Monate und Betreffe unterstützen EN/DE/FR/ES/IT. Für andere Sprachen darf ein fehlender geprüfter Fallback nicht still durch Englisch ersetzt werden; der normale Composer bleibt verfügbar. Kein zusätzlicher Rewrite-Call.
+- Angebots-Sprache bleibt als ISO-Code bis zum Composer/Reparatur erhalten, statt Nicht-Deutsch pauschal in Englisch umzuwandeln. Aktuelle Mail-/Anhangsprosa entscheidet vor Signatur/Historie; erkennbare Sprachabweichungen lösen Reparatur aus. Deterministische Angebote, Monate und Betreffe unterstützen EN/DE/FR/ES/IT. Für andere Sprachen nutzt der fehlende geprüfte Fallback die englische Vorlage, die beim Versand übersetzt wird (`app/mail/reply_language.py`); scheitert die Übersetzung, geht Englisch mit Warn-Event raus, nie gar kein Angebot. Der normale Composer bleibt verfügbar. Kein zusätzlicher Rewrite-Call.
 
 - Explizit verneinte Buchungsabsichten (`won't go ahead`, `cannot accept`, `don't reserve`, einschließlich typografischer Apostrophe) haben Vorrang vor positiven Schlüsselwörtern. Der gemeinsame Freigabeparser darf daraus weder Buchung noch Preisänderungsfreigabe ableiten.
 - Pflicht-Trackinghinweis: `send_customer` ergänzt bei jeder RFQ-Kundenmail einen eigenen Absatz vor der Signatur, vor und nach optionaler Modellprüfung. Vor Buchung bedingt, nach Kundenbestätigung direkt; keine erfundenen Trackinglinks oder Echtzeitdaten. `tracking_notice` prüft aktive Quotes/Bestätigungen alle `TRACKING_NOTICE_CHECK_EVERY_S=30` Sekunden und sendet höchstens einen fehlenden Hinweis je Durchlauf ohne Preis/Quote/LLM nach. Pause, Handbetrieb, Absage und abgelaufene ungebuchte Angebote verhindern die Nachsendung. Alte gültige Statusantwort-Hinweise und belegte referenzierte Originalmails zählen als zugestellt. Dauerhafte KV-Schlüssel `tracking.notice.recovery.<sid>` reservieren genau eine Nachsendung; `sent:<mail_id>` bleibt auch bei lokaler Aufzeichnungsstörung bestehen. Unklarer Versand/Neustart während einer Reservierung erzeugt Alarm und keinen blinden zweiten Versuch. Sicher vor Transport blockierte Versuche dürfen später erneut geprüft werden. `/api/health.tracking_notice_version` zeigt die Aktivierung.
@@ -423,7 +427,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 ## 13. Für KI-Assistenten (Claude etc.)
 
-- Diese Datei vor jeder Code-Änderung lesen und einhalten.
+- Vor einer Code-Änderung den betroffenen Abschnitt dieser Datei lesen (Index oben) und einhalten; Einstieg und Kontext-Routing: `CLAUDE.md`.
 - Keine neuen Abhängigkeiten, Sprachen oder Frameworks einführen.
 - Keine API-Felder raten: `context/docs/mail-format.md` und `openapi.json` sind die Quelle.
 - Keine Secrets in Code, Logs oder Chats.
