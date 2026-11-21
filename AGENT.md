@@ -3,6 +3,7 @@
 We are building a digital air forwarder for the 5U AI challenge: an autonomous system that reads one mailbox, routes every mail, prices air export RFQs (rate sheets, rate portal, carrier bids), quotes, books by rate ID and answers tracking questions.
 
 **Full challenge context:** [docs/CHALLENGE.md](docs/CHALLENGE.md) — read it before designing or changing anything.
+**Kit card & API (endpoints, limits, observations):** [docs/KIT.md](docs/KIT.md). Secrets in `.env` (gitignored, template `.env.example`).
 Original PDFs: [docs/5U-AI-challenge-brief.pdf](docs/5U-AI-challenge-brief.pdf), [docs/5U-AI-challenge-deep-dive.pdf](docs/5U-AI-challenge-deep-dive.pdf).
 
 ## Key constraints
@@ -15,3 +16,9 @@ Original PDFs: [docs/5U-AI-challenge-brief.pdf](docs/5U-AI-challenge-brief.pdf),
 - Setup changes ~hourly without notice — build tolerant parsers and good logging.
 - Required components: router + up to 3 agents (RFQ/booking, tracking, tariff ingestion), pricing module, CRM with dashboard, sessions UI with streaming and human intervention.
 - Judged also on pitch, UX/design, codebase quality and how human the emails read.
+
+## Git workflow
+
+- Never commit or push directly to `main`.
+- Every change: new branch → commit → push the branch → open a pull request. Merge only after review.
+- Never commit secrets: `.env` is gitignored; use `.env.example` for templates.

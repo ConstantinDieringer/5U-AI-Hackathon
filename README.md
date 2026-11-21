@@ -4,3 +4,4 @@ Digital air forwarder for the **5U AI challenge** at START HACK Munich 2026 — 
 
 - Challenge summary: [docs/CHALLENGE.md](docs/CHALLENGE.md)
 - Original documents: [brief](docs/5U-AI-challenge-brief.pdf) · [deep dive deck](docs/5U-AI-challenge-deep-dive.pdf)
+- Kit card & API: [docs/KIT.md](docs/KIT.md)
