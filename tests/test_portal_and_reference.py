@@ -74,7 +74,7 @@ def test_lane_index_channels():
     assert by_name["Elbflug Air Freight"].channel == "sheet"
     assert all(a.email and a.email.endswith("@hackloop.mail") for a in by_name.values())
     # destinations nobody prices on sheet or portal -> email bids only
-    assert {a.channel for a in airlines_for("FRA", "ULN")} == {"email"}
+    assert {a.channel for a in airlines_for("FRA", "ULN")} == {"email_only"}
 
 
 def test_reference_zip_zone_and_carriers():
@@ -124,3 +124,10 @@ def test_dataset_version_change_is_logged(monkeypatch, caplog):
     parse_rate(RATE)
     parse_rate({**RATE, "dataset_version": "v2"})
     assert "dataset_version changed v1 -> v2" in caplog.text
+
+
+def test_plan_aliases():
+    from app.pricing.reference import airline_email, airport_for_zone
+
+    assert airline_email("Cobalt Skylift") == "cobalt-skylift@hackloop.mail"
+    assert airport_for_zone("80") == "MUC" and airport_for_zone("99") is None

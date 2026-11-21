@@ -9,13 +9,13 @@ from app.pricing.portal_sync import portal_airlines
 from app.pricing.pricing import load_lanes
 from app.pricing.reference import airlines_serving, carrier_by_name
 
-Channel = Literal["sheet", "portal", "email"]
+Channel = Literal["sheet", "portal", "email_only"]
 
 
 @dataclass(frozen=True)
 class LaneAirline:
     name: str
-    channel: Channel  # sheet = priced locally, portal = /v1/portal/rates, email = bid request only
+    channel: Channel  # sheet = priced locally, portal = /v1/portal/rates, email_only = bid by mail
     code: str | None = None  # portal airline code
     email: str | None = None
 
@@ -35,5 +35,5 @@ def airlines_for(origin: str, destination: str) -> list[LaneAirline]:
             found[a["name"]] = LaneAirline(a["name"], "portal", a["code"], c.email if c else None)
     for c in airlines_serving(d):
         if c.name not in found:
-            found[c.name] = LaneAirline(c.name, "email", email=c.email)
+            found[c.name] = LaneAirline(c.name, "email_only", email=c.email)
     return list(found.values())

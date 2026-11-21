@@ -67,3 +67,13 @@ def carrier_by_email(email: str) -> Carrier | None:
 def carrier_by_name(name: str) -> Carrier | None:
     key = name.strip().lower()
     return next((c for c in carriers() if c.name.lower() == key), None)
+
+
+# Names from the team's phase-1 plan (Slack, 14:45), kept as thin aliases.
+def airline_email(name: str) -> str | None:
+    c = carrier_by_name(name)
+    return c.email if c else None
+
+
+def airport_for_zone(zone: str) -> str | None:
+    return pickup_zones().get(zone.strip())
