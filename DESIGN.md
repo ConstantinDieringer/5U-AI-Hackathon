@@ -98,6 +98,11 @@ Screens
 
 ## 4. Components
 
+Live session rows show a permanent `ID #1` sequence and the original receipt date/time
+(Europe/Vienna, including seconds). Existing sessions are numbered oldest first at migration;
+new sessions append without renumbering on filters, updates or restarts. The detail header
+repeats both values; the original mailbox ID remains available as a tooltip.
+
 RFQ detail includes an API-cost card: total USD estimate, input/output totals, and expandable calls by purpose/model with token counts, per-million rates and cost components. Cached input and reasoning are labelled as subsets; missing usage/prices and legacy records are explicit.
 
 | Component | Spec |

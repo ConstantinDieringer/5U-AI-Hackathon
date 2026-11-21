@@ -57,6 +57,27 @@ def test_actions_and_events(client):
     )
 
 
+def test_session_display_number_and_original_receipt_are_exposed(client):
+    received = "2026-11-21T15:00:59+00:00"
+    sid = db.ingest_mail(
+        mail_id=4127,
+        sender="a@b.example",
+        recipient=TEAM,
+        subject="Air freight quote to EZE",
+        body="Please quote",
+        category="rfq",
+        received_at=received,
+    )
+    rows = client.get("/api/sessions", params={"q": "#1"}).json()
+    assert len(rows) == 1
+    detail = client.get(f"/api/sessions/{sid}").json()
+    for session in (rows[0], detail):
+        assert session["session_number"] == 1
+        assert session["id"] == 4127
+        assert session["created_at"] == received
+    assert detail["mails"][0]["received_at"] == received
+
+
 def test_dashboard_shape(client):
     seed()
     d = client.get("/api/dashboard").json()

@@ -151,7 +151,9 @@ table.list { width: 100%; border-collapse: collapse; }
 .list-tools { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; }
 .list-tools .search { width: 100%; }
 .sessions { overflow: auto; margin: 0 -8px; }
-.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 12px; margin: 0 8px 4px; border-radius: var(--r-md); cursor: pointer; transition: background var(--fast); }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 12px; margin: 0 8px 4px; border-radius: var(--r-md); cursor: pointer; transition: background var(--fast); }
+.row .identity { grid-column: 1 / 3; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.session-number { font-weight: 600; color: var(--ink); white-space: nowrap; }
 .row:hover { background: var(--fill-1); }
 .row.sel { background: var(--blue-tint); }
 .row.attn { box-shadow: inset 3px 0 0 var(--orange); }
@@ -182,7 +184,7 @@ table.list { width: 100%; border-collapse: collapse; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; font: 12px/18px var(--mono); color: var(--ink-2); }
 .mail { padding: 14px; border-radius: var(--r-md); background: var(--fill-1); margin-bottom: 8px; }
 .mail.out { background: var(--blue-tint); }
-.mail .h { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-2); }
+.mail .h { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
 .mail .s { font-weight: 600; margin: 2px 0; }
 textarea { width: 100%; min-height: 140px; resize: vertical; background: var(--fill-1); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-md); padding: 14px; font: inherit; outline: none; }
 textarea:focus { border-color: var(--blue); background: var(--card); }
@@ -306,6 +308,9 @@ const usd = (u) => u == null ? "–" : "$" + (u / 1e6).toFixed(u < 10000 ? 4 : 3
 const time = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
 const hm = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "";
 const dateTime = (iso) => iso ? new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+const receivedTime = (iso) => iso ? new Date(iso).toLocaleString("de-AT", { timeZone: "Europe/Vienna", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "–";
+const sessionLabel = (s) => "ID #" + s.session_number;
+const receivedAt = (iso, label = "Eingang") => el("time", { datetime: iso, title: "Europe/Vienna" }, label + " " + receivedTime(iso));
 const secs = (s) => s == null ? "–" : s < 60 ? Math.round(s) + " s" : Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0") + " min";
 const pct = (a, b) => b ? Math.round(100 * a / b) + " %" : "–";
 const STATUS = { new: ["neu", "blue"], pricing: ["bepreisen", "blue"], quoted: ["quotiert", "indigo"], accepted: ["angenommen", "green"], booked: ["gebucht", "green"], confirmed: ["bestätigt", "green"], answered: ["beantwortet", "green"], lost: ["verloren", "red"], expired: ["abgelaufen", "red"], error: ["Fehler", "red"] };
@@ -408,13 +413,14 @@ function matches(s) {
   if (S.filter === "attention" && !s.needs_attention) return false;
   if (S.filter === "open" && !["new", "pricing", "quoted"].includes(s.status)) return false;
   if (S.filter === "done" && ["new", "pricing", "quoted"].includes(s.status)) return false;
-  if (S.q) { const q = S.q.toLowerCase(); if (![String(s.id), s.customer || "", s.subject || ""].some((v) => v.toLowerCase().includes(q))) return false; }
+  if (S.q) { const q = S.q.toLowerCase(); if (/^#?\d+$/.test(q)) { const number = Number(q.replace(/^#/, "")); if (s.session_number !== number && (q.startsWith("#") || s.id !== number)) return false; } else if (![sessionLabel(s), s.customer || "", s.subject || ""].some((v) => v.toLowerCase().includes(q))) return false; }
   return true;
 }
 function renderList() {
   const box = $("#list"); box.replaceChildren(); const rows = S.sessions.filter(matches);
   if (!rows.length) box.append(S.filter === "attention" && S.sessions.length ? el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts braucht dich gerade.") : emptyState("inbox", S.sessions.length ? "Keine Session für diesen Filter." : "Noch keine Anfragen."));
   for (const s of rows) box.append(el("div", { class: "row" + (s.id === S.selected ? " sel" : "") + (s.needs_attention ? " attn" : ""), onclick: () => select(s.id) },
+    el("div", { class: "identity" }, el("span", { class: "session-number", title: "Mailbox-ID " + s.id }, sessionLabel(s)), receivedAt(s.created_at)),
     el("div", { class: "t" }, (s.kind === "tracking" ? "Tracking · " : "") + (s.subject || "(ohne Betreff)")), countdown(s),
     el("div", { class: "m" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Mensch") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", ""))),
     el("div", { class: "m num" }, s.quote_total_minor != null ? money(s.quote_total_minor, s.quote_currency) : ""),
@@ -473,7 +479,7 @@ function renderDetail() {
   if (S.globalPause) notices.push(el("div", { class: "notice" }, icon("stop"), "Globaler Stopp aktiv: es werden keine Mails gesendet."));
   const head = el("div", { class: "card" },
     el("div", { class: "detail-head" }, el("div", {}, el("h2", {}, laneOf(s) || s.subject || "Session " + s.id),
-      el("div", { class: "meta" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", "")), el("span", { class: "faint" }, "#" + s.id + " · LLM " + usd(s.llm_cost_micro_usd)))), countdown(s)),
+      el("div", { class: "meta" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", "")), el("span", { class: "session-number", title: "Mailbox-ID " + s.id }, sessionLabel(s)), receivedAt(s.created_at), el("span", { class: "faint" }, "LLM " + usd(s.llm_cost_micro_usd)))), countdown(s)),
     el("div", { class: "actions" },
       s.paused ? el("button", { class: "btn", onclick: act("resume") }, icon("play"), "Fortsetzen") : el("button", { class: "btn", onclick: act("pause") }, icon("pause"), "Pausieren"),
       s.mode === "manual" ? el("button", { class: "btn", onclick: act("handback") }, icon("undo"), "An Agent zurückgeben") : el("button", { class: "btn", onclick: act("takeover", "Session übernehmen? Der Agent sendet danach nichts mehr in diesem Thread.") }, icon("hand"), "Übernehmen"),
@@ -483,7 +489,7 @@ function renderDetail() {
       el("textarea", { id: "reply-text", placeholder: "Hallo …" }), el("div", { class: "actions" }, el("button", { class: "btn primary", onclick: sendReply }, icon("send"), "Senden"), el("button", { class: "btn ghost", onclick: () => toggleReply(false) }, "Abbrechen"))));
   const tl = el("ul", { class: "tl", id: "timeline" }); s.events.forEach((e) => tl.append(eventItem(e)));
   const mails = el("div", {}); for (const m of s.mails) mails.append(el("div", { class: "mail " + m.direction },
-    el("div", { class: "h" }, el("span", {}, m.direction === "in" ? "von " + (m.sender || "?") : "an " + (m.recipient || "?")), el("span", {}, time(m.received_at))),
+    el("div", { class: "h" }, el("span", {}, m.direction === "in" ? "von " + (m.sender || "?") : "an " + (m.recipient || "?")), receivedAt(m.received_at, m.direction === "in" ? "Eingang" : "Gesendet")),
     el("div", { class: "s" }, m.subject || ""), el("details", { open: s.mails.length === 1 ? true : null }, el("summary", {}, "Text"), el("pre", {}, m.body || ""))));
   $("#detail").replaceChildren(head, el("div", { class: "dgrid" },
     el("div", { class: "stack" }, costCard(s), whyCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Timeline"), el("span", { class: "aside caption" }, "live")), tl)),

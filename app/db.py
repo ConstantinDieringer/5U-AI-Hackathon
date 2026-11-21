@@ -75,6 +75,7 @@ class Ev:
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS sessions (
   id             INTEGER PRIMARY KEY,
+  session_number INTEGER CHECK (session_number > 0),
   kind           TEXT NOT NULL DEFAULT 'rfq' CHECK (kind IN ('rfq','tracking')),
   customer       TEXT,
   subject        TEXT,
@@ -255,6 +256,30 @@ def init_db(path: str | None = None) -> None:
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     with tx() as migration:
+        session_columns = {
+            row["name"] for row in migration.execute("PRAGMA table_info(sessions)")
+        }
+        if "session_number" not in session_columns:
+            migration.execute(
+                "ALTER TABLE sessions ADD COLUMN session_number INTEGER CHECK (session_number > 0)"
+            )
+        migration.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_sessions_number ON sessions(session_number)"
+        )
+        last_number = migration.execute(
+            "SELECT COALESCE(MAX(session_number), 0) FROM sessions"
+        ).fetchone()[0]
+        existing = migration.execute(
+            "SELECT id FROM sessions WHERE session_number IS NULL "
+            "ORDER BY julianday(created_at), id"
+        ).fetchall()
+        migration.executemany(
+            "UPDATE sessions SET session_number = ? WHERE id = ?",
+            (
+                (last_number + offset, row["id"])
+                for offset, row in enumerate(existing, 1)
+            ),
+        )
         columns = {
             row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")
         }
@@ -675,8 +700,9 @@ def ingest_mail(
             created = True
             deadline = (_parse(received_at) + DEADLINE).isoformat(timespec="seconds")
             c.execute(
-                "INSERT INTO sessions(id, kind, customer, subject, status, deadline_at,"
-                " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO sessions(id, session_number, kind, customer, subject, status, deadline_at,"
+                " created_at, updated_at) VALUES (?,(SELECT COALESCE(MAX(session_number),0)+1"
+                " FROM sessions),?,?,?,?,?,?,?)",
                 (
                     session_id,
                     SESSION_CATEGORIES[category],
@@ -853,8 +879,11 @@ def list_sessions(
         sql += " AND s.status = ?"
         args.append(status)
     if q:
-        sql += " AND (s.customer LIKE ? OR s.subject LIKE ? OR CAST(s.id AS TEXT) = ?)"
-        args += [f"%{q}%", f"%{q}%", q]
+        sql += (
+            " AND (s.customer LIKE ? OR s.subject LIKE ? OR CAST(s.id AS TEXT) = ?"
+            " OR CAST(s.session_number AS TEXT) = ?)"
+        )
+        args += [f"%{q}%", f"%{q}%", q, q.lstrip("#")]
     if attention:
         sql += " AND needs_attention = 1"
     sql += """ ORDER BY needs_attention DESC,

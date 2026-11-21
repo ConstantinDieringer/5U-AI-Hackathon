@@ -1,6 +1,7 @@
 """Tests for app/db.py. No real 5U calls. Run: python -m pytest -q"""
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -45,6 +46,63 @@ def test_duplicate_mail_is_ignored():
     assert rfq() == 100
     s = db.get_session(100)
     assert len(s["mails"]) == 1 and len(s["events"]) == 1
+
+
+def test_session_numbers_survive_followups_filters_and_restart():
+    first = rfq(4127, received_at="2026-11-21T15:00:00+00:00")
+    second = rfq(5000, received_at="2026-11-21T15:06:00+00:00")
+    db.ingest_mail(
+        mail_id=5001,
+        sender=CUSTOMER,
+        recipient=TEAM,
+        subject="Re: RFQ",
+        body="Thank you",
+        category="customer",
+        references=[first],
+    )
+    rfq(4127)
+    db.set_status(first, "error")
+    db.init_db()
+    assert db.get_session(first)["session_number"] == 1
+    assert db.get_session(second)["session_number"] == 2
+    assert db.get_session(first)["created_at"] == "2026-11-21T15:00:00+00:00"
+    assert db.list_sessions(status="error")[0]["session_number"] == 1
+    assert [s["id"] for s in db.list_sessions(q="#2")] == [second]
+    assert db.get_session(rfq(6000))["session_number"] == 3
+
+
+def test_legacy_sessions_are_numbered_by_receipt_time_once():
+    late = rfq(100, received_at="2026-11-21T16:00:00+00:00")
+    early_high = rfq(900, received_at="2026-11-21T15:00:00+00:00")
+    early_low = rfq(800, received_at="2026-11-21T16:00:00+01:00")
+    # Reproduce the schema before the display-number migration.
+    with db.tx() as c:
+        c.execute("DROP INDEX ix_sessions_number")
+        c.execute("ALTER TABLE sessions DROP COLUMN session_number")
+    db.init_db()
+    expected = {early_low: 1, early_high: 2, late: 3}
+    assert {s["id"]: s["session_number"] for s in db.list_sessions()} == expected
+    # A subsequently ingested older mail must not change any permanent identifiers.
+    imported = rfq(700, received_at="2026-11-21T14:00:00+00:00")
+    expected[imported] = 4
+    db.init_db()
+    assert {s["id"]: s["session_number"] for s in db.list_sessions()} == expected
+    assert db.get_session(early_low)["mails"][0]["id"] == early_low
+
+
+def test_session_numbers_are_unique_for_concurrent_ingestion():
+    barrier = threading.Barrier(8)
+
+    def worker(mail_id):
+        try:
+            barrier.wait()
+            return rfq(mail_id)
+        finally:
+            db.conn().close()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        assert set(pool.map(worker, range(1000, 1008))) == set(range(1000, 1008))
+    assert sorted(s["session_number"] for s in db.list_sessions()) == list(range(1, 9))
 
 
 def test_carrier_bid_reply_maps_to_customer_session():
