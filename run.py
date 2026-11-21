@@ -50,6 +50,9 @@ def main() -> None:
 
     rfq.catch_up()  # RFQs that were mid-pricing when the app stopped
     booking.catch_up()  # acceptances that arrived while the app was down or had no booking
+    from app.agents import followup
+
+    threading.Thread(target=followup.run, args=(stop,), name="followups", daemon=True).start()
     from app.agents import tariff
 
     db.queue_stored_tariffs()
