@@ -250,8 +250,13 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 - `rfq_validation` ist eine additive Workflow-Tabelle (keine Änderung des bestehenden sessions-CHECK): Draft, Quellen, offene Punkte, Zustand und Rückfrage-Ausgang. Der API-Sessiondetail liefert `validation`; die UI zeigt den Zustand neben dem bisherigen Sessionstatus.
 - Einmal automatisch im Kundenthread nachfragen; ursprüngliche Deadline beibehalten. Das Scoring-Risiko durch die erste Antwort wurde bewusst akzeptiert. Rückfragen belegen weder `claim_quote_send` noch `first_reply_at`.
 - Rückfrageantworten vor Booking behandeln, nur angefragte Werte übernehmen. Unklare Antwort, bestätigtes Gefahrgut ohne passenden Tarif oder unklarer Versandausgang erfordern manuelle Prüfung. Keine weiteren automatischen Rückfragen.
+- Bei Gefahrguthinweisen ausdrücklich Gefahrgutunterlagen (DGD/Versendererklärung und SDS,
+  soweit zutreffend) anfragen und Prüfung vor Angebot/Buchung erklären. Eine allgemeine
+  Bestätigung der Packliste ist weder Dokumenteneingang noch Transportfreigabe.
 
 ## 8a. RFQ-Antwortvertrag und Zeitbudget
+
+- Gemeinsames Schreibprofil: `app/mail/customer_voice.md` kombiniert auf Kundenmails zugeschnittene Regeln aus Humanize Writing und Humanizer. Der Composer lädt diese lokale Datei als Systemanweisung; `.agents/skills/customer-email-voice/SKILL.md` verweist für künftige Agenten darauf. Quellen sind auf Commit-SHAs fixiert, MIT-Hinweise liegen beim Skill. Keine Laufzeitdownloads, kein zusätzlicher LLM-Aufruf und keine neue Abhängigkeit.
 
 - Eine Cargo-Annahmefrist ist derzeit keine belegte Angebotsinformation. Composer-Ausgaben
   dürfen weder Abflug-/Bereitschaftsdatum noch Tarifgültigkeit als Cutoff ausgeben.

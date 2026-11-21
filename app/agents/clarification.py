@@ -10,7 +10,13 @@ from app import db, hackloop
 from app.config import settings
 from app.mail.content import current_message
 from app.mail.language import detect
-from app.mail.rfq_validation import explicit_delivery_origin, numeric_facts, validate
+from app.mail.rfq_validation import (
+    _SIGNATURE,
+    explicit_delivery_origin,
+    free_text_answer,
+    numeric_facts,
+    validate,
+)
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RfqDraft
@@ -35,7 +41,7 @@ def text_for(draft, lang):
         "pieces": "the total number of pieces (Total pieces)",
         "lots": "complete gross weights and dimensions for each lot",
         "attachments": "a readable, corrected packing specification",
-        "dangerous_goods": "whether the goods are dangerous, their UN number/class, and which conflicting declaration is incorrect",
+        "dangerous_goods": "the dangerous goods documents (shipper's declaration/DGD and safety data sheet/SDS, where applicable), the UN number/class, and clarification of any conflicting declarations",
         "shipment": "the missing or corrected shipment details",
     }
     de = {
@@ -47,10 +53,41 @@ def text_for(draft, lang):
         "pieces": "die gesamte Stückzahl (Total pieces)",
         "lots": "vollständige Bruttogewichte und Maße für jede Position",
         "attachments": "eine lesbare, korrigierte Packliste",
-        "dangerous_goods": "ob es Gefahrgut ist, UN-Nummer/Klasse und welche widersprüchliche Angabe falsch ist",
+        "dangerous_goods": "die Gefahrgutunterlagen (Versendererklärung/DGD und Sicherheitsdatenblatt/SDS, soweit zutreffend), UN-Nummer/Klasse und eine Klärung widersprüchlicher Angaben",
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
     }
     labels = de if lang == "de" else en
+    if "dangerous_goods" in fields:
+        # one merged text (Constantin ba6dfa0 + round 10132): name the declared entry, ask
+        # for DGD and SDS, no promise to quote before the documents are reviewed
+        dg = draft.evidence.get("dangerous_goods") or {}
+        what = dg.get("declared") or ", ".join(dg.get("un_numbers") or []) or None
+        rest = [labels[f] for f in fields if f != "dangerous_goods"]
+        if lang == "de":
+            found = (
+                f"Laut Ihren Unterlagen ist die Sendung Gefahrgut ({what}). "
+                if what
+                else "Ihre Sendung enthält möglicherweise Gefahrgut, bitte nennen Sie uns UN-Nummer und Klasse. "
+            )
+            more = f" Außerdem brauchen wir noch {' und '.join(rest)}." if rest else ""
+            return (
+                f"Guten Tag,\n\ndanke für Ihre Anfrage. {found}Bitte schicken Sie uns die "
+                "Gefahrgutunterlagen: die Versendererklärung (DGD) und das Sicherheitsdatenblatt "
+                "(SDS). Wir prüfen sie und die Eignung des Transports, bevor wir ein Angebot "
+                f"abgeben oder buchen.{more}\n\n{SIGNATURE}\n"
+            )
+        found = (
+            f"Your documents show the shipment is dangerous goods ({what}). "
+            if what
+            else "Your shipment may contain dangerous goods, so please also confirm the UN number and class. "
+        )
+        more = f" We also need {' and '.join(rest)}." if rest else ""
+        return (
+            f"Hello,\n\nthanks for your request. {found}Please send us the dangerous goods "
+            "documents: the shipper's declaration (DGD) and the safety data sheet (SDS). We "
+            "need to review them and the transport suitability before we can quote or book "
+            f"this shipment.{more}\n\n{SIGNATURE}\n"
+        )
     items = [labels[f] for f in fields]
     joiner = " und " if lang == "de" else " and "
     wanted = items[0] if len(items) == 1 else ", ".join(items[:-1]) + joiner + items[-1]
@@ -99,6 +136,12 @@ def recover_history(mail, sid, draft):
             re.IGNORECASE,
         ):
             facts["pickup_zip"] = match[1]
+        elif settings.ask_pickup_zip:
+            # "pickup from our site in 61391" earlier in this thread: the same shipment; a
+            # ZIP in the signature is the company address, not the pickup site
+            body = _SIGNATURE.split(text, 1)[0]
+            if len(zips := set(re.findall(r"\b(?:D-)?(\d{5})\b", body))) == 1:
+                facts["pickup_zip"] = zips.pop()
         for field in missing & facts.keys():
             observed[field].add(facts[field])
     corrections = dict(draft.evidence.get("corrections", {}))
@@ -154,15 +197,27 @@ def request(mail, sid, draft):
     if draft.evidence.get("workflow", "rfq") == "rfq" and expired(sid):
         db.validation_save(sid, "expired", draft.model_dump(mode="json"), {})
         return
-    if db.is_paused(sid) or db.is_manual(sid) or not db.clarification_claim(sid):
+    if db.is_paused(sid) or db.is_manual(sid):
+        return
+    asked = _questions_sent(sid)
+    if settings.clarify_once and asked and draft.evidence.get("workflow", "rfq") == "rfq":
+        # CLARIFY_ONCE: never a second question (round 28 asked four times). The answer did not
+        # resolve it: quote from real prices if they allow, else stop for a person.
+        from app.agents import rfq
+
+        db.emit(
+            "clarification_capped",
+            "Keine zweite Rückfrage: Angebot aus echten Preisen oder Mensch",
+            sid,
+            level="warn",
+        )
+        if not rfq.quote_without_answer(sid, "Antwort unbrauchbar"):
+            db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
+        return
+    if not db.clarification_claim(sid):
         return
     # hard cap: at most two clarifications per thread (one follow-up for a partial answer).
     # More is a loop (round 7237 sent four identical ones); alert a human instead.
-    asked = db.conn().execute(
-        "SELECT COUNT(*) FROM mails WHERE session_id = ? AND direction = 'out'"
-        " AND category = 'clarification'",
-        (sid,),
-    ).fetchone()[0]
     if asked >= 2:
         db.emit(
             "clarification_loop",
@@ -196,6 +251,14 @@ def request(mail, sid, draft):
         references=[*mail.references, mail.id],
         raw=sent,
     )
+
+
+def _questions_sent(sid):
+    return db.conn().execute(
+        "SELECT COUNT(*) FROM mails WHERE session_id = ? AND direction = 'out'"
+        " AND category = 'clarification'",
+        (sid,),
+    ).fetchone()[0]
 
 
 def ask(mail, sid, workflow, en, de):
@@ -283,11 +346,26 @@ def handle_reply(mail, sid, *, resume=False):
             m := re.search(rf"(?:{label})\s*[:=]?\s*([A-Z]{{3}})\b", own, re.IGNORECASE)
         ):
             corrections[field] = m[1].upper()
+    if settings.clarify_once:
+        # free text: "CGN", "Cologne", a ZIP, "gross weight is 85 kg" (round 28's four answers)
+        found = free_text_answer(own, asked, draft.facts.get("destination"))
+        corrections.update({k: v for k, v in found.items() if k not in corrections})
     if "origin" in asked and "origin" not in corrections and settings.self_delivery_recovery:
         # "we'll drop it off at CGN ourselves", "quote it from CGN to DFW" (round 28)
         stated = explicit_delivery_origin(mail, draft.facts.get("destination"))
         if stated:
             corrections["origin"] = stated
+    # the customer sends (or says they attached) the DG documents
+    if "dangerous_goods" in asked and (
+        mail.attachments
+        or re.search(
+            r"declaration|\bDGD\b|\bM?SDS\b|safety data sheet|dangerous goods (?:documents|docs)"
+            r"|attached|anbei|im anhang|sicherheitsdatenblatt|gefahrgutdokument",
+            own,
+            re.IGNORECASE,
+        )
+    ):
+        corrections["dangerous_goods"] = "dg_documents_received"
     if (
         "dangerous_goods" in asked
         and re.search(r"non-dangerous|not dangerous|kein gefahrgut", own, re.IGNORECASE)
@@ -393,5 +471,39 @@ def run(stop):
                         item["session_id"],
                         RfqDraft.model_validate(row["draft"]),
                     )
+            if settings.clarify_once:
+                fallback_due()
         except Exception:
             logging.getLogger(__name__).exception("Clarification worker failed")
+
+
+def fallback_due(now=None):
+    """CLARIFY_ONCE: no usable answer CLARIFY_FALLBACK_AFTER_S after the request: quote from
+    real prices in time for the 120 s full score. Each session gets one attempt."""
+    import json
+    import threading
+
+    from app.agents import rfq
+
+    now = now if now is not None else datetime.now(UTC)
+    started = []
+    for row in db.clarification_waiting():
+        sid = int(row["session_id"])
+        workflow = json.loads(row["draft_json"]).get("evidence", {}).get("workflow", "rfq")
+        age = (now - datetime.fromisoformat(row["created_at"])).total_seconds()
+        if (
+            workflow != "rfq"
+            or not settings.clarify_fallback_after_s <= age < rfq.TOO_OLD_S
+            or db.kv_get(f"clarify.fallback.{sid}") is not None
+            or db.is_paused(sid)
+            or db.is_manual(sid)
+        ):
+            continue
+        threading.Thread(
+            target=rfq.quote_without_answer,
+            args=(sid, "keine Antwort"),
+            name=f"rfq-fallback-{sid}",
+            daemon=True,
+        ).start()
+        started.append(sid)
+    return started

@@ -1,5 +1,7 @@
 # Architecture Context
 
+- **Customer writing skill:** `.agents/skills/customer-email-voice/SKILL.md` combines Humanize Writing and Humanizer for this domain; pinned sources and MIT credits accompany it. `app/mail/voice.py` loads the shared `customer_voice.md` locally into the quote composer's system prompt, including repair attempts. No extra rewrite call or runtime download.
+
 - **Personal replies:** standard RFQs again use full extraction and the composer. Bounded current-thread and earlier same-customer correspondence informs tone and grounded references; older monetary amounts are removed from this context. Only verified current facts support price/service promises. Default gateway budget is four calls to allow both extraction and composition repairs; templates are a failure fallback.
 
 - **Mailbox ingress:** signed `/hooks/mailbox` persists into `mail_delivery` before acknowledging; workers and fallback polling share atomic claims and exact-ID deduplication. Pending/stored work resumes after restart; ambiguous dispatches become `unknown` with a warning for manual inspection. Only polling advances its cursor. Subscription and its private, persistent signing-secret file are managed explicitly with `python -m app.mail.webhook_admin`; never rotate on startup. See `DEPLOY.md`.
