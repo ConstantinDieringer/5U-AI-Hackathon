@@ -25,13 +25,14 @@ import openai
 from pydantic import ValidationError
 
 from app import db, hackloop, llm
-from app.agents import bids
+from app.agents import bids, carrier_prefs
 from app.config import settings
 from app.mail import language, lots, parse
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.rfq_sources import extraction_content, read_sources
 from app.mail.rfq_validation import _SIGNATURE
+from app.mail.router import address
 from app.mail.style import SIGNATURE, TEAM_LINE, amount, has_template_artifacts
 from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
@@ -1248,7 +1249,15 @@ def quote_without_answer(sid: int, reason: str) -> bool:
 
 def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str) -> None:
     """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send."""
+    # customer carrier preferences (round 10820, excluded_airline): stored per customer,
+    # an excluded carrier is never asked for a bid and never quoted
+    customer = address(mail.sender)
+    carrier_prefs.remember(customer, _clean(mail.body), sid)
+    banned, liked = carrier_prefs.excluded(customer), carrier_prefs.preferred(customer)
     truckers, email_airlines = _bid_carriers(rfq, origin)
+    if banned:
+        truckers = [c for c in truckers if c.name.lower() not in banned]
+        email_airlines = [c for c in email_airlines if c.name.lower() not in banned]
     if rfq.door_to_port and not truckers:
         db.emit(
             "no_trucker",
@@ -1277,7 +1286,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
             if served_lanes.serves(airline.email, origin, rfq.destination) is False:
                 continue
             carrier = carrier_by_email(airline.email)
-            if carrier is not None:
+            if carrier is not None and carrier.name.lower() not in banned:
                 fallback.append(carrier)
     requested_emails = {carrier.email for carrier in truckers + email_airlines}
     remaining_slots = max(0, settings.max_bid_carriers - len(email_airlines))
@@ -1294,7 +1303,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
             level="warn",
             errors=portal.errors,
         )
-    air = sheet_options(rfq) + portal.options
+    air = [o for o in sheet_options(rfq) + portal.options if o.airline.lower() not in banned]
     db.emit("priced", f"{len(air)} Preise aus Tarifblatt und Portal", sid)
 
     bids.wait(sid, pricing_deadline - time.time())
@@ -1331,7 +1340,7 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
     valid_offers = [o for o in offers if current(o.fx_valid_until)]
     if len(valid_offers) != len(offers):
         db.emit("fx_expired", "Carrier bid FX expired while waiting", sid, level="warn")
-    offers = valid_offers
+    offers = [o for o in valid_offers if o.carrier.name.lower() not in banned]
     chargeable = air[0].chargeable_kg if air else 0.0
     bid_opts = [
         bids.airline_option(o, rfq, origin, chargeable)
@@ -1339,6 +1348,15 @@ def _price_and_quote(mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mod
         if o.carrier.kind == "airline"
     ]
     choice = best_air(air, bid_opts, rfq.preference)
+    if liked:
+        favourite = best_air(
+            [o for o in air if o.airline.lower() in liked],
+            [o for o in bid_opts if o.airline.lower() in liked],
+            rfq.preference,
+        )
+        if favourite is not None:
+            choice = favourite
+            db.emit("carrier_pref_used", f"Vom Kunden bevorzugt: {favourite.airline}", sid)
     if choice is None:
         db.emit("no_price", "Kein Preis gefunden, kein Angebot", sid, level="error")
         db.set_status(sid, "error", "kein Preis")

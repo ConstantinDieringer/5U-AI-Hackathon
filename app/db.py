@@ -177,6 +177,14 @@ CREATE TABLE IF NOT EXISTS board_results (
 );
 
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS customer_carrier_prefs (
+  customer   TEXT NOT NULL,
+  carrier    TEXT NOT NULL,
+  kind       TEXT NOT NULL CHECK (kind IN ('exclude','prefer')),
+  session_id INTEGER,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (customer, carrier)
+);
 CREATE TABLE IF NOT EXISTS mail_delivery (
  mail_id INTEGER PRIMARY KEY, raw_json TEXT NOT NULL, source TEXT NOT NULL,
  status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
@@ -413,6 +421,38 @@ def events_after(
 
 
 # ---------------------------------------------------------------- kv
+
+
+def add_carrier_pref(customer: str, carrier: str, kind: str, session_id: int | None) -> bool:
+    """Store that a customer refuses ('exclude') or asks for ('prefer') a carrier. A refusal
+    is never downgraded to a preference. Returns True if something changed."""
+    cust = (customer or "").strip().lower()
+    with tx() as c:
+        old = _one(
+            c.execute(
+                "SELECT kind FROM customer_carrier_prefs WHERE customer = ? AND carrier = ?",
+                (cust, carrier),
+            )
+        )
+        if old and (old["kind"] == kind or old["kind"] == "exclude"):
+            return False
+        c.execute(
+            "INSERT INTO customer_carrier_prefs(customer, carrier, kind, session_id, created_at)"
+            " VALUES (?,?,?,?,?) ON CONFLICT(customer, carrier) DO UPDATE SET kind = excluded.kind,"
+            " session_id = excluded.session_id, created_at = excluded.created_at",
+            (cust, carrier, kind, session_id, now()),
+        )
+        return True
+
+
+def carrier_prefs(customer: str) -> list[tuple[str, str]]:
+    rows = _rows(
+        conn().execute(
+            "SELECT carrier, kind FROM customer_carrier_prefs WHERE customer = ? ORDER BY carrier",
+            ((customer or "").strip().lower(),),
+        )
+    )
+    return [(r["carrier"], r["kind"]) for r in rows]
 
 
 def kv_get(key: str, default: str | None = None) -> str | None:

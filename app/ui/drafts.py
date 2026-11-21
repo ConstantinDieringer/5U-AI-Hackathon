@@ -96,7 +96,13 @@ def build(session_id: int) -> dict[str, Any]:
             warnings.append("Portal teilweise nicht erreichbar")
     except Exception as e:  # noqa: BLE001 - sheets and bids still give a draft
         warnings.append(f"Portal nicht erreichbar ({type(e).__name__})")
-    offers = _session_offers(s)
+    from app.agents import carrier_prefs
+    from app.mail.router import address
+
+    banned = carrier_prefs.excluded(address(mail.sender))
+    liked = carrier_prefs.preferred(address(mail.sender))
+    air = [o for o in air if o.airline.lower() not in banned]
+    offers = [o for o in _session_offers(s) if o.carrier.name.lower() not in banned]
     chargeable = air[0].chargeable_kg if air else 0.0
     bid_opts = [
         bids.airline_option(o, request, origin, chargeable)
@@ -104,6 +110,15 @@ def build(session_id: int) -> dict[str, Any]:
         if o.carrier.kind == "airline"
     ]
     choice = rfq.best_air(air, bid_opts, request.preference)
+    if liked:
+        fav = rfq.best_air(
+            [o for o in air if o.airline.lower() in liked],
+            [o for o in bid_opts if o.airline.lower() in liked],
+            request.preference,
+        )
+        choice = fav or choice
+    if banned:
+        warnings.append("Vom Kunden ausgeschlossen: " + ", ".join(sorted(banned)))
     if choice is None:
         raise ValueError(f"kein Preis für {origin} → {request.destination} gefunden")
     truck = rfq.best_truck(offers) if request.door_to_port else None
