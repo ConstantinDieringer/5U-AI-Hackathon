@@ -163,6 +163,7 @@ def _key(r: dict) -> tuple:
     return tuple(r.get(k) for k in rfq_replay._COMPARED)
 
 
+@pytest.mark.slow
 def test_watchdog_on_changes_no_stored_round(corpus, results) -> None:
     """RFQ_WATCHDOG=true over every stored round: the flow's own answers stay as they are
     (no accepted round is handled differently) and every round still without a quote is
@@ -175,6 +176,7 @@ def test_watchdog_on_changes_no_stored_round(corpus, results) -> None:
     assert all(r["watchdog"] is None for r in results.values())  # off: never runs
 
 
+@pytest.mark.slow
 def test_watchdog_recovers_every_round_killed_after_its_bid_requests(corpus, results) -> None:
     """A restart right after the bid requests (rounds 4, 9, 15 to 17 had pushes inside the
     round): the watchdog alone quotes the same airline, total and text as the full flow."""

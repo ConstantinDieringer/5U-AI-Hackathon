@@ -21,3 +21,9 @@ Binding detail: TECH_SPEC §8a (booking consent, pre-booking answers). Booking A
 - Airline booking emails carry the frozen air cost only, never truck costs. Customer confirmations keep the all-in total. State in `bookings.customer_state`.
 - **Tracking:** prose that says where the cargo is (at the shipper before the ready date, planned departure/arrival from `rfq.schedule`), greets the asker by first name. Matching uses reference, then customer/route/weight; on a tie ask for the BK reference instead of guessing. Tracking reports `bookings.price_minor` (air only on portal door quotes).
 - Never send a second quote in a thread.
+
+## Tests (run these while iterating; the full suite only before the PR)
+
+```
+python -m pytest -q tests/test_booking.py tests/test_prebook.py tests/test_tracking.py tests/test_tracking_notice.py tests/test_reply_replay.py
+```

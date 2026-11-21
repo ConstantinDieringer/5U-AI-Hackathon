@@ -1,9 +1,6 @@
 # Architecture Context
 
-- **Manual fallback export:** `app/ui/ai_context.py` builds one markdown briefing per session (thread, attachment text, state, events, diagnostics, recent log lines from the in-memory `app/ui/logbuffer.py` ring) for pasting into an outside chat model; `context.zip` adds original attachment files. Read only: no download, send or gateway call.
-
-- **Required tracking notice:** every RFQ customer send deterministically inserts a dedicated reply-by-email tracking paragraph before the signature, including after optional model editing. Before booking it is conditional. Confirmations explicitly select booked wording. `agents/tracking_notice.py` checks active quotes/bookings every 30 seconds and repairs at most one missing notice, under the booking lock. Valid legacy instructions and referenced originals prevent duplicates. Durable `kv` claims survive restarts; ambiguous transport is alerted, never blindly resent. No extra LLM call.
-- **Thread rescue owner:** on blocked RFQs and stalled workflows, `agents/rescue.py` gives `LLM_RESCUE_MODEL` the complete same-shipment conversation, validation sources and CRM state. It may correct all request fields, explicitly release obsolete semantic/attachment holds, ask a targeted new question, retry pricing and route subsequent replies to booking/tracking. Structured, evidence-bound plans and execution leases survive restarts; approval is tied to the current customer message and request. The normal eight-call budget remains, with a separate six-call rescue budget. Human pause/manual control, phishing, real-price tools, booking consent, deadlines and uncertain sends remain authoritative. The extra style reviewer stays disabled.
+Stack and conventions (binding): [docs/TECH_SPEC.md](docs/TECH_SPEC.md): Python 3.11, FastAPI (built-in SSE), SQLite via `sqlite3` without ORM, threads instead of asyncio, one static HTML page with vanilla JS. CRM, session model and sessions UI: [docs/design/aufgabe-c.md](docs/design/aufgabe-c.md).
 
 Subsystem behavior lives in `context/areas/*.md`; the old full decision log is archived in `context/history/architecture-decisions.md`.
 

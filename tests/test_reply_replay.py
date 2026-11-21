@@ -6,6 +6,8 @@ import pytest
 
 from app.agents import reply_replay
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture(scope="module")
 def runs() -> tuple[list[dict], list[dict]]:

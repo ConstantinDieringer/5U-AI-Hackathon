@@ -29,3 +29,9 @@ Binding detail: TECH_SPEC §8 (LLM rules, rescue, validation) and §8a (answer c
 - **Restart:** `rfq.catch_up()` resumes RFQs younger than `TOO_OLD_S` without a quote, reusing the stored extraction; carriers asked before the restart are not re-mailed.
 - **Edge-case flags** (see `app/config.py` for defaults): `SELF_DELIVERY_RECOVERY`, `ASK_PICKUP_ZIP`, `CLARIFY_ONCE` (+`CLARIFY_FALLBACK_AFTER_S`), `CONFLICT_SOURCE_ANSWER`, `CUTOFF_QUESTION_NOTICE`, `TARIFF_ON_READY_DATE`, `UNIT_EVIDENCE`, `REVISION_NOT_ACCEPTANCE`, `ALL_EXCLUDED_NOTICE`, `TOTALS_SAME_LINE`, `THOUSANDS_EVIDENCE`, `CLARIFY_CAP_RESOLVE`. Tests: `tests/test_edge_cases.py` and the per-flag test files.
 - **Replay before changing behavior:** `python -m app.agents.rfq_replay` runs stored live rounds offline; the baseline diff gates option, total, airline, carriers, clarification and mail text.
+
+## Tests (run these while iterating; the full suite only before the PR)
+
+```
+python -m pytest -q tests/test_rfq_agent.py tests/test_rfq_validation_gate.py tests/test_history_first_clarification.py tests/test_clarification_cap_per_workflow.py tests/test_clarify_cap_resolve.py tests/test_clarify_once.py tests/test_thread_rescue.py tests/test_rescue_thousands.py tests/test_rfq_watchdog.py tests/test_followup.py tests/test_edge_cases.py tests/test_extract_retry.py tests/test_lots.py tests/test_numeric_sentence_evidence.py tests/test_origin_clarification_fallback.py tests/test_pickup_location.py tests/test_ask_pickup_zip.py tests/test_self_delivery_origin.py tests/test_dg_document_request.py tests/test_kessler_bom_thread.py tests/test_thousands_evidence.py tests/test_totals_same_line.py tests/test_rfq_history.py tests/test_recent_rounds_e2e.py tests/test_rfq_replay.py
+```
