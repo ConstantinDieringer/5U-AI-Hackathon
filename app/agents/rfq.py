@@ -42,6 +42,7 @@ from app.pricing.reference import (
 log = logging.getLogger(__name__)
 
 RFQ_LIFETIME_S = 360  # 5U expires a request 6 min after it was sent
+PORTAL_MIN_S = 20.0  # portal reads always get this long, even for a resumed RFQ
 TOO_OLD_S = (
     330  # do not start work on a request that cannot be answered in time any more
 )
@@ -454,10 +455,13 @@ def _handle(mail: Mail, sid: int) -> None:
     if not db.is_manual(sid) and not db.is_paused(sid):
         bids.request(sid, rfq, origin, truckers + email_airlines)
 
-    portal = portal_result(
-        rfq,
-        deadline=time.monotonic() + max(0, t0 + settings.quote_target_s - time.time()),
+    # portal reads get the time until the quote target, but at least PORTAL_MIN_S (a resumed
+    # RFQ is already past its target: round 2256 lost every read) and never past TOO_OLD_S
+    budget = min(
+        max(t0 + settings.quote_target_s - time.time(), PORTAL_MIN_S),
+        t0 + TOO_OLD_S - 30 - time.time(),
     )
+    portal = portal_result(rfq, deadline=time.monotonic() + max(0.0, budget))
     fallback_codes = set(portal.email_fallbacks)
     fallback = []
     for airline in airlines_for(origin, rfq.destination):
