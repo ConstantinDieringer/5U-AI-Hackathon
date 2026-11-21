@@ -13,6 +13,8 @@ Keep entries to at most 3 lines; details belong in code and commits.
 
 ## Completed
 
+- Extra customer-email LLM reviewer disabled by default at the user's request (`EMAIL_REVIEW_ENABLED=false`); individual composition and deterministic body/subject checks remain active. Python 3.11: 810 passed/4 skipped. Live health still reports review enabled; the signed-in Railway account gets project 404, so live toggle requires the authorized account.
+
 - RFQ watchdog (`RFQ_WATCHDOG`, default off, PR open): unanswered RFQ at 200 s gets one quote from real prices via the one-quote claim; skips paused/manual/phishing/open DG, no price = `watchdog_alert`. Replay: off unchanged, on changes no stored round; killed after bid requests, 25/25 rounds recover the identical quote. Not verified on a live round.
 - Unanswered board rounds keep their cause (`board_results.cause_json`, "Zu tun", `python -m app.agents.watchdog report`); `process_start` events + `/api/health.process_started_at`; deploy light `/api/deploy-gate` and DEPLOY.md rule: one person pushes, only on green.
 
