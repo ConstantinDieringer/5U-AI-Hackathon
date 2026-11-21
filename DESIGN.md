@@ -118,5 +118,10 @@ RFQ detail includes an API-cost card: total USD estimate, input/output totals, a
 
 ## 5. Copy
 
+Manual reply defaults to the latest message from the session customer. The existing mail
+selector labels customer vs. other senders, and the send confirmation names the selected
+recipient. An emergency quote resets the target to the customer; a carrier selection cannot
+receive a customer quote. Intentional carrier replies remain available through the selector.
+
 German UI, short verbs ("Pausieren", "Übernehmen", "Antworten"). Irreversible actions confirm
 and say why ("Nur die erste Quote zählt"). Mail text is untrusted: rendered as text only.

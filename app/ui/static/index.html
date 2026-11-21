@@ -299,7 +299,7 @@ function el(tag, attrs = {}, ...kids) {
 function svg(tag, attrs = {}, ...kids) { const n = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v); kids.flat().forEach((c) => c && n.append(c)); return n; }
 function icon(name) { const s = svg("svg", { class: "icon" }); s.append(svg("use", { href: "#i-" + name })); return s; }
 const api = async (p, o) => { const r = await fetch(p, o); if (!r.ok) throw new Error((await r.text()) || r.status); return r.json(); };
-const post = (p, b) => api(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined });
+const post = (p, b) => api(p, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }, body: b ? JSON.stringify(b) : undefined });
 const money = (m, c) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (c || "EUR");
 const euro = (m) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 }) + " €";
 const usd = (u) => u == null ? "–" : "$" + (u / 1e6).toFixed(u < 10000 ? 4 : 3);
@@ -461,6 +461,12 @@ function costCard(s) {
   }
   return c;
 }
+const mailAddress = (value) => { const text = (value || "").trim(); return (text.match(/<([^<>]+)>/)?.[1] || text).toLowerCase(); };
+const isCustomerMail = (mail, session) => Boolean(mailAddress(session.customer)) && mailAddress(mail.sender) === mailAddress(session.customer);
+function replyMails(session) {
+  const incoming = session.mails.filter((mail) => mail.direction === "in").slice().reverse();
+  return [...incoming.filter((mail) => isCustomerMail(mail, session)), ...incoming.filter((mail) => !isCustomerMail(mail, session))];
+}
 function renderDetail() {
   const s = S.detail, notices = [];
   if (s.validation) {
@@ -485,8 +491,8 @@ function renderDetail() {
     el("div", { id: "reply", style: "display:none;margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
       el("div", { id: "draft-info", class: "caption", style: "margin-bottom:8px" }),
       el("label", { class: "caption", for: "reply-mail" }, "Antworten auf"),
-      el("select", { id: "reply-mail", style: "width:100%;margin:6px 0 12px" }, ...s.mails.filter((m) => m.direction === "in").slice().reverse().map((m) => {
-        const label = [m.subject || "Ohne Betreff", m.sender || "unbekannter Absender", time(m.received_at)].join(" · ");
+      el("select", { id: "reply-mail", style: "width:100%;margin:6px 0 12px" }, ...replyMails(s).map((m) => {
+        const label = [isCustomerMail(m, s) ? "Kunde" : "Anderer Absender", m.sender || "unbekannter Absender", m.subject || "Ohne Betreff", time(m.received_at)].join(" · ");
         return el("option", { value: String(m.id) }, label);
       })),
       el("textarea", { id: "reply-text", placeholder: "Hallo …" }), el("div", { class: "actions" }, el("button", { class: "btn primary", onclick: sendReply }, icon("send"), "Senden"), el("button", { class: "btn ghost", onclick: () => toggleReply(false) }, "Abbrechen"))));
@@ -525,6 +531,8 @@ async function loadDraft() {
   toggleReply(true); const info = $("#draft-info"); info.textContent = "Berechne Preis aus Tarifblatt, Portal und Geboten …"; DRAFT = null;
   try {
     const d = await post(`/api/sessions/${S.selected}/draft`);
+    const customerMail = replyMails(S.detail).find((mail) => isCustomerMail(mail, S.detail));
+    if (customerMail) $("#reply-mail").value = String(customerMail.id);
     DRAFT = d; $("#reply-text").value = d.body; $("#reply-text").style.minHeight = "300px";
     const opts = d.options.slice(0, 4).map((o) => `${o.airline.split(" ")[0]} ${o.transit_days} T ${euro(o.eur_minor)}`).join(" · ");
     info.replaceChildren(el("b", {}, `Entwurf: ${money(d.total_minor)} · ${d.choice.airline} · ${d.preference === "fastest" ? "schnellste" : "günstigste"}`),
@@ -533,10 +541,14 @@ async function loadDraft() {
   } catch (e) { info.textContent = "Kein Entwurf möglich: " + e.message.replace(/^\{"detail":"|"\}$/g, ""); }
 }
 async function sendReply() { const text = $("#reply-text").value.trim(); if (!text) return;
-  if (!confirm("Antwort jetzt an den Kunden senden? Die Session wird dabei übernommen.")) return;
+  const mail_id = Number($("#reply-mail").value);
+  const target = S.detail.mails.find((mail) => mail.id === mail_id && mail.direction === "in");
+  if (!target) { alert("Bitte eine eingegangene Mail als Antwortziel auswählen."); return; }
   // a draft counts as our quote only if the price in the text is still the draft's price
   const quote = DRAFT && text.includes(money(DRAFT.total_minor).replace(" EUR", "").trim()) ? DRAFT : null;
-  const mail_id = Number($("#reply-mail").value);\n  try { await post(`/api/sessions/${S.selected}/reply`, { text, quote, mail_id }); toggleReply(false); DRAFT = null; } catch (e) { alert("Senden fehlgeschlagen: " + e.message); }
+  if (quote && !isCustomerMail(target, S.detail)) { alert("Eine Kundenquote kann nur an den Kunden gesendet werden."); return; }
+  if (!confirm(`Antwort jetzt an ${target.sender} senden? Die Session wird dabei übernommen.`)) return;
+  try { await post(`/api/sessions/${S.selected}/reply`, { text, quote, mail_id }); toggleReply(false); DRAFT = null; } catch (e) { alert("Senden fehlgeschlagen: " + e.message); }
   await Promise.all([loadDetail(), loadSessions()]); }
 
 // ---------- CRM ----------

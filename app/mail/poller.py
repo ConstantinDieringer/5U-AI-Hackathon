@@ -21,6 +21,7 @@ from app.models import Category, Mail
 log = logging.getLogger(__name__)
 
 POLL_LIMIT = 200
+MAX_MAIL_ATTACHMENT_BYTES = 20_000_000
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -41,16 +42,31 @@ def _safe_filename(name: str) -> str:
 
 
 def download_attachments(mail: Mail) -> list[Path]:
-    """Save every attachment to data/inbox/<mail_id>/<attachment_id>-<filename>."""
+    """Save a bounded set of attachments to data/inbox/<mail_id>/..."""
+    if len(mail.attachments) > 12:
+        raise ValueError("mail exceeds 12 attachments")
     target = settings.inbox_dir / str(mail.id)
     paths: list[Path] = []
+    pending: list[tuple[Path, bytes]] = []
+    total_bytes = 0
     for att in mail.attachments:
         att_id = int(att["id"])
         path = target / f"{att_id}-{_safe_filename(str(att.get('filename', '')))}"
         if not path.exists():
-            target.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(hackloop.get_attachment(mail.id, att_id))
+            content = hackloop.get_attachment(mail.id, att_id)
+            total_bytes += len(content)
+            if total_bytes > MAX_MAIL_ATTACHMENT_BYTES:
+                raise ValueError("mail attachments exceed 20 MB total")
+            pending.append((path, content))
+        else:
+            total_bytes += path.stat().st_size
+            if total_bytes > MAX_MAIL_ATTACHMENT_BYTES:
+                raise ValueError("mail attachments exceed 20 MB total")
         paths.append(path)
+    if pending:
+        target.mkdir(parents=True, exist_ok=True)
+        for path, content in pending:
+            path.write_bytes(content)
     return paths
 
 

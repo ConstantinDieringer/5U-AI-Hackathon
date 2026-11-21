@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app import db
 from app.config import settings
 from app.mail import webhook
+from app.mail.router import address
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
@@ -43,30 +44,49 @@ PUBLIC_PATHS = {
     "/api/health",
     webhook.PATH,
 }  # health check or separate mandatory HMAC auth
-app.add_api_route(
-    webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False
-)
+app.add_api_route(webhook.PATH, webhook.receive, methods=["POST"], include_in_schema=False)
 
 
 @app.middleware("http")
 async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
-    """HTTP Basic auth for everything when UI_PASSWORD is set (always set it online: the UI
-    can stop all mail and send replies). EventSource reuses the browser's credentials."""
-    if not settings.ui_password or request.url.path in PUBLIC_PATHS:
-        return await call_next(request)
-    header = request.headers.get("authorization", "")
-    if header.lower().startswith("basic "):
-        try:
-            user, _, pw = base64.b64decode(header[6:]).decode().partition(":")
-        except (ValueError, UnicodeDecodeError):
-            user, pw = "", ""
-        if secrets.compare_digest(user, settings.ui_user) and secrets.compare_digest(
-            pw, settings.ui_password
-        ):
-            return await call_next(request)
-    return Response(
-        status_code=401, headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'}
+    """Protect the dashboard and state-changing requests; the webhook uses its own HMAC."""
+    public = request.url.path in PUBLIC_PATHS
+    if settings.ui_password and not public:
+        header = request.headers.get("authorization", "")
+        authenticated = False
+        if header.lower().startswith("basic "):
+            try:
+                user, _, pw = base64.b64decode(header[6:], validate=True).decode().partition(":")
+            except (ValueError, UnicodeDecodeError):
+                user, pw = "", ""
+            authenticated = secrets.compare_digest(
+                user, settings.ui_user
+            ) and secrets.compare_digest(pw, settings.ui_password)
+        if not authenticated:
+            response = Response(
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="Austrian Power"'},
+            )
+        elif request.method not in {"GET", "HEAD", "OPTIONS"} and request.headers.get(
+            "x-requested-with"
+        ) != "XMLHttpRequest":
+            response = Response(status_code=403, content="Cross-site request blocked")
+        else:
+            response = await call_next(request)
+    else:
+        response = await call_next(request)
+
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
+        "img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; connect-src 'self'"
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/", include_in_schema=False)
@@ -235,24 +255,29 @@ def api_draft(session_id: int) -> dict[str, Any]:
 def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
     """Human reply in the customer's thread. Takes the session over first."""
     s = _require(session_id)
-    customer_mails = [m for m in s["mails"] if m["direction"] == "in"]
-    if not customer_mails:
+    incoming = [m for m in s["mails"] if m["direction"] == "in"]
+    if not incoming:
         raise HTTPException(409, "no incoming mail to reply to")
+    customer = address(s.get("customer") or "")
     if body.mail_id is None:
+        customer_mails = [m for m in incoming if customer and address(m["sender"]) == customer]
+        if not customer_mails:
+            raise HTTPException(409, "no incoming customer mail to reply to")
         parent = customer_mails[-1]
     else:
         parent = next(
-            (m for m in customer_mails if m["id"] == body.mail_id),
+            (m for m in incoming if m["id"] == body.mail_id),
             None,
         )
     if parent is None:
         raise HTTPException(422, "selected mail is not an incoming mail in this session")
+    customer_reply = bool(customer and address(parent["sender"]) == customer)
+    if body.quote is not None and not customer_reply:
+        raise HTTPException(422, "customer quotes can only be sent to the session customer")
     try:
         from app import hackloop  # owned by task A; may not exist yet
     except ImportError as e:
-        raise HTTPException(
-            503, "mail client (app/hackloop.py) not available yet"
-        ) from e
+        raise HTTPException(503, "mail client (app/hackloop.py) not available yet") from e
 
     db.takeover(session_id)
     subject = parent["subject"] or ""
@@ -285,8 +310,9 @@ def api_reply(session_id: int, body: ReplyIn) -> dict[str, Any]:
             in_reply_to=parent["id"],
             raw=sent if isinstance(sent, dict) else None,
         )
-    db.mark_manual_reply(session_id)
-    db.emit(db.Ev.HUMAN_ACTION, "Manuelle Antwort gesendet", session_id)
+    if customer_reply:
+        db.mark_manual_reply(session_id)
+    db.emit(db.Ev.HUMAN_ACTION, f"Manuelle Antwort an {parent['sender']} gesendet", session_id)
     q = body.quote
     if q and q.get("total_minor") and not s.get("quotes"):
         c = q.get("choice") or {}
@@ -317,7 +343,7 @@ MAX_DB_BYTES = 500 * 1024 * 1024
 async def api_import_db(request: Request) -> dict[str, Any]:
     """Replace the database with an uploaded SQLite file (moving the local DB online).
     Only while AGENTS_ENABLED=false, so nothing polls or sends during the swap.
-        curl -u team:PW --data-binary @data/forwarder.db https://<host>/api/admin/import-db
+        curl -u team:PW -H 'X-Requested-With: XMLHttpRequest' --data-binary @data/forwarder.db https://<host>/api/admin/import-db
     """
     if settings.agents_enabled:
         raise HTTPException(409, "set AGENTS_ENABLED=false first")
