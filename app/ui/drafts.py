@@ -77,6 +77,8 @@ def build(session_id: int) -> dict[str, Any]:
         request = rfq.extract_rfq(mail, session_id)
         if request is None:
             raise ValueError("Anfrage nicht lesbar: bitte Preis von Hand eintragen")
+    # same as the agent: the language of the mail itself, not the LLM's guess from names
+    request = request.model_copy(update={"language": language.detect(mail.body)})
     request = rfq.locate_origin(
         rfq.locate_pickup(request, mail, session_id), mail, session_id
     )

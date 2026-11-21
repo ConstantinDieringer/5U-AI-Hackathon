@@ -431,6 +431,7 @@ def test_emergency_draft_and_send_records_quote(client, monkeypatch):
             "volume_cbm": 0.7,
             "preference": "cheapest",
             "customer_name": "Klaus",
+            "language": "de",
         },
     )
     monkeypatch.setattr(
