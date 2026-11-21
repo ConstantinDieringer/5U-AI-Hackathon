@@ -4,10 +4,12 @@ The jury judges UX and design, and the pitch will show the UI, so the UI is a sc
 
 ## Design Principles
 
+**Binding guidelines:** [docs/design/design-guidelines.md](docs/design/design-guidelines.md) (tokens, layout, components, checklist; design language derived from the Twenty CRM). Read it before any UI change.
+
 - Colors and spacing come from shared design tokens. Components use no raw color values.
 - Use a consistent radius scale that grows with surface depth: small controls, then cards, then modals.
 - Use one icon set throughout.
-- Start with a dark theme.
+- Dark theme is the default; a light theme switch exists (same tokens).
 
 ## Screens (proposed)
 

@@ -26,6 +26,7 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - A4 `mail/poller.py` + `mail/store.py` + `mail/parse.py`: live run stores mail 208 once, a restart resumes at since_id 208; 6 tests (broken mail, restart, attachments).
 - A7 `app/llm.py`: live call OK (gpt-5-nano, 10+10 tokens, logged 5 micro-USD). The gateway returns no cost, so we use list prices (`app/llm_prices.json`). max_tokens=16 fails: use ≥ 100.
 - A5 `mail/router.py`: rules only, 10 tests green. A6 `python run.py` = poller + watchers + UI on :8000, checked live.
+- UI design pass (branch `ui/design-guidelines`): `context/docs/design/design-guidelines.md` (tokens, layout, components; Twenty CRM style), `index.html` restyled: sidebar layout, Inter 13px, 4px grid, soft status tags, dark + light theme. Checked in browser with demo DB (desktop, mobile, both themes).
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 ## In Progress
