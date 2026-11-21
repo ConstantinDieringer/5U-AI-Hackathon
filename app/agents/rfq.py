@@ -16,7 +16,7 @@ import json
 import logging
 import re
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -185,12 +185,50 @@ def _valid(option: RateOption) -> str | None:
         return None
 
 
+_MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def schedule(
+    rfq: Rfq, transit_days: int, today: date | None = None
+) -> tuple[date, date] | None:
+    """Earliest departure and arrival: departure on the ready date (one day later when we
+    truck it to the airport first, never before today), arrival = departure + transit."""
+    if not rfq.ready_date:
+        return None
+    try:
+        ready = date.fromisoformat(rfq.ready_date[:10])
+    except ValueError:
+        return None
+    dep = max(ready, today or datetime.now(UTC).date())
+    if rfq.pickup_zip:
+        dep += timedelta(days=1)
+    return dep, dep + timedelta(days=transit_days)
+
+
+def _date(d: date, lang: str) -> str:
+    return d.strftime("%d.%m.%Y") if lang == "de" else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
+
+
+def _schedule_line(rfq: Rfq, option: RateOption, lang: str, today: date | None) -> str | None:
+    when = schedule(rfq, option.transit_days, today)
+    if when is None:
+        return None
+    dep, arr = (_date(d, lang) for d in when)
+    if lang == "de":
+        return (
+            f"Frühester Abflug ab {option.origin} ist am {dep}, "
+            f"Ankunft in {option.destination} am {arr}."
+        )
+    return f"Earliest departure from {option.origin} is {dep}, arriving in {option.destination} on {arr}."
+
+
 def quote_text(
     rfq: Rfq,
     option: RateOption,
     total_eur_minor: int,
     truck: bids.Offer | None,
     variant: int,
+    today: date | None = None,
 ) -> str:
     """The quote mail: one all-in total with its currency, in the customer's language."""
     lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
@@ -198,6 +236,7 @@ def quote_text(
     price = _amount(total_eur_minor, lang)
     days = option.transit_days
     valid = _valid(option)
+    when = _schedule_line(rfq, option, lang, today)
     if lang == "de":
         hello = f"Hallo {name}," if name else "Guten Tag,"
         intro = (
@@ -216,6 +255,8 @@ def quote_text(
             f"{what}: {price} all-in.",
             f"Wir fliegen mit {option.airline}, die Laufzeit beträgt {days} Tage ab Abflug.",
         ]
+        if when:
+            lines.append(when)
         if valid:
             lines.append(f"Der Preis ist bis {valid} buchbar.")
         lines += [
@@ -243,6 +284,8 @@ def quote_text(
             f"{what}: {price} all-in.",
             f"It flies with {option.airline}, transit time {days} days from departure.",
         ]
+        if when:
+            lines.append(when)
         if valid:
             lines.append(f"The rate can be booked until {valid}.")
         lines += [

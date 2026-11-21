@@ -115,6 +115,56 @@ def test_quote_text_has_exactly_one_total() -> None:
     assert _amounts(de) == ["2.545,00 EUR"]
 
 
+MAIL_1628 = (
+    "Hello,\n\nCould you please quote the fastest air freight option from MUC to LAX (Los "
+    "Angeles, US) for our furniture samples? The cargo will be ready for pickup on 2026-11-29, "
+    "and we will deliver it to Munich airport (MUC) ourselves.\n\n"
+    "Lot 1: 1 piece, gross weight 618 kg, volume 0.74 cbm\n"
+    "Lot 2: 1 piece, gross weight 380 kg, volume 1.65 cbm\n\n"
+    "Please send both lots together as one consignment under a single air waybill. Could you "
+    "give us one all-in price in EUR for the complete shipment and confirm the earliest "
+    "available departure and arrival?\n\n"
+    "Viele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH"
+)  # real mail 1628: asks for earliest departure and arrival
+
+
+def test_quote_answers_earliest_departure_and_arrival() -> None:
+    from app.mail import language
+
+    r = Rfq(
+        origin="MUC",
+        destination="LAX",
+        weight_kg=998,
+        volume_cbm=2.39,
+        preference="fastest",
+        ready_date="2026-11-29",
+        language=language.detect(MAIL_1628),
+        customer_name="Deniz",
+    )
+    o = RateOption("Fjordline Air Cargo", "MUC", "LAX", 3, 320358, "EUR", 320358, "portal")
+    today = datetime(2026, 11, 21).date()
+    text = rfq.quote_text(r, o, 320358, None, 0, today=today)
+    assert _amounts(text) == ["EUR 3,203.58"]
+    assert "Earliest departure from MUC is 29 Nov 2026, arriving in LAX on 2 Dec 2026." in text
+
+    de = rfq.quote_text(r.model_copy(update={"language": "de"}), o, 320358, None, 0, today=today)
+    assert _amounts(de) == ["3.203,58 EUR"]
+    assert "Frühester Abflug ab MUC ist am 29.11.2026, Ankunft in LAX am 02.12.2026." in de
+
+
+def test_schedule_door_to_port_and_past_ready_date() -> None:
+    today = datetime(2026, 11, 21).date()
+    door = Rfq(pickup_zip="51447", destination="ORD", weight_kg=676, ready_date="2026-11-25")
+    assert rfq.schedule(door, 2, today) == (
+        datetime(2026, 11, 26).date(),
+        datetime(2026, 11, 28).date(),
+    )  # +1 day for the trucking leg
+    past = door.model_copy(update={"pickup_zip": None, "origin": "CGN", "ready_date": "2026-11-01"})
+    assert rfq.schedule(past, 2, today)[0] == today  # never before today
+    assert rfq.schedule(door.model_copy(update={"ready_date": None}), 2, today) is None
+    assert rfq.schedule(door.model_copy(update={"ready_date": "next week"}), 2, today) is None
+
+
 # ---------------------------------------------------------------- whole flow
 
 
