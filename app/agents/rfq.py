@@ -48,9 +48,7 @@ log = logging.getLogger(__name__)
 
 RFQ_LIFETIME_S = 360  # 5U expires a request 6 min after it was sent
 PORTAL_MIN_S = 20.0  # portal reads always get this long, even for a resumed RFQ
-TOO_OLD_S = (
-    330  # do not start work on a request that cannot be answered in time any more
-)
+TOO_OLD_S = 330  # do not start work on a request that cannot be answered in time any more
 COMPOSE_RESERVE_S = 15
 
 EXTRACT_PROMPT = (
@@ -202,12 +200,8 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
         json.dumps({"texts": texts, "problems": problems, "media": bool(media)}),
     )
     boundary = _HISTORY.search(mail.body or "")
-    has_current_shipment = boundary and _SHIPMENT_DATA.search(
-        mail.body[: boundary.start()]
-    )
-    subject = (
-        "(historical thread subject omitted)" if has_current_shipment else mail.subject
-    )
+    has_current_shipment = boundary and _SHIPMENT_DATA.search(mail.body[: boundary.start()])
+    subject = "(historical thread subject omitted)" if has_current_shipment else mail.subject
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": EXTRACT_PROMPT},
         {
@@ -228,9 +222,7 @@ def extract_rfq(mail: Mail, session_id: int) -> Rfq | None:
             response_format=RFQ_SCHEMA,
         )
         rfq, error = _parse_extraction(text, mail, session_id)
-    except (
-        openai.APIError
-    ) as e:  # gateway down or timed out: the retry may still get through
+    except openai.APIError as e:  # gateway down or timed out: the retry may still get through
         text, rfq, error = "", None, f"{type(e).__name__}: {e}"
     if rfq is not None:
         return rfq
@@ -294,9 +286,7 @@ def _parse_extraction(text: str, mail: Mail, session_id: int) -> tuple[Rfq | Non
                 return RfqDraft(facts=data), ""
             raise
     except (json.JSONDecodeError, ValidationError) as e:
-        log.warning(
-            "session %s: extraction not usable (%s): %r", session_id, e, text[:300]
-        )
+        log.warning("session %s: extraction not usable (%s): %r", session_id, e, text[:300])
         return None, str(e).replace("\n", " ")
 
 
@@ -328,8 +318,7 @@ def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
     return min(
         trucks,
         key=lambda o: (
-            norm(o.total_eur, lo_p, hi_p) / 2
-            + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
+            norm(o.total_eur, lo_p, hi_p) / 2 + norm(Decimal(str(o.transit_days)), lo_d, hi_d) / 2,
             o.total_eur,
         ),
     )
@@ -346,11 +335,7 @@ def _valid(option: RateOption) -> str | None:
     if not option.valid_until:
         return None
     try:
-        return (
-            datetime.fromisoformat(option.valid_until)
-            .astimezone(UTC)
-            .strftime("%H:%M UTC")
-        )
+        return datetime.fromisoformat(option.valid_until).astimezone(UTC).strftime("%H:%M UTC")
     except ValueError:
         return None
 
@@ -371,9 +356,7 @@ _MONTHS_EN = [
 ]
 
 
-def schedule(
-    rfq: Rfq, transit_days: int, today: date | None = None
-) -> tuple[date, date] | None:
+def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[date, date] | None:
     """Earliest departure and arrival: departure on the ready date (one day later when we
     truck it to the airport first, never before today), arrival = departure + transit."""
     if not rfq.ready_date:
@@ -389,16 +372,10 @@ def schedule(
 
 
 def _date(d: date, lang: str) -> str:
-    return (
-        d.strftime("%d.%m.%Y")
-        if lang == "de"
-        else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
-    )
+    return d.strftime("%d.%m.%Y") if lang == "de" else f"{d.day} {_MONTHS_EN[d.month - 1]} {d.year}"
 
 
-def _schedule_line(
-    rfq: Rfq, option: RateOption, lang: str, today: date | None
-) -> str | None:
+def _schedule_line(rfq: Rfq, option: RateOption, lang: str, today: date | None) -> str | None:
     when = schedule(rfq, option.transit_days, today)
     if when is None:
         return None
@@ -433,22 +410,16 @@ def quote_text(
         hours = truck.transit_days * 24 if truck.transit_days is not None else None
         if lang == "de":
             lead = (
-                f"Gemeldete Trucker-Vorlaufzeit: {hours:g} Stunden. "
-                if hours is not None
-                else ""
+                f"Gemeldete Trucker-Vorlaufzeit: {hours:g} Stunden. " if hours is not None else ""
             )
-            pickup_note = (
-                lead + "Der genaue früheste Abholtermin ist noch nicht bestätigt."
-            )
+            pickup_note = lead + "Der genaue früheste Abholtermin ist noch nicht bestätigt."
         else:
             lead = (
                 f"Carrier-reported pickup/road lead time: {hours:g} hours. "
                 if hours is not None
                 else ""
             )
-            pickup_note = (
-                lead + "The exact earliest collection slot is not yet confirmed."
-            )
+            pickup_note = lead + "The exact earliest collection slot is not yet confirmed."
     if lang == "de":
         hello = f"Hallo {name}," if name else "Guten Tag,"
         intro = (
@@ -488,7 +459,9 @@ def quote_text(
         )
         what = f"Air freight {option.origin} to {option.destination}"
         if truck is not None and rfq.door_to_port:
-            what += f", including pickup at {rfq.pickup_label} and trucking to {option.origin} airport"
+            what += (
+                f", including pickup at {rfq.pickup_label} and trucking to {option.origin} airport"
+            )
         lines = [
             hello,
             "",
@@ -587,11 +560,7 @@ def with_pickup_note(body: str, rfq: Rfq) -> str:
             "Schicken Sie uns kurz die genaue Abholadresse, dann bestätigen wir den Preis."
         )
     else:
-        where = (
-            f"postal code {rfq.pickup_zip}"
-            if rfq.pickup_zip
-            else f"the {rfq.pickup_city} area"
-        )
+        where = f"postal code {rfq.pickup_zip}" if rfq.pickup_zip else f"the {rfq.pickup_city} area"
         note = (
             f"Your mail did not mention the pickup address, so we priced pickup in {where}. "
             "Just send us the exact address and we will confirm the price."
@@ -611,9 +580,7 @@ def compose_quote_text(
     today: date | None = None,
 ) -> str:
     """Generate and verify a general answer; deterministic copy is always available."""
-    fallback = _fallback_with_coverage(
-        rfq, option, total_eur_minor, truck, session_id, today
-    )
+    fallback = _fallback_with_coverage(rfq, option, total_eur_minor, truck, session_id, today)
     lang = "de" if (rfq.language or "").lower().startswith("de") else "en"
     price = _amount(total_eur_minor, lang)
     when = schedule(rfq, option.transit_days, today)
@@ -638,9 +605,7 @@ def compose_quote_text(
         "pickup_zip": rfq.pickup_label if truck else None,
         "pickup_included": truck is not None,
         "carrier_reported_pickup_road_lead_hours": (
-            truck.transit_days * 24
-            if truck and truck.transit_days is not None
-            else None
+            truck.transit_days * 24 if truck and truck.transit_days is not None else None
         ),
         "confirmed_collection_slot": None,
         "earliest_departure": when[0].isoformat() if when else None,
@@ -677,9 +642,7 @@ def compose_quote_text(
         if not isinstance(body, str) or not body.strip():
             raise ValueError("empty body")
         if has_template_artifacts(body):
-            raise ValueError(
-                "answer contains an unfilled template field or mail header"
-            )
+            raise ValueError("answer contains an unfilled template field or mail header")
         coverage_lists = (
             answered,
             unavailable,
@@ -735,9 +698,7 @@ def _bid_carriers(rfq: Rfq, origin: str) -> tuple[list[Carrier], list[Carrier]]:
     minimum = min(maximum, max(0, settings.min_bid_carriers))
     zone = rfq.pickup_zone
     truckers = truckers_for_zone(zone) if zone else []
-    truckers = sorted(truckers, key=lambda carrier: carrier.name)[
-        : settings.max_trucker_bids
-    ]
+    truckers = sorted(truckers, key=lambda carrier: carrier.name)[: settings.max_trucker_bids]
     airline_candidates: list[tuple[bool, Carrier]] = []
     # every airline in the kit flies from our German airports only: an origin outside that
     # network (round 3627: AMS) has no email-only bidder, asking them only collects refusals
@@ -837,9 +798,7 @@ def _handle(mail: Mail, sid: int) -> None:
     db.set_status(sid, "pricing")
 
     start = time.monotonic()
-    rfq = _stored_request(sid) or extract_rfq(
-        mail, sid
-    )  # stored = resumed after a restart
+    rfq = _stored_request(sid) or extract_rfq(mail, sid)  # stored = resumed after a restart
     if rfq is None:
         from app.agents import clarification
         from app.models import RfqDraft
@@ -853,7 +812,7 @@ def _handle(mail: Mail, sid: int) -> None:
         clarification.request(mail, sid, draft)
         return
     from app.agents import clarification
-    from app.mail.rfq_validation import validate
+    from app.mail.rfq_validation import explicit_delivery_origin, validate
 
     prior = db.validation_get(sid)
     cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}"))
@@ -869,16 +828,12 @@ def _handle(mail: Mail, sid: int) -> None:
                 "detail": "Confirm the scanned document in readable text",
             }
         )
-    corrections = (
-        (prior or {}).get("draft", {}).get("evidence", {}).get("corrections", {})
-    )
+    corrections = (prior or {}).get("draft", {}).get("evidence", {}).get("corrections", {})
     if prior and prior["state"] == "ready":
         cached["texts"] = prior["draft"]["evidence"].get(
             "attachment_texts", cached.get("texts", {})
         )
-    checked_rfq, draft = validate(
-        mail, rfq, cached.get("texts", {}), problems, corrections
-    )
+    checked_rfq, draft = validate(mail, rfq, cached.get("texts", {}), problems, corrections)
     draft.evidence["attachment_texts"] = cached.get("texts", {})
     draft.evidence["corrections"] = corrections
     mode = settings.rfq_validation_mode
@@ -901,6 +856,15 @@ def _handle(mail: Mail, sid: int) -> None:
             draft.model_dump(mode="json"),
             __import__("dataclasses").asdict(mail),
         )
+    if mode != "enforce" and not rfq.origin:
+        recovered = explicit_delivery_origin(mail, rfq.destination)
+        if recovered:
+            rfq = rfq.model_copy(update={"origin": recovered})
+            db.emit(
+                "origin_recovered",
+                f"Abflughafen {recovered} aus ausdrücklicher Selbstanlieferung",
+                sid,
+            )
     # the LLM guesses the language from names/places (English mail from a German firm -> "de")
     rfq = rfq.model_copy(update={"language": language.detect(mail.body)})
     if mode != "enforce":
@@ -915,7 +879,23 @@ def _handle(mail: Mail, sid: int) -> None:
 
     origin = resolve_origin(rfq)
     if origin is None:
-        db.set_status(sid, "error", f"kein Abflughafen (Abholort {rfq.pickup_label})")
+        from app.models import RfqDraft
+
+        clarification.request(
+            mail,
+            sid,
+            RfqDraft(
+                facts=rfq.model_dump(),
+                evidence={"blocking_clarification": True},
+                issues=[
+                    {
+                        "field": "origin",
+                        "code": "missing",
+                        "detail": "Confirm departure airport or pickup location",
+                    }
+                ],
+            ),
+        )
         return
 
     truckers, email_airlines = _bid_carriers(rfq, origin)
@@ -951,9 +931,7 @@ def _handle(mail: Mail, sid: int) -> None:
                 fallback.append(carrier)
     requested_emails = {carrier.email for carrier in truckers + email_airlines}
     remaining_slots = max(0, settings.max_bid_carriers - len(email_airlines))
-    fallback = [
-        carrier for carrier in fallback if carrier.email not in requested_emails
-    ]
+    fallback = [carrier for carrier in fallback if carrier.email not in requested_emails]
     fallback = fallback[:remaining_slots]
     if fallback:
         bids.request(sid, rfq, origin, fallback)
@@ -1026,9 +1004,7 @@ def _handle(mail: Mail, sid: int) -> None:
             )
             db.set_status(sid, "error", "kein vollständiger Door-to-Port-Preis")
             return
-        db.emit(
-            "no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn"
-        )
+        db.emit("no_trucking", "Kein Trucker-Gebot: Angebot ohne Vorlauf", sid, level="warn")
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
     if settings.price_adjust_pct:
         cost = total
@@ -1065,11 +1041,7 @@ def _handle(mail: Mail, sid: int) -> None:
             level="warn",
         )
         return
-    subject = (
-        mail.subject
-        if mail.subject.lower().startswith("re:")
-        else f"Re: {mail.subject}"
-    )
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     sent = hackloop.send(mail.sender, subject, body, in_reply_to=mail.id)
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -1094,11 +1066,7 @@ def _handle(mail: Mail, sid: int) -> None:
         rate_id=choice.rate_id,
         valid_until=choice.valid_until,
         alternatives=[asdict(o) for o in air + bid_opts]
-        + (
-            [{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}]
-            if truck
-            else []
-        ),
+        + ([{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}] if truck else []),
         mail_id=int(sent["id"]),
     )
     log.info(
