@@ -6,3 +6,4 @@ data/forwarder.db*
 data/inbox/
 *.log
 .DS_Store
+data/demo.db*

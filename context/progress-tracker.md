@@ -16,12 +16,13 @@ Keep entries to at most 3 lines; details belong in code and commits.
 - Stack decided (`context/docs/TECH_SPEC.md`), `context/architecture-context.md` added.
 - Start kit parsed: 158 lanes from 10 sheets in `data/tariffs.json`, pricing module in `app/pricing/` (floats still, to fix).
 - Design for task C (CRM + sessions UI) in `context/docs/design/aufgabe-c.md`.
-- C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11. Not yet run under uvicorn.
+- C3+C4 done: `app/ui/server.py` (REST, SSE via `fastapi.sse`, actions), `static/index.html` (sessions + dashboard, dark), `watchers.py` (deadline, board sync), `demo.py` (seed `data/demo.db`); 20 tests green, checked in a real browser.
+- C1+C2 done: `app/db.py` (schema, `tx()` with BEGIN IMMEDIATE, session mapping, events, quotes, bookings, `claim_quote_send`, stats), 16 tests green on 3.11. 
 - Moved `docs/` (TECH_SPEC, CHALLENGE, PDFs, design) into `context/docs/`; all references updated, `docs/` removed.
 
 ## In Progress
 
-- Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), next: C3 `app/ui/server.py`, C4 `static/index.html`.
+- Task C, Moritz (CRM `app/db.py` + sessions UI `app/ui/`): design done (`context/docs/design/aufgabe-c.md`), C3+C4 done (server, SSE, sessions UI, dashboard); next: wire `watchers.start()` and the UI into `run.py` with Karim, then C7/C8.
 - Tasks A, Karim (mail poller, router) and B, Constantin (portal sync, lane index): status unknown in repo, no code pushed yet.
 
 ## Next Up
