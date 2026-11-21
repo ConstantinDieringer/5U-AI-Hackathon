@@ -34,12 +34,22 @@ def test_parse_preference_and_german():
 def test_remembered_per_customer_for_future_requests():
     cust = "meyer-industrie@hackloop.mail"
     carrier_prefs.remember(cust, "Please do not offer Zephyr Steppe Cargo (ZS).", 10820)
-    carrier_prefs.remember(
-        cust, "We would prefer Zephyr Steppe Cargo.", 11000
-    )  # no downgrade
+    carrier_prefs.remember(cust, "We would prefer Zephyr Steppe Cargo.", 11000)  # no downgrade
     assert carrier_prefs.excluded(cust) == {"zephyr steppe cargo"}
     assert carrier_prefs.preferred(cust) == set()
-    assert carrier_prefs.excluded("Meyer-Industrie@hackloop.mail ") == {
-        "zephyr steppe cargo"
-    }
+    assert carrier_prefs.excluded("Meyer-Industrie@hackloop.mail ") == {"zephyr steppe cargo"}
     assert carrier_prefs.excluded("other@hackloop.mail") == set()
+
+
+def test_backfill_reads_stored_customer_mails():
+    db.ingest_mail(
+        mail_id=10820,
+        sender="meyer-industrie@hackloop.mail",
+        recipient="t",
+        subject="RFQ ULN",
+        category="rfq",
+        body="Please do not offer Zephyr Steppe Cargo (ZS) for any future inquiries.",
+    )
+    assert carrier_prefs.backfill() == 1
+    assert carrier_prefs.excluded("meyer-industrie@hackloop.mail") == {"zephyr steppe cargo"}
+    assert carrier_prefs.backfill() == 0
