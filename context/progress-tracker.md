@@ -14,7 +14,9 @@ Keep entries to at most 3 lines; details belong in code and commits.
 ## Completed
 
 - RFQ validation: current-message evidence and attachment checks, additive durable clarification state, one automatic question, reply routing before booking, deadline/pause/restart protections; `RFQ_VALIDATION_MODE=shadow` remains the default pending production replay acceptance.
+- RFQ validation verification: 257 tests passed, 1 existing test skipped; relevant Ruff checks pass. Read-only local replay covered 18 sessions but no stored extractions, so no live extraction accuracy claim or production activation. Integrated the latest API-cost/pickup-note changes; enforce never prices an assumed pickup.
 
+- RFQ cost card: input/cached input/output/reasoning per model and purpose, frozen price/usage snapshots and USD totals. Legacy estimates retained; missing prices/usage visible. Accounting migration adds one nullable column; no extra API calls.
 - RFQ history isolation: current cargo blocks exclude obsolete forwarded specifications and thread subjects from extraction/lot sums; pure forwarding remains supported. Round 15 carrier requests used historical AMS; actual pickup location was absent, so this fix cannot reconstruct it or recover the expired round.
 - Door-to-port without ZIP (rounds 3627, 3930 lost): pickup area from the mail/signature (pickup_zones.csv) or the customer's last pickup → zone → airport → truck + air. No email-only airline bids for origins outside our 6 airports.
 - Mail template guard: generated RFQ bodies reject unfilled placeholders and embedded mail headers, falling back to verified copy; placeholder customer names use a generic greeting. Observed live mail 3495 still used pre-style-fix output, so production rollout requires confirmation.

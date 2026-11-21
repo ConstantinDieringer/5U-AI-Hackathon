@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -66,6 +67,48 @@ def cost_micro_usd(name: str, prompt_tokens: int, completion_tokens: int) -> int
     return int(usd_per_m.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
+def accounting(name: str, usage: Any) -> dict[str, Any]:
+    """Snapshot usage and list rates; cached input and reasoning are subsets, not extras."""
+    prices = _prices()
+    price = prices.get(name) or next(
+        (
+            v
+            for k, v in sorted(prices.items(), key=lambda kv: -len(kv[0]))
+            if re.fullmatch(re.escape(k) + r"-\d{4}-\d{2}-\d{2}", name)
+        ),
+        None,
+    )
+    if usage is None:
+        return {"status": "usage_missing", "rates": price, "currency": "USD"}
+    pt, ct = usage.prompt_tokens, usage.completion_tokens
+    pd = getattr(usage, "prompt_tokens_details", None)
+    cd = getattr(usage, "completion_tokens_details", None)
+    cached = getattr(pd, "cached_tokens", None)
+    reasoning = getattr(cd, "reasoning_tokens", None)
+    tokens = {"input": pt, "cached_input": cached, "output": ct, "reasoning": reasoning}
+    result: dict[str, Any] = {
+        "status": "estimated" if price else "price_missing",
+        "currency": "USD",
+        "tokens": tokens,
+        "rates": price,
+        "prompt_details": pd.model_dump() if hasattr(pd, "model_dump") else None,
+        "completion_details": cd.model_dump() if hasattr(cd, "model_dump") else None,
+    }
+    if price is None:
+        return result
+    cached_count = min(pt, max(0, cached or 0))
+    components = {
+        "input": Decimal(str(price["input"])) * (pt - cached_count),
+        "cached_input": Decimal(str(price["cached_input"])) * cached_count,
+        "output": Decimal(str(price["output"])) * ct,
+    }
+    result["components_micro_usd"] = {k: str(v) for k, v in components.items()}
+    result["total_micro_usd"] = int(
+        sum(components.values()).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    )
+    return result
+
+
 def _reserve(session_id: int | None) -> None:
     """Per-session call budget, counted in the db (survives a restart of run.py)."""
     if session_id is None:
@@ -92,20 +135,34 @@ def complete(
         "max_completion_tokens": max_tokens,
     }
     if _is_reasoning(name):
-        kw["reasoning_effort"] = "minimal"  # no hidden reasoning tokens: cheaper and faster
+        kw["reasoning_effort"] = "minimal"  # reasoning usage still counts within output tokens
     else:
         kw["temperature"] = 0
     if response_format is not None:
         kw["response_format"] = response_format
 
     start = time.monotonic()
-    resp = _client.chat.completions.create(**kw)
+    try:
+        resp = _client.chat.completions.create(**kw)
+    except Exception:
+        db.record_llm_call(
+            session_id,
+            purpose=purpose,
+            model=name,
+            prompt_tokens=0,
+            completion_tokens=0,
+            cost_micro_usd=0,
+            latency_ms=int((time.monotonic() - start) * 1000),
+            accounting={"status": "request_failed", "currency": "USD"},
+        )
+        raise
     latency_ms = int((time.monotonic() - start) * 1000)
 
     usage = resp.usage
     pt = usage.prompt_tokens if usage else 0
     ct = usage.completion_tokens if usage else 0
-    cost = cost_micro_usd(resp.model or name, pt, ct)
+    breakdown = accounting(resp.model or name, usage)
+    cost = breakdown.get("total_micro_usd", 0)
     db.record_llm_call(
         session_id,
         purpose=purpose,
@@ -114,6 +171,7 @@ def complete(
         completion_tokens=ct,
         cost_micro_usd=cost,
         latency_ms=latency_ms,
+        accounting=breakdown,
     )
     text = resp.choices[0].message.content if resp.choices else None
     return text or ""

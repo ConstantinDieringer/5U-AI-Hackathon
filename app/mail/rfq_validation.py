@@ -75,6 +75,7 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         sources["subject"] = current.subject
     # Never retain a pickup city inferred by the older history/signature heuristic.
     data["pickup_city"] = None
+    data["pickup_assumed"] = False
     combined = "\n".join(sources.values())
     pickup = bool(_PICKUP.search(active))
     zip_match = re.search(r"\b(?:D-)?(\d{5})\b", active)

@@ -250,6 +250,10 @@ def init_db(path: str | None = None) -> None:
     c = conn()
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
+    with tx() as migration:
+        columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
+        if "accounting_json" not in columns:
+            migration.execute("ALTER TABLE llm_calls ADD COLUMN accounting_json TEXT")
     remap_unassigned()
     backfill_bookings_from_confirmations()
     if path_changed:
@@ -788,6 +792,7 @@ def get_session(session_id: int) -> dict[str, Any] | None:
             (session_id,),
         )
     )["v"]  # type: ignore[index]
+    s["llm_usage"] = session_llm_usage(session_id)
     s["board"] = _rows(c.execute("SELECT * FROM board_results WHERE session_id = ?", (session_id,)))
     return s
 
@@ -1235,11 +1240,12 @@ def record_llm_call(
     completion_tokens: int,
     cost_micro_usd: int,
     latency_ms: int,
+    accounting: dict[str, Any] | None = None,
 ) -> None:
     with tx() as c:
         c.execute(
             "INSERT INTO llm_calls(session_id, purpose, model, prompt_tokens, completion_tokens,"
-            " cost_micro_usd, latency_ms, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            " cost_micro_usd, latency_ms, created_at, accounting_json) VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 session_id,
                 purpose,
@@ -1249,6 +1255,7 @@ def record_llm_call(
                 cost_micro_usd,
                 latency_ms,
                 now(),
+                _json(accounting) if accounting is not None else None,
             ),
         )
         _emit(
@@ -1260,6 +1267,28 @@ def record_llm_call(
             duration_ms=latency_ms,
             cost_micro_usd=cost_micro_usd,
         )
+
+
+def session_llm_usage(session_id: int) -> dict[str, Any]:
+    calls = _rows(
+        conn().execute("SELECT * FROM llm_calls WHERE session_id = ? ORDER BY id", (session_id,))
+    )
+    incomplete = 0
+    for call in calls:
+        call["accounting"] = json.loads(call.pop("accounting_json") or "null")
+        if call["accounting"] and call["accounting"]["status"] != "estimated":
+            incomplete += 1
+    return {
+        "calls": calls,
+        "call_count": len(calls),
+        "currency": "USD",
+        "input_tokens": sum(c["prompt_tokens"] or 0 for c in calls),
+        "output_tokens": sum(c["completion_tokens"] or 0 for c in calls),
+        "known_cost_micro_usd": sum(c["cost_micro_usd"] for c in calls),
+        "total_micro_usd": None if incomplete else sum(c["cost_micro_usd"] for c in calls),
+        "incomplete_calls": incomplete,
+        "legacy_calls": sum(c["accounting"] is None for c in calls),
+    }
 
 
 def save_board_result(

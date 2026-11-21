@@ -174,7 +174,7 @@ def locate_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
             sid,
             level="warn",
         )
-        return rfq.model_copy(update={"pickup_city": area})
+        return rfq.model_copy(update={"pickup_city": area, "pickup_assumed": True})
     last = db.last_pickup(mail.sender, before_session=sid)
     if last:
         db.emit(
@@ -184,7 +184,7 @@ def locate_pickup(rfq: Rfq, mail: Mail, sid: int) -> Rfq:
             level="warn",
         )
         key = "pickup_zip" if last[:1].isdigit() else "pickup_city"
-        return rfq.model_copy(update={key: last})
+        return rfq.model_copy(update={key: last, "pickup_assumed": True})
     return rfq
 
 
@@ -537,6 +537,31 @@ def _fallback_with_coverage(
         )
     closing = f"\n\n{SIGNATURE}"
     return body.replace(closing, f"\n\n{note}{closing}", 1)
+
+
+def with_pickup_note(body: str, rfq: Rfq) -> str:
+    """The mail named no pickup site, so the price rests on an assumed one: say which and ask
+    for the exact address in the same (first and only) quote. No extra mail, no LLM."""
+    where = f"PLZ {rfq.pickup_zip}" if rfq.pickup_zip else f"Raum {rfq.pickup_city}"
+    if (rfq.language or "").lower().startswith("de"):
+        note = (
+            f"Ihre Mail nennt keinen Abholort, wir haben mit Abholung in {where} gerechnet. "
+            "Schicken Sie uns kurz die genaue Abholadresse, dann bestätigen wir den Preis."
+        )
+    else:
+        where = (
+            f"postal code {rfq.pickup_zip}"
+            if rfq.pickup_zip
+            else f"the {rfq.pickup_city} area"
+        )
+        note = (
+            f"Your mail did not mention the pickup address, so we priced pickup in {where}. "
+            "Just send us the exact address and we will confirm the price."
+        )
+    i = body.rfind(SIGNATURE)
+    if i < 0:
+        return f"{body.rstrip()}\n\n{note}\n"
+    return f"{body[:i].rstrip()}\n\n{note}\n\n{body[i:]}"
 
 
 def compose_quote_text(
@@ -932,6 +957,8 @@ def _handle(mail: Mail, sid: int) -> None:
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
 
     body = compose_quote_text(rfq, choice, total, truck, sid)
+    if rfq.pickup_assumed and truck is not None:
+        body = with_pickup_note(body, rfq)
     from dataclasses import asdict
 
     db.emit(
