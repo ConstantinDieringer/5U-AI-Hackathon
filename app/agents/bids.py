@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -68,6 +69,7 @@ class _Request:
     declined: set[str] = field(default_factory=set)  # emails that said "we do not serve"
     # emails whose reply came but could not be priced: answered, nothing more to wait for
     unreadable: set[str] = field(default_factory=set)
+    last_answer_at: float = 0.0  # monotonic time of the latest offer, decline or unreadable reply
 
 
 _open: dict[int, _Request] = {}
@@ -539,7 +541,9 @@ def _unreadable(carrier: Carrier, sid: int, issue: str, kind: str = "bid_unreada
     """The carrier answered but gave no usable price: log it and stop waiting for them
     (rounds 63/64 waited out the bid window for replies that would never become offers)."""
     with _cond:
-        _open.setdefault(sid, _Request()).unreadable.add(carrier.email)
+        req = _open.setdefault(sid, _Request())
+        req.unreadable.add(carrier.email)
+        req.last_answer_at = time.monotonic()
         _cond.notify_all()
     db.emit(kind, f"Gebot von {carrier.name}: {issue}"[:300], sid, level="warn")
 
@@ -655,7 +659,9 @@ def _evaluate(
     if refusal is not None:
         served_lanes.remember(carrier.email, refusal, at=mail.received_at or None)
         with _cond:
-            _open.setdefault(sid, _Request()).declined.add(carrier.email)
+            req = _open.setdefault(sid, _Request())
+            req.declined.add(carrier.email)
+            req.last_answer_at = time.monotonic()
             _cond.notify_all()
         db.emit(
             "bid_declined",
@@ -689,7 +695,9 @@ def _evaluate(
         float(billed[1]) if (billed := _BILLED.search(mail.subject or "")) else None,
     )
     with _cond:
-        _open.setdefault(sid, _Request()).offers.append(offer)
+        req = _open.setdefault(sid, _Request())
+        req.offers.append(offer)
+        req.last_answer_at = time.monotonic()
         _cond.notify_all()
     db.emit(
         "bid_received",
@@ -717,22 +725,56 @@ def offers(session_id: int) -> list[Offer]:
 def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None) -> list[Offer]:
     """Block until every asked carrier answered (or, with `until_kinds`, until each kind has
     an offer or nobody of that kind is left to answer), or the timeout passes. Returns the
-    offers so far."""
+    offers so far.
 
-    def done() -> bool:
+    With BID_GRACE_S > 0 the plain wait also ends once BID_QUORUM carriers answered, every
+    asked kind has an offer, and no further reply came for BID_GRACE_S: one silent carrier no
+    longer holds the quote to the deadline (replies cluster 34 to 45 s after our request)."""
+    end = time.monotonic() + max(0.0, timeout_s)
+    grace = config.settings.bid_grace_s
+
+    def check() -> tuple[bool, float | None]:
         req = _open.get(session_id)
         if req is None or not req.asked:
-            return True
+            return True, None
         answered = {o.carrier.email for o in req.offers} | req.declined | req.unreadable
+        have = {o.carrier.kind for o in req.offers}
+        waiting = {c.kind for email, c in req.asked.items() if email not in answered}
         if until_kinds is not None:
-            have = {o.carrier.kind for o in req.offers}
             # round 11: every airline had declined, yet we waited out the full timeout
-            waiting = {c.kind for email, c in req.asked.items() if email not in answered}
-            return all(k in have or k not in waiting for k in until_kinds)
-        return answered >= set(req.asked)
+            return all(k in have or k not in waiting for k in until_kinds), None
+        if answered >= set(req.asked):
+            return True, None
+        quorum = min(len(req.asked), max(1, config.settings.bid_quorum))
+        kinds = {c.kind for c in req.asked.values()}
+        if grace > 0 and len(answered & set(req.asked)) >= quorum and all(
+            k in have or k not in waiting for k in kinds
+        ):
+            return False, req.last_answer_at + grace
+        return False, None
 
+    released: tuple[int, int] | None = None
     with _cond:
-        _cond.wait_for(done, timeout=max(0.0, timeout_s))
+        while True:
+            done, release_at = check()
+            now = time.monotonic()
+            if done or now >= end:
+                break
+            if release_at is not None and now >= release_at:
+                req = _open[session_id]
+                answered = {o.carrier.email for o in req.offers} | req.declined | req.unreadable
+                released = (len(answered & set(req.asked)), len(req.asked))
+                break
+            _cond.wait(timeout=(min(end, release_at) if release_at is not None else end) - now)
+    if released is not None:
+        db.emit(
+            "bid_quorum",
+            f"{released[0]} von {released[1]} Carriern geantwortet, Rest nach {grace:.0f} s"
+            " Ruhe nicht mehr abgewartet",
+            session_id,
+            answered=released[0],
+            asked=released[1],
+        )
     return offers(session_id)
 
 

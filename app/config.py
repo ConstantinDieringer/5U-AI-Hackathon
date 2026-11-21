@@ -82,6 +82,8 @@ class Settings:
     quote_full_score_deadline_s: float
     quote_final_deadline_s: float
     min_bid_carriers: int
+    bid_quorum: int
+    bid_grace_s: float
     max_bid_carriers: int
     max_trucker_bids: int
     price_adjust_pct: float
@@ -199,6 +201,10 @@ settings = Settings(
     ),
     quote_final_deadline_s=float(_env("QUOTE_FINAL_DEADLINE_S", _env("BID_MAX_WAIT_S", "300"))),
     min_bid_carriers=max(0, int(_env("MIN_BID_CARRIERS", "2"))),
+    # bids.wait stops early once BID_QUORUM carriers answered and BID_GRACE_S passed without a
+    # further reply; 0 = wait for every carrier as before
+    bid_quorum=max(1, int(_env("BID_QUORUM", "2"))),
+    bid_grace_s=max(0.0, float(_env("BID_GRACE_S", "0"))),
     max_bid_carriers=max(1, int(_env("MAX_BID_CARRIERS", "5"))),  # airline bid requests
     # truckers get their own slots: in round 20 five truckers left no slot for airline bids
     max_trucker_bids=max(0, int(_env("MAX_TRUCKER_BIDS", "5"))),
