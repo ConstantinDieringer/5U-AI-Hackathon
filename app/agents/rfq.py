@@ -43,6 +43,7 @@ from app.mail.style import (
     has_template_artifacts,
     written_date,
 )
+from app.mail.subjects import shipment_subject
 from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
 from app.pricing import served_lanes
@@ -1637,6 +1638,7 @@ def _price_and_quote(
         )
         return
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    subject = shipment_subject(choice.origin, choice.destination, rfq.language, subject)
     try:
         sent = hackloop.send_customer(
             mail.sender,

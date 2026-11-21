@@ -418,7 +418,7 @@ def test_handle_rfq_door_to_port_with_trucker_bid(stub, monkeypatch) -> None:
             [],
         ),
     )
-    mail = _rfq_mail()
+    mail = dataclasses.replace(_rfq_mail(), subject="FW: AMS TLV 104 crates")
 
     def reply() -> None:  # the trucker answers while the agent waits
         while not stub.sent:
@@ -440,6 +440,7 @@ def test_handle_rfq_door_to_port_with_trucker_bid(stub, monkeypatch) -> None:
 
     quote = stub.sent[-1]
     assert quote["to"] == CUSTOMER and quote["in_reply_to"] == 265
+    assert quote["subject"] == "Air freight CGN to ORD"
     assert "trucking to CGN" in quote["body"]
     s = db.get_session(265)
     assert s["status"] == "quoted"
