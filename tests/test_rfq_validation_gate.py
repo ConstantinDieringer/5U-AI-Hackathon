@@ -190,7 +190,7 @@ def test_dangerous_goods_ask_for_documents_and_clear_on_documents():
     _, d = validate(m, cand, sli)
     assert [i["field"] for i in d.issues] == ["dangerous_goods"]
     text = clarification.text_for(d, "en")
-    assert "UN3481, Class 9" in text and "Shipper's Declaration" in text and "postal" not in text
+    assert "UN3481, Class 9" in text and "(DGD)" in text and "postal" not in text
     rfq, d2 = validate(m, cand, sli, corrections={"dangerous_goods": "dg_documents_received"})
     assert rfq is not None and not d2.issues
 

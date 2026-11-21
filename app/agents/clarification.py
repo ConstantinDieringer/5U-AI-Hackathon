@@ -52,51 +52,39 @@ def text_for(draft, lang):
     }
     labels = de if lang == "de" else en
     if "dangerous_goods" in fields:
+        # one merged text (Constantin ba6dfa0 + round 10132): name the declared entry, ask
+        # for DGD and SDS, no promise to quote before the documents are reviewed
         dg = draft.evidence.get("dangerous_goods") or {}
         what = dg.get("declared") or ", ".join(dg.get("un_numbers") or []) or None
         rest = [labels[f] for f in fields if f != "dangerous_goods"]
         if lang == "de":
-            line = (
-                f"Laut Ihren Unterlagen ist die Sendung Gefahrgut ({what}). " if what else
-                "Laut Ihren Unterlagen ist die Sendung Gefahrgut. "
-            ) + (
-                "Bevor wir ein Angebot machen können, brauchen wir dafür die Gefahrgutdokumente: "
-                "die Shipper's Declaration for Dangerous Goods und das Sicherheitsdatenblatt (SDS)."
+            found = (
+                f"Laut Ihren Unterlagen ist die Sendung Gefahrgut ({what}). "
+                if what
+                else "Ihre Sendung enthält möglicherweise Gefahrgut, bitte nennen Sie uns UN-Nummer und Klasse. "
             )
             more = f" Außerdem brauchen wir noch {' und '.join(rest)}." if rest else ""
             return (
-                f"Guten Tag,\n\ndanke für Ihre Anfrage. {line}{more} Schicken Sie uns die "
-                f"Unterlagen einfach hier im Thread, dann melden wir uns gleich mit dem "
-                f"Angebot.\n\n{SIGNATURE}\n"
+                f"Guten Tag,\n\ndanke für Ihre Anfrage. {found}Bitte schicken Sie uns die "
+                "Gefahrgutunterlagen: die Versendererklärung (DGD) und das Sicherheitsdatenblatt "
+                "(SDS). Wir prüfen sie und die Eignung des Transports, bevor wir ein Angebot "
+                f"abgeben oder buchen.{more}\n\n{SIGNATURE}\n"
             )
-        line = (
-            f"Your documents show the shipment is dangerous goods ({what}). " if what else
-            "Your documents show the shipment is dangerous goods. "
-        ) + (
-            "Before we can quote we need the dangerous goods documents: the Shipper's "
-            "Declaration for Dangerous Goods and the safety data sheet (SDS)."
+        found = (
+            f"Your documents show the shipment is dangerous goods ({what}). "
+            if what
+            else "Your shipment may contain dangerous goods, so please also confirm the UN number and class. "
         )
         more = f" We also need {' and '.join(rest)}." if rest else ""
         return (
-            f"Hello,\n\nthanks for your request. {line}{more} Just send them over in this "
-            f"thread and we'll come back with the quote right away.\n\n{SIGNATURE}\n"
+            f"Hello,\n\nthanks for your request. {found}Please send us the dangerous goods "
+            "documents: the shipper's declaration (DGD) and the safety data sheet (SDS). We "
+            "need to review them and the transport suitability before we can quote or book "
+            f"this shipment.{more}\n\n{SIGNATURE}\n"
         )
     items = [labels[f] for f in fields]
     joiner = " und " if lang == "de" else " and "
     wanted = items[0] if len(items) == 1 else ", ".join(items[:-1]) + joiner + items[-1]
-    if "dangerous_goods" in fields:
-        if lang == "de":
-            return (
-                "Guten Tag,\n\nbitte schicken Sie uns noch "
-                f"{wanted}. Wir prüfen die Unterlagen und die Eignung des Transports, "
-                "bevor wir ein Angebot abgeben oder buchen.\n\n"
-                f"{SIGNATURE}\n"
-            )
-        return (
-            f"Hello,\n\nPlease send us {wanted}. We need to review the documents and "
-            "transport suitability before we can quote or book this shipment.\n\n"
-            f"{SIGNATURE}\n"
-        )
     # one short human paragraph, no bullet list; the labels in brackets stay so the reply
     # can be matched to the field
     if lang == "de":
