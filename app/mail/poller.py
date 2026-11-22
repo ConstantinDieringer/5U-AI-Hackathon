@@ -20,7 +20,7 @@ from pathlib import Path
 
 from app import db, hackloop
 from app.config import settings
-from app.mail import guard, parse, rate_limit_watch, router, screening, store
+from app.mail import address_changes, guard, parse, rate_limit_watch, router, screening, store
 from app.models import Category, Mail
 
 log = logging.getLogger(__name__)
@@ -126,12 +126,22 @@ def handle(raw: dict, *, recover: bool = False) -> None:
         from app.agents import tariff
 
         tariff.enqueue(mail)
+    try:  # before storing: a mail must not make its own sender a verified customer
+        verified = address_changes.verified_addresses()
+    except Exception:
+        log.exception("verified addresses unavailable on mail %s", mail.id)
+        verified = frozenset()
     saved = store.save_mail(mail, category, in_reply_to, session_hint)
     if not saved.is_new and not recover:
         log.info("mail %s already stored, skipped", mail.id)
         return
     if saved.is_new and check is not None and check.verdict is not screening.Verdict.GENUINE:
         _flag(mail, check, saved.session_id)
+    if saved.is_new and check is not None and check.verdict is not screening.Verdict.PHISHING:
+        try:  # a verified party announcing its new address: the new one is verified too
+            address_changes.record(mail, verified, saved.session_id)
+        except Exception:
+            log.exception("address change check failed on mail %s", mail.id)
     db.delivery_state(mail.id, "stored")
     try:
         held = guard.inbound(mail, category, saved.session_id, early)

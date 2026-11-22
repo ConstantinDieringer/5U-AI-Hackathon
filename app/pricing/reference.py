@@ -116,8 +116,15 @@ def truckers_for_zone(zone: str) -> list[Carrier]:
 
 
 def carrier_by_email(email: str) -> Carrier | None:
+    """Also finds a carrier by the new address it announced (app/mail/address_changes.py)."""
     addr = email.strip().lower()
-    return next((c for c in carriers() if c.email == addr), None)
+    found = next((c for c in carriers() if c.email == addr), None)
+    if found is None:
+        from app.mail.address_changes import canonical
+
+        original = canonical(addr)
+        found = next((c for c in carriers() if c.email == original), None)
+    return found
 
 
 def carrier_by_name(name: str) -> Carrier | None:

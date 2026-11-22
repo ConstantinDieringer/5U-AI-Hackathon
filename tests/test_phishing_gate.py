@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from app import db, hackloop, llm
@@ -137,3 +138,143 @@ def test_genuine_rfq_flows_unchanged_without_an_llm_call(box: Box, monkeypatch) 
     assert box.dispatched == [(9002, Category.RFQ)] and calls == []
     assert stored(9002)["category"] == "rfq"
     assert not [e for e in db.events_after(0) if e["kind"] in ("phishing", "screening")]
+
+
+# ---------------------------------------------------------------- lookalike of a verified sender
+
+RATEDESK_FAKE_BODY = (
+    "Hello,\n\nportal rates for FRA-JFK, 100.0 kg, 0.5 cbm: Polaris Air Logistics (PL) "
+    "308.00 EUR, 4 days. Please confirm the booking by reply.\n\nRate Desk"
+)
+
+
+def test_lookalike_of_a_verified_address_is_never_answered(box: Box, monkeypatch) -> None:
+    """A friendly mail without any other signal is blocked only because its sender imitates
+    the rate desk; no reply can go to it or to the fake address."""
+    gate(monkeypatch)
+    calls = no_llm(monkeypatch)
+    deliver(raw_mail(9101, "ratedesk@hackl0op.mail", RATEDESK_FAKE_BODY, subject="Rates"))
+    assert stored(9101)["category"] == "phishing" and box.dispatched == [] and calls == []
+    [q] = db.quarantined()
+    assert "lookalike_sender" in str(q)
+    with pytest.raises(hackloop.QuarantinedReply):
+        hackloop.send("ratedesk@hackl0op.mail", "Re: Rates", "ok", in_reply_to=9101)
+
+
+@pytest.mark.parametrize(
+    "fake",
+    [
+        "rheintal-elektronlk@hackloop.mail",  # i -> l
+        "rheintal-elektronik@hackl00p.mail",  # same name, lookalike domain
+        "rheintal-elektronik-billing@hackloop.mail",  # extra word
+        "rheintal-elektronіk@hackloop.mail",  # Cyrillic і
+    ],
+)
+def test_lookalike_of_a_known_customer_is_blocked(fake, box: Box, monkeypatch) -> None:
+    gate(monkeypatch)
+    no_llm(monkeypatch)
+    monkeypatch.setattr(db, "known_customers", lambda: ["rheintal-elektronik@hackloop.mail"])
+    deliver(raw_mail(9102, fake, RFQ_BODY))
+    assert stored(9102)["category"] == "phishing" and box.dispatched == []
+    # the known customer itself still flows unchanged
+    deliver(raw_mail(9103, "rheintal-elektronik@hackloop.mail", RFQ_BODY))
+    assert box.dispatched == [(9103, Category.RFQ)]
+
+
+def test_no_genuine_sender_imitates_another() -> None:
+    """Counterexample on all real mail: every genuine sender, checked against every other
+    carrier, desk and customer, is never taken for a lookalike (no lost round)."""
+    labelled = json.loads((FIX / "screening" / "labelled_mails.json").read_text())
+    mails = next(v for v in labelled.values() if isinstance(v, list))
+    genuine = {m["sender"] for m in mails if m["label"] == "genuine"}
+    known = screening.fixed_addresses() | genuine
+    assert len(genuine) > 50
+    assert {
+        s: screening.lookalike(s, known - {s})
+        for s in genuine
+        if screening.lookalike(s, known - {s})
+    } == {}
+
+
+def test_send_refuses_a_lookalike_recipient_before_any_network_call(box: Box, monkeypatch) -> None:
+    posted: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        hackloop,
+        "_request",
+        lambda *a, **kw: posted.append(kw.get("json") or {}) or httpx.Response(200, json={"id": 1}),
+    )
+    with pytest.raises(hackloop.QuarantinedReply):
+        hackloop.send("po1aris-air-logistics@hackloop.mail", "Rate request", "Hello")
+    assert posted == []
+    hackloop.send("polaris-air-logistics@hackloop.mail", "Rate request", "Hello")
+    assert [p["to"] for p in posted] == ["polaris-air-logistics@hackloop.mail"]
+
+
+# ---------------------------------------------------------------- address change by a verified party
+
+CHANGE_BODY = (
+    "Hello,\n\nplease note our new email address: {new}. Please send all future requests "
+    "there.\n\nBest regards\nPolaris Air Logistics"
+)
+
+
+def test_verified_party_can_announce_a_new_address(box: Box, monkeypatch) -> None:
+    gate(monkeypatch)
+    no_llm(monkeypatch)
+    new = "polaris-cargo-desk@hackloop.mail"
+    deliver(raw_mail(9201, "polaris-air-logistics@hackloop.mail", CHANGE_BODY.format(new=new)))
+    assert db.address_changes() == {new: "polaris-air-logistics@hackloop.mail"}
+    assert any(e["kind"] == "address_change" for e in db.events_after(0))
+    # the new address now counts as the carrier: routed as its bid, never quarantined
+    deliver(raw_mail(9202, new, "Our offer: 2.10 EUR/kg, 3 days.", subject="Re: [AP-1] FRA-JFK"))
+    assert stored(9202)["category"] == "carrier_bid" and db.quarantined() == []
+    # and outbound mail to the carrier goes to the new address
+    posted: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        hackloop,
+        "_request",
+        lambda *a, **kw: posted.append(kw.get("json") or {}) or httpx.Response(200, json={"id": 1}),
+    )
+    hackloop.send("polaris-air-logistics@hackloop.mail", "Rate request", "Hello")
+    assert [p["to"] for p in posted] == [new]
+
+
+def test_desk_address_change_makes_a_lookalike_address_genuine(box: Box, monkeypatch) -> None:
+    gate(monkeypatch)
+    no_llm(monkeypatch)
+    body = (
+        "Hello,\n\nour address has changed, please write to rate-desk@hackloop.mail.\n\nRate Desk"
+    )
+    deliver(raw_mail(9211, "ratedesk@hackloop.mail", body, subject="New address"))
+    deliver(raw_mail(9212, "rate-desk@hackloop.mail", RATEDESK_FAKE_BODY, subject="Rates"))
+    assert stored(9212)["category"] == "portal_reply" and db.quarantined() == []
+
+
+@pytest.mark.parametrize(
+    "sender, new",
+    [
+        ("po1aris-air-logistics@hackloop.mail", "polaris-new@hackloop.mail"),  # lookalike
+        ("someone-unknown@hackloop.mail", "polaris-new@hackloop.mail"),  # not verified
+        ("polaris-air-logistics@hackloop.mail", "ratedesk@hackloop.mail"),  # another party
+        ("polaris-air-logistics@hackloop.mail", "rate-desk@hackloop.mail"),  # another's lookalike
+    ],
+)
+def test_address_change_needs_an_exact_verified_sender(sender, new, box, monkeypatch) -> None:
+    gate(monkeypatch)
+    no_llm(monkeypatch)
+    deliver(raw_mail(9221, sender, CHANGE_BODY.format(new=new)))
+    assert db.address_changes() == {}
+
+
+def test_a_customer_cannot_verify_a_change_in_its_first_mail(box: Box, monkeypatch) -> None:
+    """First mail opens a session (known customer) but must not verify its own change; a
+    later notice from that customer does."""
+    gate(monkeypatch)
+    no_llm(monkeypatch)
+    body = RFQ_BODY + "\n\nPlease note our new email address: rheintal-export@hackloop.mail."
+    deliver(raw_mail(9231, "rheintal-elektronik@hackloop.mail", body))
+    assert db.address_changes() == {}
+    deliver(raw_mail(9232, "rheintal-elektronik@hackloop.mail", body, subject="Second request"))
+    assert db.address_changes() == {
+        "rheintal-export@hackloop.mail": "rheintal-elektronik@hackloop.mail"
+    }
