@@ -51,6 +51,11 @@ def repair(sid: int) -> bool:
         session = db.get_session(sid)
         if not session or db.is_paused(sid) or db.is_manual(sid):
             return False
+        workflow = session.get("workflow")
+        if workflow and (
+            workflow["phase"] not in ("awaiting_customer", "booked") or db.reply_has_pending(sid)
+        ):
+            return False
         customer = address(session.get("customer") or "")
         booked = customer_context(session, customer)
         if booked is None or session["status"] not in ("quoted", "booked", "confirmed"):

@@ -32,6 +32,7 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 - Body AND subject are rendered and independently asserted immediately before sending; Unicode punctuation and HTML entities cannot bypass the rules. Re/Fw prefixes are removed without changing `in_reply_to`.
 - The actually submitted body and subject are persisted. Carrier/trucker machine messages are unchanged.
 - Quotes, booking confirmations and follow-ups name the verified current airport route in the subject; missing route facts keep the existing subject.
+- Versioned replies and natural booking invitations: `context/docs/reply-workflow.md`.
 - Every RFQ customer send inserts a deterministic reply-by-email tracking paragraph before the signature (conditional before booking, direct after). `tracking_notice` checks active quotes/bookings every 30 s and repairs at most one missing notice; ambiguous transport is alerted, never resent.
 
 ## Quote PDF

@@ -19,6 +19,8 @@ AGENTS = (
     "rescue",
     "bid_reader",
     "consent_check",
+    "customer_reply",
+    "reply_conditions",
 )
 
 

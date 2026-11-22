@@ -34,7 +34,7 @@
 ## Mail Handling
 
 - Processing is idempotent by message ID: handling the same mail twice has no extra effect.
-- Reply in the customer's thread (`in_reply_to`). Never send a second quote in a thread.
+- Reply in the customer's thread (`in_reply_to`). Only the first quote counts for scoring. A customer correction may produce a versioned replacement in the same thread; never resend an unchanged version as a new quote.
 - Ignore mail that 5U's agents did not start.
 - Blocking gaps: history/CRM first, then a persisted threaded clarification (`context/areas/rfq.md`). Approvals must be current and explicit.
 - Customer-facing text follows the hard style rules in `context/areas/customer-email.md`.

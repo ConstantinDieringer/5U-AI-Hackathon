@@ -307,7 +307,9 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   dieselbe Prüfung gilt bei Annahme eines geänderten Buchungspreises.
 - Vorabfragen beantworten (`PREBOOK_ANSWER`, Standard `false`, `app/agents/prebook.py`):
   `booking.classify_reply` (Regeln, kein LLM) unterscheidet yes/no/question/deferral/unclear;
-  nur „yes“ (unverändert `is_acceptance`) bucht. Eine Antwort auf das Angebot, deren
+  im Legacy-Ablauf bucht nur „yes“ (unverändert `is_acceptance`). Der optionale gemeinsame
+  Antwortablauf mit versionierten Angeboten und belegter bedingter Freigabe ist in
+  `reply-workflow.md` definiert und hat im Modus `enforce` Vorrang. Eine Antwort auf das Angebot, deren
   Fragesätze alle ein bekanntes Thema nennen (schnellste/günstigste Option, Abflug/Ankunft,
   Laufzeit, Airline, Abholung, Gültigkeit, Preisumfang, Annahmeschluss, Routing), wird aus
   dem gespeicherten ersten Angebot beantwortet: Fahrplan über `rfq.schedule` zum Angebotstag,

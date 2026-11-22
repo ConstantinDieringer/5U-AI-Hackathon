@@ -142,6 +142,8 @@ class Settings:
     followup_window_s: float
     followup_check_every_s: float
     tracking_notice_check_every_s: float
+    reply_workflow_mode: str
+    reply_workers: int
     prebook_answer: bool
     phishing_gate_mode: str
     phishing_gate_llm_mode: str
@@ -309,6 +311,8 @@ settings = Settings(
     tracking_notice_check_every_s=max(5.0, float(_env("TRACKING_NOTICE_CHECK_EVERY_S", "30"))),
     # customer answers our quote with questions: answer them from the stored quote and ask
     # for the go-ahead (app/agents/prebook.py); false = today's generic clarification
+    reply_workflow_mode=_env("REPLY_WORKFLOW_MODE", "shadow").lower(),
+    reply_workers=max(1, min(16, int(_env("REPLY_WORKERS", "4")))),
     prebook_answer=_env("PREBOOK_ANSWER", "false").lower() in ("1", "true", "yes", "on"),
     # phishing gate: off | shadow (classify and log, block nothing) | enforce
     phishing_gate_mode=_env("PHISHING_GATE_MODE", "enforce").lower(),
@@ -357,3 +361,6 @@ for _name, _mode in (
 ):
     if _mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"{_name} must be off, shadow or enforce")
+
+if settings.reply_workflow_mode not in ("off", "shadow", "enforce"):
+    raise ValueError("REPLY_WORKFLOW_MODE must be off, shadow or enforce")

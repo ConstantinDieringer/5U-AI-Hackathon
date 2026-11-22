@@ -513,6 +513,8 @@ def api_health() -> dict[str, Any]:
         "tracking_notice_version": "required-v1",
         "tracking_notice_recovery_enabled": settings.agents_enabled,
         "thread_rescue_enabled": settings.thread_rescue_enabled,
+        "reply_workflow_mode": settings.reply_workflow_mode,
+        "reply_workers": settings.reply_workers,
         "thread_rescue_model": settings.llm_rescue_model,
         "llm_max_calls_per_session": settings.llm_max_calls_per_session,
         "phishing_gate_mode": settings.phishing_gate_mode,
