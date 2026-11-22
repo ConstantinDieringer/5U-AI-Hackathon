@@ -3224,6 +3224,44 @@ WON = ("accepted", "booked", "confirmed")
 LOST = ("lost", "expired", "error")
 
 
+def booking_volume_24h() -> dict[str, Any]:
+    """Agreed customer order value by booking time, independent of RFQ cohort filters."""
+    end = datetime.now(UTC)
+    start = end - timedelta(hours=24)
+    rows = _rows(
+        conn().execute(
+            "SELECT b.created_at AS at,b.status,b.customer_state,"
+            " COALESCE(b.customer_total_minor,q.total_minor) AS minor,q.currency"
+            " FROM bookings b JOIN sessions s ON s.id=b.session_id"
+            " LEFT JOIN quotes q ON q.id=COALESCE(b.quote_id,"
+            " (SELECT MIN(id) FROM quotes WHERE session_id=b.session_id))"
+            " WHERE s.kind='rfq' AND b.created_at>=? AND b.created_at<=? ORDER BY b.created_at",
+            (start.isoformat(), end.isoformat()),
+        )
+    )
+    events, amounts, unknown = [], {}, 0
+    for row in rows:
+        if row["status"] not in ("booked", "confirmed") or row["customer_state"] not in (
+            None,
+            "confirmed_sent",
+            "price_accepted",
+        ):
+            continue
+        if row["minor"] is None or not row["currency"]:
+            unknown += 1
+            continue
+        currency = row["currency"].upper()
+        events.append({"at": row["at"], "minor": row["minor"], "currency": currency})
+        amounts[currency] = amounts.get(currency, 0) + row["minor"]
+    return {
+        "from": start.isoformat(),
+        "to": end.isoformat(),
+        "events": events,
+        "unknown": unknown,
+        "amounts": [{"currency": c, "minor": v} for c, v in sorted(amounts.items())],
+    }
+
+
 def business_metrics(days: int = 0) -> dict[str, Any]:
     """RFQ cohort metrics, without CRM display limits or mixing currency amounts.
 

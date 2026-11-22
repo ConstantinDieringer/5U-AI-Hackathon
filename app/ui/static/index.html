@@ -296,6 +296,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 }
 </style>
 <link rel="stylesheet" href="/static/workspace.css">
+<link rel="stylesheet" href="/static/vendor/maplibre/maplibre-gl.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -337,7 +338,6 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 
 <div class="main">
   <header class="topbar">
-    <div><h1 id="page-title">Übersicht</h1><div class="sub" id="page-sub">Wie läuft der Forwarder gerade?</div></div>
     <div class="right">
       <div id="view-controls"></div>
       <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Kunde, Betreff oder ID" autocomplete="off"></label>
@@ -363,6 +363,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 <aside class="drawer" id="drawer" aria-label="Kunde"><header><h3 id="drawer-title"></h3><button class="btn ghost" id="drawer-close" style="margin-left:auto" aria-label="Schließen"><svg class="icon"><use href="#i-x"/></svg></button></header><div class="body" id="drawer-body"></div></aside>
 
 <script src="/static/workspace.js"></script>
+<script src="/static/map-view.js"></script>
 <script src="/static/dashboard.js"></script>
 <script src="/static/controls.js"></script>
 <script>
@@ -430,7 +431,8 @@ function show(page, updateHistory = true) {
   renderBreadcrumbs();
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + page));
   document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.page === (page === "session" ? S.returnPage : page)));
-  $("#page-title").textContent = PAGES[page][0]; $("#page-sub").textContent = PAGES[page][1];
+  document.title = PAGES[page][0] + " · Austrian Power";
+  $("#page-"+page).setAttribute("aria-label",PAGES[page][0]);
   if (page === "overview") loadOverview(); if (page === "requests") loadRequests(); if (page === "crm") loadCrm(); if (page === "errors") loadErrors();
   const hash = page === "session" ? "#session=" + S.selected : "#" + page;
   if (updateHistory && location.hash !== hash) history.pushState(null, "", hash);
