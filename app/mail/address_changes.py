@@ -1,4 +1,8 @@
-"""Address changes announced by a verified party.
+"""Address changes outside the fixed-contact challenge simulation.
+
+SIMULATION_STATIC_CONTACTS (on by default) prevents recording address announcements and
+using historical mappings. In the simulation such notices are phishing, even from a known
+party. The behavior below is available only when that simulation policy is explicitly off.
 
 A mail sent *exactly from* a verified address (carrier list, rate desk, tracking desk, a known
 customer, or an address verified this way before) that announces a new address makes the new
@@ -60,12 +64,17 @@ def verified_addresses() -> frozenset[str]:
     from app.mail.screening import address, fixed_addresses
 
     customers = {address(c) for c in db.known_customers()}
-    return fixed_addresses() | frozenset(customers) | frozenset(db.address_changes())
+    changed = (
+        frozenset() if settings.simulation_static_contacts else frozenset(db.address_changes())
+    )
+    return fixed_addresses() | frozenset(customers) | changed
 
 
 def record(mail: Mail, verified: frozenset[str], session_id: int | None = None) -> str | None:
     """Call only for a mail the phishing gate let through, with `verified` taken before this
     mail was stored (it must not verify its own sender). Returns the newly verified address."""
+    if settings.simulation_static_contacts:
+        return None
     from app import db
     from app.mail.screening import address
 
@@ -91,6 +100,8 @@ def record(mail: Mail, verified: frozenset[str], session_id: int | None = None) 
 
 def canonical(addr: str) -> str:
     """The original verified address behind a changed address, else `addr` itself."""
+    if settings.simulation_static_contacts:
+        return addr
     try:
         from app import db
 
@@ -102,6 +113,8 @@ def canonical(addr: str) -> str:
 
 def current(addr: str) -> str:
     """Where mail to the party behind `addr` goes now: its latest announced address."""
+    if settings.simulation_static_contacts:
+        return addr
     try:
         from app import db
 

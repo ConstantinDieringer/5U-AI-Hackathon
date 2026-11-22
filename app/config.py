@@ -158,6 +158,7 @@ class Settings:
     phishing_gate_mode: str
     phishing_gate_llm_mode: str
     phishing_gate_model: str
+    simulation_static_contacts: bool
     mail_guard_enabled: bool
     inbound_flood_max: int
     inbound_flood_s: float
@@ -334,6 +335,8 @@ settings = Settings(
     # off = no model call: in shadow the verdict can never block, so the call only costs
     phishing_gate_llm_mode=_env("PHISHING_GATE_LLM_MODE", "off").lower(),
     phishing_gate_model=_env("PHISHING_GATE_MODEL", "gpt-5-nano"),
+    # Challenge policy: genuine simulated parties never lose/change their mail identity.
+    simulation_static_contacts=_flag("SIMULATION_STATIC_CONTACTS", True),
     # mail guard (app/mail/guard.py): empty/automatic mail, RFQ floods, outgoing mail loops
     mail_guard_enabled=_flag("MAIL_GUARD_ENABLED", True),
     inbound_flood_max=max(1, int(_env("INBOUND_FLOOD_MAX", "3"))),  # new RFQs per sender

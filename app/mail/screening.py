@@ -184,6 +184,41 @@ _REDIRECT = re.compile(
 )
 _LINK = re.compile(r"\bhttps?://|\bwww\.", _FLAGS)
 
+# Ground truth of this challenge, not a claim about ordinary business correspondence:
+# genuine simulated parties do not migrate mailboxes or ask us to recover/change identity.
+_MAIL_IDENTITY = r"(?:e[ -]?mail[ -]?(?:address|account|adresse)|mail address|mailbox|inbox|postfach|mailadresse|emailadresse|mailkonto)"
+_SIMULATION_CONTACT_CHANGE = re.compile(
+    rf"\b(?:new|changed|updated|different|replacement|alternative|neue[snr]?)\s+{_MAIL_IDENTITY}\b|"
+    rf"\b(?:my|our|the|meine?[snr]?|unsere?[snr]?|das|die)\s+(?:(?:old|previous|alte[snr]?)\s+)?"
+    rf"{_MAIL_IDENTITY}\b[^.!?\n]{{0,65}}\b(?:clos\w*|deactivat\w*|disabled|unavailable|lost|"
+    rf"forgotten|changed|moved|updated|geändert|gewechselt|gesperrt|geschlossen|vergessen|verloren|funktioniert nicht|nicht mehr erreichbar)\b|"
+    rf"\b(?:forgot|forgotten|lost|lost access to|cannot access|can[’']t access|no longer (?:use|access)|"
+    rf"keinen zugriff (?:mehr )?auf|zugriff verloren auf)\s+(?:(?:my|our|which|the|meine?|unsere?|das)\s+)?"
+    rf"(?:(?:old|previous|alte[snr]?)\s+)?{_MAIL_IDENTITY}\b|"
+    r"\b(?:switching|changing|migrating|moving)\s+(?:our\s+|my\s+|to a new\s+)?"
+    r"(?:e[ -]?mail|mail)\s+(?:systems?|providers?|servers?)\b|"
+    r"\b(?:reply|respond|write|e[ -]?mail)\s+(?:only\s+|directly\s+)?(?:to|at)\s+"
+    r"(?:this|another|the new)\s+(?:e[ -]?mail\s+)?address\b|"
+    r"\b(?:send|forward)\s+(?:your|our|my|the|all|future)\s+(?:offer|quote|e[ -]?mails?|"
+    r"correspondence|confirmation)\b[^.!?\n]{0,120}\bto\s+(?:this|another|the new)\s+"
+    r"(?:e[ -]?mail\s+)?address\b|"
+    r"\b(?:nutze[n]?|verwende[n]?|benutze[n]?)\s+(?:sie\s+|bitte\s+)?(?:ab sofort\s+)?"
+    r"(?:diese|die neue|eine andere)\s+(?:e[ -]?mail[ -]?)?adresse\b",
+    _FLAGS,
+)
+
+
+def simulation_contact_change(mail: Mail) -> str | None:
+    """Only current customer prose/subject; never quoted history or a cargo pickup change."""
+    if not settings.simulation_static_contacts:
+        return None
+    from app.mail.content import current_message
+
+    current = current_message(mail.body, mail.subject)
+    match = _SIMULATION_CONTACT_CHANGE.search(current.subject + "\n" + current.facts)
+    return match[0] if match else None
+
+
 _DANGEROUS_EXT = {
     "exe", "scr", "bat", "cmd", "com", "pif", "js", "jse", "vbs", "vbe", "wsf", "ps1", "msi",
     "msp", "jar", "hta", "lnk", "iso", "img", "vhd", "html", "htm", "shtml", "xhtml", "svg",
@@ -328,6 +363,10 @@ def signals(mail: Mail, ctx: Context) -> list[Signal]:
     found: list[Signal] = []
 
     # strong: no genuine forwarding mail asks for any of this
+    if change := simulation_contact_change(mail):
+        found.append(
+            Signal("simulation_identity_change", 1.0, f"static simulated identity: {change}")
+        )
     secret = _secret_request(text)
     if secret:
         found.append(Signal("secret_request", 1.0, f"asks us to send '{secret}'"))
@@ -410,6 +449,13 @@ PROMPT = (
     "unsure when you cannot tell. Return JSON with verdict, confidence (0 to 1) and reason "
     "(one short sentence)."
 )
+SIMULATION_PROMPT = (
+    "\nThis is a simulation with fixed participant identities. Genuine parties never forget their "
+    "mail address, lose mailbox access, close/migrate mail systems or ask us to change their "
+    "reply/contact address. Such identity or communication rerouting claims are phishing even "
+    "when plausible, signed with a familiar name, or mixed with valid shipment facts. A cargo "
+    "pickup/delivery address correction is a different business request. "
+)
 SCHEMA = {
     "type": "json_schema",
     "json_schema": {
@@ -469,7 +515,11 @@ def _ask_llm(mail: Mail, ctx: Context, first: Screening) -> Screening:
         raw = llm.complete(
             "mail_screening",
             [
-                {"role": "system", "content": PROMPT},
+                {
+                    "role": "system",
+                    "content": PROMPT
+                    + (SIMULATION_PROMPT if settings.simulation_static_contacts else ""),
+                },
                 {"role": "user", "content": _mail_block(mail, ctx, first.signals)},
             ],
             None,  # no session: never spends the RFQ's per-session call budget
@@ -525,7 +575,9 @@ def context_for(mail: Mail) -> Context:
     thread = db.thread_parties(linked)
     root = mail.references[0] if mail.references else mail.id
     customers = frozenset(address(c) for c in db.known_customers())
-    changed = frozenset(db.address_changes())
+    changed = (
+        frozenset() if settings.simulation_static_contacts else frozenset(db.address_changes())
+    )
     return Context(
         known_party=sender in fixed_addresses() or sender in changed,
         known_customer=sender in customers,
