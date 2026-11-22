@@ -163,6 +163,51 @@ def test_handle_rfq_door_to_port_with_trucker_bid(stub, monkeypatch) -> None:
     assert not db.claim_quote_send(265)  # never a second quote
 
 
+def _fra_pek_waits(monkeypatch, fallback: list[str]) -> list[set[str] | None]:
+    """Run a FRA-PEK RFQ with an Orion sheet price; return the until_kinds of each wait."""
+    extracted = {
+        "origin": "FRA",
+        "pickup_zip": None,
+        "destination": "PEK",
+        "weight_kg": 700,
+        "volume_cbm": 6.58,
+        "pieces": 9,
+        "preference": "fastest",
+        "ready_date": "2026-11-27",
+        "language": "en",
+        "customer_name": "Anna",
+    }
+    monkeypatch.setattr(rfq.llm, "complete", lambda *a, **k: json.dumps(extracted))
+    lumen = bids.Carrier("Lumen Air Cargo", "airline", "lumen-air-cargo@hackloop.mail", ())
+    monkeypatch.setattr(rfq, "_bid_carriers", lambda *args: ([], []))
+    monkeypatch.setattr(rfq, "_portal_bid_carriers", lambda *args: {"LM": lumen})
+    monkeypatch.setattr(
+        rfq, "portal_result", lambda r, **kw: PortalResult(email_fallbacks=list(fallback))
+    )
+    orion = RateOption("Orion Cargo Air", "FRA", "PEK", 4, 269221, "EUR", 269221, "sheet")
+    monkeypatch.setattr(rfq, "_sheets", lambda *args: [orion])
+    waits: list[set[str] | None] = []
+    monkeypatch.setattr(
+        bids, "wait", lambda sid, t, until_kinds=None: waits.append(until_kinds) or []
+    )
+    mail = dataclasses.replace(_rfq_mail(36098), subject="Air freight quote request: FRA to PEK")
+    rfq.handle_rfq(mail, 36098)
+    return waits
+
+
+def test_portal_503_airline_reply_is_awaited_despite_sheet_price(stub, monkeypatch) -> None:
+    """Round 121 (#36098): Lumen (portal) answered 503 and was asked by email, but Orion's
+    sheet price was quoted at once and rejected too_low. The emailed airline is awaited."""
+    assert {"airline"} in _fra_pek_waits(monkeypatch, ["LM"])
+
+
+def test_sheet_price_without_portal_fallback_does_not_wait_for_airlines(
+    stub, monkeypatch
+) -> None:
+    """Counterexample: no 503 fallback, so the sheet price is quoted without an extra wait."""
+    assert all(not (k and "airline" in k) for k in _fra_pek_waits(monkeypatch, []))
+
+
 def test_incomplete_door_quote_is_not_sent(stub, monkeypatch) -> None:
     trucker = bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",))
     monkeypatch.setattr(rfq, "_bid_carriers", lambda *args: ([trucker], []))

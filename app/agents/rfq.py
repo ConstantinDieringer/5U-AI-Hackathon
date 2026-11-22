@@ -2116,9 +2116,13 @@ def _price(
     need: set[str] = set()
     if truckers and best_truck(bids.offers(slot)) is None:
         need.add("trucker")
+    # A portal airline that answered 503 is asked by email; its reply is the lane's live price.
+    # Round 121 (#36098): Orion's sheet alone was quoted at 110 s, rejected too_low; the only
+    # accepted team booked the emailed portal airline (Lumen) at 4 min. Wait for it.
+    fallback_pending = any(carrier.email in selected_emails for carrier in fallback)
     if (
         email_airlines
-        and not air
+        and (not air or fallback_pending)
         and not any(o.carrier.kind == "airline" for o in bids.offers(slot))
     ):
         need.add("airline")
