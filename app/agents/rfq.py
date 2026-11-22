@@ -55,11 +55,9 @@ from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import (
     earliest_schedule,
     most_balanced,
-    pick,
     resolve_origin,
     sheet_options,
     to_minor,
-    within_arrival_deadline,
 )
 from app.pricing.pricing import today as pricing_today
 from app.pricing.reference import (
@@ -69,6 +67,8 @@ from app.pricing.reference import (
     pickup_zones,
     truckers_for_zone,
 )
+from app.pricing.selection import best_air as rank_air
+from app.pricing.selection import select_air
 
 log = logging.getLogger(__name__)
 
@@ -518,15 +518,8 @@ def _parse_extraction(text: str, mail: Mail, session_id: int) -> tuple[Rfq | Non
 def best_air(
     air: list[RateOption], bid_opts: list[RateOption], preference: str
 ) -> RateOption | None:
-    """Among carrier bids the balanced one (price/speed 50/50) counts; then the customer's
-    preference over sheet, portal and that bid."""
-    best_bid = most_balanced(
-        bid_opts,
-        lambda o: o.total_eur_minor,
-        lambda o: o.transit_days,
-        settings.trucker_balance,
-    )
-    return pick(air + ([best_bid] if best_bid else []), preference)
+    """Compatibility entry point for callers ranking already feasible air options."""
+    return rank_air(air, bid_opts, preference, settings.trucker_balance)
 
 
 def best_truck(offers: list[bids.Offer]) -> bids.Offer | None:
@@ -2001,9 +1994,7 @@ def _price(
         for o in offers
         if o.carrier.kind == "airline"
     ]
-    considered = air + bid_opts
-    air = within_arrival_deadline(rfq, air)
-    bid_opts = within_arrival_deadline(rfq, bid_opts)
+    selection = select_air(rfq, air, bid_opts, liked, settings.trucker_balance)
     if rfq.arrival_deadline:
         db.emit(
             "arrival_selection",
@@ -2011,21 +2002,14 @@ def _price(
             sid,
             deadline=rfq.arrival_deadline,
             preference=rfq.preference,
-            eligible=[o.airline for o in air + bid_opts],
-            rejected=[o.airline for o in considered if o not in air + bid_opts],
+            eligible=[o.airline for o in selection.eligible],
+            rejected=[o.airline for o in selection.late],
         )
-        if considered and not air and not bid_opts:
-            raise SelectionBlocked(rfq)
-    choice = best_air(air, bid_opts, rfq.preference)
-    if liked:
-        favourite = best_air(
-            [o for o in air if o.airline.lower() in liked],
-            [o for o in bid_opts if o.airline.lower() in liked],
-            rfq.preference,
-        )
-        if favourite is not None:
-            choice = favourite
-            db.emit("carrier_pref_used", f"Vom Kunden bevorzugt: {favourite.airline}", sid)
+    if selection.outcome == "deadline_unmet":
+        raise SelectionBlocked(rfq)
+    choice = selection.choice
+    if choice and selection.preferred:
+        db.emit("carrier_pref_used", f"Vom Kunden bevorzugt: {choice.airline}", sid)
     if choice is None:
         db.emit("no_price", "Kein Preis gefunden, kein Angebot", sid, level="error")
         if primary:
@@ -2071,7 +2055,7 @@ def _price(
             premium=asdict(premium),
             slot=slot,
         )
-    return Priced(rfq, choice, total, truck, air + bid_opts, insurance_minor)
+    return Priced(rfq, choice, total, truck, selection.eligible, insurance_minor)
 
 
 def _price_and_quote(
