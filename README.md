@@ -7,6 +7,8 @@
 <p align="center"><b>A digital air forwarder that never sleeps and always lets a human step in.</b><br>
 Built by Constantin, Karim and Moritz for the 5U AI challenge at START HACK Munich 2026.</p>
 
+<p align="center"><a href="https://5u-ai-hackathon-production.up.railway.app/#overview"><b>Live dashboard ↗</b></a></p>
+
 ---
 
 ## Who answers at 2 a.m.?
@@ -36,7 +38,7 @@ A new air export request arrives every six minutes and expires six minutes later
 | Carrier bids | `app/agents/bids.py` | Asks airlines and truckers in parallel and reads replies as mail, PDF, Word, Excel or voice message |
 | Booking | `app/agents/customer_reply.py`, `booking.py`, `consent_check.py` | Books only on current, explicit consent and refreshes an expired rate ID |
 | Tracking | `app/agents/tracking.py` | Answers status questions from the CRM and never guesses |
-| Dashboard | `app/ui/` | Live sessions over server-sent events, pause / take over / hand back, emergency quote drafts, board verdicts, cost per request, deploy light |
+| Dashboard | `app/ui/` | Live sessions over server-sent events, pause / take over / hand back, emergency quote drafts, board verdicts, cost per request, airport map with weather and event alerts, rates tab, deploy light |
 
 ## Design principles
 
@@ -49,14 +51,21 @@ A new air export request arrives every six minutes and expires six minutes later
 
 ## Run it
 
+Requires Python 3.11.
+
 ```bash
-python -m venv .venv && . .venv/bin/activate
+python3.11 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env          # fill in TEAM_API_KEY and UI_PASSWORD
 python run.py                 # poller, agents and dashboard on UI_PORT
 ```
 
-Only **one** instance may process the live mailbox. For a demo without live mail:
+Production runs at <https://5u-ai-hackathon-production.up.railway.app/#overview>. A local run serves the same dashboard at <http://localhost:8000>. Both log in with user `team` and the `UI_PASSWORD` of that environment. Every other setting has a default in `app/config.py` and is documented in `.env.example`.
+
+> [!WARNING]
+> Only **one** instance may process the live mailbox. Production already does, so never start a second live instance locally.
+
+For a demo without live mail:
 
 ```bash
 DB_PATH=data/demo.db python -m app.ui.demo --live &   # realistic sessions with streaming events
@@ -69,7 +78,13 @@ DB_PATH=data/demo.db AGENTS_ENABLED=false python run.py
 python -m tools.ship_check     # essential test suite + ruff, the same command CI runs on every PR
 ```
 
-The suite covers pricing, routing, clarification, booking consent, tracking and multilingual quotes (48 test files). Tests never call 5U or a model: mailbox, portal and gateway are blocked in `tests/conftest.py`.
+While editing, run just the file you are working on:
+
+```bash
+TEAM_API_KEY=test-only python -m pytest tests/test_booking.py -q
+```
+
+The suite covers pricing, routing, clarification, booking consent, tracking and multilingual quotes. Tests never call 5U or a model: mailbox, portal and gateway are blocked in `tests/conftest.py`.
 
 ## Repository map
 
@@ -90,7 +105,7 @@ tools/         ship check, safe merge, map data
 
 ## Deploy
 
-One Railway container from `Dockerfile`. A PR merges only with green CI, and only while the deploy light shows that no request is mid-pricing and the next one is more than 90 seconds away. Details and recovery: [DEPLOY.md](DEPLOY.md).
+One Railway container from `Dockerfile`, live at <https://5u-ai-hackathon-production.up.railway.app>. A PR merges only with green CI, and only while the deploy light shows that no request is mid-pricing and the next one is more than 90 seconds away. A change is live once `/api/health` reports the merge commit as `build_revision`. Details and recovery: [DEPLOY.md](DEPLOY.md).
 
 ## Optional: exploratory case worker
 
