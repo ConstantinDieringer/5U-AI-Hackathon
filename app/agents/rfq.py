@@ -21,6 +21,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 
 import openai
@@ -2037,7 +2038,8 @@ def _price(
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
     if settings.price_adjust_pct:
         cost = total
-        total = round(cost * (100 - settings.price_adjust_pct) / 100)
+        factor = (100 - Decimal(str(settings.price_adjust_pct))) / 100
+        total = to_minor(Decimal(cost) / 100 * factor)
         db.emit(
             "price_adjusted",
             f"Preis {settings.price_adjust_pct:g} % unter Einkauf: {amount(cost)} → {amount(total)}",

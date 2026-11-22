@@ -218,15 +218,21 @@ def send(
     In-Reply-To/References threading) from it, verified in A3. `references` is accepted
     for callers' convenience and only checked against what the server stored.
     """
+    from app.mail import address_changes, guard
+
+    moved = address_changes.current(to.strip().lower())
+    if moved != to.strip().lower():
+        log.info("%s announced a new address: sending to %s", to, moved)
+        to = moved
     payload: dict[str, Any] = {"to": to, "subject": subject, "body": body}
     if attachments:
         payload["attachments"] = attachments
-    from app.mail import guard
 
     guard.check_outbound(to, body, in_reply_to)  # raises OutboundLoopBlocked on a mail loop
-    if in_reply_to is not None:
-        from app import db
+    from app import db
+    from app.mail import screening
 
+    if in_reply_to is not None:
         try:  # last line of the phishing gate, for every sender
             blocked = db.reply_blocked(in_reply_to)
         except Exception:
@@ -235,6 +241,14 @@ def send(
         if blocked:
             raise QuarantinedReply(f"mail {in_reply_to} is quarantined as phishing")
         payload["in_reply_to"] = in_reply_to
+    try:  # never write to an address imitating a carrier, desk or known customer
+        row = db.screening_get(in_reply_to) if in_reply_to is not None else None
+        imitated = None if row and row.get("released_at") else screening.imitated_recipient(to)
+    except Exception:
+        log.exception("lookalike check failed for %s: sending", to)
+        imitated = None
+    if imitated:
+        raise QuarantinedReply(f"{to} imitates {imitated}; a person must release it first")
     sent = _json_obj(_request("POST", "/v1/mailbox/messages", safe=False, json=payload))
     if references and sent.get("references") != [*references]:
         log.warning(
@@ -394,7 +408,7 @@ def send_customer(
 rate_limit: dict[str, str] = {}  # last X-RateLimit-* headers seen on /v1/portal/rates
 _rate_lock = threading.Lock()
 _rate_blocked_until = 0.0
-_rate_window_start = 0.0
+_rate_window_start = float("-inf")  # no window yet; 0 is not "long ago" right after boot
 _rate_used = 0
 _rate_cap = 10
 
@@ -507,4 +521,3 @@ def webhook_subscribe(url: str) -> dict[str, Any]:
 
 def webhook_test() -> dict[str, Any]:
     return _json_obj(_request("POST", "/v1/mailbox/webhook/test", safe=False))
-

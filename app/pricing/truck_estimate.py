@@ -12,7 +12,9 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
+
+from app.pricing.pricing import money
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ def estimate(history: list[PastBid], weight_kg: float) -> Estimate | None:
     ratio = weight / Decimal(str(nearest.weight_kg))
     if ratio > MAX_WEIGHT_RATIO or ratio < 1 / MAX_WEIGHT_RATIO:
         return None
-    total = (nearest.total_eur * ratio.sqrt()).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total = money(nearest.total_eur * ratio.sqrt())
     return Estimate(total, nearest)
 
 
@@ -73,8 +75,11 @@ def history_for_zone(zone: str, exclude_session: int) -> list[PastBid]:
             continue
         try:
             payload = json.loads(row["payload_json"] or "{}")
-            total = Decimal(str(payload["original_amount"])) * Decimal(
-                str(payload.get("fx_rate") or 1)
+            currency = str(payload.get("currency") or "EUR")
+            if currency != "EUR" and not payload.get("fx_rate"):
+                continue  # a foreign-currency bid without its rate is not an EUR amount
+            total = money(
+                Decimal(str(payload["original_amount"])) * Decimal(str(payload.get("fx_rate") or 1))
             )
             rfq = Rfq.model_validate(json.loads(row["request_json"]))
         except Exception:  # noqa: BLE001 - an old or partial row is simply not used

@@ -22,7 +22,9 @@ def address(raw: str) -> str:
 
 def classify(mail: Mail, parent: Mail | None = None) -> tuple[Category, str]:
     """Return (category, rule). `parent` is the mail `in_reply_to` points at, if known."""
-    sender = address(mail.sender)
+    from app.mail.address_changes import canonical
+
+    sender = canonical(address(mail.sender))
 
     if sender == settings.team_mailbox:
         return Category.IGNORE, "own address"
