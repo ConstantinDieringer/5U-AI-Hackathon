@@ -53,6 +53,17 @@ DB_PATH=data/demo.db AGENTS_ENABLED=false python run.py
 
 ## Test it
 
+For the optional local portal-browser experiment, install `requirements-browser.txt`
+and Google Chrome, then run:
+
+```bash
+python -m tools.portal_browser_check --pure-wu --interactive --output-dir /path/to/screenshots
+```
+
+This opens visible Chrome using the Pure-WU browser settings. Add `--headless`
+for comparison. It records screenshots and whether the Cloudflare page remains;
+it does not verify rates, send credentials, run mail agents or change live pricing.
+
 ```bash
 python -m tools.ship_check     # the essential test suite + ruff, same command as CI
 ```
