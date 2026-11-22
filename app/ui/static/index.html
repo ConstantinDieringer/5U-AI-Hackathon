@@ -84,6 +84,7 @@ button { font: inherit; color: inherit; cursor: pointer; letter-spacing: inherit
 .card-h .aside { margin-left: auto; }
 #overview .card-h > div, #errors .card-h > div { min-width: 0; flex: 1; }
 #overview .card-h .aside, #errors .card-h .aside { flex-shrink: 0; }
+#errors .card-h > .seg { flex: 0 0 auto; }
 .linklike { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
 .linklike:hover b { text-decoration: underline; }
 .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--fill-1); border-radius: var(--r-sm); }
@@ -195,22 +196,8 @@ table.steps { table-layout: fixed; min-width: 560px; }
 .chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--r-pill); background: var(--fill-1); color: var(--ink); font-size: 12px; font-weight: 500; border: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.chip:hover { background: var(--blue-tint); color: var(--blue); }
 .probs { max-height: 560px; overflow: auto; margin: 0 -12px; padding: 0 12px; }
-.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 50; padding: 10px 16px; border-radius: var(--r-md); background: var(--ink); color: #fff; font-weight: 500; box-shadow: var(--shadow-float); opacity: 0; transition: opacity var(--mid); pointer-events: none; }
-.toast.show { opacity: 1; }
-
 /* ---------- live ---------- */
-.live { display: grid; grid-template-columns: minmax(300px, 4fr) minmax(0, 8fr); gap: var(--gap); max-width: 1360px; align-items: start; }
-.live .list-card { padding: 16px; position: sticky; top: 110px; max-height: calc(100vh - 130px); display: flex; flex-direction: column; }
-.list-tools { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; }
-.list-tools .search { width: 100%; }
-.sessions { overflow: auto; margin: 0 -8px; }
-.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 12px; margin: 0 8px 4px; border-radius: var(--r-md); cursor: pointer; transition: background var(--fast); }
-.row:hover { background: var(--fill-1); }
-.row.sel { background: var(--blue-tint); }
-.row.attn { box-shadow: inset 3px 0 0 var(--orange); }
-.row .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .m { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-2); overflow: hidden; white-space: nowrap; }
-.row .e { grid-column: 1 / 3; font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.request-detail { max-width: 1360px; min-width: 0; }
 .cd { font: 600 13px/18px var(--mono); color: var(--ink-2); text-align: right; }
 .cd.warn { color: var(--orange); } .cd.bad { color: var(--red); }
 .detail-head { display: flex; gap: 16px; align-items: flex-start; }
@@ -219,7 +206,7 @@ button.chip:hover { background: var(--blue-tint); color: var(--blue); }
 .detail-head .cd { margin-left: auto; font-size: 30px; line-height: 36px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .notice { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-md); margin-top: 14px; background: var(--orange-tint); color: #C93400; font-size: 13px; font-weight: 500; }
-.dgrid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--gap); margin-top: var(--gap); align-items: start; }
+
 .stack { display: flex; flex-direction: column; gap: var(--gap); }
 .why-total { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .why-total b { font-size: 28px; letter-spacing: -0.03em; }
@@ -233,10 +220,48 @@ button.chip:hover { background: var(--blue-tint); color: var(--blue); }
 @keyframes flash { from { background: var(--blue-tint); } to { background: transparent; } }
 .tl details { grid-column: 2 / 4; } summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; font: 12px/18px var(--mono); color: var(--ink-2); }
-.mail { padding: 14px; border-radius: var(--r-md); background: var(--fill-1); margin-bottom: 8px; }
+
+.session-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); margin: var(--gap) 0; align-items: start; }
+.session-metrics .card { height: 100%; }
+.session-metrics .why-total { align-items: flex-start; gap: 8px; }
+.session-metrics .why-total b { font-size: 26px; line-height: 32px; overflow-wrap: anywhere; }
+.session-metrics .why-total span { font-size: 12px; line-height: 18px; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; margin: 0; }
+.facts dt { color: var(--ink-2); font-size: 12px; }
+.facts dd { margin: 3px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.flow-steps { display: flex; justify-content: space-between; gap: 10px; margin: 18px 0; }
+.flow-step { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.flow-step .flow-dot { width: 28px; height: 28px; display: grid; place-items: center; background: var(--fill-1); color: var(--ink-2); border-radius: var(--r-pill); }
+.flow-step.done .flow-dot { color: var(--green); background: var(--green-tint); }
+.flow-step b { font-size: 12px; }
+.flow-step small { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.detail-back { margin-bottom: 14px; }
+.detail-head > div { min-width: 0; }
+.detail-head h2 { overflow-wrap: anywhere; }
+.detail-fold { margin-top: var(--gap); padding: 0; }
+.detail-fold > summary { display: flex; gap: 12px; align-items: center; padding: 20px 24px; color: var(--ink); font-size: 16px; font-weight: 600; list-style: none; }
+.detail-fold > summary::-webkit-details-marker { display: none; }
+.detail-fold > summary::after { content: "+"; margin-left: auto; color: var(--ink-2); font-size: 22px; font-weight: 400; }
+.detail-fold[open] > summary::after { content: "−"; }
+.detail-fold .fold-body { padding: 0 24px 24px; min-width: 0; }
+.detail-fold .fold-body > .card { padding: 0; border: 0; box-shadow: none; margin-top: 20px; }
+.detail-fold .fold-body > .card:first-child { margin-top: 0; }
+.timeline-body { max-height: 620px; overflow: auto; }
+.tl li { display: block; padding: 0; }
+.event-entry > summary { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: start; gap: 10px; list-style: none; padding: 12px 0; }
+.event-entry > summary::-webkit-details-marker { display: none; }
+.event-entry .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.event-entry > .log-body { padding: 0 0 14px 84px; }
+.log-body .log-message { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.mail-list { display: flex; flex-direction: column; gap: 16px; }
+.mail { padding: 22px 24px; border-radius: var(--r-md); background: var(--fill-1); border: 1px solid var(--hairline); min-width: 0; }
 .mail.out { background: var(--blue-tint); }
-.mail .h { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-2); }
-.mail .s { font-weight: 600; margin: 2px 0; }
+.mail .h { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; color: var(--ink-2); font-size: 12px; }
+.mail .h > span { min-width: 0; overflow-wrap: anywhere; }
+.mail .s { font-size: 15px; line-height: 22px; font-weight: 600; margin: 6px 0 0; overflow-wrap: anywhere; }
+.mail-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.7; margin-top: 18px; }
+.request-open { display: inline-flex; gap: 6px; align-items: center; }
+.mobile-only { display: none; }
 textarea { width: 100%; min-height: 140px; resize: vertical; background: var(--fill-1); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-md); padding: 14px; font: inherit; outline: none; }
 textarea:focus { border-color: var(--blue); background: var(--card); }
 .placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 420px; color: var(--ink-2); }
@@ -262,8 +287,12 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 }
 @media (max-width: 899px) {
   .sidebar { display: none; } .main { margin-left: var(--inset); }
-  .s3 { grid-column: span 12; } .live, .dgrid { grid-template-columns: 1fr; } .live .list-card { position: static; max-height: 60vh; }
-  .topbar .search { display: none; }
+  .s3 { grid-column: span 12; } .session-metrics { grid-template-columns: 1fr; }
+  .mobile-only { display: inline-flex; } .topbar { flex-wrap: wrap; } .topbar .right { flex-wrap: wrap; gap: 8px; }
+  .mail { padding: 18px; } .detail-head { flex-wrap: wrap; } .detail-head .cd { margin-left: 0; }
+  .topbar .search { width: 100%; } .topbar .right { width: 100%; }
+  .event-entry > summary { grid-template-columns: 60px minmax(0, 1fr); } .event-entry .x { display: none; }
+  .event-entry > .log-body { padding-left: 0; }
 }
 </style>
 </head>
@@ -297,9 +326,8 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 <nav class="sidebar" aria-label="Hauptnavigation">
   <div class="brand"><span class="mark"><svg class="icon"><use href="#i-plane"/></svg></span><div><b>Austrian Power</b><small>Forwarder Console</small></div></div>
   <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Übersicht</span></button>
-  <button class="nav" data-page="live"><svg class="icon"><use href="#i-radio"/></svg><span class="lbl">Live</span><span class="badge" id="attn-badge"></span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
-  <button class="nav" data-page="errors" title="Fehler & Warnungen"><svg class="icon"><use href="#i-alert"/></svg><span class="lbl">Fehler</span><span class="badge err" id="err-badge" title="Fehler der letzten 15 min"></span></button>
+  <button class="nav" data-page="errors" title="Fehler & Warnungen"><svg class="icon"><use href="#i-alert"/></svg><span class="lbl">Meldungen</span><span class="badge err" id="err-badge" title="Gesammelte Fehler und Warnungen"></span></button>
   <div class="spacer"></div>
   <div class="conn"><span class="dot" id="live-dot"></span><span class="lbl" id="live-text">verbinde…</span></div>
   <button class="stop" id="global-pause" title="Alle ausgehenden Mails stoppen"><svg class="icon"><use href="#i-stop"/></svg><span>Mails stoppen</span></button>
@@ -310,6 +338,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
     <div><h1 id="page-title">Übersicht</h1><div class="sub" id="page-sub">Wie läuft der Forwarder gerade?</div></div>
     <div class="right">
       <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Kunde, Betreff oder ID" autocomplete="off"></label>
+      <button class="btn mobile-only" id="mobile-messages" title="Meldungspuffer"><svg class="icon"><use href="#i-alert"/></svg>Meldungen</button>
       <span class="badge-s" id="deploy-gate" role="status" aria-live="polite" title="Deploy-Ampel: Push auf main nur bei Grün (DEPLOY.md)">Deploy …</span>
       <div class="avatar" title="Team Austrian Power">AP</div>
     </div>
@@ -318,18 +347,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 
   <section class="page active" id="page-overview"><div class="bento" id="overview"></div></section>
 
-  <section class="page" id="page-live">
-    <div class="live">
-      <div class="card list-card">
-        <div class="list-tools">
-          <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="q" placeholder="Sessions filtern  ( / )" autocomplete="off"></label>
-          <div class="seg" id="filters" role="tablist"></div>
-        </div>
-        <div class="sessions" id="list"></div>
-      </div>
-      <div id="detail"></div>
-    </div>
-  </section>
+  <section class="page" id="page-session"><div class="request-detail" id="detail"></div></section>
 
   <section class="page" id="page-crm"><div class="bento" id="crm"></div></section>
 
@@ -356,7 +374,15 @@ function el(tag, attrs = {}, ...kids) {
 }
 function svg(tag, attrs = {}, ...kids) { const n = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v); kids.flat().forEach((c) => c && n.append(c)); return n; }
 function icon(name) { const s = svg("svg", { class: "icon" }); s.append(svg("use", { href: "#i-" + name })); return s; }
-const api = async (p, o) => { const r = await fetch(p, o); if (!r.ok) throw new Error((await r.text()) || r.status); return r.json(); };
+const api = async (p, o) => {
+  const r = await fetch(p, o);
+  if (!r.ok) {
+    let message = await r.text();
+    try { const body = JSON.parse(message); if (typeof body.detail === "string") message = body.detail; } catch {}
+    throw new Error(message || String(r.status));
+  }
+  return r.json();
+};
 const post = (p, b) => api(p, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }, body: b ? JSON.stringify(b) : undefined });
 const money = (m, c) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (c || "EUR");
 const euro = (m) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 }) + " €";
@@ -376,9 +402,8 @@ function who(email) { const [name, hex] = tintFor(email); return el("div", { cla
 function emptyState(ic, text) { return el("div", { class: "empty" }, el("span", { class: "ic" }, icon(ic)), text); }
 
 // ---------- state ----------
-const S = { page: "overview", filter: "attention", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", initDone: false };
-const PAGES = { overview: ["Übersicht", "Läuft alles? Was ist zu tun?"], live: ["Live", "Sessions, die dich brauchen, stehen oben."], crm: ["CRM", "Wen wir quotiert haben, was gewonnen und was verloren wurde."], errors: ["Fehler & Warnungen", "Was schiefgelaufen ist. Gleiche Meldungen stehen in einer Zeile."] };
-const FILTERS = [["attention", "Achtung"], ["open", "Offen"], ["all", "Alle"], ["done", "Erledigt"]];
+const S = { page: "overview", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", returnPage: "overview", foldOpen: new Set(), problemExpanded: new Set(), reply: {}, detailRequest: 0 };
+const PAGES = { overview: ["Übersicht", "Die letzten Anfragen auf einen Blick."], session: ["Anfrage", "E-Mail-Verlauf und aktueller Stand."], crm: ["CRM", "Kunden, Angebote und Buchungen."], errors: ["Meldungspuffer", "Fehler und Warnungen gesammelt, ohne Pop-ups."] };
 
 // ---------- countdown ----------
 const remaining = (d) => d ? (new Date(d) - Date.now()) / 1000 : null;
@@ -388,17 +413,27 @@ function countdown(s) { const r = remaining(s.deadline_at); return el("span", { 
 setInterval(() => document.querySelectorAll("[data-deadline]").forEach((n) => { const r = remaining(n.dataset.deadline); n.textContent = cdText(r, n.dataset.status); n.classList.remove("warn", "bad"); const t = cdTone(r); if (t && OPEN.includes(n.dataset.status)) n.classList.add(t); }), 1000);
 
 // ---------- navigation ----------
-function show(page) {
+function show(page, updateHistory = true) {
+  if (!PAGES[page] || page === "session" && S.selected == null) page = "overview";
   S.page = page;
-  document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + page));
-  document.querySelectorAll(".nav").forEach((n) => n.classList.toggle("active", n.dataset.page === page));
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + page));
+  document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.page === (page === "session" ? S.returnPage : page)));
   $("#page-title").textContent = PAGES[page][0]; $("#page-sub").textContent = PAGES[page][1];
-  if (page === "overview") loadOverview(); if (page === "crm") loadCrm(); if (page === "live") loadSessions(); if (page === "errors") loadErrors();
-  history.replaceState(null, "", page === "live" && S.selected ? "#session=" + S.selected : "#" + page);
+  if (page === "overview") loadOverview(); if (page === "crm") loadCrm(); if (page === "errors") loadErrors();
+  const hash = page === "session" ? "#session=" + S.selected : "#" + page;
+  if (updateHistory && location.hash !== hash) history.pushState(null, "", hash);
 }
-document.querySelectorAll(".nav").forEach((n) => n.addEventListener("click", () => show(n.dataset.page)));
-$("#global-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { S.q = e.target.value.trim(); S.filter = "all"; $("#q").value = S.q; show("live"); renderFilters(); renderList(); } });
+document.querySelectorAll(".nav").forEach(n => n.addEventListener("click", () => show(n.dataset.page)));
+$("#mobile-messages").addEventListener("click", () => show("errors"));
+$("#global-q").addEventListener("keydown", e => { if (e.key === "Enter") { S.q = e.target.value.trim(); show("overview"); } });
+document.addEventListener("toggle", e => {
+  if (e.target.matches("#detail details[data-fold]")) {
+    const key = e.target.dataset.fold;
+    if (e.target.open) S.foldOpen.add(key); else S.foldOpen.delete(key);
+  }
+}, true);
 
+// ---------- OVERVIEW ----------
 // ---------- OVERVIEW ----------
 const TONE = { ok: "green", warn: "orange", bad: "red", run: "blue", none: "" };
 const STEP_ICON = { ok: "check", warn: "clock", bad: "x", run: "clock", none: null };
@@ -410,10 +445,25 @@ const KIND_LABEL = { log_error: "Log-Fehler", clarification_loop: "Rückfrage-Li
 const kindLabel = (k) => KIND_LABEL[k] || k.replace(/_/g, " ");
 const ago = (iso) => { if (!iso) return ""; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "gerade eben" : m < 60 ? `vor ${m} min` : `vor ${Math.floor(m / 60)} h ${m % 60} min`; };
 let PROBLEMS = null;
+let LOCAL_MESSAGES = [];
+try { const saved = JSON.parse(localStorage.getItem("ap.messages.v1") || "[]"); if (Array.isArray(saved)) LOCAL_MESSAGES = saved.filter(g => g && typeof g.message === "string" && Array.isArray(g.sessions) && ["warn", "error"].includes(g.level)).slice(0, 100); } catch {}
+function saveMessages() { try { localStorage.setItem("ap.messages.v1", JSON.stringify(LOCAL_MESSAGES)); } catch {} }
+function bufferMessage(message, level = "error", sid = S.selected) {
+  const now = new Date().toISOString();
+  const text = String(message).slice(0, 2000), existing = LOCAL_MESSAGES.find(g => g.message === text && g.level === level && (g.sessions[0]?.id ?? null) === sid);
+  if (existing) { existing.count += 1; existing.last_at = now; LOCAL_MESSAGES = LOCAL_MESSAGES.filter(g => g !== existing); LOCAL_MESSAGES.unshift(existing); }
+  else LOCAL_MESSAGES.unshift({ key: "ui-" + Date.now() + "-" + Math.random().toString(36).slice(2), origin: "browser", level, kind: "Browser", message: text, count: 1, first_at: now, last_at: now, last_event_id: 0, sessions: sid == null ? [] : [{ id: sid }] });
+  LOCAL_MESSAGES = LOCAL_MESSAGES.slice(0, 100); saveMessages(); errBadge();
+  if (S.page === "errors") renderProblems();
+}
+function problemGroups() { return [...LOCAL_MESSAGES, ...(PROBLEMS?.groups || [])].sort((a, b) => new Date(b.last_at) - new Date(a.last_at)); }
+
 function problemRow(g) {
   const fresh = g.level === "error" && g.last_event_id > (S.problemsSeen || 0);
-  const msg = el("div", { class: "msg", title: "Klick: ganze Meldung" }, g.message || "(ohne Text)");
-  msg.addEventListener("click", () => msg.classList.toggle("full"));
+  const msg = el("div", { class: "msg" + (S.problemExpanded.has(g.key) ? " full" : ""), role: "button", tabindex: "0", title: "Ganze Meldung anzeigen" }, g.message || "(ohne Text)");
+  const expand = () => { msg.classList.toggle("full"); if (msg.classList.contains("full")) S.problemExpanded.add(g.key); else S.problemExpanded.delete(g.key); };
+  msg.addEventListener("click", expand);
+  msg.addEventListener("keydown", e => { if (["Enter", " "].includes(e.key)) { e.preventDefault(); expand(); } });
   return el("div", { class: "prob " + g.level + (fresh ? " fresh" : "") },
     el("span", { class: "ic" }, icon(g.level === "error" ? "x" : "alert")),
     el("div", { style: "min-width:0" }, msg,
@@ -426,26 +476,22 @@ function problemRow(g) {
 }
 async function ackProblems(groups) {
   if (!groups.length) return;
+  const remote = groups.filter(g => g.origin !== "browser"), done = new Set(groups.map(g => g.key));
   try {
-    await post("/api/problems/ack", { acks: Object.fromEntries(groups.map((g) => [g.key, g.last_event_id])) });
-    const done = new Set(groups.map((g) => g.key));
-    PROBLEMS.groups = PROBLEMS.groups.filter((g) => !done.has(g.key));
-    for (const g of groups) PROBLEMS[g.level === "error" ? "errors" : "warnings"] -= g.count;
-    PROBLEMS.handled = (PROBLEMS.handled || 0) + groups.length;
-    renderProblems();
-    toast(groups.length === 1 ? "Als erledigt ausgeblendet." : `${groups.length} Meldungen als erledigt ausgeblendet.`);
-  } catch (e) { toast("Ausblenden fehlgeschlagen: " + e.message); }
+    if (remote.length) await post("/api/problems/ack", { acks: Object.fromEntries(remote.map(g => [g.key, g.last_event_id])) });
+    LOCAL_MESSAGES = LOCAL_MESSAGES.filter(g => !done.has(g.key)); saveMessages();
+    if (PROBLEMS) PROBLEMS.groups = PROBLEMS.groups.filter(g => !done.has(g.key));
+    renderProblems(); errBadge();
+  } catch (e) { bufferMessage("Meldung konnte nicht als erledigt markiert werden. " + e.message); }
 }
 function renderProblems() {
-  const box = $("#problems"); if (!box || !PROBLEMS) return;
-  const f = S.probFilter || "error", groups = PROBLEMS.groups.filter((g) => f === "all" || g.level === f);
-  $("#prob-seg").replaceChildren(...[["error", `Fehler ${PROBLEMS.errors}`], ["warn", `Warnungen ${PROBLEMS.warnings}`], ["all", "Alle"]].map(([k, l]) =>
-    el("button", { class: f === k ? "active" : "", onclick: () => { S.probFilter = k; renderProblems(); } }, l)));
-  const clear = groups.length > 1 ? el("button", { class: "chip", onclick: () => ackProblems(groups) }, icon("check"), `Alle ${groups.length} als erledigt`) : null;
-  const handled = PROBLEMS.handled ? el("small", { class: "muted" }, `${PROBLEMS.handled} erledigt ausgeblendet`) : null;
-  box.replaceChildren(...[clear || handled ? el("div", { class: "meta", style: "justify-content:flex-end;gap:8px;margin-bottom:8px" }, handled, clear) : null].filter(Boolean),
-    groups.length ? el("div", { class: "probs" }, ...groups.map(problemRow))
-    : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), f === "error" ? `Keine Fehler in den letzten ${PROBLEMS.hours} h.` : "Nichts in diesem Filter."));
+  const box = $("#problems"); if (!box) return;
+  const all = problemGroups(), f = S.probFilter || "all", groups = all.filter(g => f === "all" || g.level === f);
+  $("#prob-seg").replaceChildren(...[["all", `Alle ${all.length}`], ["error", `Fehler ${all.filter(g => g.level === "error").length}`], ["warn", `Warnungen ${all.filter(g => g.level === "warn").length}`]].map(([key, label]) =>
+    el("button", { class: f === key ? "active" : "", onclick: () => { S.probFilter = key; renderProblems(); } }, label)));
+  box.replaceChildren(groups.length ? el("div", {},
+    el("div", { style: "display:flex;justify-content:flex-end;margin-bottom:12px" }, el("button", { class: "chip", onclick: () => ackProblems(groups) }, icon("check"), "Alle als erledigt")),
+    el("div", { class: "probs" }, ...groups.map(problemRow))) : emptyState("check", "Keine offenen Meldungen in diesem Filter."));
 }
 async function copyText(url, btn) {
   const old = btn.innerHTML; btn.disabled = true;
@@ -453,15 +499,14 @@ async function copyText(url, btn) {
     const { text } = await api(url);
     try { await navigator.clipboard.writeText(text); }
     catch { const ta = el("textarea", { style: "position:fixed;opacity:0" }); ta.value = text; document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
-    toast(`Kontext kopiert (${Math.round(text.length / 1000)}k Zeichen). In ein AI-Modell einfügen.`);
-  } catch (e) { toast("Kopieren fehlgeschlagen: " + e.message); }
+    btn.title = `Kopiert · ${Math.round(text.length / 1000)}k Zeichen`;
+  } catch (e) { bufferMessage("Kopieren fehlgeschlagen: " + e.message); }
   finally { btn.disabled = false; btn.innerHTML = old; }
 }
-let toastT = null;
-function toast(text) { let t = $("#toast"); if (!t) { t = el("div", { id: "toast", class: "toast", role: "status" }); document.body.append(t); } t.textContent = text; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 3500); }
 async function loadOverview() {
-  const [d, p] = await Promise.all([api("/api/status").catch(() => null), api("/api/problems?hours=3").catch(() => null)]); if (!d) return;
-  PROBLEMS = p || { groups: [], errors: 0, warnings: 0, hours: 3 };
+  const request = S.overviewRequest = (S.overviewRequest || 0) + 1, query = S.q;
+  const [d, p] = await Promise.all([api("/api/status").catch(() => null), api("/api/problems?hours=24").catch(() => null)]); if (!d || S.page !== "overview" || request !== S.overviewRequest) return;
+  PROBLEMS = p || PROBLEMS || { groups: [], errors: 0, warnings: 0, hours: 24 };
   if (S.problemsSeen == null) S.problemsSeen = Math.max(0, ...PROBLEMS.groups.map((g) => g.last_event_id)) ; // first load: nothing is "neu"
   const card = (cls, ...kids) => el("div", { class: "card " + cls }, ...kids);
   const head = (title, sub, aside) => el("div", { class: "card-h" }, el("div", {}, el("h3", {}, title), sub ? el("div", { class: "caption" }, sub) : null), aside || null);
@@ -476,99 +521,84 @@ async function loadOverview() {
     el("div", { class: "verdict" }, el("i", { class: "lamp " + tone }), el("div", {}, recentErr && !bad ? el("button", { class: "linklike", title: "Zu Fehler & Warnungen", onclick: () => show("errors") }, el("b", {}, verdictText)) : el("b", {}, verdictText), el("div", { class: "caption" }, `Systemcheck · letzte ${d.window_hours} h`))),
     el("div", { class: "pills" }, ...d.checks.map((c) => el("span", { class: "pill " + c.level, title: `${c.name}: ${c.value} · ${c.hint}` }, el("i"), c.name))),
     el("div", { class: "score", title: "Ø Punkte je akzeptierter Quote (Preis als voll angenommen)" }, el("b", { class: "num" }, sc.per_quote == null ? "–" : Math.round(sc.per_quote)), el("span", { class: "caption" }, `/ 100 · ${sc.accepted} von ${sc.rated} akzeptiert`)),
-    el("button", { class: "btn", title: "Lagebild (Systemcheck, Fehler, Zu tun, letzte Anfragen) als Text kopieren, zum Einfügen in ChatGPT/Claude", onclick: (e) => copyText("/api/context", e.currentTarget) }, icon("inbox"), "Lagebild kopieren"));
+    el("button", { class: "btn", title: "Lagebild (Systemcheck, Meldungen und letzte Anfragen) als Text kopieren, zum Einfügen in ChatGPT/Claude", onclick: (e) => copyText("/api/context", e.currentTarget) }, icon("inbox"), "Lagebild kopieren"));
 
-  // 3. Zu tun: only what a human can still change; quarantined mails first
-  const quarantine = d.quarantine || [], open = d.todo.length + quarantine.length;
-  const qItems = quarantine.map((q) => el("div", { class: "attn-item quarantine", onclick: q.session_id ? () => select(q.session_id) : null },
-    el("span", { class: "ic", style: "background:var(--red-tint);color:var(--red)" }, icon("stop")),
-    el("div", { style: "min-width:0;flex:1" }, el("div", { class: "t", title: q.subject || "" }, q.subject || "Mail " + q.mail_id),
-      el("div", { class: "d" }, "Phishing-Verdacht, nicht beantwortet · " + (q.sender || "").replace("@hackloop.mail", "")),
-      el("div", { class: "d why" }, (q.reasons || []).map((r) => r.split(":")[0].replace(/_/g, " ")).join(" · "))),
-    el("button", { class: "btn sm", title: "Kein Phishing: normale Verarbeitung starten, Absender in diesem Thread vertrauen", onclick: (ev) => { ev.stopPropagation(); releaseMail(q.mail_id, ev.currentTarget); } }, icon("undo"), "Freigeben")));
-  const todo = card("s12",
-    head("Zu tun", "Nur was ein Mensch jetzt noch retten kann.", el("span", { class: "aside badge-s " + (quarantine.length ? "red" : d.todo.length ? "orange" : "green") }, String(open))),
-    open ? el("div", {}, ...qItems, ...d.todo.map((t) => el("div", { class: "attn-item", onclick: () => { if (t.session_id != null) select(t.session_id); } },
-      el("span", { class: "ic", style: `background:var(--${t.tone}-tint);color:var(--${t.tone})` }, icon(t.tone === "blue" ? "box" : "alert")),
-      el("div", { style: "min-width:0" }, el("div", { class: "t" }, t.lane || t.subject || "Session " + t.session_id), el("div", { class: "d" }, t.reason + " · " + (t.customer || "").replace("@hackloop.mail", ""))))))
-      : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts zu tun. Der Agent arbeitet allein."));
-
+  // Letzte Anfragen stehen unmittelbar unter dem Systemstatus.
   // 4. Letzte Anfragen: each request step by step
-  const rows = d.requests.map((r) => el("tr", { onclick: () => select(r.id) },
+  const queried = query ? await api("/api/sessions?q=" + encodeURIComponent(query)).catch(() => []) : null;
+  if (S.page !== "overview" || request !== S.overviewRequest) return;
+  const requests = queried ? queried.map(s => d.requests.find(r => r.id === s.id) || {
+    ...s, quote_minor: s.quote_total_minor, quote_currency: s.quote_currency,
+    steps: { quote: { state: s.first_reply_at ? "ok" : "run", label: s.first_reply_at ? "Beantwortet" : "Offen" }, board: { state: "none", label: "Im Detail" }, booking: { state: s.status === "booked" ? "ok" : "none", label: s.status === "booked" ? "Gebucht" : "Im Detail" } }
+  }) : d.requests;
+  const rows = requests.map((r) => el("tr", { onclick: () => select(r.id), tabindex: "0", onkeydown: e => { if (["Enter", " "].includes(e.key)) { e.preventDefault(); select(r.id); } } },
     el("td", { class: "muted num" }, hm(r.created_at)),
     el("td", {}, el("div", { class: "req" }, el("b", { title: r.lane || r.subject || "#" + r.id }, r.lane || r.subject || "#" + r.id), el("span", { class: "muted", title: [(r.customer || ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ") }, [(r.customer || "").replace("@hackloop.mail", ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ")))),
     el("td", {}, stepChip(r.steps.quote)), el("td", {}, stepChip(r.steps.board)), el("td", {}, stepChip(r.steps.booking))));
   const reqs = card("s12",
-    head("Letzte Anfragen", "Quote gesendet → 5U-Urteil → gebucht. Klick öffnet die Session.", el("button", { class: "btn ghost aside", onclick: () => show("live") }, "Alle", icon("cart"))),
+    head(query ? "Suchergebnisse" : "Letzte Anfragen", "Anfrage auswählen und E-Mail-Verlauf öffnen.", query ? el("button", { class: "btn ghost aside", onclick: () => { S.q = ""; $("#global-q").value = ""; loadOverview(); } }, "Suche löschen") : el("span", { class: "aside caption" }, requests.length + " Anfragen")),
     rows.length ? el("div", { class: "table-scroll", role: "region", "aria-label": "Letzte Anfragen", tabindex: "0" },
       el("table", { class: "list steps" }, el("colgroup", {}, ...["time", "request", "quote", "board", "booking"].map((name) => el("col", { class: "col-" + name }))),
         el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Anfrage"), el("th", {}, "Quote"), el("th", {}, "5U"), el("th", {}, "Buchung"))), el("tbody", {}, ...rows))) : emptyState("inbox", "Noch keine Anfragen."));
 
-  $("#overview").replaceChildren(strip, todo, reqs);
-  $("#attn-badge").textContent = open || "";
+  $("#overview").replaceChildren(strip, reqs);
   errBadge();
 }
-// red badge on the Fehler & Warnungen tab: errors of the last 15 min
+// A passive counter replaces automatic error and warning pop-ups.
 function errBadge() {
-  const n = PROBLEMS ? PROBLEMS.groups.filter((g) => g.level === "error" && Date.now() - new Date(g.last_at) < 15 * 60000).length : 0;
-  const b = $("#err-badge"); if (b) b.textContent = n || "";
+  const groups = problemGroups(), b = $("#err-badge"); if (!b) return;
+  b.textContent = groups.length || ""; b.className = "badge" + (groups.some(g => g.level === "error") ? " err" : "");
+  b.title = groups.length + " gesammelte Fehler und Warnungen";
 }
 const PROB_HOURS = [3, 12, 24];
 async function loadErrors() {
-  const hours = S.probHours || 3;
-  const p = await api(`/api/problems?hours=${hours}`).catch(() => null); if (!p) return;
-  PROBLEMS = p;
-  if (S.problemsSeen == null) S.problemsSeen = Math.max(0, ...PROBLEMS.groups.map((g) => g.last_event_id));
-  const range = el("div", { class: "seg" }, ...PROB_HOURS.map((h) =>
-    el("button", { class: h === hours ? "active" : "", onclick: () => { S.probHours = h; loadErrors(); } }, `${h} h`)));
+  const hours = S.probHours || 24;
+  const [problems, quarantine] = await Promise.all([api(`/api/problems?hours=${hours}`).catch(() => null), api("/api/quarantine").catch(() => [])]);
+  if (S.page !== "errors") return;
+  if (problems) PROBLEMS = problems;
+  const range = el("div", { class: "seg" }, ...PROB_HOURS.map(h => el("button", { class: h === hours ? "active" : "", onclick: () => { S.probHours = h; loadErrors(); } }, `${h} h`)));
+  const quarantineBox = el("details", { class: "card s12 detail-fold" }, el("summary", {}, "Quarantäne", el("span", { class: "caption" }, quarantine.length + " Mails")),
+    el("div", { class: "fold-body" }, ...quarantine.map(q => el("div", { class: "attn-item quarantine" }, icon("stop"),
+      el("div", { style: "min-width:0;flex:1" }, el("div", { class: "t" }, q.subject || "Mail " + q.mail_id), el("div", { class: "d" }, q.sender || "")),
+      el("button", { class: "btn sm", onclick: e => releaseMail(q.mail_id, e.currentTarget) }, "Freigeben")))));
+  quarantineBox.open = Boolean($("#errors details")?.open);
   $("#errors").replaceChildren(el("div", { class: "card s12" },
-    el("div", { class: "card-h" },
-      el("div", {}, el("h3", {}, `Letzte ${PROBLEMS.hours} h`), el("div", { class: "caption" }, "Gleiche Meldungen zusammengefasst, neue Fehler rot hinterlegt." + (PROBLEMS.truncated ? " Nur die neuesten 400 Meldungen." : ""))),
-      el("div", { class: "aside", style: "display:flex;gap:8px;flex-wrap:wrap" }, range, el("div", { class: "seg", id: "prob-seg" }))),
-    el("div", { id: "problems" })));
-  renderProblems();
-  errBadge();
+    el("div", { class: "card-h" }, el("div", {}, el("h3", {}, "Gesammelte Meldungen"), el("div", { class: "caption" }, `Servermeldungen der letzten ${hours} h. Browsermeldungen bleiben auf diesem Gerät bis zur Bestätigung gespeichert.`)), range),
+    el("div", { class: "seg", id: "prob-seg", style: "margin-bottom:16px" }), el("div", { id: "problems" })), ...(quarantine.length ? [quarantineBox] : []));
+  renderProblems(); errBadge();
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden && PROBLEMS) S.problemsSeen = Math.max(S.problemsSeen || 0, ...PROBLEMS.groups.map((g) => g.last_event_id)); });
 async function releaseMail(id, btn) {
   btn.disabled = true;
-  try { const r = await post(`/api/mails/${id}/release`); if (r.session_id) select(r.session_id); else loadOverview(); }
-  catch (e) { btn.disabled = false; btn.title = "Freigabe fehlgeschlagen: " + e.message; }
+  try { const r = await post(`/api/mails/${id}/release`); if (r.session_id) select(r.session_id); else if (S.page === "errors") loadErrors(); else loadOverview(); }
+  catch (e) { btn.disabled = false; bufferMessage("Freigabe fehlgeschlagen: " + e.message, "error", null); }
 }
 
-// ---------- LIVE ----------
-function renderFilters() { const attn = S.sessions.filter((s) => s.needs_attention).length;
-  $("#filters").replaceChildren(...FILTERS.map(([k, l]) => el("button", { class: S.filter === k ? "active" : "", role: "tab", onclick: () => { S.filter = k; renderFilters(); renderList(); } }, l + (k === "attention" && attn ? ` ${attn}` : "")))); }
-function matches(s) {
-  if (S.filter === "attention" && !s.needs_attention) return false;
-  if (S.filter === "open" && !["new", "pricing", "quoted"].includes(s.status)) return false;
-  if (S.filter === "done" && ["new", "pricing", "quoted"].includes(s.status)) return false;
-  if (S.q) { const q = S.q.toLowerCase(); if (![String(s.id), s.customer || "", s.subject || ""].some((v) => v.toLowerCase().includes(q))) return false; }
-  return true;
+// ---------- request detail, reached only through a request link ----------
+async function loadSessions() { S.sessions = await api("/api/sessions").catch(() => S.sessions); }
+async function select(id, updateHistory = true) {
+  if (S.page !== "session") S.returnPage = S.page;
+  if (S.selected !== id) { S.reply = {}; S.foldOpen = new Set(); DRAFT = null; S.detail = null; $("#detail").replaceChildren(emptyState("clock", "Anfrage wird geladen …")); window.scrollTo(0, 0); }
+  S.selected = id; show("session", updateHistory); await loadDetail();
 }
-function renderList() {
-  const box = $("#list"); box.replaceChildren(); const rows = S.sessions.filter(matches);
-  if (!rows.length) box.append(S.filter === "attention" && S.sessions.length ? el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), "Nichts braucht dich gerade.") : emptyState("inbox", S.sessions.length ? "Keine Session für diesen Filter." : "Noch keine Anfragen."));
-  for (const s of rows) box.append(el("div", { class: "row" + (s.id === S.selected ? " sel" : "") + (s.needs_attention ? " attn" : ""), onclick: () => select(s.id) },
-    el("div", { class: "t" }, (s.kind === "tracking" ? "Tracking · " : "") + (s.subject || "(ohne Betreff)")), countdown(s),
-    el("div", { class: "m" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Mensch") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", ""))),
-    el("div", { class: "m num" }, s.quote_total_minor != null ? money(s.quote_total_minor, s.quote_currency) : ""),
-    el("div", { class: "e" }, s.last_event || "")));
+async function loadDetail() {
+  if (S.selected == null) return;
+  const id = S.selected, request = ++S.detailRequest;
+  try {
+    const detail = await api("/api/sessions/" + id);
+    if (id !== S.selected || request !== S.detailRequest) return;
+    S.detail = detail; renderDetail();
+  } catch (e) {
+    if (id !== S.selected || request !== S.detailRequest) return;
+    S.detail = null;
+    $("#detail").replaceChildren(el("button", { class: "btn detail-back", onclick: () => show("overview") }, "Zurück zu den Anfragen"), emptyState("alert", "Anfrage konnte nicht geladen werden."));
+    bufferMessage("Anfrage #" + id + " konnte nicht geladen werden. " + e.message, "error", id);
+  }
 }
-async function loadSessions() {
-  S.sessions = await api("/api/sessions").catch(() => S.sessions);
-  if (!S.initDone) { if (!S.sessions.some((s) => s.needs_attention)) S.filter = "all"; S.initDone = true; }
-  renderFilters(); renderList(); if (!S.selected) renderPlaceholder();
-}
-function renderPlaceholder() { $("#detail").replaceChildren(el("div", { class: "card placeholder" }, el("span", { class: "empty" }, el("span", { class: "ic" }, icon("radio"))), "Wähle links eine Session.", el("span", { class: "faint" }, "Tastatur: j / k wechseln · p pausieren · / suchen"))); }
-async function select(id) { S.selected = id; if (S.page !== "live") show("live"); history.replaceState(null, "", "#session=" + id); renderList(); await loadDetail(); }
-async function loadDetail() { if (S.selected == null) return;
-  try { S.detail = await api("/api/sessions/" + S.selected); } catch { S.detail = null; $("#detail").replaceChildren(el("div", { class: "card" }, emptyState("alert", "Session nicht gefunden."))); return; }
-  renderDetail(); }
-const act = (path, confirmText) => async () => { if (confirmText && !confirm(confirmText)) return; try { await post(`/api/sessions/${S.selected}/${path}`); } catch (e) { alert("Fehler: " + e.message); } await Promise.all([loadDetail(), loadSessions()]); };
+const act = (path, confirmText) => async () => { if (confirmText && !confirm(confirmText)) return; try { await post(`/api/sessions/${S.selected}/${path}`); } catch (e) { bufferMessage("Aktion fehlgeschlagen: " + e.message); } await Promise.all([loadDetail(), loadSessions()]); };
 function currentQuote(s) { if (s.bookings && s.bookings.length && s.bookings[0].quote_id) return (s.quotes || []).find(q => q.id === s.bookings[0].quote_id); return s.workflow ? (s.quotes || []).find(q => q.id === s.workflow.active_quote_id) : (s.quotes || [])[0]; }
 function laneOf(s) { const r = s.request || {}, q = currentQuote(s) || {}; const o = r.origin || q.origin, d = r.destination || q.destination, parts = [];
-  if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(r.preference || r.mode); return parts.join(" · "); }
+  if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(({fastest:"schnellste Verbindung",cheapest:"günstigstes Angebot"})[r.preference || r.mode] || r.preference || r.mode); return parts.join(" · "); }
 function costCard(s) {
   const u = s.llm_usage || { calls: [], call_count: 0, total_micro_usd: 0, input_tokens: 0, output_tokens: 0 };
   const dollars = (v) => v == null ? "Unbekannt" : Number(v / 1e6).toLocaleString("de-DE", { minimumFractionDigits: 6, maximumFractionDigits: 6 }) + " USD";
@@ -605,6 +635,12 @@ function replyMails(session) {
 }
 function renderDetail() {
   const s = S.detail, notices = [];
+  if (!s || s.id !== S.selected) return;
+  if (S.renderedSession === s.id) {
+    const form = $("#reply");
+    if (form) S.reply = { open: form.style.display !== "none", text: $("#reply-text").value, mailId: $("#reply-mail").value, info: $("#draft-info").textContent };
+  }
+  const back = el("button", { class: "btn ghost detail-back", onclick: () => show(S.returnPage || "overview") }, "← Zurück zu " + ({overview:"den Anfragen",crm:"CRM",errors:"den Meldungen"}[S.returnPage] || "den Anfragen"));
   if (s.workflow) {
     const w = s.workflow, labels = {interpreting:"Kundenantwort wird geprüft",repricing:"Geänderte Anfrage wird kalkuliert",answering:"Kundenfragen werden beantwortet",awaiting_customer:"Warte auf Kundenfreigabe",awaiting_price_approval:"Warte auf Freigabe des geänderten Preises",booking:"Buchung läuft",booked:"Gebucht",needs_review:"Prüfung erforderlich",closed:"Abgelehnt",deferred:"Vom Kunden zurückgestellt"};
     notices.push(el("div",{class:"notice"},el("strong",{},labels[w.phase] || "Prüfung läuft"),el("div",{},"Anfragestand " + w.request_version + (w.active_quote_id ? " · Aktives Angebot " + w.active_quote_id : " · Kein aktuelles Angebot")),...w.open_items.map(item => el("div",{},item))));
@@ -621,7 +657,7 @@ function renderDetail() {
   if (S.globalPause) notices.push(el("div", { class: "notice" }, icon("stop"), "Globaler Stopp aktiv: es werden keine Mails gesendet."));
   const head = el("div", { class: "card" },
     el("div", { class: "detail-head" }, el("div", {}, el("h2", {}, laneOf(s) || s.subject || "Session " + s.id),
-      el("div", { class: "meta" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", "")), el("span", { class: "faint" }, "#" + s.id + " · LLM " + usd(s.llm_cost_micro_usd)))), countdown(s)),
+      el("div", { class: "meta" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", "")), el("span", { class: "faint" }, "#" + s.id), s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Manuell") : null)), countdown(s)),
     el("div", { class: "actions" },
       s.paused ? el("button", { class: "btn", onclick: act("resume") }, icon("play"), "Fortsetzen") : el("button", { class: "btn", onclick: act("pause") }, icon("pause"), "Pausieren"),
       s.mode === "manual" ? el("button", { class: "btn", onclick: act("handback") }, icon("undo"), "An Agent zurückgeben") : el("button", { class: "btn", onclick: act("takeover", "Session übernehmen? Der Agent sendet danach nichts mehr in diesem Thread.") }, icon("hand"), "Übernehmen"),
@@ -629,7 +665,6 @@ function renderDetail() {
       el("button", { class: "btn", title: "Ganze Session (Mails mit Anhängen, Quotes, Agent-Schritte, Logs) als Text kopieren. In eine normale Claude-Session einfügen, sie schreibt die nächste Mail", onclick: (e) => copyText(`/api/sessions/${s.id}/context`, e.currentTarget) }, icon("inbox"), "Kontext kopieren"),
       el("a", { class: "btn ghost", href: `/api/sessions/${s.id}/context.zip`, download: "", title: "Kontext plus Original-Anhänge (Bilder, Scans, Sprachnachrichten) als ZIP herunterladen" }, icon("download"), "ZIP"),
       el("button", { class: "btn primary", onclick: () => toggleReply(true) }, icon("send"), "Antworten")),
-    ...notices,
     el("div", { id: "reply", style: "display:none;margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
       el("div", { id: "draft-info", class: "caption", style: "margin-bottom:8px" }),
       el("label", { class: "caption", for: "reply-mail" }, "Antworten auf"),
@@ -638,17 +673,55 @@ function renderDetail() {
         return el("option", { value: String(m.id) }, label);
       })),
       el("textarea", { id: "reply-text", placeholder: "Hallo …" }), el("div", { class: "actions" }, el("button", { class: "btn primary", onclick: sendReply }, icon("send"), "Senden"), el("button", { class: "btn ghost", onclick: () => toggleReply(false) }, "Abbrechen"))));
-  const tl = el("ul", { class: "tl", id: "timeline" }); s.events.forEach((e) => tl.append(eventItem(e)));
-  const mails = el("div", {}); for (const m of s.mails) mails.append(el("div", { class: "mail " + m.direction },
-    el("div", { class: "h" }, el("span", {}, m.direction === "in" ? "von " + (m.sender || "?") : "an " + (m.recipient || "?")), el("span", {}, time(m.received_at))),
-    el("div", { class: "s" }, m.subject || ""), el("details", { open: s.mails.length === 1 ? true : null }, el("summary", {}, "Text"), el("pre", {}, m.body || ""))));
-  $("#detail").replaceChildren(head, el("div", { class: "dgrid" },
-    el("div", { class: "stack" }, costCard(s), whyCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Timeline"), el("span", { class: "aside caption" }, "live")), tl)),
-    el("div", { class: "stack" }, s.bookings.length ? bookingCard(s) : null, boardCard(s), el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Mails"), el("span", { class: "aside caption" }, String(s.mails.length))), s.mails.length ? mails : emptyState("mail", "Keine Mails.")))));
+  const tl = el("ul", { class: "tl", id: "timeline" }); s.events.forEach(e => tl.append(eventItem(e)));
+  const mails = el("div", { class: "mail-list" });
+  for (const m of s.mails) mails.append(el("article", { class: "mail " + m.direction, "data-mail-id": m.id },
+    el("div", { class: "h" }, el("span", {}, m.direction === "in" ? "Von " + (m.sender || "Unbekannt") : "An " + (m.recipient || "Unbekannt")), el("span", {}, dateTime(m.received_at))),
+    el("div", { class: "s" }, m.subject || "Ohne Betreff"), el("div", { class: "mail-body" }, m.body || "Kein Nachrichtentext.")));
+  const conversation = el("section", { class: "card conversation", "aria-label": "E-Mail-Verlauf" },
+    el("div", { class: "card-h" }, el("h3", {}, "E-Mail-Verlauf"), el("span", { class: "aside caption" }, s.mails.length + " Nachrichten")),
+    s.mails.length ? mails : emptyState("mail", "Noch keine E-Mails."));
+  const costs = costCard(s); costs.querySelector("h3").textContent = "API-Kosten";
+  const costDetails = el("details", { "data-fold": "costs" }, el("summary", {}, "Aufrufe und Token-Details"));
+  [...costs.children].slice(2).forEach(child => costDetails.append(child)); costs.append(costDetails);
+  const info = requestInfo(s), flow = flowCard(s, notices);
+  const timeline = el("details", { class: "card detail-fold", "data-fold": "timeline" },
+    el("summary", {}, "Agent-Protokoll", el("span", { class: "caption", id: "timeline-count" }, s.events.length + " Ereignisse")),
+    el("div", { class: "fold-body timeline-body" }, tl));
+  const quote = el("details", { class: "card detail-fold", "data-fold": "quote" },
+    el("summary", {}, "Angebot, Preisvergleich und Buchung"), el("div", { class: "fold-body" }, whyCard(s), s.bookings.length ? bookingCard(s) : null, boardCard(s)));
+  $("#detail").replaceChildren(back, head, el("div", { class: "session-metrics" }, info, flow, costs), conversation, quote, timeline);
+  for (const fold of $("#detail").querySelectorAll("details[data-fold]")) fold.open = S.foldOpen.has(fold.dataset.fold);
+  const reply = S.reply;
+  $("#reply-text").value = reply.text || "";
+  if (reply.mailId && [...$("#reply-mail").options].some(o => o.value === reply.mailId)) $("#reply-mail").value = reply.mailId;
+  $("#draft-info").textContent = reply.info || "";
+  toggleReply(Boolean(reply.open), false); S.renderedSession = s.id;
 }
-function eventItem(e, fresh) { const li = el("li", { class: (e.level || "") + (fresh ? " fresh" : "") }, el("span", { class: "time" }, time(e.created_at)), el("span", { class: "msg" }, e.message || e.kind),
-  el("span", { class: "x" }, [e.duration_ms != null ? e.duration_ms + " ms" : "", e.cost_micro_usd != null ? usd(e.cost_micro_usd) : ""].filter(Boolean).join(" · ")));
-  if (e.payload) li.append(el("details", {}, el("summary", {}, "Details"), el("pre", {}, JSON.stringify(e.payload, null, 2)))); return li; }
+function requestInfo(s) {
+  const r = s.request || {}, q = currentQuote(s);
+  const quantity = (value, unit) => value == null ? "Noch offen" : Number(value).toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " " + unit;
+  const facts = [["Gewicht", quantity(r.weight_kg, "kg")], ["Volumen", quantity(r.volume_cbm, "m³")],
+    ["Packstücke", r.pieces ?? "Noch offen"], ["Bereit ab", r.ready_date ? new Date(r.ready_date).toLocaleDateString("de-DE") : "Noch offen"],
+    ["Angebot", q ? money(q.total_minor, q.currency) : "Noch offen"], ["Priorität", ({cheapest:"Günstigster Preis",fastest:"Kürzeste Laufzeit"})[r.preference] || "Noch offen"]];
+  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Sendungsinfos")),
+    el("dl", { class: "facts" }, ...facts.map(([key, value]) => el("div", {}, el("dt", {}, key), el("dd", {}, value)))));
+}
+function flowCard(s, notices) {
+  const q = currentQuote(s), b = s.bookings[0];
+  const phases = { interpreting:"Kundenantwort wird geprüft",repricing:"Geänderte Anfrage wird kalkuliert",answering:"Kundenfragen werden beantwortet",awaiting_customer:"Wartet auf Kundenfreigabe",awaiting_price_approval:"Wartet auf Preisfreigabe",booking:"Buchung läuft",booked:"Gebucht",needs_review:"Prüfung erforderlich",closed:"Abgeschlossen",deferred:"Vom Kunden zurückgestellt" };
+  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Flow"), el("span", { class: "aside" }, badge(s.status))),
+    el("div", { class: "flow-steps" }, ...[["Anfrage", true, hm(s.created_at)], ["Angebot", Boolean(q), q ? hm(q.sent_at) : "Noch offen"], ["Buchung", Boolean(b && b.status === "confirmed"), b ? b.status : "Noch offen"]].map(([label, done, text]) =>
+      el("div", { class: "flow-step" + (done ? " done" : "") }, el("span", { class: "flow-dot" }, icon(done ? "check" : "clock")), el("b", {}, label), el("small", {}, text)))),
+    s.workflow ? el("p", { class: "caption" }, phases[s.workflow.phase] || "Bearbeitung läuft") : null,
+    notices.length ? el("details", { "data-fold": "checks" }, el("summary", {}, "Prüfungen und offene Angaben"), ...notices) : null);
+}
+function eventItem(e) {
+  return el("li", { class: e.level || "", "data-event-id": e.id }, el("details", { class: "event-entry", "data-fold": "event-" + e.id },
+    el("summary", {}, el("span", { class: "time" }, time(e.created_at)), el("span", { class: "msg" }, e.message || e.kind),
+      el("span", { class: "x" }, e.level === "error" ? "Fehler" : e.level === "warn" ? "Warnung" : "Details")),
+    el("div", { class: "log-body" }, el("div", { class: "log-message" }, e.message || e.kind), e.payload ? el("pre", {}, JSON.stringify(e.payload, null, 2)) : null)));
+}
 function whyCard(s) { const q = currentQuote(s), c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Warum diese Quote")));
   if (!q) { c.append(emptyState("clock", OPEN.includes(s.status) ? "Noch keine Quote. Der Agent bepreist gerade." : "Keine Quote in dieser Session.")); return c; }
   const pref = s.request && (s.request.preference || s.request.mode);
@@ -667,12 +740,12 @@ function verdictBadge(v) { return el("span", { class: "badge-s " + (v === "accep
 function boardCard(s) { const c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "5U-Bewertung")));
   if (!s.board.length) c.append(el("div", { class: "faint" }, "Noch keine Bewertung."));
   for (const b of s.board) c.append(el("div", { style: "display:flex;gap:8px;align-items:center" }, verdictBadge(b.verdict), el("span", { class: "muted" }, b.reason || ""))); return c; }
-function toggleReply(on) { const r = $("#reply"); if (!r) return; r.style.display = on ? "block" : "none"; if (on) $("#reply-text").focus(); }
+function toggleReply(on, focus = true) { const r = $("#reply"); if (!r) return; r.style.display = on ? "block" : "none"; S.reply.open = on; if (on && focus) $("#reply-text").focus(); }
 let DRAFT = null;
 async function loadDraft() {
-  toggleReply(true); const info = $("#draft-info"); info.textContent = "Berechne Preis aus Tarifblatt, Portal und Geboten …"; DRAFT = null;
+  const sid = S.selected; toggleReply(true); const info = $("#draft-info"); info.textContent = "Berechne Preis aus Tarifblatt, Portal und Geboten …"; DRAFT = null;
   try {
-    const d = await post(`/api/sessions/${S.selected}/draft`);
+    const d = await post(`/api/sessions/${sid}/draft`); if (S.selected !== sid) return;
     const customerMail = replyMails(S.detail).find((mail) => isCustomerMail(mail, S.detail));
     if (customerMail) $("#reply-mail").value = String(customerMail.id);
     DRAFT = d; $("#reply-text").value = d.body; $("#reply-text").style.minHeight = "300px";
@@ -680,19 +753,28 @@ async function loadDraft() {
     info.replaceChildren(el("b", {}, `Entwurf: ${money(d.total_minor)} · ${d.choice.airline} · ${d.preference === "fastest" ? "schnellste" : "günstigste"}`),
       d.truck ? ` · Lkw ${d.truck.name} ${euro(d.truck.eur_minor)}` : "", el("br"), "Optionen: " + opts,
       ...d.warnings.map((w) => el("div", { style: "color:#C93400" }, "⚠ " + w)));
-  } catch (e) { info.textContent = "Kein Entwurf möglich: " + e.message.replace(/^\{"detail":"|"\}$/g, ""); }
+  } catch (e) { if (S.selected !== sid) return; info.textContent = "Entwurf konnte nicht erstellt werden. Details im Meldungspuffer."; bufferMessage("Kein Entwurf möglich: " + e.message, "error", sid); }
 }
-async function sendReply() { const text = $("#reply-text").value.trim(); if (!text) return;
+async function sendReply() {
+  const sid = S.selected, text = $("#reply-text").value.trim(); if (!text) return;
   const mail_id = Number($("#reply-mail").value);
-  const target = S.detail.mails.find((mail) => mail.id === mail_id && mail.direction === "in");
-  if (!target) { alert("Bitte eine eingegangene Mail als Antwortziel auswählen."); return; }
-  // a draft counts as our quote only if the price in the text is still the draft's price
+  const target = S.detail.mails.find(mail => mail.id === mail_id && mail.direction === "in");
+  if (!target) { bufferMessage("Bitte eine eingegangene E-Mail als Antwortziel auswählen.", "warn", sid); return; }
   const quote = DRAFT && text.includes(money(DRAFT.total_minor).replace(" EUR", "").trim()) ? DRAFT : null;
-  if (quote && !isCustomerMail(target, S.detail)) { alert("Eine Kundenquote kann nur an den Kunden gesendet werden."); return; }
-  if (!confirm(`Antwort jetzt an ${target.sender} senden? Die Session wird dabei übernommen.`)) return;
-  try { await post(`/api/sessions/${S.selected}/reply`, { text, quote, mail_id }); toggleReply(false); DRAFT = null; } catch (e) { alert("Senden fehlgeschlagen: " + e.message); }
-  await Promise.all([loadDetail(), loadSessions()]); }
+  if (quote && !isCustomerMail(target, S.detail)) { bufferMessage("Eine Kundenquote kann nur an den Kunden gesendet werden.", "warn", sid); return; }
+  if (!confirm(`Antwort jetzt an ${target.sender} senden? Die Anfrage wird dabei übernommen.`)) return;
+  try {
+    await post(`/api/sessions/${sid}/reply`, { text, quote, mail_id });
+    if (S.selected !== sid) return;
+    S.reply = {}; DRAFT = null; toggleReply(false); $("#reply-text").value = "";
+    await Promise.all([loadDetail(), loadSessions()]);
+  } catch (e) {
+    bufferMessage("Senden fehlgeschlagen: " + e.message, "error", sid);
+    if (S.selected === sid) $("#draft-info").textContent = "Nicht gesendet. Dein Entwurf bleibt erhalten. Details im Meldungspuffer.";
+  }
+}
 
+// ---------- CRM ----------
 // ---------- CRM ----------
 async function loadCrm() { S.crm = await api("/api/crm").catch(() => S.crm); renderCrm(); }
 function renderCrm() {
@@ -758,29 +840,49 @@ async function loadStats() { const st = await api("/api/stats").catch(() => null
   const b = $("#global-pause"); b.classList.toggle("on", S.globalPause); b.querySelector("span").textContent = S.globalPause ? "Mails freigeben" : "Mails stoppen"; $("#global-banner").classList.toggle("show", S.globalPause); }
 $("#global-pause").addEventListener("click", async () => { const stop = !S.globalPause;
   if (stop && !confirm("Alle ausgehenden Mails stoppen? Der Agent sendet dann nichts mehr, auch keine Quotes.")) return;
-  await post(stop ? "/api/pause-all" : "/api/resume-all").catch((e) => alert(e.message)); await loadStats(); if (S.detail) renderDetail(); });
+  await post(stop ? "/api/pause-all" : "/api/resume-all").catch(e => bufferMessage("Globaler Mailstopp konnte nicht geändert werden. " + e.message, "error", null)); await loadStats(); if (S.detail) renderDetail(); });
 
 // ---------- live stream ----------
 let refreshT = null;
-function refreshSoon() { clearTimeout(refreshT); refreshT = setTimeout(() => { loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "live") loadSessions(); if (S.page === "crm") loadCrm(); if (S.page === "errors") loadErrors(); }, 500); }
-function onEvent(e) { if (S.seen.has(e.id)) return; S.seen.add(e.id); S.lastId = Math.max(S.lastId, e.id);
-  if (S.detail && e.session_id === S.selected) { const tl = $("#timeline"); if (tl) tl.append(eventItem(e, true));
-    if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted", "llm_call"].includes(e.kind)) loadDetail(); }
-  refreshSoon(); }
+function refreshSoon() {
+  clearTimeout(refreshT); refreshT = setTimeout(() => {
+    loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "session") loadSessions(); if (S.page === "crm") loadCrm(); if (S.page === "errors") loadErrors();
+  }, 500);
+}
+function onEvent(e) {
+  if (S.seen.has(e.id)) return; S.seen.add(e.id); S.lastId = Math.max(S.lastId, e.id);
+  if (S.detail && e.session_id === S.selected) {
+    const tl = $("#timeline"); if (tl) { tl.append(eventItem(e)); $("#timeline-count").textContent = tl.children.length + " Ereignisse"; }
+    if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted", "llm_call"].includes(e.kind)) loadDetail();
+  }
+  if (["warn", "error"].includes(e.level)) {
+    clearTimeout(S.bufferRefresh); S.bufferRefresh = setTimeout(async () => {
+      const p = await api("/api/problems?hours=24").catch(() => null); if (p) { PROBLEMS = p; errBadge(); if (S.page === "errors") loadErrors(); }
+    }, 500);
+  }
+  refreshSoon();
+}
 function connect() { const es = new EventSource("/api/stream?since=" + S.lastId);
   es.onopen = () => { $("#live-dot").className = "dot on"; $("#live-text").textContent = "Live verbunden"; };
   es.onmessage = (m) => { try { onEvent(JSON.parse(m.data)); } catch (err) { console.warn(err); } };
   es.onerror = () => { $("#live-dot").className = "dot retry"; $("#live-text").textContent = "verbinde neu…"; }; }
 
 // ---------- keyboard & boot ----------
-$("#q").addEventListener("input", (e) => { S.q = e.target.value.trim(); renderList(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); if (e.target.matches("input, textarea")) return;
-  const rows = S.sessions.filter(matches), i = rows.findIndex((s) => s.id === S.selected);
-  if (e.key === "j" && rows[i + 1]) select(rows[i + 1].id); if (e.key === "k" && i > 0) select(rows[i - 1].id);
-  if (e.key === "p" && S.detail && S.page === "live") act(S.detail.paused ? "resume" : "pause")();
-  if (e.key === "/") { e.preventDefault(); show("live"); $("#q").focus(); } });
-setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "live") loadSessions(); }, 20000);
-// Deploy-Ampel: green = newest RFQ answered and the next one more than 90 s away
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeDrawer(); if (e.target.matches("input, textarea, select") || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "p" && S.detail && S.page === "session") act(S.detail.paused ? "resume" : "pause")();
+  if (e.key === "/") { e.preventDefault(); $("#global-q").focus(); }
+});
+setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "session") loadDetail(); }, 20000);
+function routeFromHash() {
+  const hash = location.hash, match = hash.match(/^#session=(\d+)$/);
+  if (match) select(Number(match[1]), false); else show(hash === "#crm" ? "crm" : hash === "#errors" ? "errors" : "overview", false);
+}
+window.addEventListener("popstate", routeFromHash);
+window.addEventListener("hashchange", routeFromHash);
+window.addEventListener("error", e => bufferMessage("Darstellungsfehler: " + e.message, "error", null));
+window.addEventListener("unhandledrejection", e => bufferMessage("Aktion konnte nicht abgeschlossen werden: " + (e.reason?.message || e.reason), "error", null));
+// Deploy-Ampel:// Deploy-Ampel: green = newest RFQ answered and the next one more than 90 s away
 async function loadGate() {
   const g = await api("/api/deploy-gate").catch(() => null), b = $("#deploy-gate"); if (!g) return;
   b.className = "badge-s " + (g.safe ? "green" : "red");
@@ -792,8 +894,7 @@ loadGate();
 (async function boot() {
   const ev = await api("/api/events?since=0&limit=500").catch(() => []); S.lastId = ev.length ? ev[ev.length - 1].id : 0; ev.forEach((e) => S.seen.add(e.id));
   await Promise.all([loadStats(), loadSessions()]);
-  const h = location.hash, m = h.match(/session=(\d+)/);
-  if (m) select(Number(m[1])); else if (h === "#live") show("live"); else if (h === "#crm") show("crm"); else if (h === "#errors") show("errors"); else show("overview");
+  routeFromHash(); errBadge();
   connect();
 })();
 </script>
