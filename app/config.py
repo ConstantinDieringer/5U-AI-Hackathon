@@ -123,6 +123,7 @@ class Settings:
     revision_not_acceptance: bool
     bid_llm_fallback: bool
     estimate_missing_truck: bool
+    cargo_insurance: bool
     consent_llm_check: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
@@ -262,6 +263,8 @@ settings = Settings(
     bid_llm_fallback=_flag("BID_LLM_FALLBACK", True),
     # no trucker bid: estimate from earlier bids for the same pickup zone instead of silence
     estimate_missing_truck=_flag("ESTIMATE_MISSING_TRUCK", True),
+    # cargo insurance the customer asks for is added to the all-in total (value x cover x rate)
+    cargo_insurance=_flag("CARGO_INSURANCE", True),
     # round 60/70: a reply the consent rules cannot decide (or a yes next to a doubt word)
     # is checked by one cheap gateway call; the rules' explicit decline always wins
     consent_llm_check=_flag("CONSENT_LLM_CHECK", True),

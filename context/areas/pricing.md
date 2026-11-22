@@ -36,3 +36,4 @@ Binding detail: TECH_SPEC §6 (data models), portal API in `context/docs/5u-api.
 ```
 python -m pytest -q tests/test_pricing.py tests/test_pricing_hardening.py tests/test_parse_tariffs.py tests/test_portal_and_reference.py tests/test_portal_fallback_capacity.py tests/test_served_lanes.py tests/test_trucker_balance.py tests/test_bid_attachments.py tests/test_bid_next_break.py tests/test_document_totals.py tests/test_carrier_prefs.py tests/test_carrier_exclusion_guard.py tests/test_rounds_66_68_offers.py
 ```
+- **Cargo insurance (`CARGO_INSURANCE`, on):** when the mail asks for insurance in the all-in price and states goods value in EUR and premium rate, code adds value x coverage x rate (`app/pricing/insurance.py`, coverage 100 % if unstated) to the total; the mail says it is included, without a second amount. Unreadable terms: error event, nothing added. Not applied to multi-shipment replies.

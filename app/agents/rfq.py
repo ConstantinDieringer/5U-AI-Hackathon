@@ -49,7 +49,7 @@ from app.mail.style import (
 from app.mail.subjects import shipment_subject
 from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
-from app.pricing import served_lanes
+from app.pricing import insurance, served_lanes
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import (
@@ -824,6 +824,46 @@ def _fallback_with_coverage(
     # no generic "verified information is not yet available" line: it reads like a bot and
     # the quote itself already states every verified fact
     return quote_text(rfq, option, total_eur_minor, truck, variant, today)
+
+
+def with_insurance_note(body: str, rfq: Rfq) -> str:
+    """The premium is inside the one all-in total; the mail says so without a second amount."""
+    if language.base(rfq.language) == "de":
+        note = "Im Gesamtpreis ist die gewünschte Transportversicherung enthalten."
+    else:
+        note = "The total includes the cargo insurance you asked for."
+    i = body.rfind(SIGNATURE)
+    if i < 0:
+        return f"{body.rstrip()}\n\n{note}\n"
+    return f"{body[:i].rstrip()}\n\n{note}\n\n{body[i:]}"
+
+
+def _insurance(mail: Mail, sid: int) -> insurance.Insurance | None:
+    """Cargo insurance the customer wants inside the all-in price (round 91, too_low)."""
+    if not settings.cargo_insurance:
+        return None
+    text = _clean(mail.body)
+    cover = insurance.read(text)
+    if cover is not None:
+        db.emit(
+            "insurance_added",
+            f"Versicherung im Gesamtpreis: {amount(cover.premium_minor)}"
+            f" ({cover.coverage_pct:g} % von {amount(cover.value_minor)},"
+            f" Satz {cover.rate_pct:g} %)",
+            sid,
+        )
+    elif insurance.asked(text) and not re.search(
+        r"\bno\s+insurance\b|\bwithout\s+insurance\b|\bkeine\s+versicherung\b",
+        text,
+        re.IGNORECASE,
+    ):
+        db.emit(
+            "insurance_unreadable",
+            "Versicherung gewünscht, Warenwert oder Prämiensatz nicht lesbar: nicht im Preis",
+            sid,
+            level="error",
+        )
+    return cover
 
 
 def with_pickup_note(body: str, rfq: Rfq) -> str:
@@ -1959,6 +1999,9 @@ def _price_and_quote(
         return
     rfq, choice, total, truck = priced.rfq, priced.choice, priced.total, priced.truck
     air, bid_opts = priced.options, []
+    cover = _insurance(mail, sid)
+    if cover is not None:
+        total += cover.premium_minor
     template = forced and t0 + RFQ_LIFETIME_S - time.time() < FORCED_FULL_COMPOSE_S
     if template:
         # little time left: the checked deterministic copy, no composer and no style review
@@ -1968,6 +2011,8 @@ def _price_and_quote(
         body = compose_quote_text(rfq, choice, total, truck, sid)
     if rfq.pickup_assumed and truck is not None:
         body = with_pickup_note(body, rfq)
+    if cover is not None:
+        body = with_insurance_note(body, rfq)
     from dataclasses import asdict
 
     db.emit(
