@@ -4,7 +4,7 @@ Only major capabilities or behavior changes belong here. Combine related work, n
 
 ## 22 November 2026
 
-* GPT-5.6 Luna is the selected default. Recovery can interpret unfamiliar requests, correct the RFQ schema and remove superseded facts, review semantic arrival blocks, and retry rejected plans with tool feedback and a larger budget.
+* GPT-5.6 Sol handles text and vision, with source-unit and currency checks. Exact conversions prevent cubic feet being priced as cubic metres. Recovery interprets unfamiliar requests, repairs evidenced facts and retries rejected plans with tool feedback.
 * Customer replies support versioned offers and explicit approval of revised terms. Execution remains rollout controlled, with shadow evaluation as the default.
 * Multilingual requests, attachments and replies use checked translations while preserving shipment facts and consent evidence.
 * Arrival constraints and cargo insurance are validated before all quote paths so incomplete or unsuitable offers are held for clarification.

@@ -4,6 +4,7 @@ import re
 from decimal import Decimal
 
 from app import config
+from app.mail import measurements
 from app.mail.content import current_message
 from app.mail.lots import parse_lots
 from app.models import Rfq, RfqDraft
@@ -226,7 +227,7 @@ def _stated_departures(active, destination, supported):
 
 
 _THOUSANDS = r"\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?"
-_UNIT = r"kgs?|kilos?|lbs?|t|tonnes?|tons?"
+_UNIT = r"kgs?|kilos?|kilograms?|lbs?|pounds?|ounces?|oz|mg|milligrams?|g|grams?|t|tonnes?|tons?"
 # UNIT_EVIDENCE: extra ways a mail states the totals (none of the 31 stored rounds uses them)
 _UNIT_WEIGHT = [
     rf"({_THOUSANDS})\s*({_UNIT})\s+(?:gross|brutto)\b",
@@ -244,7 +245,7 @@ _COUNT = re.compile(
 )
 _DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*"
-    r"(cm|inches|inch|in(?=[.,;)]|\s*$|\s+each\b)|\"|'')(?=\W|$)",
+    r"(mm|cm|m|ft|feet|foot|inches|inch|in(?=[.,;)]|\s*$|\s+each\b)|\"|'')(?=\W|$)",
     re.IGNORECASE,
 )
 # cubic metres per cubic unit of the stated dimensions (US customers give inches)
@@ -317,7 +318,7 @@ def _unit_facts(text, expect, known=()):
         if not match:
             continue
         unit = match[2].lower()
-        factor = _TO_KG.get(unit[0], Decimal(1))
+        factor = measurements.mass_suffix(unit) or Decimal(1)
         figures = [(expect or {}).get("weight_kg")]
         if config.settings.thousands_evidence:
             figures += list(known)
@@ -325,12 +326,13 @@ def _unit_facts(text, expect, known=()):
         if value is not None:
             found["weight_kg"] = value
         break
-    if match := re.search(_UNIT_VOLUME, text, re.IGNORECASE):
-        found["volume_cbm"] = Decimal(match[1].replace(",", "."))
+    volumes = measurements.explicit_volumes(text)
+    if len({value for value, _ in volumes}) == 1:
+        found["volume_cbm"] = volumes[0][0]
     dims, counts = _DIMS.findall(text), {int(c) for c in _COUNT.findall(text)}
     if "volume_cbm" not in found and len(dims) == 1 and len(counts) == 1 and _EACH.search(text):
         length, width, height = (Decimal(x.replace(",", ".")) for x in dims[0][:3])
-        per = _CBM_PER["cm" if dims[0][3].lower() == "cm" else "in"]
+        per = measurements.length_factor(dims[0][3]) ** 3
         found["volume_cbm"] = (next(iter(counts)) * length * width * height * per).quantize(
             Decimal("0.0001")
         )
@@ -393,19 +395,26 @@ def numeric_facts(text, expect=None, known=()):
                     break
                 amount = Decimal(match[1].replace(",", "."))
                 if field == "weight_kg":
-                    if re.match(r"(?:t|tonnes?|tons?)\b", suffix, re.IGNORECASE):
-                        amount *= Decimal(1000)
-                    elif re.match(r"lbs?\b", suffix, re.IGNORECASE):
-                        amount *= Decimal("0.45359237")
-                elif field == "volume_cbm" and re.match(
-                    r"(?:ft|cu\s*ft|litres?|liters?)", suffix, re.IGNORECASE
-                ):
-                    continue
+                    amount *= measurements.mass_suffix(suffix) or Decimal(1)
+                elif field == "volume_cbm":
+                    factor = measurements.volume_suffix(suffix)
+                    if factor is not None:
+                        amount *= factor
+                    elif re.match(
+                        r"(?:ft|cu\b|cubic\b|litres?|liters?|gallons?|yards?)",
+                        suffix,
+                        re.IGNORECASE,
+                    ):
+                        continue
                 result[field] = amount
                 break
     if config.settings.unit_evidence:
         for field, value in _unit_facts(text, expect, known).items():
             result.setdefault(field, value)
+    # Header units and derived dimensions take precedence over an unlabelled scalar.
+    volumes = measurements.explicit_volumes(text)
+    if len({value for value, _ in volumes}) == 1:
+        result["volume_cbm"] = volumes[0][0]
     return result
 
 
@@ -606,6 +615,20 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         )
     )
     values = numeric_facts(active, expect=data) if not has_lots else {}
+    if not data.get("additional_shipments") and "volume_cbm" not in corrections:
+        for name, text in sources.items():
+            if has_lots and name == "body":
+                continue
+            for problem in measurements.volume_issues(text):
+                issues.append(
+                    {"field": "volume_cbm", "code": "conflict", "detail": name + ": " + problem}
+                )
+    evidence["volume_units"] = {
+        name: [
+            {"source": raw, "cbm": str(value)} for value, raw in measurements.explicit_volumes(text)
+        ]
+        for name, text in sources.items()
+    }
     if has_lots and totals is None and not {"weight_kg", "volume_cbm"} <= corrections.keys():
         issues.append(
             {

@@ -17,6 +17,16 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, "").strip() or default
 
 
+def _text_model(role: str) -> str:
+    """The user's unified model choice supersedes older Railway role overrides.
+
+    An explicitly empty LLM_TEXT_MODEL restores legacy per-role configuration.
+    Audio recognition has its own compatible models and does not use this policy.
+    """
+    unified = os.getenv("LLM_TEXT_MODEL", "gpt-5.6-sol").strip()
+    return unified or _env(role, _env("LLM_MODEL", "gpt-5.6-sol"))
+
+
 _ON = frozenset({"1", "true", "yes", "on"})
 _OFF = frozenset({"0", "false", "no", "off"})
 
@@ -190,10 +200,9 @@ settings = Settings(
     team_mailbox=_env("TEAM_MAILBOX", "austrian-power@hackloop.mail").lower(),
     ratedesk_address=_env("RATEDESK_ADDRESS", "ratedesk@hackloop.mail").lower(),
     tracking_address=_env("TRACKING_ADDRESS", "tracking@hackloop.mail").lower(),
-    llm_model=_env("LLM_MODEL", "gpt-5.6-luna"),
-    # One model policy, including repairs and recovery. Explicit per-role overrides remain.
-    llm_retry_model=_env("LLM_RETRY_MODEL", _env("LLM_MODEL", "gpt-5.6-luna")),
-    llm_rescue_model=_env("LLM_RESCUE_MODEL", _env("LLM_MODEL", "gpt-5.6-luna")),
+    llm_model=_text_model("LLM_MODEL"),
+    llm_retry_model=_text_model("LLM_RETRY_MODEL"),
+    llm_rescue_model=_text_model("LLM_RESCUE_MODEL"),
     thread_rescue_enabled=_flag("THREAD_RESCUE_ENABLED", True),
     thread_rescue_max_calls=max(1, int(_env("THREAD_RESCUE_MAX_CALLS", "12"))),
     thread_rescue_after_s=max(10.0, float(_env("THREAD_RESCUE_AFTER_S", "45"))),
@@ -204,14 +213,14 @@ settings = Settings(
     # Keep enough conversation to solve unfamiliar requests and accumulated corrections.
     thread_rescue_max_mails=max(2, int(_env("THREAD_RESCUE_MAX_MAILS", "24"))),
     thread_rescue_body_chars=max(500, int(_env("THREAD_RESCUE_BODY_CHARS", "8000"))),
-    llm_compose_model=_env("LLM_COMPOSE_MODEL", _env("LLM_MODEL", "gpt-5.6-luna")),
+    llm_compose_model=_text_model("LLM_COMPOSE_MODEL"),
     # a second composer call after a failed check doubles the quote's biggest cost; off =
     # the checked deterministic quote copy goes out instead
     compose_repair=_flag("COMPOSE_REPAIR", False),
     # true = the checked template carries the facts and one small call adds a personal
     # opening and answers (cheaper than the full composer); false = full composer
     quote_template_first=_flag("QUOTE_TEMPLATE_FIRST", False),
-    llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
+    llm_review_model=_text_model("LLM_REVIEW_MODEL"),
     email_review_enabled=_flag("EMAIL_REVIEW_ENABLED"),
     reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
     # 5U wants the quote as a PDF attachment: built by code from the priced option, no LLM
@@ -333,7 +342,7 @@ settings = Settings(
     # what an LLM-only verdict may do; it never does more than PHISHING_GATE_MODE allows.
     # off = no model call: in shadow the verdict can never block, so the call only costs
     phishing_gate_llm_mode=_env("PHISHING_GATE_LLM_MODE", "off").lower(),
-    phishing_gate_model=_env("PHISHING_GATE_MODEL", "gpt-5-nano"),
+    phishing_gate_model=_text_model("PHISHING_GATE_MODEL"),
     # mail guard (app/mail/guard.py): empty/automatic mail, RFQ floods, outgoing mail loops
     mail_guard_enabled=_flag("MAIL_GUARD_ENABLED", True),
     inbound_flood_max=max(1, int(_env("INBOUND_FLOOD_MAX", "3"))),  # new RFQs per sender
@@ -347,7 +356,7 @@ settings = Settings(
     llm_audio_model=_env("LLM_AUDIO_MODEL"),
     speech_model=_speech_model(),  # multilingual offline fallback
     speech_model_dir=_env("SPEECH_MODEL_DIR"),  # Docker bakes the model into /opt/whisper
-    llm_vision_model=_env("LLM_VISION_MODEL"),
+    llm_vision_model=_text_model("LLM_VISION_MODEL"),
     # false = no recognition of audio/scans (deterministic text readers stay enabled)
     attachment_transcription=_flag("ATTACHMENT_TRANSCRIPTION", True),
     groq_api_key=_env("GROQ_API_KEY"),

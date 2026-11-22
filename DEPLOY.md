@@ -1,15 +1,17 @@
 # Deploy (Railway)
 
-## GPT-5.6 Luna rollout
+## GPT-5.6 Sol rollout
 
-The user-selected text model is `gpt-5.6-luna`. Before rollout, run
+The user-selected text and vision model is `gpt-5.6-sol`. Before rollout, run
 `python -m tools.model_check` in a trusted environment with the existing team credential.
 This reads only gateway model availability; it does not poll mail or start agents.
 Do not announce model access or live use based on offline tests alone.
 
-Existing Railway variables override new code defaults. Set `LLM_MODEL`,
-`LLM_RETRY_MODEL`, `LLM_RESCUE_MODEL` and `LLM_COMPOSE_MODEL` to `gpt-5.6-luna`
-with the matching code deployment, after confirming availability. Clear old rescue
+`LLM_TEXT_MODEL` defaults to `gpt-5.6-sol` and supersedes old Railway role-model values,
+including extraction, repair, rescue, composition, image reading and optional reviewers.
+Set it to another verified model to change the unified policy. Explicitly empty restores
+the legacy `LLM_MODEL` and individual role settings. Sol uses medium reasoning, rescue high;
+audio recognition keeps compatible transcription models. Clear old rescue
 budget/context overrides or set `THREAD_RESCUE_MAX_CALLS=12`,
 `THREAD_RESCUE_MAX_MAILS=24`, `THREAD_RESCUE_BODY_CHARS=8000`. Keep the optional
 email reviewer disabled. Use the normal deploy gate and verify the deployed revision.
@@ -142,7 +144,7 @@ poll the mailbox, otherwise mails are processed twice. Once it runs online, nobo
    TEAM_API_KEY=hk_...            # from the kit-card mail
    UI_PASSWORD=<strong password>  # required: the UI can stop all mail and send replies
    UI_USER=team
-   LLM_MODEL=gpt-5.6-luna
+   LLM_TEXT_MODEL=gpt-5.6-sol
    LOG_LEVEL=INFO
    ```
    `DB_PATH=/data/forwarder.db` and `INBOX_DIR=/data/inbox` are set in the Dockerfile.
