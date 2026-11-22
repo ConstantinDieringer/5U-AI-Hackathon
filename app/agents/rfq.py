@@ -30,12 +30,12 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids, carrier_prefs, quote_opening
 from app.config import settings
-from app.mail import compliance, language, lots, multilingual, parse, pdf_request
+from app.mail import compliance, language, lots, multilingual, parse, pdf_request, screening
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.quote_locales import COPY as QUOTE_LOCALES
 from app.mail.quote_locales import quote as localized_quote
-from app.mail.rfq_sources import extraction_content, read_sources
+from app.mail.rfq_sources import ATTACK, attachment_attacks, extraction_content, read_sources
 from app.mail.rfq_validation import _SIGNATURE
 from app.mail.router import address
 from app.mail.style import (
@@ -1368,6 +1368,12 @@ def _handle(mail: Mail, sid: int) -> None:
 
     start = time.monotonic()
     rfq = _stored_request(sid) or extract_rfq(mail, sid)  # stored = resumed after a restart
+    sources = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}") or "{}")
+    if (attacks := attachment_attacks(mail, sources)) and screening.quarantine_for_attachment(
+        mail, sid, attacks
+    ):
+        db.set_status(sid, "error", "Phishing im Anhang: ein Mensch muss freigeben")
+        return  # no question, no quote: the attacker gets no answer
     if rfq is None:
         from app.agents import clarification
 
@@ -1387,7 +1393,8 @@ def _handle(mail: Mail, sid: int) -> None:
     if not cached:
         texts, media, problems = read_sources(mail, session_id=sid)
         cached = {"texts": texts, "problems": problems, "media": bool(media)}
-    problems = list(cached.get("problems", []))
+    # an attack in a file is handled by the attachment check above, never asked about
+    problems = [p for p in cached.get("problems", []) if p.get("code") != ATTACK]
     if cached.get("media"):
         problems.append(
             {
