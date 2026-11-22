@@ -4683,8 +4683,15 @@ def reply_enqueue(sid: int, mail: dict[str, Any], *, shadow: bool = False) -> No
 
 
 def reply_claim(
-    owner: str, timestamp: float, lease_s: float = 90, kind: str | None = None
+    owner: str,
+    timestamp: float,
+    lease_s: float = 90,
+    kind: str | None = None,
+    *,
+    promoted_prefix: str | None = None,
 ) -> dict[str, Any] | None:
+    """Claim the next pending reply action. `promoted_prefix` (shadow mode): shadow actions plus
+    the acting actions of threads whose kv key `<prefix><session_id>` exists, never others."""
     with tx() as c:
         # A lease expiration cannot tell whether an external operation already happened.
         expired = _rows(
@@ -4718,12 +4725,13 @@ def reply_claim(
         row = _one(
             c.execute(
                 """SELECT a.* FROM workflow_actions a WHERE a.kind IN ('reply','shadow') AND a.status='pending' AND (? IS NULL OR a.kind=?)
+          AND (? IS NULL OR a.kind='shadow' OR EXISTS (SELECT 1 FROM kv WHERE kv.key = ? || a.session_id))
           AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id=a.session_id AND (s.paused=1 OR s.mode='manual'))
           AND NOT EXISTS (SELECT 1 FROM workflow_actions e WHERE e.session_id=a.session_id AND e.status='dispatching')
           AND NOT EXISTS (SELECT 1 FROM workflow_actions b WHERE b.session_id=a.session_id
             AND b.kind IN ('reply','shadow') AND (b.status='processing' OR (b.status='pending' AND b.mail_id<a.mail_id)))
           ORDER BY a.mail_id,a.id LIMIT 1""",
-                (kind, kind),
+                (kind, kind, promoted_prefix, promoted_prefix),
             )
         )
         if row:
