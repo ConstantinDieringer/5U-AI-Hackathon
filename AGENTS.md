@@ -8,7 +8,7 @@ Implement the requested customer behaviour. Start at its owner, exercise the nor
 | Eligible flight, cheapest/fastest, favourite | app/pricing/selection.py | tests/test_arrival_constraints.py |
 | Mail intake, retries | app/mail/webhook.py or poller.py | tests/test_mailbox_webhook.py |
 | RFQ, missing information, resume | app/agents/rfq.py or clarification.py | tests/test_history_first_clarification.py |
-| Accept, decline or defer a booking | app/agents/booking.py and consent_check.py | tests/test_booking.py |
+| Accept, decline or defer a booking | app/agents/customer_reply.py, booking.py and consent_check.py | tests/test_booking.py |
 | Status of a shipment | app/agents/tracking.py | tests/test_tracking.py |
 | Customer wording, language | app/mail/ and `.agents/skills/customer-email-voice/SKILL.md` | tests/test_quote_languages.py |
 | Dashboard or manual quote | app/ui/drafts.py and the shared business function | tests/test_arrival_constraints.py |

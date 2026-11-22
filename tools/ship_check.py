@@ -18,8 +18,8 @@ DOC_TESTS = [
 AREAS = {
     "app/pricing/selection.py": "arrival_constraints rfq_agent multi_shipment carrier_prefs carrier_exclusion_guard trucker_balance rfq_replay",
     "app/mail/selection_intent.py": "arrival_constraints rfq_validation_gate rfq_history recent_rounds_e2e multi_shipment rfq_replay",
-    "app/agents/consent_check.py": "booking prebook thread_rescue reply_replay",
-    "app/agents/tracking.py": "tracking tracking_notice followup",
+    "app/agents/consent_check.py": "booking prebook thread_rescue reply_replay customer_reply_workflow",
+    "app/agents/tracking.py": "tracking tracking_notice followup customer_reply_workflow",
     "app/ui/drafts.py": "server dashboard_problems cargo_insurance arrival_constraints manual_reply_targets",
 }
 DOC_ROOTS = {
