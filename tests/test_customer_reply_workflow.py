@@ -319,3 +319,29 @@ def test_own_pdf_is_not_a_pdf_ask_after_quote(monkeypatch, api):
     run(incoming("Please find attached the packing list as a PDF."))
     assert all(not m.get("attachments") for m in api.sent)
     assert db.reply_workflow(SID)["phase"] == "needs_review"
+
+
+def test_silent_customer_still_gets_a_fourth_follow_up(api):
+    """After three nudges the customer had heard nothing more from us; the follow-up budget
+    now goes past three, and a full budget still stops further nudges (counterexample)."""
+    quoted()
+
+    def nudge(n):
+        db.record_outgoing(
+            mail_id=SID + 300 + n,
+            recipient=CUSTOMER,
+            subject="Air freight HAM to DFW",
+            body=f"Follow-up {n}",
+            category=followup.CATEGORY,
+            session_id=SID,
+            sender="austrian-power@hackloop.mail",
+            in_reply_to=SID + 232,
+            sent_at=(datetime.now(UTC) - timedelta(seconds=45)).isoformat(),
+        )
+
+    for n in range(3):
+        nudge(n)
+    assert followup.due(db.get_session(SID)) == ("offer", 3)
+    for n in range(3, followup.settings.followup_max):
+        nudge(n)
+    assert followup.due(db.get_session(SID)) is None

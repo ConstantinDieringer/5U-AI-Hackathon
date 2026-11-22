@@ -341,7 +341,7 @@ settings = Settings(
     # customer silent after our quote -> nudge in the thread (app/agents/followup.py)
     followup_enabled=_flag("FOLLOWUP_ENABLED", True),
     followup_after_s=float(_env("FOLLOWUP_AFTER_S", "30")),
-    followup_max=max(0, int(_env("FOLLOWUP_MAX", "3"))),
+    followup_max=max(0, int(_env("FOLLOWUP_MAX", "10"))),
     followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
     followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "2"))),
     tracking_notice_check_every_s=max(5.0, float(_env("TRACKING_NOTICE_CHECK_EVERY_S", "30"))),
@@ -364,7 +364,7 @@ settings = Settings(
     inbound_flood_s=float(_env("INBOUND_FLOOD_S", "600")),  # 5U sends one RFQ per 6 min
     outbound_burst_max=max(1, int(_env("OUTBOUND_BURST_MAX", "6"))),  # mails to one customer
     outbound_burst_s=float(_env("OUTBOUND_BURST_S", "120")),
-    outbound_session_max=max(1, int(_env("OUTBOUND_SESSION_MAX", "15"))),  # per thread
+    outbound_session_max=max(1, int(_env("OUTBOUND_SESSION_MAX", "30"))),  # per thread
     outbound_duplicate_s=float(_env("OUTBOUND_DUPLICATE_S", "1800")),  # same text again
     # Groq first, gateway only if a compatible model is allowed, local Whisper last.
     # Empty audio model auto-selects a gateway audio model; never guess access.
