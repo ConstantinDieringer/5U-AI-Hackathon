@@ -103,6 +103,10 @@ class Settings:
     reply_in_customer_language: bool
     quote_pdf: bool
     quote_pdf_on_request: bool
+    airport_events: bool
+    airport_events_ttl_s: float
+    airport_events_gdacs_url: str
+    airport_events_faa_url: str
     poll_interval_s: float
     db_path: str
     ui_port: int
@@ -240,6 +244,16 @@ settings = Settings(
     quote_pdf=_flag("QUOTE_PDF", True),
     # team decision 22.11.: the PDF goes out only when the customer asks for it
     quote_pdf_on_request=_flag("QUOTE_PDF_ON_REQUEST", True),
+    # Dashboard map info box: public hazard (GDACS) and US airport status (FAA) feeds, read only
+    airport_events=_flag("AIRPORT_EVENTS", True),
+    airport_events_ttl_s=float(_env("AIRPORT_EVENTS_TTL_S", "600")),
+    airport_events_gdacs_url=_env(
+        "AIRPORT_EVENTS_GDACS_URL",
+        "https://www.gdacs.org/gdacsapi/api/events/geteventlist/EVENTS4APP",
+    ),
+    airport_events_faa_url=_env(
+        "AIRPORT_EVENTS_FAA_URL", "https://nasstatus.faa.gov/api/airport-status-information"
+    ),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render

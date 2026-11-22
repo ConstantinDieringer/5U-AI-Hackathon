@@ -25,6 +25,7 @@ from app import db
 from app.config import settings
 from app.mail import webhook
 from app.mail.router import address
+from app.ui import airport_events, rates
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
@@ -129,6 +130,19 @@ def api_business_metrics(days: int = 0) -> dict[str, Any]:
 @app.get("/api/booking-volume")
 def api_booking_volume() -> dict[str, Any]:
     return db.booking_volume_24h()
+
+
+@app.get("/api/rates")
+def api_rates() -> dict[str, Any]:
+    return rates.catalogue()
+
+
+@app.get("/api/airport-events")
+def api_airport_events(airports: str = Query("", max_length=1200)) -> dict[str, Any]:
+    codes = [c.strip().upper() for c in airports.split(",") if c.strip()]
+    if len(codes) > 300:
+        raise HTTPException(422, "at most 300 airports")
+    return airport_events.events_for(codes)
 
 
 @app.get("/api/overview")
@@ -379,7 +393,7 @@ def _manual_quote_pdf(
     except Exception as e:  # noqa: BLE001 - a PDF fault must never block the human's send
         db.emit(
             "quote_pdf_failed",
-            f"Angebots-PDF nicht erstellt, Antwort geht ohne Anhang raus: {type(e).__name__}",
+            f"Quote PDF not created, reply goes out without attachment: {type(e).__name__}",
             session_id,
             level="error",
         )

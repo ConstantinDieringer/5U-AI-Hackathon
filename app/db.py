@@ -3635,9 +3635,9 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
         {
             "session_id": row["session_id"],
             "kind": "case_worker",
-            "reason": "Externer Ausgang unklar"
+            "reason": "External outcome unclear"
             if row["status"] == "unknown"
-            else "Fallbearbeitung benötigt Prüfung",
+            else "Case needs review",
             "subject": row["subject"],
             "customer": row["customer"],
             "status": row["status"],
@@ -3656,7 +3656,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
         {
             "session_id": r["session_id"],
             "kind": "reply_workflow",
-            "reason": " · ".join(json.loads(r["open_json"])) or "Kundenanliegen benötigt Prüfung",
+            "reason": " · ".join(json.loads(r["open_json"])) or "Customer request needs review",
             "subject": r["subject"],
             "customer": r["customer"],
             "status": r["phase"],
@@ -3673,7 +3673,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             "session_id": q["session_id"],
             "mail_id": q["mail_id"],
             "kind": "quarantine",
-            "reason": "Phishing-Verdacht: keine Antwort gesendet",
+            "reason": "Suspected phishing: no reply sent",
             "subject": q["subject"],
             "customer": q["sender"],
             "status": "quarantined",
@@ -3695,7 +3695,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
     ]
     for s in list_sessions(attention=True, limit=limit):
         reason = (
-            "Fehler" if s["status"] == "error" else "pausiert" if s["paused"] else "Deadline < 90 s"
+            "Error" if s["status"] == "error" else "Paused" if s["paused"] else "Deadline < 90 s"
         )
         validation = validation_get(s["id"])
         if validation and validation["state"] in (
@@ -3704,9 +3704,9 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             "resolving",
         ):
             reason = (
-                "Rückfrage offen"
+                "Clarification open"
                 if validation["state"] == "awaiting_clarification"
-                else "Eingangsdaten prüfen"
+                else "Check incoming details"
             )
         items.append(
             {
@@ -3777,7 +3777,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             {
                 "session_id": r["id"],
                 "kind": "to_book",
-                "reason": "Kunde hat geantwortet, noch nicht gebucht",
+                "reason": "Customer replied, not booked yet",
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],
@@ -3795,7 +3795,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             {
                 "session_id": r["session_id"],
                 "kind": "needs_human",
-                "reason": "Rückfrage ohne brauchbare Antwort: prüfen",
+                "reason": "Clarification without a usable answer, please check",
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],
@@ -3984,16 +3984,16 @@ def _rfq_rows(c: sqlite3.Connection, since: str | None, limit: int | None) -> li
                 "label": secs_label(response_s),
             }
         elif r["status"] in ("new", "pricing") and deadline and deadline > now_dt:
-            quote = {"state": "run", "label": "läuft"}
+            quote = {"state": "run", "label": "running"}
         else:
-            quote = {"state": "bad", "label": r["last_problem"] or "keine Quote"}
+            quote = {"state": "bad", "label": r["last_problem"] or "no quote"}
         v = b.get("verdict")
         if v == "accepted":
-            five = {"state": "ok", "label": "akzeptiert"}
+            five = {"state": "ok", "label": "accepted"}
         elif v in (None, "open", "pending"):
             five = {
                 "state": "run" if first else "none",
-                "label": "offen" if first else "–",
+                "label": "open" if first else "–",
             }
         else:
             five = {
@@ -4001,17 +4001,17 @@ def _rfq_rows(c: sqlite3.Connection, since: str | None, limit: int | None) -> li
                 "label": v + (f" ({b['reason']})" if b.get("reason") else ""),
             }
         if r["booking_reference"] or b.get("booked"):
-            book = {"state": "ok", "label": r["booking_reference"] or "gebucht"}
+            book = {"state": "ok", "label": r["booking_reference"] or "booked"}
         elif r["declined"]:
-            book = {"state": "none", "label": "Kunde lehnt ab"}
+            book = {"state": "none", "label": "customer declined"}
         elif r["customer_replied"]:
-            book = {"state": "bad", "label": "Antwort, nicht gebucht"}
+            book = {"state": "bad", "label": "replied, not booked"}
         elif v not in (None, "open", "pending", "accepted"):
             book = {"state": "none", "label": "–"}
         elif first and now_dt - first > timedelta(minutes=30):
-            book = {"state": "none", "label": "keine Zusage"}
+            book = {"state": "none", "label": "no acceptance"}
         elif first:
-            book = {"state": "run", "label": "wartet auf Kunde"}
+            book = {"state": "run", "label": "waiting for customer"}
         else:
             book = {"state": "none", "label": "–"}
         lane = " → ".join(x for x in (req.get("origin"), req.get("destination")) if x)
@@ -4167,10 +4167,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "mail",
-            "name": "Mail-Abruf",
+            "name": "Mail polling",
             "level": "bad" if age is None else _level(age <= 8, age <= 15),
-            "value": "keine Mail" if age is None else f"vor {int(age)} min",
-            "hint": "Alle 6 min kommt eine RFQ. Länger still heißt: Poller steht oder Server ist aus.",
+            "value": "no mail" if age is None else f"{int(age)} min ago",
+            "hint": "An RFQ arrives every 6 min. Longer silence means the poller is stuck or the server is down.",
         }
     )
 
@@ -4180,10 +4180,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "quotes",
-            "name": "Anfragen beantwortet",
+            "name": "Requests answered",
             "level": "ok" if not done else _level(missed == 0, missed <= 1),
             "value": f"{len(quoted)} / {len(done)}" if done else "–",
-            "hint": "RFQs der letzten 2 h mit Quote vor Ablauf. Jede verpasste ist verloren.",
+            "hint": "RFQs of the last 2 h quoted before expiry. Every missed one is lost.",
         }
     )
 
@@ -4192,10 +4192,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "speed",
-            "name": "Antwortzeit",
+            "name": "Response time",
             "level": "ok" if avg_resp is None else _level(avg_resp <= 120, avg_resp <= 240),
             "value": secs_label(avg_resp),
-            "hint": "Ø bis zur Quote. ≤ 2 min volle 15 Zeitpunkte, ab 6 min null.",
+            "hint": "Average time to quote. Up to 2 min earns all 15 time points, from 6 min none.",
         }
     )
 
@@ -4204,10 +4204,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "price",
-            "name": "5U akzeptiert",
+            "name": "5U accepted",
             "level": "ok" if not rated else _level(acc == len(rated), acc / len(rated) >= 0.6),
             "value": f"{acc} / {len(rated)}" if rated else "–",
-            "hint": "Urteil vom Leaderboard. too_high = Preis > 5 % über Bestpreis, no answer = nichts gesendet.",
+            "hint": "Leaderboard verdict. too_high = price more than 5 % above best, no answer = nothing sent.",
         }
     )
 
@@ -4216,10 +4216,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "cost",
-            "name": "LLM-Kosten je Quote",
+            "name": "LLM cost per quote",
             "level": "ok" if avg_cost is None else _level(avg_cost <= 2000, avg_cost <= 10000),
             "value": "–" if avg_cost is None else f"${avg_cost / 1e6:.4f}",
-            "hint": "0 $ = 40 Punkte, 0,10 $ = 0. Mindestens ein Gateway-Call pro Quote nötig.",
+            "hint": "$0 = 40 points, $0.10 = 0. At least one gateway call per quote is required.",
         }
     )
 
@@ -4228,10 +4228,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "booking",
-            "name": "Buchungen",
+            "name": "Bookings",
             "level": _level(not pending_book, False),
-            "value": f"{booked} gebucht" + (f", {len(pending_book)} offen" if pending_book else ""),
-            "hint": "Kunde hat zugesagt → Buchung per Rate-ID. Offen = Zusage ohne Buchung.",
+            "value": f"{booked} booked" + (f", {len(pending_book)} open" if pending_book else ""),
+            "hint": "Customer accepted, booking by rate ID. Open = accepted without booking.",
         }
     )
 
@@ -4249,15 +4249,15 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "tracking",
-            "name": "Tracking-Antworten",
+            "name": "Tracking answers",
             "level": "ok"
             if not trk
             else _level(unanswered == 0 and not_found == 0, unanswered == 0),
             "value": f"{len(trk) - unanswered} / {len(trk)}"
-            + (f", {not_found} ohne Treffer" if not_found else "")
+            + (f", {not_found} without match" if not_found else "")
             if trk
             else "–",
-            "hint": "Antwort aus unserem CRM. Ohne Treffer = keine passende Buchung gefunden, Rückfrage gesendet.",
+            "hint": "Answered from our CRM. Without match = no matching booking found, clarification sent.",
         }
     )
 
@@ -4275,10 +4275,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "bids",
-            "name": "Carrier-Gebote gelesen",
+            "name": "Carrier bids read",
             "level": "ok" if not (got + bad_bids) else _level(bad_bids == 0, got >= bad_bids),
             "value": f"{got} / {got + bad_bids}" if got + bad_bids else "–",
-            "hint": "Gebote mit erkanntem Preis. Nicht gelesen sind oft Absagen „lane not served“.",
+            "hint": "Bids with a recognised price. Unread ones are often “lane not served” declines.",
         }
     )
 
@@ -4298,13 +4298,13 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "errors",
-            "name": "Fehler · unzugeordnet",
+            "name": "Errors · unassigned",
             "level": _level(not errors and not unassigned, not errors),
             "value": f"{sum(g['count'] for g in errors)} · {unassigned}",
             "hint": (
                 errors[0]["message"][:120]
                 if errors
-                else "Programmfehler im Log und Mails, die keiner Session zugeordnet werden konnten."
+                else "Program errors in the log and mails that could not be assigned to a session."
             ),
         }
     )
@@ -4346,7 +4346,7 @@ def status_overview() -> dict[str, Any]:
                 todo.append(
                     {
                         **_todo(r),
-                        "reason": "pausiert / übernommen – antworte selbst",
+                        "reason": "paused or taken over, reply yourself",
                         "tone": "orange",
                     }
                 )
@@ -4356,7 +4356,7 @@ def status_overview() -> dict[str, Any]:
                 todo.append(
                     {
                         **_todo(r),
-                        "reason": f"noch {int(max(left, 0))} s, keine Quote",
+                        "reason": f"{int(max(left, 0))} s left, no quote",
                         "tone": "red",
                     }
                 )
@@ -4364,7 +4364,7 @@ def status_overview() -> dict[str, Any]:
             todo.append(
                 {
                     **_todo(r),
-                    "reason": "Kunde hat geantwortet, nicht gebucht",
+                    "reason": "Customer replied, not booked",
                     "tone": "blue",
                 }
             )

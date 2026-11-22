@@ -52,7 +52,7 @@ def test_green_between_rounds():
 def test_red_while_the_next_rfq_is_due_but_not_stored_yet():
     newest = _rounds(5)
     result = deploy_gate.gate(newest + timedelta(seconds=SPACING + 1))
-    assert result["safe"] is False and "fällig" in result["reason"]
+    assert result["safe"] is False and "overdue" in result["reason"]
 
 
 def test_green_again_when_the_due_rfq_never_came():

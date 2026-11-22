@@ -137,5 +137,5 @@ selector labels customer vs. other senders, and the send confirmation names the 
 recipient. An emergency quote resets the target to the customer; a carrier selection cannot
 receive a customer quote. Intentional carrier replies remain available through the selector.
 
-German UI, short verbs ("Pausieren", "Übernehmen", "Antworten"). Irreversible actions confirm
-and say why ("Nur die erste Quote zählt"). Mail text is untrusted: rendered as text only.
+English UI (en-GB dates and numbers, € before the amount), short verbs ("Pause", "Take over", "Reply"). Irreversible actions confirm
+and say why ("Only the first quote in a thread counts"). Mail text is untrusted: rendered as text only.

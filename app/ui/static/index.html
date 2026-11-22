@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -331,46 +331,50 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3 6 0 1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z"/><circle cx="12" cy="12" r="3"/></symbol>
 </svg>
 
-<nav class="sidebar" aria-label="Hauptnavigation">
+<nav class="sidebar" aria-label="Main navigation">
   <div class="brand"><span class="mark"><svg class="icon"><use href="#i-plane"/></svg></span><div><b>Austrian Power</b><small>Forwarder Console</small></div></div>
   <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></button>
-  <button class="nav" data-page="requests"><svg class="icon"><use href="#i-inbox"/></svg><span class="lbl">Anfragen</span></button>
+  <button class="nav" data-page="requests"><svg class="icon"><use href="#i-inbox"/></svg><span class="lbl">Requests</span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
+  <button class="nav" data-page="rates"><svg class="icon"><use href="#i-coin"/></svg><span class="lbl">Rates</span></button>
   <div class="spacer"></div>
-  <button class="stop" id="global-pause" title="Alle ausgehenden Mails stoppen"><svg class="icon"><use href="#i-stop"/></svg><span>Mails stoppen</span></button>
-  <button class="nav profile-settings" data-page="errors" id="settings-toggle" title="Einstellungen und Meldungen" aria-expanded="false" aria-controls="page-errors"><span class="avatar">AP</span><span class="lbl">Einstellungen</span><svg class="icon"><use href="#i-settings"/></svg><span class="badge err" id="err-badge"></span></button>
+  <button class="stop" id="global-pause" title="Stop all outgoing mail"><svg class="icon"><use href="#i-stop"/></svg><span>Stop mail</span></button>
+  <button class="nav profile-settings" data-page="errors" id="settings-toggle" title="Settings and messages" aria-expanded="false" aria-controls="page-errors"><span class="avatar">AP</span><span class="lbl">Settings</span><svg class="icon"><use href="#i-settings"/></svg><span class="badge err" id="err-badge"></span></button>
 </nav>
 
 <div class="main">
   <header class="topbar">
     <div class="right">
       <div id="view-controls"></div>
-      <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Kunde, Betreff oder ID" autocomplete="off"></label>
-      <button class="btn mobile-only" id="mobile-messages" title="Einstellungen"><svg class="icon"><use href="#i-settings"/></svg>Einstellungen</button>
-      <button class="btn mobile-only nav" data-page="requests">Anfragen</button>
-      <button class="btn mobile-only nav" data-page="crm" title="CRM öffnen"><svg class="icon"><use href="#i-users"/></svg>CRM</button>
+      <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Customer, subject or ID" autocomplete="off"></label>
+      <button class="btn mobile-only" id="mobile-messages" title="Settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</button>
+      <button class="btn mobile-only nav" data-page="requests">Requests</button>
+      <button class="btn mobile-only nav" data-page="crm" title="Open CRM"><svg class="icon"><use href="#i-users"/></svg>CRM</button>
+      <button class="btn mobile-only nav" data-page="rates">Rates</button>
     </div>
   </header>
-  <div class="banner" id="global-banner"><svg class="icon"><use href="#i-alert"/></svg>Alle ausgehenden Mails sind gestoppt. Der Agent sendet nichts, bis ihr sie wieder freigebt.</div>
+  <div class="banner" id="global-banner"><svg class="icon"><use href="#i-alert"/></svg>All outgoing mail is stopped. The agent sends nothing until you release it.</div>
 
-  <nav id="breadcrumbs" class="breadcrumbs" aria-label="Navigationspfad"></nav>
+  <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumb"></nav>
   <section class="page active" id="page-overview"><div class="bento" id="overview"></div></section>
 
   <section class="page" id="page-requests"><div class="bento" id="requests"></div></section>
   <section class="page" id="page-session"><div class="request-detail" id="detail"></div></section>
 
   <section class="page" id="page-crm"><div class="bento" id="crm"></div></section>
+  <section class="page" id="page-rates"><div class="bento" id="rates"></div></section>
 
   <section class="page" id="page-errors"><div class="bento" id="errors"></div></section>
 </div>
 
 <div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer" aria-label="Kunde"><header><h3 id="drawer-title"></h3><button class="btn ghost" id="drawer-close" style="margin-left:auto" aria-label="Schließen"><svg class="icon"><use href="#i-x"/></svg></button></header><div class="body" id="drawer-body"></div></aside>
+<aside class="drawer" id="drawer" aria-label="Customer"><header><h3 id="drawer-title"></h3><button class="btn ghost" id="drawer-close" style="margin-left:auto" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button></header><div class="body" id="drawer-body"></div></aside>
 
 <script src="/static/workspace.js"></script>
 <script src="/static/map-view.js"></script>
 <script src="/static/dashboard.js"></script>
 <script src="/static/controls.js"></script>
+<script src="/static/rates.js"></script>
 <script>
 "use strict";
 // ---------- helpers: text only via textContent (mail bodies are untrusted) ----------
@@ -398,15 +402,17 @@ const api = async (p, o) => {
   return r.json();
 };
 const post = (p, b) => api(p, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }, body: b ? JSON.stringify(b) : undefined });
-const money = (m, c) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { minimumFractionDigits: m % 100 ? 2 : 0, maximumFractionDigits: 2 }) + " " + (!c || c === "EUR" ? "€" : c);
-const euro = (m) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 }) + " €";
+const money = (m, c) => m == null ? "–" : (!c || c === "EUR" ? "€" : c + " ") + (m / 100).toLocaleString("en-GB", { minimumFractionDigits: m % 100 ? 2 : 0, maximumFractionDigits: 2 });
+// Customer mail bodies keep the German amount style ("1.475 €"); used to recognise a drafted quote in a manual reply.
+const mailAmount = (m) => (m / 100).toLocaleString("de-DE", { minimumFractionDigits: m % 100 ? 2 : 0, maximumFractionDigits: 2 }) + " €";
+const euro = (m) => m == null ? "–" : "€" + (m / 100).toLocaleString("en-GB", { maximumFractionDigits: 0 });
 const usd = (u) => u == null ? "–" : "$" + (u / 1e6).toFixed(u < 10000 ? 4 : 3);
-const time = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
-const hm = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "";
-const dateTime = (iso) => iso ? new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+const time = (iso) => iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+const hm = (iso) => iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
+const dateTime = (iso) => iso ? new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
 const secs = (s) => s == null ? "–" : s < 60 ? Math.round(s) + " s" : Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0") + " min";
 const pct = (a, b) => b ? Math.round(100 * a / b) + " %" : "–";
-const STATUS = { new: ["neu", "blue"], pricing: ["bepreisen", "blue"], quoted: ["quotiert", "indigo"], accepted: ["angenommen", "green"], booked: ["gebucht", "green"], confirmed: ["bestätigt", "green"], answered: ["beantwortet", "green"], lost: ["verloren", "red"], expired: ["abgelaufen", "red"], error: ["Fehler", "red"] };
+const STATUS = { new: ["New", "blue"], pricing: ["Pricing", "blue"], quoted: ["Quoted", "indigo"], accepted: ["Accepted", "green"], booked: ["Booked", "green"], confirmed: ["Confirmed", "green"], answered: ["Answered", "green"], lost: ["Lost", "red"], expired: ["Expired", "red"], error: ["Error", "red"] };
 const badge = (status) => { const [l, t] = STATUS[status] || [status, ""]; return el("span", { class: "badge-s " + t }, l); };
 const OPEN = ["new", "pricing"];
 const PALETTE = ["blue", "indigo", "green", "orange"];
@@ -417,7 +423,7 @@ function emptyState(ic, text) { return el("div", { class: "empty" }, el("span", 
 
 // ---------- state ----------
 const S = { page: "overview", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", returnPage: "overview", foldOpen: new Set(), problemExpanded: new Set(), reply: {}, detailRequest: 0 };
-const PAGES = { overview: ["Dashboard", ""], requests: ["Anfragen", ""], session: ["Anfrage", "E-Mail-Verlauf und aktueller Stand."], crm: ["CRM", "Kunden, Angebote und Buchungen."], errors: ["Einstellungen", "Team, Meldungen und Systemkontext."] };
+const PAGES = { overview: ["Dashboard", ""], requests: ["Requests", ""], session: ["Request", "Mail thread and current state."], crm: ["CRM", "Customers, quotes and bookings."], rates: ["Rates", "Airline tariffs and portal lanes."], errors: ["Settings", "Team, messages and system context."] };
 
 // ---------- countdown ----------
 const remaining = (d) => d ? (new Date(d) - Date.now()) / 1000 : null;
@@ -438,7 +444,7 @@ function show(page, updateHistory = true) {
   document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.page === (page === "session" ? S.returnPage : page)));
   document.title = PAGES[page][0] + " · Austrian Power";
   $("#page-"+page).setAttribute("aria-label",PAGES[page][0]);
-  if (page === "overview") loadOverview(); if (page === "requests") loadRequests(); if (page === "crm") loadCrm(); if (page === "errors") loadErrors();
+  if (page === "overview") loadOverview(); if (page === "requests") loadRequests(); if (page === "crm") loadCrm(); if (page === "rates") loadRates(); if (page === "errors") loadErrors();
   const hash = page === "session" ? "#session=" + S.selected : "#" + page;
   if (updateHistory && location.hash !== hash) history.pushState(null, "", hash);
 }
@@ -461,9 +467,9 @@ function stepChip(st) {
   const ic = STEP_ICON[st.state];
   return el("span", { class: "step " + (TONE[st.state] || ""), title: st.label }, ic ? icon(ic) : null, el("span", {}, st.label));
 }
-const KIND_LABEL = { log_error: "Log-Fehler", clarification_loop: "Rückfrage-Limit", clarification_unknown: "Versand unklar", clarification_capped: "Rückfrage-Limit", guard: "Mail-Guard", board_verdict: "5U-Urteil", watchdog_alert: "Watchdog", agent_import_failed: "Agent defekt", validation_blocked: "Rückfrage", error: "Fehler", warn: "Warnung" };
+const KIND_LABEL = { log_error: "Log error", clarification_loop: "Clarification limit", clarification_unknown: "Send unclear", clarification_capped: "Clarification limit", guard: "Mail guard", board_verdict: "5U verdict", watchdog_alert: "Watchdog", agent_import_failed: "Agent broken", validation_blocked: "Clarification", error: "Error", warn: "Warning" };
 const kindLabel = (k) => KIND_LABEL[k] || k.replace(/_/g, " ");
-const ago = (iso) => { if (!iso) return ""; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "gerade eben" : m < 60 ? `vor ${m} min` : `vor ${Math.floor(m / 60)} h ${m % 60} min`; };
+const ago = (iso) => { if (!iso) return ""; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`; };
 let PROBLEMS = null;
 let LOCAL_MESSAGES = [];
 try { const saved = JSON.parse(localStorage.getItem("ap.messages.v1") || "[]"); if (Array.isArray(saved)) LOCAL_MESSAGES = saved.filter(g => g && typeof g.message === "string" && Array.isArray(g.sessions) && ["warn", "error"].includes(g.level)).slice(0, 100); } catch {}
@@ -480,7 +486,7 @@ function problemGroups() { return [...LOCAL_MESSAGES, ...(PROBLEMS?.groups || []
 
 function problemRow(g) {
   const fresh = g.level === "error" && g.last_event_id > (S.problemsSeen || 0);
-  const msg = el("div", { class: "msg" + (S.problemExpanded.has(g.key) ? " full" : ""), role: "button", tabindex: "0", title: "Ganze Meldung anzeigen" }, g.message || "(ohne Text)");
+  const msg = el("div", { class: "msg" + (S.problemExpanded.has(g.key) ? " full" : ""), role: "button", tabindex: "0", title: "Show full message" }, g.message || "(no text)");
   const expand = () => { msg.classList.toggle("full"); if (msg.classList.contains("full")) S.problemExpanded.add(g.key); else S.problemExpanded.delete(g.key); };
   msg.addEventListener("click", expand);
   msg.addEventListener("keydown", e => { if (["Enter", " "].includes(e.key)) { e.preventDefault(); expand(); } });
@@ -488,12 +494,12 @@ function problemRow(g) {
     el("span", { class: "ic" }, icon(g.level === "error" ? "x" : "alert")),
     el("div", { style: "min-width:0" }, msg,
       el("div", { class: "meta" }, el("span", { class: "badge-s " + (g.level === "error" ? "red" : "orange") }, kindLabel(g.kind)),
-        fresh ? el("span", { class: "badge-s red" }, "neu") : null,
-        el("span", {}, `${hm(g.last_at)} · ${ago(g.last_at)}` + (g.count > 1 ? ` · seit ${hm(g.first_at)}` : "")),
+        fresh ? el("span", { class: "badge-s red" }, "new") : null,
+        el("span", {}, `${hm(g.last_at)} · ${ago(g.last_at)}` + (g.count > 1 ? ` · since ${hm(g.first_at)}` : "")),
         ...g.sessions.map((x) => el("button", { class: "chip", title: [x.subject, x.customer].filter(Boolean).join(" · "), onclick: () => select(x.id) }, "#" + x.id + (x.customer ? " " + x.customer.replace("@hackloop.mail", "").split("-")[0] : ""))))),
-    el("div", { class: "count" }, g.count + "×", el("small", {}, g.sessions.length ? g.sessions.length + " Sess." : "System"),
-      el("button", { class: "chip", onclick: e => copyMail(g.message || "", e.currentTarget) }, "Kopieren"),
-      el("button", { class: "chip", title: "Als erledigt ausblenden, bis die Meldung neu auftritt", onclick: () => ackProblems([g]) }, icon("check"), "Erledigt")));
+    el("div", { class: "count" }, g.count + "×", el("small", {}, g.sessions.length ? g.sessions.length + " sessions" : "System"),
+      el("button", { class: "chip", onclick: e => copyMail(g.message || "", e.currentTarget) }, "Copy"),
+      el("button", { class: "chip", title: "Hide as done until it occurs again", onclick: () => ackProblems([g]) }, icon("check"), "Done")));
 }
 async function ackProblems(groups) {
   if (!groups.length) return;
@@ -503,31 +509,31 @@ async function ackProblems(groups) {
     LOCAL_MESSAGES = LOCAL_MESSAGES.filter(g => !done.has(g.key)); saveMessages();
     if (PROBLEMS) PROBLEMS.groups = PROBLEMS.groups.filter(g => !done.has(g.key));
     renderProblems(); errBadge();
-  } catch (e) { bufferMessage("Meldung konnte nicht als erledigt markiert werden. " + e.message); }
+  } catch (e) { bufferMessage("Could not mark the message as done. " + e.message); }
 }
 function renderProblems() {
   const box = $("#problems"); if (!box) return;
   const all = problemGroups(), f = S.probFilter || "all", groups = all.filter(g => f === "all" || g.level === f);
-  $("#prob-seg").replaceChildren(...[["all", `Alle ${all.length}`], ["error", `Fehler ${all.filter(g => g.level === "error").length}`], ["warn", `Warnungen ${all.filter(g => g.level === "warn").length}`]].map(([key, label]) =>
+  $("#prob-seg").replaceChildren(...[["all", `All ${all.length}`], ["error", `Errors ${all.filter(g => g.level === "error").length}`], ["warn", `Warnings ${all.filter(g => g.level === "warn").length}`]].map(([key, label]) =>
     el("button", { class: f === key ? "active" : "", onclick: () => { S.probFilter = key; renderProblems(); } }, label)));
   box.replaceChildren(groups.length ? el("div", {},
-    el("div", { style: "display:flex;justify-content:flex-end;margin-bottom:12px" }, el("button", { class: "chip", onclick: () => ackProblems(groups) }, icon("check"), "Alle als erledigt")),
-    el("div", { class: "probs" }, ...groups.map(problemRow))) : emptyState("check", "Keine offenen Meldungen in diesem Filter."));
+    el("div", { style: "display:flex;justify-content:flex-end;margin-bottom:12px" }, el("button", { class: "chip", onclick: () => ackProblems(groups) }, icon("check"), "Mark all as done")),
+    el("div", { class: "probs" }, ...groups.map(problemRow))) : emptyState("check", "No open messages for this filter."));
 }
 async function copyText(url, btn) {
   const old = btn.innerHTML; btn.disabled = true;
   try {
     const { text } = await api(url);
     await copyPlainText(text, btn);
-    btn.title = `Kopiert · ${Math.round(text.length / 1000)}k Zeichen`;
-  } catch (e) { bufferMessage("Kopieren fehlgeschlagen: " + e.message); }
+    btn.title = `Copied · ${Math.round(text.length / 1000)}k characters`;
+  } catch (e) { bufferMessage("Copy failed: " + e.message); }
   finally { btn.disabled = false; btn.innerHTML = old; }
 }
 // A passive counter replaces automatic error and warning pop-ups.
 function errBadge() {
   const groups = problemGroups(), b = $("#err-badge"); if (!b) return;
   b.textContent = groups.length || ""; b.className = "badge" + (groups.some(g => g.level === "error") ? " err" : "");
-  b.title = groups.length + " gesammelte Fehler und Warnungen";
+  b.title = groups.length + " collected errors and warnings";
 }
 const PROB_HOURS = [3, 12, 24];
 async function loadErrors() {
@@ -536,16 +542,16 @@ async function loadErrors() {
   if (S.page !== "errors") return;
   if (problems) PROBLEMS = problems;
   const range = el("div", { class: "seg" }, ...PROB_HOURS.map(h => el("button", { class: h === hours ? "active" : "", onclick: () => { S.probHours = h; loadErrors(); } }, `${h} h`)));
-  const quarantineBox = el("details", { class: "card s12 detail-fold" }, el("summary", {}, "Quarantäne", el("span", { class: "caption" }, quarantine.length + " Mails")),
+  const quarantineBox = el("details", { class: "card s12 detail-fold" }, el("summary", {}, "Quarantine", el("span", { class: "caption" }, quarantine.length + " mails")),
     el("div", { class: "fold-body" }, ...quarantine.map(q => el("div", { class: "attn-item quarantine" }, icon("stop"),
       el("div", { style: "min-width:0;flex:1" }, el("div", { class: "t" }, q.subject || "Mail " + q.mail_id), el("div", { class: "d" }, q.sender || "")),
-      el("button", { class: "btn sm", onclick: e => releaseMail(q.mail_id, e.currentTarget) }, "Freigeben")))));
+      el("button", { class: "btn sm", onclick: e => releaseMail(q.mail_id, e.currentTarget) }, "Release")))));
   quarantineBox.open = Boolean($("#errors details")?.open);
   $("#errors").replaceChildren(el("section", {class:"card s12 settings-intro"},
-    el("div", {class:"avatar"}, "AP"), el("div", {}, el("h3", {}, "Austrian Power"), el("p", {class:"caption"}, "Meldungen prüfen und den aktuellen Systemkontext kopieren.")),
-    el("button", {class:"btn", onclick:e => copyText("/api/context", e.currentTarget)}, icon("inbox"), "Lagebild kopieren")),
+    el("div", {class:"avatar"}, "AP"), el("div", {}, el("h3", {}, "Austrian Power"), el("p", {class:"caption"}, "Review messages and copy the current system context.")),
+    el("button", {class:"btn", onclick:e => copyText("/api/context", e.currentTarget)}, icon("inbox"), "Copy status report")),
     el("div", { class: "card s12" },
-    el("div", { class: "card-h" }, el("div", {}, el("h3", {}, "Gesammelte Meldungen"), el("div", { class: "caption" }, `Servermeldungen der letzten ${hours} h. Browsermeldungen bleiben auf diesem Gerät bis zur Bestätigung gespeichert.`)), range),
+    el("div", { class: "card-h" }, el("div", {}, el("h3", {}, "Collected messages"), el("div", { class: "caption" }, `Server messages from the last ${hours} h. Browser messages stay on this device until you mark them done.`)), range),
     el("div", { class: "seg", id: "prob-seg", style: "margin-bottom:16px" }), el("div", { id: "problems" })), ...(quarantine.length ? [quarantineBox] : []));
   renderProblems(); errBadge();
 }
@@ -553,14 +559,14 @@ document.addEventListener("visibilitychange", () => { if (document.hidden && PRO
 async function releaseMail(id, btn) {
   btn.disabled = true;
   try { const r = await post(`/api/mails/${id}/release`); if (r.session_id) select(r.session_id); else if (S.page === "errors") loadErrors(); else loadOverview(); }
-  catch (e) { btn.disabled = false; bufferMessage("Freigabe fehlgeschlagen: " + e.message, "error", null); }
+  catch (e) { btn.disabled = false; bufferMessage("Release failed: " + e.message, "error", null); }
 }
 
 // ---------- request detail, reached only through a request link ----------
 async function loadSessions() { S.sessions = await api("/api/sessions").catch(() => S.sessions); }
 async function select(id, updateHistory = true) {
   if (S.page !== "session") S.returnPage = S.page;
-  if (S.selected !== id) { S.reply = {}; S.foldOpen = new Set(); DRAFT = null; S.detail = null; $("#detail").replaceChildren(emptyState("clock", "Anfrage wird geladen …")); window.scrollTo(0, 0); }
+  if (S.selected !== id) { S.reply = {}; S.foldOpen = new Set(); DRAFT = null; S.detail = null; $("#detail").replaceChildren(emptyState("clock", "Loading request …")); window.scrollTo(0, 0); }
   S.selected = id; show("session", updateHistory); await loadDetail();
 }
 async function loadDetail() {
@@ -573,38 +579,38 @@ async function loadDetail() {
   } catch (e) {
     if (id !== S.selected || request !== S.detailRequest) return;
     S.detail = null;
-    $("#detail").replaceChildren(el("button", { class: "btn detail-back", onclick: () => show("overview") }, "Zurück zu den Anfragen"), emptyState("alert", "Anfrage konnte nicht geladen werden."));
-    bufferMessage("Anfrage #" + id + " konnte nicht geladen werden. " + e.message, "error", id);
+    $("#detail").replaceChildren(el("button", { class: "btn detail-back", onclick: () => show("overview") }, "Back to requests"), emptyState("alert", "Request could not be loaded."));
+    bufferMessage("Request #" + id + " could not be loaded. " + e.message, "error", id);
   }
 }
-const act = (path, confirmText) => async () => { if (confirmText && !confirm(confirmText)) return; try { await post(`/api/sessions/${S.selected}/${path}`); } catch (e) { bufferMessage("Aktion fehlgeschlagen: " + e.message); } await Promise.all([loadDetail(), loadSessions()]); };
+const act = (path, confirmText) => async () => { if (confirmText && !confirm(confirmText)) return; try { await post(`/api/sessions/${S.selected}/${path}`); } catch (e) { bufferMessage("Action failed: " + e.message); } await Promise.all([loadDetail(), loadSessions()]); };
 function currentQuote(s) { if (s.bookings && s.bookings.length && s.bookings[0].quote_id) return (s.quotes || []).find(q => q.id === s.bookings[0].quote_id); return s.workflow ? (s.quotes || []).find(q => q.id === s.workflow.active_quote_id) : (s.quotes || [])[0]; }
 function laneOf(s) { const r = s.request || {}, q = currentQuote(s) || {}; const o = r.origin || q.origin, d = r.destination || q.destination, parts = [];
-  if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(({fastest:"schnellste Verbindung",cheapest:"günstigstes Angebot"})[r.preference || r.mode] || r.preference || r.mode); return parts.join(" · "); }
+  if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(({fastest:"fastest connection",cheapest:"cheapest offer"})[r.preference || r.mode] || r.preference || r.mode); return parts.join(" · "); }
 function costCard(s) {
   const u = s.llm_usage || { calls: [], call_count: 0, total_micro_usd: 0, input_tokens: 0, output_tokens: 0 };
-  const dollars = (v) => v == null ? "Unbekannt" : Number(v / 1e6).toLocaleString("de-DE", { minimumFractionDigits: 6, maximumFractionDigits: 6 }) + " USD";
-  const count = (v) => v == null ? "Nicht gemeldet" : Number(v).toLocaleString("de-DE");
-  const c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "API-Kosten dieser RFQ")),
-    el("div", { class: "why-total" }, el("b", {}, dollars(u.total_micro_usd)), el("span", { class: "muted" }, `${u.call_count} Aufrufe · Input ${count(u.input_tokens)} · Output ${count(u.output_tokens)}`)),
-    el("p", { class: "caption" }, "Schätzung nach OpenAI-Modellpreisen in USD. Cached Input ist Teil des Inputs; Reasoning ist bereits im Output enthalten. Keine doppelte Berechnung."));
-  if (u.incomplete_calls) c.append(el("p", { class: "notice" }, `${u.incomplete_calls} Aufrufe ohne Preis oder Verbrauchsdaten. Bekannte Teilsumme: ${dollars(u.known_cost_micro_usd)}.`));
-  if (u.legacy_calls) c.append(el("p", { class: "caption" }, "Historische Aufrufe: ursprüngliche Kostenschätzung erhalten; Cache-, Reasoning- und Preisdetails wurden damals nicht gespeichert."));
-  if (!u.calls.length) c.append(el("p", { class: "muted" }, "Noch keine LLM-Aufrufe für diese RFQ erfasst."));
+  const dollars = (v) => v == null ? "Unknown" : Number(v / 1e6).toLocaleString("en-GB", { minimumFractionDigits: 6, maximumFractionDigits: 6 }) + " USD";
+  const count = (v) => v == null ? "Not reported" : Number(v).toLocaleString("en-GB");
+  const c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "API cost of this RFQ")),
+    el("div", { class: "why-total" }, el("b", {}, dollars(u.total_micro_usd)), el("span", { class: "muted" }, `${u.call_count} calls · input ${count(u.input_tokens)} · output ${count(u.output_tokens)}`)),
+    el("p", { class: "caption" }, "Estimate from OpenAI model prices in USD. Cached input is part of input; reasoning is already included in output. Nothing is counted twice."));
+  if (u.incomplete_calls) c.append(el("p", { class: "notice" }, `${u.incomplete_calls} calls without price or usage data. Known partial sum: ${dollars(u.known_cost_micro_usd)}.`));
+  if (u.legacy_calls) c.append(el("p", { class: "caption" }, "Historic calls: the original cost estimate is kept; cache, reasoning and price details were not stored at the time."));
+  if (!u.calls.length) c.append(el("p", { class: "muted" }, "No LLM calls recorded for this RFQ yet."));
   for (const call of u.calls) {
     const a = call.accounting, t = a && a.tokens, rates = a && a.rates, costs = a && a.components_micro_usd;
-    const wrap = el("details", {}, el("summary", {}, `${call.purpose || "Aufruf"} · ${call.model || "Modell unbekannt"} · ${dollars(a && a.status !== "estimated" ? null : call.cost_micro_usd)}`));
+    const wrap = el("details", {}, el("summary", {}, `${call.purpose || "Call"} · ${call.model || "Unknown model"} · ${dollars(a && a.status !== "estimated" ? null : call.cost_micro_usd)}`));
     const rows = t ? [
-      [t.cached_input == null ? "Input (Cache unbekannt)" : "Input ohne Cache", t.input - (t.cached_input || 0), rates && rates.input, costs && costs.input],
+      [t.cached_input == null ? "Input (cache unknown)" : "Uncached input", t.input - (t.cached_input || 0), rates && rates.input, costs && costs.input],
       ["Cached Input", t.cached_input, rates && rates.cached_input, costs && costs.cached_input],
-      ["Output inkl. Reasoning", t.output, rates && rates.output, costs && costs.output],
-      ["Davon Reasoning", t.reasoning, null, null]
+      ["Output incl. reasoning", t.output, rates && rates.output, costs && costs.output],
+      ["Of which reasoning", t.reasoning, null, null]
     ] : [["Input", call.prompt_tokens, null, null], ["Output", call.completion_tokens, null, null]];
-    const table = el("table", { class: "list" }, el("thead", {}, el("tr", {}, ...["Tokenart", "Tokens", "USD / 1 Mio.", "Kosten"].map(x => el("th", {}, x)))),
+    const table = el("table", { class: "list" }, el("thead", {}, el("tr", {}, ...["Token type", "Tokens", "USD / 1M", "Cost"].map(x => el("th", {}, x)))),
       el("tbody", {}, ...rows.map(([label, tokens, rate, cost]) => el("tr", {}, el("td", {}, label), el("td", { class: "num" }, count(tokens)), el("td", { class: "num" }, rate == null ? "" : String(rate)), el("td", { class: "num" }, cost == null ? "" : dollars(Number(cost)))))));
     wrap.append(el("div", { style: "overflow-x:auto" }, table));
-    if (t && t.cached_input == null) wrap.append(el("p", { class: "caption" }, "Gateway meldet keinen Cache-Anteil. Input zum regulären Tarif geschätzt."));
-    if (a && (a.prompt_details || a.completion_details)) wrap.append(el("details", {}, el("summary", {}, "Weitere gemeldete Tokenarten"), el("pre", {}, JSON.stringify({ input: a.prompt_details, output: a.completion_details }, null, 2))));
+    if (t && t.cached_input == null) wrap.append(el("p", { class: "caption" }, "The gateway reports no cached share. Input estimated at the regular rate."));
+    if (a && (a.prompt_details || a.completion_details)) wrap.append(el("details", {}, el("summary", {}, "Other reported token types"), el("pre", {}, JSON.stringify({ input: a.prompt_details, output: a.completion_details }, null, 2))));
     c.append(wrap);
   }
   return c;
@@ -622,62 +628,62 @@ function renderDetail() {
     const form = $("#reply");
     if (form) S.reply = { open: form.style.display !== "none", text: $("#reply-text").value, mailId: $("#reply-mail").value, info: $("#draft-info").textContent };
   }
-  const back = el("button", { class: "btn ghost detail-back", onclick: () => show(S.returnPage || "overview") }, "← Zurück zu " + ({overview:"den Anfragen",crm:"CRM",errors:"den Meldungen"}[S.returnPage] || "den Anfragen"));
+  const back = el("button", { class: "btn ghost detail-back", onclick: () => show(S.returnPage || "overview") }, "← Back to " + ({overview:"requests",crm:"CRM",errors:"messages"}[S.returnPage] || "requests"));
   if (s.case_worker) {
-    const c = s.case_worker, w = c.workspace || {}, labels = {pending:"Fall eingeplant",running:"Fall wird bearbeitet",waiting:"Warte auf ergänzende Informationen",done:"Fall beantwortet",review:"Prüfung erforderlich",unknown:"Versand oder Buchung unbestätigt",superseded:"Durch neue Nachricht ersetzt"};
+    const c = s.case_worker, w = c.workspace || {}, labels = {pending:"Case scheduled",running:"Case in progress",waiting:"Waiting for more information",done:"Case answered",review:"Review required",unknown:"Send or booking unconfirmed",superseded:"Replaced by a newer message"};
     const findings = Object.fromEntries(((w.last_audit || {}).findings || []).map(f => [f.task_id,f]));
     notices.push(el("div",{class:"notice"},el("strong",{},labels[c.status] || c.status),
-      el("div",{},"Stand " + c.version + " · " + Object.keys(w.shipments || {}).length + " Sendungen · " + Object.keys(w.artifacts || {}).length + " Dokumente"),
-      ...Object.values(w.tasks || {}).map(t => el("div",{},(w.superseded && w.superseded[t.id] ? "Ersetzt · " : findings[t.id] && findings[t.id].status === "satisfied" ? "Geprüft · " : "Offen · ") + t.description)),
-      el("details",{},el("summary",{},"Letzte Arbeitsschritte"),...(w.observations || []).slice(-6).map(o => el("div",{},o.tool + " · " + (o.ok ? "ausgeführt" : (o.result.reason || "Prüfung erforderlich")))))));
+      el("div",{},"Version " + c.version + " · " + Object.keys(w.shipments || {}).length + " shipments · " + Object.keys(w.artifacts || {}).length + " documents"),
+      ...Object.values(w.tasks || {}).map(t => el("div",{},(w.superseded && w.superseded[t.id] ? "Replaced · " : findings[t.id] && findings[t.id].status === "satisfied" ? "Checked · " : "Open · ") + t.description)),
+      el("details",{},el("summary",{},"Latest steps"),...(w.observations || []).slice(-6).map(o => el("div",{},o.tool + " · " + (o.ok ? "done" : (o.result.reason || "review required")))))));
   }
   if (s.workflow) {
-    const w = s.workflow, labels = {interpreting:"Kundenantwort wird geprüft",repricing:"Geänderte Anfrage wird kalkuliert",answering:"Kundenfragen werden beantwortet",awaiting_customer:"Warte auf Kundenfreigabe",awaiting_price_approval:"Warte auf Freigabe des geänderten Preises",booking:"Buchung läuft",booked:"Gebucht",needs_review:"Prüfung erforderlich",closed:"Abgelehnt",deferred:"Vom Kunden zurückgestellt"};
-    notices.push(el("div",{class:"notice"},el("strong",{},labels[w.phase] || "Prüfung läuft"),el("div",{},"Anfragestand " + w.request_version + (w.active_quote_id ? " · Aktives Angebot " + w.active_quote_id : " · Kein aktuelles Angebot")),...w.open_items.map(item => el("div",{},item))));
+    const w = s.workflow, labels = {interpreting:"Checking customer reply",repricing:"Pricing the changed request",answering:"Answering customer questions",awaiting_customer:"Waiting for customer approval",awaiting_price_approval:"Waiting for approval of the changed price",booking:"Booking in progress",booked:"Booked",needs_review:"Review required",closed:"Declined",deferred:"Postponed by customer"};
+    notices.push(el("div",{class:"notice"},el("strong",{},labels[w.phase] || "Review in progress"),el("div",{},"Request version " + w.request_version + (w.active_quote_id ? " · Active quote " + w.active_quote_id : " · No current quote")),...w.open_items.map(item => el("div",{},item))));
   }
   if (s.validation) {
     const v = s.validation, d = v.draft || {};
-    const states = {awaiting_clarification: "Warte auf ergänzende Angaben", resolving: "Antwort wird geprüft", ready: "Angaben geklärt", manual_review: "Manuelle Prüfung erforderlich", expired: "Ursprüngliche Anfragefrist abgelaufen"};
-    const delivery = v.send_state === "unknown" ? " · Versand der Rückfrage unbestätigt" : v.send_state === "pending" && v.state === "awaiting_clarification" ? " · Rückfrage wartet auf Versand" : "";
+    const states = {awaiting_clarification: "Waiting for missing details", resolving: "Checking the answer", ready: "Details clarified", manual_review: "Manual review required", expired: "Original request deadline passed"};
+    const delivery = v.send_state === "unknown" ? " · Clarification send unconfirmed" : v.send_state === "pending" && v.state === "awaiting_clarification" ? " · Clarification waiting to be sent" : "";
     notices.push(el("div", { class: "notice" }, (states[v.state] || v.state) + delivery,
       ...(d.issues || []).map((i) => el("div", {}, i.field + ": " + (i.detail || i.code))),
-      el("details", {}, el("summary", {}, "Geprüfte Angaben und Quellen"), el("pre", { style: "white-space:pre-wrap" }, JSON.stringify({facts:d.facts,evidence:d.evidence},null,2)))));
+      el("details", {}, el("summary", {}, "Checked details and sources"), el("pre", { style: "white-space:pre-wrap" }, JSON.stringify({facts:d.facts,evidence:d.evidence},null,2)))));
   }
-  if (s.mode === "manual") notices.push(el("div", { class: "notice" }, icon("hand"), "Ein Mensch hat diese Session übernommen. Der Agent antwortet hier nicht mehr."));
-  if (S.globalPause) notices.push(el("div", { class: "notice" }, icon("stop"), "Globaler Stopp aktiv: es werden keine Mails gesendet."));
+  if (s.mode === "manual") notices.push(el("div", { class: "notice" }, icon("hand"), "A person has taken over this session. The agent no longer replies here."));
+  if (S.globalPause) notices.push(el("div", { class: "notice" }, icon("stop"), "Global stop active: no mail is being sent."));
   const head = el("div", { class: "card" },
     el("div", { class: "detail-head" }, el("div", {}, el("h2", {}, laneOf(s) || s.subject || "Session " + s.id),
-      el("div", { class: "meta" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "pausiert") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", "")), el("span", { class: "faint" }, "#" + s.id), s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Manuell") : null)), countdown(s)),
+      el("div", { class: "meta" }, badge(s.status), s.paused ? el("span", { class: "badge-s orange" }, "Paused") : null, el("span", {}, (s.customer || "").replace("@hackloop.mail", "")), el("span", { class: "faint" }, "#" + s.id), s.mode === "manual" ? el("span", { class: "badge-s orange" }, "Manual") : null)), countdown(s)),
     el("div", { class: "actions" },
-      s.paused ? el("button", { class: "btn", onclick: act("resume") }, icon("play"), "Fortsetzen") : el("button", { class: "btn", onclick: act("pause") }, icon("pause"), "Pausieren"),
-      s.mode === "manual" ? el("button", { class: "btn", onclick: act("handback") }, icon("undo"), "An Agent zurückgeben") : el("button", { class: "btn", onclick: act("takeover", "Session übernehmen? Der Agent sendet danach nichts mehr in diesem Thread.") }, icon("hand"), "Übernehmen"),
-      el("button", { class: "btn", onclick: loadDraft, title: "Preis aus Tarifblatt, Portal und Geboten berechnen und eine fertige Quote ins Antwortfeld setzen" }, icon("coin"), "Notfall-Quote"),
-      el("button", { class: "btn", title: "Ganze Session (Mails mit Anhängen, Quotes, Agent-Schritte, Logs) als Text kopieren. In eine normale Claude-Session einfügen, sie schreibt die nächste Mail", onclick: (e) => copyText(`/api/sessions/${s.id}/context`, e.currentTarget) }, icon("inbox"), "Kontext kopieren"),
-      el("a", { class: "btn ghost", href: `/api/sessions/${s.id}/context.zip`, download: "", title: "Kontext plus Original-Anhänge (Bilder, Scans, Sprachnachrichten) als ZIP herunterladen" }, icon("download"), "ZIP"),
-      el("button", { class: "btn primary", onclick: () => toggleReply(true) }, icon("send"), "Antworten")),
-    el("div", { id: "reply", style: "display:none;margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
+      s.paused ? el("button", { class: "btn", onclick: act("resume") }, icon("play"), "Resume") : el("button", { class: "btn", onclick: act("pause") }, icon("pause"), "Pause"),
+      s.mode === "manual" ? el("button", { class: "btn", onclick: act("handback") }, icon("undo"), "Hand back to agent") : el("button", { class: "btn", onclick: act("takeover", "Take over this session? The agent will send nothing more in this thread.") }, icon("hand"), "Take over"),
+      el("button", { class: "btn", onclick: loadDraft, title: "Price from tariff sheet, portal and bids and put a ready quote into the reply field" }, icon("coin"), "Emergency quote"),
+      el("button", { class: "btn", title: "Copy the whole session (mails with attachments, quotes, agent steps, logs) as text. Paste it into a normal Claude session and it writes the next mail", onclick: (e) => copyText(`/api/sessions/${s.id}/context`, e.currentTarget) }, icon("inbox"), "Copy context"),
+      el("a", { class: "btn ghost", href: `/api/sessions/${s.id}/context.zip`, download: "", title: "Download context plus original attachments (images, scans, voice messages) as ZIP" }, icon("download"), "ZIP"),
+      el("button", { class: "btn primary", onclick: () => toggleReply(true) }, icon("send"), "Reply")),
+    el("div", { id: "reply", style: "display:none;margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Only the first quote in a thread counts. Sent is sent."),
       el("div", { id: "draft-info", class: "caption", style: "margin-bottom:8px" }),
-      el("label", { class: "caption", for: "reply-mail" }, "Antworten auf"),
+      el("label", { class: "caption", for: "reply-mail" }, "Reply to"),
       el("select", { id: "reply-mail", style: "width:100%;margin:6px 0 12px" }, ...replyMails(s).map((m) => {
-        const label = [isCustomerMail(m, s) ? "Kunde" : "Anderer Absender", m.sender || "unbekannter Absender", m.subject || "Ohne Betreff", time(m.received_at)].join(" · ");
+        const label = [isCustomerMail(m, s) ? "Customer" : "Other sender", m.sender || "unknown sender", m.subject || "No subject", time(m.received_at)].join(" · ");
         return el("option", { value: String(m.id) }, label);
       })),
-      el("textarea", { id: "reply-text", placeholder: "Hallo …" }), el("div", { class: "actions" }, el("button", { class: "btn primary", onclick: sendReply }, icon("send"), "Senden"), el("button", { class: "btn ghost", onclick: () => toggleReply(false) }, "Abbrechen"))));
+      el("textarea", { id: "reply-text", placeholder: "Hello …" }), el("div", { class: "actions" }, el("button", { class: "btn primary", onclick: sendReply }, icon("send"), "Send"), el("button", { class: "btn ghost", onclick: () => toggleReply(false) }, "Cancel"))));
   const tl = el("ul", { class: "tl", id: "timeline" }); s.events.forEach(e => tl.append(eventItem(e)));
   const mails = el("div", { class: "mail-list" });
   for (const m of s.mails) mails.append(conversationMail(m, s));
-  const conversation = el("section", { class: "card conversation", "aria-label": "E-Mail-Verlauf" },
-    el("div", { class: "card-h" }, el("h3", {}, "E-Mail-Verlauf"), el("span", { class: "aside caption" }, s.mails.length + " Nachrichten")),
-    s.mails.length ? mails : emptyState("mail", "Noch keine E-Mails."));
-  const costs = costCard(s); costs.querySelector("h3").textContent = "API-Kosten";
-  const costDetails = el("details", { "data-fold": "costs" }, el("summary", {}, "Aufrufe und Token-Details"));
+  const conversation = el("section", { class: "card conversation", "aria-label": "Mail thread" },
+    el("div", { class: "card-h" }, el("h3", {}, "Mail thread"), el("span", { class: "aside caption" }, s.mails.length + " messages")),
+    s.mails.length ? mails : emptyState("mail", "No mails yet."));
+  const costs = costCard(s); costs.querySelector("h3").textContent = "API cost";
+  const costDetails = el("details", { "data-fold": "costs" }, el("summary", {}, "Calls and token details"));
   [...costs.children].slice(2).forEach(child => costDetails.append(child)); costs.append(costDetails);
   const info = requestInfo(s), flow = flowCard(s, notices);
   const timeline = el("details", { class: "card detail-fold", "data-fold": "timeline" },
-    el("summary", {}, "Agent-Protokoll", el("span", { class: "caption", id: "timeline-count" }, s.events.length + " Ereignisse")),
+    el("summary", {}, "Agent log", el("span", { class: "caption", id: "timeline-count" }, s.events.length + " events")),
     el("div", { class: "fold-body timeline-body" }, tl));
   const quote = el("details", { class: "card detail-fold", "data-fold": "quote" },
-    el("summary", {}, "Angebot, Preisvergleich und Buchung"), el("div", { class: "fold-body" }, whyCard(s), s.bookings.length ? bookingCard(s) : null, boardCard(s)));
+    el("summary", {}, "Quote, price comparison and booking"), el("div", { class: "fold-body" }, whyCard(s), s.bookings.length ? bookingCard(s) : null, boardCard(s)));
   $("#detail").replaceChildren(back, head, el("div", { class: "session-metrics" }, info, flow, costs), conversation, quote, timeline);
   for (const fold of $("#detail").querySelectorAll("details[data-fold]")) fold.open = S.foldOpen.has(fold.dataset.fold);
   const reply = S.reply;
@@ -689,78 +695,78 @@ function renderDetail() {
 }
 function requestInfo(s) {
   const r = s.request || {}, q = currentQuote(s);
-  const quantity = (value, unit) => value == null ? "Noch offen" : Number(value).toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " " + unit;
-  const facts = [["Route", [r.origin || q?.origin, r.destination || q?.destination].filter(Boolean).join(" → ") || "Noch offen"], ["Gewicht", quantity(r.weight_kg, "kg")], ["Volumen", quantity(r.volume_cbm, "m³")],
-    ["Packstücke", r.pieces ?? "Noch offen"], ["Bereit ab", r.ready_date ? new Date(r.ready_date).toLocaleDateString("de-DE", {day:"numeric",month:"long",year:"numeric"}) : "Noch offen"],
-    ["Angebot", q ? money(q.total_minor, q.currency) : "Noch offen"], ["Priorität", ({cheapest:"Günstigster Preis",fastest:"Kürzeste Laufzeit"})[r.preference] || "Noch offen"]];
-  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Sendungsinfos"), el("button", {class:"btn ghost aside", "aria-label":"Sendungsinfos kopieren", title:"Sendungsinfos kopieren", onclick:e => copyMail(facts.map(([label,value]) => label + "\n" + value).join("\n\n"),e.currentTarget)}, icon("inbox"))),
+  const quantity = (value, unit) => value == null ? "Pending" : Number(value).toLocaleString("en-GB", { maximumFractionDigits: 2 }) + " " + unit;
+  const facts = [["Route", [r.origin || q?.origin, r.destination || q?.destination].filter(Boolean).join(" → ") || "Pending"], ["Weight", quantity(r.weight_kg, "kg")], ["Volume", quantity(r.volume_cbm, "m³")],
+    ["Pieces", r.pieces ?? "Pending"], ["Ready from", r.ready_date ? new Date(r.ready_date).toLocaleDateString("en-GB", {day:"numeric",month:"long",year:"numeric"}) : "Pending"],
+    ["Quote", q ? money(q.total_minor, q.currency) : "Pending"], ["Priority", ({cheapest:"Lowest price",fastest:"Shortest transit"})[r.preference] || "Pending"]];
+  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Shipment"), el("button", {class:"btn ghost aside", "aria-label":"Copy shipment details", title:"Copy shipment details", onclick:e => copyMail(facts.map(([label,value]) => label + "\n" + value).join("\n\n"),e.currentTarget)}, icon("inbox"))),
     el("dl", { class: "facts" }, ...facts.map(([key, value]) => el("div", {}, el("dt", {}, key), el("dd", {}, value)))));
 }
 function flowCard(s, notices) {
   const q = currentQuote(s), b = s.bookings[0];
-  const phases = { interpreting:"Kundenantwort wird geprüft",repricing:"Geänderte Anfrage wird kalkuliert",answering:"Kundenfragen werden beantwortet",awaiting_customer:"Wartet auf Kundenfreigabe",awaiting_price_approval:"Wartet auf Preisfreigabe",booking:"Buchung läuft",booked:"Gebucht",needs_review:"Prüfung erforderlich",closed:"Abgeschlossen",deferred:"Vom Kunden zurückgestellt" };
-  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Bearbeitungsstand"), el("button", {class:"btn ghost aside", "aria-label":"Bearbeitungsstand kopieren", title:"Bearbeitungsstand kopieren", onclick:e => copyMail(["Anfrage #" + s.id, "Status " + (STATUS[s.status]?.[0] || s.status), q ? "Angebot " + money(q.total_minor,q.currency) : "Angebot noch offen", b ? "Buchung " + (b.booking_reference || b.team_reference) : "Buchung noch offen"].join("\n"),e.currentTarget)}, icon("inbox"))),
-    el("div", { class: "flow-steps" }, ...[["Anfrage", true, hm(s.created_at)], ["Angebot", Boolean(q), q ? hm(q.sent_at) : "Noch offen"], ["Buchung", Boolean(b && b.status === "confirmed"), b ? b.status : "Noch offen"]].map(([label, done, text]) =>
+  const phases = { interpreting:"Checking customer reply",repricing:"Pricing the changed request",answering:"Answering customer questions",awaiting_customer:"Waiting for customer approval",awaiting_price_approval:"Waiting for price approval",booking:"Booking in progress",booked:"Booked",needs_review:"Review required",closed:"Closed",deferred:"Postponed by customer" };
+  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Progress"), el("button", {class:"btn ghost aside", "aria-label":"Copy progress", title:"Copy progress", onclick:e => copyMail(["Request #" + s.id, "Status " + (STATUS[s.status]?.[0] || s.status), q ? "Quote " + money(q.total_minor,q.currency) : "Quote pending", b ? "Booking " + (b.booking_reference || b.team_reference) : "Booking pending"].join("\n"),e.currentTarget)}, icon("inbox"))),
+    el("div", { class: "flow-steps" }, ...[["Request", true, hm(s.created_at)], ["Quote", Boolean(q), q ? hm(q.sent_at) : "Pending"], ["Booking", Boolean(b && b.status === "confirmed"), b ? b.status : "Pending"]].map(([label, done, text]) =>
       el("div", { class: "flow-step" + (done ? " done" : "") }, el("span", { class: "flow-dot" }, icon(done ? "check" : "clock")), el("b", {}, label), el("small", {}, text)))),
-    s.workflow ? el("p", { class: "caption" }, phases[s.workflow.phase] || "Bearbeitung läuft") : null,
-    notices.length ? el("details", { "data-fold": "checks" }, el("summary", {}, "Prüfungen und offene Angaben"), ...notices) : null);
+    s.workflow ? el("p", { class: "caption" }, phases[s.workflow.phase] || "In progress") : null,
+    notices.length ? el("details", { "data-fold": "checks" }, el("summary", {}, "Checks and open details"), ...notices) : null);
 }
 function eventItem(e) {
   return el("li", { class: e.level || "", "data-event-id": e.id }, el("details", { class: "event-entry", "data-fold": "event-" + e.id },
     el("summary", {}, el("span", { class: "time" }, time(e.created_at)), el("span", { class: "msg" }, e.message || e.kind),
-      el("span", { class: "x" }, e.level === "error" ? "Fehler" : e.level === "warn" ? "Warnung" : "Details")),
+      el("span", { class: "x" }, e.level === "error" ? "Error" : e.level === "warn" ? "Warning" : "Details")),
     el("div", { class: "log-body" }, el("div", { class: "log-message" }, e.message || e.kind), e.payload ? el("pre", {}, JSON.stringify(e.payload, null, 2)) : null)));
 }
-function whyCard(s) { const q = currentQuote(s), c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Warum diese Quote")));
-  if (!q) { c.append(emptyState("clock", OPEN.includes(s.status) ? "Noch keine Quote. Der Agent bepreist gerade." : "Keine Quote in dieser Session.")); return c; }
+function whyCard(s) { const q = currentQuote(s), c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Why this quote")));
+  if (!q) { c.append(emptyState("clock", OPEN.includes(s.status) ? "No quote yet. The agent is pricing." : "No quote in this session.")); return c; }
   const pref = s.request && (s.request.preference || s.request.mode);
-  c.append(el("div", { class: "why-total" }, el("b", {}, money(q.total_minor, q.currency)), el("span", { class: "muted" }, [q.airline, q.transit_days != null ? q.transit_days + " Tage" : null, "Quelle " + q.source, pref ? "gewünscht: " + pref : null].filter(Boolean).join(" · "))));
+  c.append(el("div", { class: "why-total" }, el("b", {}, money(q.total_minor, q.currency)), el("span", { class: "muted" }, [q.airline, q.transit_days != null ? q.transit_days + " days" : null, "source " + q.source, pref ? "requested: " + pref : null].filter(Boolean).join(" · "))));
   const alts = [...(q.alternatives || [])].filter((a) => a.airline).sort((a, b) => ((a.total_minor ?? a.total_eur_minor) ?? 1e18) - ((b.total_minor ?? b.total_eur_minor) ?? 1e18));
-  if (!alts.length) { c.append(el("div", { class: "faint" }, "Keine Alternativen gespeichert.")); return c; }
-  const t = el("table", { class: "list" }, el("thead", {}, el("tr", {}, el("th", {}, "Airline"), el("th", {}, "Quelle"), el("th", { class: "r" }, "Tage"), el("th", { class: "r" }, "Preis"))), el("tbody", {}));
+  if (!alts.length) { c.append(el("div", { class: "faint" }, "No alternatives stored.")); return c; }
+  const t = el("table", { class: "list" }, el("thead", {}, el("tr", {}, el("th", {}, "Airline"), el("th", {}, "Source"), el("th", { class: "r" }, "Days"), el("th", { class: "r" }, "Price"))), el("tbody", {}));
   for (const a of alts) { const total = a.total_minor ?? a.total_eur_minor, ch = a.airline === q.airline;
     t.tBodies[0].append(el("tr", { style: "cursor:default" + (ch ? ";color:var(--green-ink);font-weight:600" : "") }, el("td", {}, (ch ? "✓ " : "") + a.airline), el("td", { class: "muted" }, a.source || ""), el("td", { class: "r num" }, a.transit_days ?? ""), el("td", { class: "r num" }, money(total, a.currency || "EUR")))); }
   c.append(t); return c; }
 function bookingCard(s) { const b = s.bookings[0];
-  return el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Buchung"), el("span", { class: "aside badge-s " + (b.status === "failed" ? "red" : "green") }, b.status)),
+  return el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Booking"), el("span", { class: "aside badge-s " + (b.status === "failed" ? "red" : "green") }, b.status)),
     el("div", { style: "font-size:22px;font-weight:700;letter-spacing:-.03em" }, b.booking_reference || b.team_reference),
     el("div", { class: "muted", style: "margin-top:4px" }, [b.airline, money(b.price_minor, b.currency), "Rate " + (b.rate_id || "–")].join(" · "))); }
 function verdictBadge(v) { return el("span", { class: "badge-s " + (v === "accepted" ? "green" : ["open", "pending"].includes(v) ? "blue" : "red") }, v || "?"); }
-function boardCard(s) { const c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "5U-Bewertung")));
-  if (!s.board.length) c.append(el("div", { class: "faint" }, "Noch keine Bewertung."));
+function boardCard(s) { const c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "5U rating")));
+  if (!s.board.length) c.append(el("div", { class: "faint" }, "No rating yet."));
   for (const b of s.board) c.append(el("div", { style: "display:flex;gap:8px;align-items:center" }, verdictBadge(b.verdict), el("span", { class: "muted" }, b.reason || ""))); return c; }
 function toggleReply(on, focus = true) { const r = $("#reply"); if (!r) return; r.style.display = on ? "block" : "none"; S.reply.open = on; if (on && focus) $("#reply-text").focus(); }
 let DRAFT = null;
 async function loadDraft() {
-  const sid = S.selected; toggleReply(true); let info = $("#draft-info"); info.textContent = "Berechne Preis aus Tarifblatt, Portal und Geboten …"; DRAFT = null;
+  const sid = S.selected; toggleReply(true); let info = $("#draft-info"); info.textContent = "Pricing from tariff sheet, portal and bids …"; DRAFT = null;
   try {
     const d = await post(`/api/sessions/${sid}/draft`); if (S.selected !== sid) return;
     info = $("#draft-info");
     const customerMail = replyMails(S.detail).find((mail) => isCustomerMail(mail, S.detail));
     if (customerMail) { $("#reply-mail").value = String(customerMail.id); syncSelect($("#reply-mail")); }
     DRAFT = d; $("#reply-text").value = d.body; $("#reply-text").style.minHeight = "300px";
-    const opts = d.options.slice(0, 4).map((o) => `${o.airline.split(" ")[0]} ${o.transit_days} T ${euro(o.eur_minor)}`).join(" · ");
-    info.replaceChildren(el("b", {}, `Entwurf: ${money(d.total_minor)} · ${d.choice.airline} · ${d.preference === "fastest" ? "schnellste" : "günstigste"}`),
-      d.truck ? ` · Lkw ${d.truck.name} ${euro(d.truck.eur_minor)}` : "", el("br"), "Optionen: " + opts,
+    const opts = d.options.slice(0, 4).map((o) => `${o.airline.split(" ")[0]} ${o.transit_days} d ${euro(o.eur_minor)}`).join(" · ");
+    info.replaceChildren(el("b", {}, `Draft: ${money(d.total_minor)} · ${d.choice.airline} · ${d.preference === "fastest" ? "fastest" : "cheapest"}`),
+      d.truck ? ` · truck ${d.truck.name} ${euro(d.truck.eur_minor)}` : "", el("br"), "Options: " + opts,
       ...d.warnings.map((w) => el("div", { style: "color:var(--orange-ink)" }, "⚠ " + w)));
-  } catch (e) { if (S.selected !== sid) return; $("#draft-info").textContent = "Entwurf konnte nicht erstellt werden. Details im Meldungspuffer."; bufferMessage("Kein Entwurf möglich: " + e.message, "error", sid); }
+  } catch (e) { if (S.selected !== sid) return; $("#draft-info").textContent = "Draft could not be created. Details in Settings messages."; bufferMessage("No draft possible: " + e.message, "error", sid); }
 }
 async function sendReply() {
   const sid = S.selected, text = $("#reply-text").value.trim(); if (!text) return;
   const mail_id = Number($("#reply-mail").value);
   const target = S.detail.mails.find(mail => mail.id === mail_id && mail.direction === "in");
-  if (!target) { bufferMessage("Bitte eine eingegangene E-Mail als Antwortziel auswählen.", "warn", sid); return; }
-  const quote = DRAFT && text.includes(money(DRAFT.total_minor).replace(" EUR", "").trim()) ? DRAFT : null;
-  if (quote && !isCustomerMail(target, S.detail)) { bufferMessage("Eine Kundenquote kann nur an den Kunden gesendet werden.", "warn", sid); return; }
-  if (!confirm(`Antwort jetzt an ${target.sender} senden? Die Anfrage wird dabei übernommen.`)) return;
+  if (!target) { bufferMessage("Please choose an incoming mail to reply to.", "warn", sid); return; }
+  const quote = DRAFT && text.includes(mailAmount(DRAFT.total_minor)) ? DRAFT : null;
+  if (quote && !isCustomerMail(target, S.detail)) { bufferMessage("A customer quote can only be sent to the customer.", "warn", sid); return; }
+  if (!confirm(`Send the reply to ${target.sender} now? This takes over the request.`)) return;
   try {
     await post(`/api/sessions/${sid}/reply`, { text, quote, mail_id });
     if (S.selected !== sid) return;
     S.reply = {}; DRAFT = null; toggleReply(false); $("#reply-text").value = "";
     await Promise.all([loadDetail(), loadSessions()]);
   } catch (e) {
-    bufferMessage("Senden fehlgeschlagen: " + e.message, "error", sid);
-    if (S.selected === sid) $("#draft-info").textContent = "Nicht gesendet. Dein Entwurf bleibt erhalten. Details im Meldungspuffer.";
+    bufferMessage("Send failed: " + e.message, "error", sid);
+    if (S.selected === sid) $("#draft-info").textContent = "Not sent. Your draft is kept. Details in Settings messages.";
   }
 }
 
@@ -770,9 +776,9 @@ async function loadCrm() { if(isSelectOpen())return; S.crm = await api("/api/crm
 async function openCustomer(c) {
   $("#drawer-title").textContent = c.customer.replace("@hackloop.mail", "");
   const sessions = await api("/api/customers/" + encodeURIComponent(c.customer) + "/sessions").catch(() => []);
-  $("#drawer-body").replaceChildren(el("div", { class: "mini" }, el("div", {}, el("span", { class: "caption" }, "Anfragen"), el("b", {}, c.requests)), el("div", {}, el("span", { class: "caption" }, "Gewonnen"), el("b", { style: "color:var(--green-ink)" }, c.won)), el("div", {}, el("span", { class: "caption" }, "Buchungsquote"), el("b", {}, pct(c.won, c.requests)))),
-    el("div", { class: "caption", style: "margin-bottom:8px" }, "Verlauf"),
-    sessions.length ? el("table", { class: "list" }, el("tbody", {}, ...sessions.map((s) => el("tr", { onclick: () => { closeDrawer(); select(s.id); } }, el("td", { class: "muted" }, dateTime(s.created_at)), el("td", { class: "wrap" }, s.subject || ""), el("td", {}, badge(s.status)), el("td", { class: "r num" }, s.quote_total_minor != null ? money(s.quote_total_minor, s.quote_currency) : "–"))))) : emptyState("inbox", "Keine Sessions."));
+  $("#drawer-body").replaceChildren(el("div", { class: "mini" }, el("div", {}, el("span", { class: "caption" }, "Requests"), el("b", {}, c.requests)), el("div", {}, el("span", { class: "caption" }, "Won"), el("b", { style: "color:var(--green-ink)" }, c.won)), el("div", {}, el("span", { class: "caption" }, "Booking rate"), el("b", {}, pct(c.won, c.requests)))),
+    el("div", { class: "caption", style: "margin-bottom:8px" }, "History"),
+    sessions.length ? el("table", { class: "list" }, el("tbody", {}, ...sessions.map((s) => el("tr", { onclick: () => { closeDrawer(); select(s.id); } }, el("td", { class: "muted" }, dateTime(s.created_at)), el("td", { class: "wrap" }, s.subject || ""), el("td", {}, badge(s.status)), el("td", { class: "r num" }, s.quote_total_minor != null ? money(s.quote_total_minor, s.quote_currency) : "–"))))) : emptyState("inbox", "No sessions."));
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open");
 }
 function closeDrawer() { $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); }
@@ -780,10 +786,10 @@ $("#drawer-close").addEventListener("click", closeDrawer); $("#scrim").addEventL
 
 // ---------- global pause ----------
 async function loadStats() { const st = await api("/api/stats").catch(() => null); if (!st) return; S.globalPause = !!st.global_pause;
-  const b = $("#global-pause"); b.classList.toggle("on", S.globalPause); b.querySelector("span").textContent = S.globalPause ? "Mails freigeben" : "Mails stoppen"; $("#global-banner").classList.toggle("show", S.globalPause); }
+  const b = $("#global-pause"); b.classList.toggle("on", S.globalPause); b.querySelector("span").textContent = S.globalPause ? "Release mail" : "Stop mail"; $("#global-banner").classList.toggle("show", S.globalPause); }
 $("#global-pause").addEventListener("click", async () => { const stop = !S.globalPause;
-  if (stop && !confirm("Alle ausgehenden Mails stoppen? Der Agent sendet dann nichts mehr, auch keine Quotes.")) return;
-  await post(stop ? "/api/pause-all" : "/api/resume-all").catch(e => bufferMessage("Globaler Mailstopp konnte nicht geändert werden. " + e.message, "error", null)); await loadStats(); if (S.detail) renderDetail(); });
+  if (stop && !confirm("Stop all outgoing mail? The agent then sends nothing, not even quotes.")) return;
+  await post(stop ? "/api/pause-all" : "/api/resume-all").catch(e => bufferMessage("Could not change the global mail stop. " + e.message, "error", null)); await loadStats(); if (S.detail) renderDetail(); });
 
 // ---------- live stream ----------
 let refreshT = null;
@@ -796,7 +802,7 @@ function onEvent(e) {
   if(["extracted","quoted","mail_in"].includes(e.kind))S.airportOptions=null;
   if (S.seen.has(e.id)) return; S.seen.add(e.id); S.lastId = Math.max(S.lastId, e.id);
   if (S.detail && e.session_id === S.selected) {
-    const tl = $("#timeline"); if (tl) { tl.append(eventItem(e)); $("#timeline-count").textContent = tl.children.length + " Ereignisse"; }
+    const tl = $("#timeline"); if (tl) { tl.append(eventItem(e)); $("#timeline-count").textContent = tl.children.length + " events"; }
     if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted", "llm_call"].includes(e.kind)) loadDetail();
   }
   if (["warn", "error"].includes(e.level)) {
@@ -820,12 +826,12 @@ document.addEventListener("keydown", e => {
 setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "requests") loadRequests(); else if (S.page === "session") loadDetail(); }, 20000);
 function routeFromHash() {
   const hash = location.hash, match = hash.match(/^#session=(\d+)$/);
-  if (match) select(Number(match[1]), false); else show(hash === "#requests" ? "requests" : hash === "#crm" ? "crm" : hash === "#errors" ? "errors" : "overview", false);
+  if (match) select(Number(match[1]), false); else show(hash === "#requests" ? "requests" : hash === "#crm" ? "crm" : hash === "#rates" ? "rates" : hash === "#errors" ? "errors" : "overview", false);
 }
 window.addEventListener("popstate", routeFromHash);
 window.addEventListener("hashchange", routeFromHash);
-window.addEventListener("error", e => bufferMessage("Darstellungsfehler: " + e.message, "error", null));
-window.addEventListener("unhandledrejection", e => bufferMessage("Aktion konnte nicht abgeschlossen werden: " + (e.reason?.message || e.reason), "error", null));
+window.addEventListener("error", e => bufferMessage("Display error: " + e.message, "error", null));
+window.addEventListener("unhandledrejection", e => bufferMessage("Action could not be completed: " + (e.reason?.message || e.reason), "error", null));
 (async function boot() {
   const ev = await api("/api/events?since=0&limit=500").catch(() => []); S.lastId = ev.length ? ev[ev.length - 1].id : 0; ev.forEach((e) => S.seen.add(e.id));
   await Promise.all([loadStats(), loadSessions()]);

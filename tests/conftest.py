@@ -15,6 +15,7 @@ from openai import OpenAI
 from app import hackloop, llm
 from app.agents import bid_reader, booking, consent_check, email_review
 from app.mail import audio, guard, speech
+from app.ui import airport_events
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +39,13 @@ def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(bid_reader, "read", lambda *_a, **_k: None)
     monkeypatch.setattr(consent_check, "classify", lambda *_a, **_k: "unclear")
     refused: list[str] = []
+
+    def no_feed() -> list[object]:  # airport alert feeds are public sites; tests install their own
+        raise httpx.ConnectError("no live airport feeds in tests")
+
+    monkeypatch.setattr(airport_events, "_fetch_gdacs", no_feed)
+    monkeypatch.setattr(airport_events, "_fetch_faa", no_feed)
+    monkeypatch.setattr(airport_events, "_cache", {})
 
     def refuse(request: httpx.Request) -> httpx.Response:
         refused.append(f"{request.method} {request.url.path}")
