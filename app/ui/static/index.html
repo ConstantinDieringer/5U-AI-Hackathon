@@ -638,6 +638,14 @@ function renderDetail() {
     if (form) S.reply = { open: form.style.display !== "none", text: $("#reply-text").value, mailId: $("#reply-mail").value, info: $("#draft-info").textContent };
   }
   const back = el("button", { class: "btn ghost detail-back", onclick: () => show(S.returnPage || "overview") }, "← Zurück zu " + ({overview:"den Anfragen",crm:"CRM",errors:"den Meldungen"}[S.returnPage] || "den Anfragen"));
+  if (s.case_worker) {
+    const c = s.case_worker, w = c.workspace || {}, labels = {pending:"Fall eingeplant",running:"Fall wird bearbeitet",waiting:"Warte auf ergänzende Informationen",done:"Fall beantwortet",review:"Prüfung erforderlich",unknown:"Versand oder Buchung unbestätigt",superseded:"Durch neue Nachricht ersetzt"};
+    const findings = Object.fromEntries(((w.last_audit || {}).findings || []).map(f => [f.task_id,f]));
+    notices.push(el("div",{class:"notice"},el("strong",{},labels[c.status] || c.status),
+      el("div",{},"Stand " + c.version + " · " + Object.keys(w.shipments || {}).length + " Sendungen · " + Object.keys(w.artifacts || {}).length + " Dokumente"),
+      ...Object.values(w.tasks || {}).map(t => el("div",{},(w.superseded && w.superseded[t.id] ? "Ersetzt · " : findings[t.id] && findings[t.id].status === "satisfied" ? "Geprüft · " : "Offen · ") + t.description)),
+      el("details",{},el("summary",{},"Letzte Arbeitsschritte"),...(w.observations || []).slice(-6).map(o => el("div",{},o.tool + " · " + (o.ok ? "ausgeführt" : (o.result.reason || "Prüfung erforderlich")))))));
+  }
   if (s.workflow) {
     const w = s.workflow, labels = {interpreting:"Kundenantwort wird geprüft",repricing:"Geänderte Anfrage wird kalkuliert",answering:"Kundenfragen werden beantwortet",awaiting_customer:"Warte auf Kundenfreigabe",awaiting_price_approval:"Warte auf Freigabe des geänderten Preises",booking:"Buchung läuft",booked:"Gebucht",needs_review:"Prüfung erforderlich",closed:"Abgelehnt",deferred:"Vom Kunden zurückgestellt"};
     notices.push(el("div",{class:"notice"},el("strong",{},labels[w.phase] || "Prüfung läuft"),el("div",{},"Anfragestand " + w.request_version + (w.active_quote_id ? " · Aktives Angebot " + w.active_quote_id : " · Kein aktuelles Angebot")),...w.open_items.map(item => el("div",{},item))));

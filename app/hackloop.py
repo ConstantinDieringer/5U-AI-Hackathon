@@ -257,6 +257,7 @@ def send(
         imitated = None
     if imitated:
         raise QuarantinedReply(f"{to} imitates {imitated}; a person must release it first")
+    db.case_transport_guard()
     sent = _json_obj(_request("POST", "/v1/mailbox/messages", safe=False, json=payload))
     if references and sent.get("references") != [*references]:
         log.warning(
@@ -289,6 +290,7 @@ def send_customer(
     language_code: str | None = None,
     tracking_booked: bool | None = None,
     attachments: list[dict[str, str]] | None = None,
+    require_attachments: bool = False,
 ) -> dict[str, Any]:
     """All customer replies pass the final prose renderer before transport. review=False skips
     the LLM style reviewer for fixed templates. Non-English/German templates still use
@@ -401,7 +403,13 @@ def send_customer(
     except HackloopError as e:
         # a refused attachment must never cost the quote: a 4xx means nothing was stored,
         # so the same mail goes out once more without it (429 and 5xx are not retried here)
-        if not attachments or e.status is None or not 400 <= e.status < 500 or e.status == 429:
+        if (
+            require_attachments
+            or not attachments
+            or e.status is None
+            or not 400 <= e.status < 500
+            or e.status == 429
+        ):
             raise
         log.error("attachment refused (%s): sending without it", e.status)
         if session_id is not None:
@@ -509,6 +517,9 @@ def get_rate(
 def book(rate_id: str, team_reference: str) -> dict[str, Any]:
     """Book a portal rate. 201 = booked, 200 = same booking again (idempotent).
     404/409/410/503 raise HackloopError (status + detail; 503 says how to book by email)."""
+    from app import db
+
+    db.case_transport_guard()
     return _json_obj(
         _request(
             "POST",
@@ -522,6 +533,9 @@ def cancel_booking(booking_reference: str) -> dict[str, Any]:
     """Cancel one of our bookings (portal or airline email). 200 = cancelled, also on a repeat
     call (idempotent, so retries are safe); 404 = unknown or another team's. Not counted
     against the rate-read limit. Its rate_id can never be booked again."""
+    from app import db
+
+    db.case_transport_guard()
     return _json_obj(_request("DELETE", f"/v1/portal/bookings/{booking_reference}"))
 
 

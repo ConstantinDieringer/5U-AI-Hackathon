@@ -524,6 +524,8 @@ def api_health() -> dict[str, Any]:
         "tracking_notice_version": "booking-mail-and-replies-v2",
         "tracking_notice_recovery_enabled": settings.agents_enabled,
         "thread_rescue_enabled": settings.thread_rescue_enabled,
+        "case_worker_enabled": settings.case_worker_enabled,
+        "case_worker_max_steps": settings.case_worker_max_steps,
         "reply_workflow_mode": settings.reply_workflow_mode,
         "reply_workers": settings.reply_workers,
         "thread_rescue_model": settings.llm_rescue_model,

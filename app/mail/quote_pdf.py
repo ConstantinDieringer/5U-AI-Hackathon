@@ -315,18 +315,32 @@ def _content(doc: QuoteDoc) -> bytes:
 
 def render(doc: QuoteDoc) -> bytes:
     """One A4 page as PDF bytes. Deterministic for the same `doc`."""
-    stream = _content(doc)
+    return render_many([doc])
+
+
+def render_many(docs: list[QuoteDoc]) -> bytes:
+    """One page per independently priced shipment, without summing unrelated totals."""
+    if not 1 <= len(docs) <= 10:
+        raise ValueError("A quote document needs 1 to 10 shipments")
+    kids = " ".join(f"{5 + 2 * i} 0 R" for i in range(len(docs)))
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        (
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
-            b"/Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>"
-        ),
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(docs)} >>".encode("ascii"),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
-        b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
     ]
+    for index, doc in enumerate(docs):
+        stream = _content(doc)
+        objects.extend(
+            [
+                (
+                    b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+                    b"/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents "
+                    + f"{6 + 2 * index} 0 R >>".encode("ascii")
+                ),
+                b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
+            ]
+        )
     out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
     offsets: list[int] = []
     for number, body in enumerate(objects, start=1):

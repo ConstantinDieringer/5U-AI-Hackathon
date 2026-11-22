@@ -90,6 +90,10 @@ class Settings:
     thread_rescue_max_parallel: int
     thread_rescue_max_mails: int
     thread_rescue_body_chars: int
+    case_worker_enabled: bool
+    case_worker_max_steps: int
+    case_worker_workers: int
+    case_worker_max_calls: int
     llm_compose_model: str
     compose_repair: bool
     quote_template_first: bool
@@ -214,6 +218,10 @@ settings = Settings(
     # Keep enough conversation to solve unfamiliar requests and accumulated corrections.
     thread_rescue_max_mails=max(2, int(_env("THREAD_RESCUE_MAX_MAILS", "24"))),
     thread_rescue_body_chars=max(500, int(_env("THREAD_RESCUE_BODY_CHARS", "8000"))),
+    case_worker_enabled=_flag("CASE_WORKER_ENABLED", False),
+    case_worker_max_steps=max(1, min(24, int(_env("CASE_WORKER_MAX_STEPS", "16")))),
+    case_worker_workers=max(1, min(4, int(_env("CASE_WORKER_WORKERS", "2")))),
+    case_worker_max_calls=max(1, min(32, int(_env("CASE_WORKER_MAX_CALLS", "20")))),
     llm_compose_model=_text_model("LLM_COMPOSE_MODEL"),
     # a second composer call after a failed check doubles the quote's biggest cost; off =
     # the checked deterministic quote copy goes out instead

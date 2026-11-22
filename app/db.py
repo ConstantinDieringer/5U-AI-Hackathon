@@ -60,6 +60,256 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_workflow_thread_owner ON workflow_actions(s
  WHERE kind='reply' AND status='processing';
 """
 
+CASE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS case_jobs (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES sessions(id),
+ mail_id INTEGER NOT NULL UNIQUE, version INTEGER NOT NULL, status TEXT NOT NULL,
+ workspace_json TEXT NOT NULL DEFAULT '{}', lease_owner TEXT, lease_until REAL NOT NULL DEFAULT 0,
+ steps INTEGER NOT NULL DEFAULT 0, llm_calls INTEGER NOT NULL DEFAULT 0,
+ wake_requested INTEGER NOT NULL DEFAULT 0,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_case_pending ON case_jobs(status,id);
+CREATE TABLE IF NOT EXISTS case_steps (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL REFERENCES case_jobs(id),
+ signature TEXT NOT NULL, tool TEXT NOT NULL, arguments_json TEXT NOT NULL,
+ status TEXT NOT NULL, result_json TEXT, updated_at TEXT NOT NULL,
+ UNIQUE(job_id,signature)
+);
+"""
+
+
+def case_latest(sid: int) -> dict[str, Any] | None:
+    row = _one(
+        conn().execute(
+            "SELECT * FROM case_jobs WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,)
+        )
+    )
+    if row:
+        row["workspace"] = json.loads(row.pop("workspace_json"))
+        row.pop("lease_owner", None)
+    return row
+
+
+def case_owns(sid: int) -> bool:
+    # Enrollment is durable: changing the rollout flag cannot resume a legacy sender
+    # around an unresolved requirement or an uncertain external operation.
+    return case_latest(sid) is not None
+
+
+def case_enqueue(sid: int, mid: int) -> None:
+    with tx() as c:
+        previous = _one(
+            c.execute("SELECT * FROM case_jobs WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,))
+        )
+        if c.execute("SELECT 1 FROM case_jobs WHERE mail_id=?", (mid,)).fetchone():
+            return
+        workspace = json.loads(previous["workspace_json"]) if previous else {}
+        # Every new customer input invalidates calculated prices and prepared documents.
+        # Keep evidence and outstanding obligations; the model must explicitly supersede
+        # an obsolete obligation with a citation from the new customer message.
+        for key in ("shipments", "prices", "artifacts", "last_audit"):
+            workspace[key] = {}
+        c.execute(
+            "UPDATE case_jobs SET status='superseded' WHERE session_id=? "
+            "AND status IN ('pending','waiting','running')",
+            (sid,),
+        )
+        c.execute(
+            "INSERT INTO case_jobs(session_id,mail_id,version,status,workspace_json,created_at,updated_at) "
+            "VALUES (?,?,?,'pending',?,?,?)",
+            (
+                sid,
+                mid,
+                (previous["version"] + 1) if previous else 1,
+                _json(workspace),
+                now(),
+                now(),
+            ),
+        )
+        _emit(c, "case_queued", "Fallbearbeitung eingeplant", sid, payload={"mail_id": mid})
+
+
+def case_wake(sid: int) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE case_jobs SET status=CASE WHEN status='waiting' THEN 'pending' ELSE status END,"
+            "wake_requested=1,updated_at=? WHERE id="
+            "(SELECT MAX(id) FROM case_jobs WHERE session_id=?) AND status IN ('waiting','running')",
+            (now(), sid),
+        )
+
+
+def case_wake_mail(mid: int) -> None:
+    row = _one(conn().execute("SELECT session_id FROM mails WHERE id=?", (mid,)))
+    if row and row["session_id"] is not None:
+        case_wake(int(row["session_id"]))
+
+
+def case_claim(owner: str, at: float) -> dict[str, Any] | None:
+    with tx() as c:
+        expired = _rows(
+            c.execute(
+                "SELECT id,session_id FROM case_jobs WHERE status IN ('running','superseded') "
+                "AND lease_until<? AND (status='running' OR EXISTS "
+                "(SELECT 1 FROM case_steps e WHERE e.job_id=case_jobs.id AND e.status='dispatching'))",
+                (at,),
+            )
+        )
+        for row in expired:
+            uncertain = c.execute(
+                "SELECT 1 FROM case_steps WHERE job_id=? AND status='dispatching'", (row["id"],)
+            ).fetchone()
+            state = "unknown" if uncertain else "pending"
+            c.execute(
+                "UPDATE case_jobs SET status=?,lease_owner=NULL WHERE id=?", (state, row["id"])
+            )
+            if uncertain:
+                _emit(
+                    c,
+                    "case_unknown",
+                    "Externer Ausgang unklar, keine Wiederholung",
+                    row["session_id"],
+                    level="error",
+                )
+        row = _one(
+            c.execute(
+                "SELECT j.* FROM case_jobs j JOIN sessions s ON s.id=j.session_id "
+                "WHERE j.status='pending' AND s.paused=0 AND s.mode='auto' "
+                "AND NOT EXISTS (SELECT 1 FROM case_jobs b WHERE b.session_id=j.session_id "
+                "AND (b.status='unknown' OR (b.status='running' AND b.lease_until>?))) "
+                "AND NOT EXISTS (SELECT 1 FROM case_steps e JOIN case_jobs b ON b.id=e.job_id "
+                "WHERE b.session_id=j.session_id AND e.status='dispatching') "
+                "ORDER BY j.id LIMIT 1",
+                (at,),
+            )
+        )
+        if row and not is_global_paused():
+            c.execute(
+                "UPDATE case_jobs SET status='running',lease_owner=?,lease_until=? WHERE id=?",
+                (owner, at + 90, row["id"]),
+            )
+            row["workspace"] = json.loads(row.pop("workspace_json"))
+            return row
+    return None
+
+
+def case_current(job: int, owner: str, at: float) -> bool:
+    row = _one(
+        conn().execute(
+            "SELECT j.session_id,j.mail_id FROM case_jobs j JOIN sessions s ON s.id=j.session_id "
+            "WHERE j.id=? AND j.status='running' AND j.lease_owner=? AND j.lease_until>? "
+            "AND s.paused=0 AND s.mode='auto' "
+            "AND NOT EXISTS (SELECT 1 FROM mails m WHERE m.session_id=j.session_id "
+            "AND m.direction='in' AND (lower(m.sender)=lower(s.customer) OR m.category IN ('rfq','customer','tracking')) "
+            "AND m.id>j.mail_id) "
+            "AND NOT EXISTS (SELECT 1 FROM case_jobs n WHERE n.session_id=j.session_id AND n.id>j.id)",
+            (job, owner, at),
+        )
+    )
+    return bool(row) and not is_global_paused()
+
+
+def case_heartbeat(job: int, owner: str, at: float) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE case_jobs SET lease_until=? WHERE id=? AND lease_owner=? AND status='running'",
+                (at + 90, job, owner),
+            ).rowcount
+            == 1
+        )
+
+
+def case_save(job: int, owner: str, workspace: dict, status: str = "running") -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE case_jobs SET workspace_json=?,status=CASE WHEN ?='waiting' AND wake_requested=1 "
+                "THEN 'pending' ELSE ? END,wake_requested=CASE WHEN ?='waiting' THEN 0 ELSE wake_requested END,"
+                "updated_at=? WHERE id=? AND lease_owner=? AND status='running'",
+                (_json(workspace), status, status, status, now(), job, owner),
+            ).rowcount
+            == 1
+        )
+
+
+def case_spend_step(job: int, owner: str, maximum: int) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE case_jobs SET steps=steps+1 WHERE id=? AND lease_owner=? "
+                "AND status='running' AND steps<?",
+                (job, owner, maximum),
+            ).rowcount
+            == 1
+        )
+
+
+def reserve_case_call(sid: int, job: int, maximum: int) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE case_jobs SET llm_calls=llm_calls+1 WHERE id=? AND session_id=? "
+                "AND status='running' AND llm_calls<?",
+                (job, sid, maximum),
+            ).rowcount
+            == 1
+        )
+
+
+def case_step(job: int, signature: str, tool: str, arguments: str) -> dict:
+    with tx() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO case_steps(job_id,signature,tool,arguments_json,status,updated_at) "
+            "VALUES (?,?,?,?,'prepared',?)",
+            (job, signature, tool, arguments, now()),
+        )
+        row = _one(
+            c.execute("SELECT * FROM case_steps WHERE job_id=? AND signature=?", (job, signature))
+        )
+        assert row is not None
+        row["result"] = json.loads(row.pop("result_json") or "null")
+        return row
+
+
+def case_step_state(step: int, state: str, result: dict | None = None) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE case_steps SET status=?,result_json=?,updated_at=? WHERE id=?",
+            (state, _json(result), now(), step),
+        )
+
+
+def case_steps(job: int) -> list[dict]:
+    rows = _rows(conn().execute("SELECT * FROM case_steps WHERE job_id=? ORDER BY id", (job,)))
+    for row in rows:
+        row["result"] = json.loads(row.pop("result_json") or "null")
+    return rows
+
+
+def case_set_context(job: int, owner: str, step: int | None = None) -> None:
+    _local.case_context = (job, owner, step)
+
+
+def case_clear_context() -> None:
+    _local.case_context = None
+
+
+def case_transport_guard() -> None:
+    """Fail closed immediately before transport, including delegated business tools."""
+    import time
+
+    context = getattr(_local, "case_context", None)
+    if context is None:
+        return
+    job, owner, step = context
+    if not case_current(job, owner, time.time()):
+        raise RuntimeError("Case input, ownership or human control changed before transport")
+    if step is not None:
+        case_step_state(step, "dispatching")
+
+
 DEADLINE = timedelta(minutes=6)
 ATTENTION_WINDOW_S = 90
 
@@ -351,6 +601,7 @@ def init_db(path: str | None = None) -> None:
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     c.executescript(REPLY_SCHEMA)
+    c.executescript(CASE_SCHEMA)
     with tx() as migration:
         columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
         if "accounting_json" not in columns:
@@ -1509,6 +1760,7 @@ def get_session(session_id: int) -> dict[str, Any] | None:
         for column in ("request_snapshot_json", "pricing_snapshot_json"):
             q[column.removesuffix("_json")] = json.loads(q.pop(column) or "null")
     s["workflow"] = reply_workflow(session_id)
+    s["case_worker"] = case_latest(session_id)
     s["quotes"] = quotes
     s["bookings"] = _rows(c.execute("SELECT * FROM bookings WHERE session_id = ?", (session_id,)))
     s["events"] = [
@@ -2204,7 +2456,7 @@ def reserve_llm_call(session_id: int, limit: int) -> int | None:
         kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (key,)))
         logged = _one(
             c.execute(
-                "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose<>'thread_rescue'",
+                "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose NOT IN ('thread_rescue','case_plan','case_audit')",
                 (session_id,),
             )
         )
@@ -2638,7 +2890,7 @@ def llm_calls_used(session_id: int) -> int:
     kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (f"llm_calls:{session_id}",)))
     logged = _one(
         c.execute(
-            "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose<>'thread_rescue'",
+            "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose NOT IN ('thread_rescue','case_plan','case_audit')",
             (session_id,),
         )
     )
@@ -3233,6 +3485,27 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             "status": r["status"],
         }
         for r in clarification_cap_open(limit)
+    ]
+    items += [
+        {
+            "session_id": row["session_id"],
+            "kind": "case_worker",
+            "reason": "Externer Ausgang unklar"
+            if row["status"] == "unknown"
+            else "Fallbearbeitung benötigt Prüfung",
+            "subject": row["subject"],
+            "customer": row["customer"],
+            "status": row["status"],
+        }
+        for row in _rows(
+            c.execute(
+                "SELECT j.session_id,j.status,s.subject,s.customer FROM case_jobs j "
+                "JOIN sessions s ON s.id=j.session_id WHERE j.status='unknown' OR "
+                "(j.status='review' AND j.id=(SELECT MAX(n.id) FROM case_jobs n WHERE n.session_id=j.session_id)) "
+                "ORDER BY j.updated_at DESC LIMIT ?",
+                (limit,),
+            )
+        )
     ]
     items += [
         {
