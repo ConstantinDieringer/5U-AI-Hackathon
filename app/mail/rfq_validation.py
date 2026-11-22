@@ -652,6 +652,23 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
             }
         elif field != "pieces":
             issues.append({"field": field, "code": "missing", "detail": f"Confirm {field}"})
+    # Round 109 (session 32120): 1478 kg priced as 306.18 cbm (4.8 kg per cbm, 51 t chargeable,
+    # too_high). No freight is lighter than MIN_DENSITY_KG_PER_CBM: such a volume is a unit or
+    # reading error and is confirmed with the customer before any price goes out.
+    weight, volume = data.get("weight_kg"), data.get("volume_cbm")
+    if (
+        weight
+        and volume
+        and "volume_cbm" not in corrections
+        and Decimal(str(weight)) / Decimal(str(volume)) < MIN_DENSITY_KG_PER_CBM
+    ):
+        issues.append(
+            {
+                "field": "volume_cbm",
+                "code": "unproven",
+                "detail": "Volume is implausible for the weight: confirm total volume in cbm",
+            }
+        )
     # UN markers in any source take precedence over a generic non-dangerous statement.
     dangerous = bool(
         re.search(
