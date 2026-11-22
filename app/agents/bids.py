@@ -16,7 +16,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 
 from app import config, db, hackloop
@@ -25,6 +25,10 @@ from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
+from app.pricing.amounts import AMOUNT as _AMOUNT
+from app.pricing.amounts import MONEY as _MONEY
+from app.pricing.amounts import SPACES as _SPACES
+from app.pricing.amounts import mail_total, parse_decimal
 from app.pricing.fx import CURRENCY as _CUR
 from app.pricing.fx import currency_code
 from app.pricing.lanes import airlines_for
@@ -36,18 +40,11 @@ log = logging.getLogger(__name__)
 
 TAG = re.compile(r"\[AP-(\d+)\]")
 _BILLED = re.compile(r"billed at (\d+(?:\.\d+)?) kg", re.IGNORECASE)
-_MONEY = r"(?:\d{1,3}(?:[ ,.'’]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
-_AMOUNT = re.compile(
-    rf"(?:(?P<cur1>{_CUR})\s*(?P<num1>{_MONEY}))"
-    rf"|(?:(?P<num2>{_MONEY})\s*(?P<cur2>{_CUR}))",
-    re.IGNORECASE,
-)
 _DAYS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*(?:business\s+|working\s+|calendar\s+)?(?:days?|tage?n?)\b",
     re.IGNORECASE,
 )
 _HOURS = re.compile(r"(\d+)\s*(?:h|hrs?|hours?|stunden|std)\b", re.IGNORECASE)
-_TOTAL_HINT = re.compile(r"all[- ]?in|total|gesamt|price|preis|rate|offer|angebot", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -119,40 +116,14 @@ def _slot_of_reply(mail: Mail, session_id: int) -> int:
 
 
 def _number(raw: str) -> Decimal | None:
-    s = raw.replace(" ", "").replace("'", "")
-    if "," in s and "." in s:  # the later separator is the decimal one
-        s = (
-            s.replace(",", "")
-            if s.rfind(".") > s.rfind(",")
-            else s.replace(".", "").replace(",", ".")
-        )
-    elif "," in s:
-        head, _, tail = s.rpartition(",")
-        s = f"{head.replace(',', '')}.{tail}" if len(tail) in (1, 2) else s.replace(",", "")
-    elif s.count(".") > 1 or (s.count(".") == 1 and len(s.rpartition(".")[2]) == 3):
-        s = s.replace(".", "")  # 1.234 / 1.234.567 = thousands
-    try:
-        return Decimal(s)
-    except InvalidOperation:
-        return None
+    return parse_decimal(raw)
 
 
 def parse_price(text: str) -> tuple[Decimal, str] | None:
-    """The quoted price and its currency. Prefers an amount on a line naming a total/price;
-    among several such amounts the largest (an all-in total beats its components)."""
-    best: tuple[int, Decimal, str] | None = None
-    for line in text.translate(_SPACES).splitlines():
-        hint = 1 if _TOTAL_HINT.search(line) else 0
-        for m in _AMOUNT.finditer(line):
-            num = _number(m.group("num1") or m.group("num2") or "")
-            cur = (m.group("cur1") or m.group("cur2") or "").upper()
-            cur = currency_code(cur)
-            if num is None or num <= 0:
-                continue
-            key = (hint, num)
-            if best is None or key > (best[0], best[1]):
-                best = (hint, num, cur)
-    return (money(best[1]), best[2]) if best else None
+    """The one all-in total a mail states, with its currency (see amounts.mail_total):
+    per-unit, optional, waiting and insured-value amounts never count; several different
+    totals give None (bid_unreadable), never the largest."""
+    return mail_total(text)
 
 
 def parse_transit_days(text: str) -> float | None:
@@ -163,7 +134,6 @@ def parse_transit_days(text: str) -> float | None:
     return int(h.group(1)) / 24 if h else None
 
 
-_SPACES = str.maketrans({"\u00a0": " ", "\u202f": " ", "\u2009": " ", "\u2007": " "})
 # Labels of a document's final amount. Optional words between label and amount (amount, due,
 # (EUR), incl. fuel, all-in, netto ...) may not contain digits. Sub-totals never match.
 _TOTAL_LABEL = re.compile(
@@ -928,7 +898,7 @@ def airline_option(offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float) ->
         airline=offer.carrier.name,
         origin=origin,
         destination=rfq.destination,
-        transit_days=round(days),
+        transit_days=max(1, round(days)),  # a same-day offer is never 0 days
         total_minor=to_minor(offer.original_amount) if offer.original_amount is not None else total,
         currency=offer.currency,
         total_eur_minor=total,

@@ -1088,7 +1088,11 @@ def backfill_bookings_from_confirmations() -> int:
         if _one(c.execute("SELECT 1 FROM bookings WHERE session_id = ?", (sid,))):
             continue
         price = found["price"]
-        minor = round(float(price.group(1).replace(",", "")) * 100) if price else None
+        from app.pricing.amounts import parse_decimal
+        from app.pricing.pricing import to_minor
+
+        amount = parse_decimal(price.group(1)) if price else None
+        minor = to_minor(amount) if amount is not None else None
         record_booking(
             sid,
             booking_reference=found["bk"].group(1),
@@ -2785,7 +2789,11 @@ def pricing_history(limit: int = 100) -> list[dict[str, Any]]:
             carrier = carrier_by_name(name)
             bids.append({"name": name, "kind": carrier.kind if carrier else None})
         tr = p.get("trucking") or None
-        truck_minor = round(float(tr["total_eur"]) * 100) if tr else 0
+        from decimal import Decimal
+
+        from app.pricing.pricing import to_minor
+
+        truck_minor = to_minor(Decimal(str(tr["total_eur"]))) if tr else 0
         quote = _one(
             c.execute(
                 "SELECT total_minor FROM quotes WHERE session_id = ? ORDER BY id LIMIT 1",

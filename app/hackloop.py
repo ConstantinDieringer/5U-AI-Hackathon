@@ -408,7 +408,7 @@ def send_customer(
 rate_limit: dict[str, str] = {}  # last X-RateLimit-* headers seen on /v1/portal/rates
 _rate_lock = threading.Lock()
 _rate_blocked_until = 0.0
-_rate_window_start = 0.0
+_rate_window_start = float("-inf")  # no window yet; 0 is not "long ago" right after boot
 _rate_used = 0
 _rate_cap = 10
 
