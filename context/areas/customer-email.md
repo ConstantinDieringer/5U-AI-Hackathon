@@ -43,7 +43,7 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 
 ## Composer
 
-- Every quote uses `LLM_COMPOSE_MODEL` (`gpt-5-mini`) with bounded current-thread and earlier same-customer correspondence; older monetary amounts are removed. A failed check sends the deterministic quote copy; the second composer call is opt-in (`COMPOSE_REPAIR`, off for cost). Only verified current facts support price/service promises.
+- Every quote uses `LLM_COMPOSE_MODEL` (inherits `LLM_MODEL`, default `gpt-5.6-luna`) with bounded current-thread and earlier same-customer correspondence; older monetary amounts are removed. A failed check sends the deterministic quote copy; the second composer call is opt-in (`COMPOSE_REPAIR`, off for cost). Only verified current facts support price/service promises.
 - Language: current request/attachment prose and the latest meaningful reply set the language; short acknowledgements inherit it. Composer/repair receive the full code. EN/DE/FR/ES/IT retain verified native templates; other languages use checked, cached translation at the shared send boundary. No unverified English fallback. Native tracking paragraphs survive translation and recovery. Details, costs and limits: `context/docs/multilingual-mail.md`.
 - `QUOTE_TEMPLATE_FIRST` (off): template carries the facts, one small call (`app/agents/quote_opening.py`) adds a checked opening and answers; failures send the plain template.
 - Voice: close, cheerful best-friend tone; German defaults to du unless formal address is requested. No invented shared history.

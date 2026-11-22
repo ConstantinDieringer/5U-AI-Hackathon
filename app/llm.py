@@ -21,7 +21,7 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gpt-5-mini"  # stronger extraction default; override with LLM_MODEL
+DEFAULT_MODEL = "gpt-5.6-luna"  # user-selected model; override with LLM_MODEL
 MAX_CALLS_PER_SESSION = min(8, settings.llm_max_calls_per_session)
 PRICES_FILE = Path(__file__).with_name("llm_prices.json")
 
@@ -147,7 +147,15 @@ def complete(
         "max_completion_tokens": max_tokens,
     }
     if _is_reasoning(name):
-        kw["reasoning_effort"] = "minimal"  # reasoning usage still counts within output tokens
+        if name.startswith("gpt-5.6"):
+            # Luna does not support the legacy 'minimal' effort. Leave room for reasoning
+            # as well as schema output; reasoning tokens count against this same limit.
+            kw["reasoning_effort"] = "medium" if purpose == "thread_rescue" else "low"
+            kw["max_completion_tokens"] = max(
+                max_tokens, 4096 if purpose == "thread_rescue" else 2048
+            )
+        else:
+            kw["reasoning_effort"] = "minimal"
     else:
         kw["temperature"] = 0
     if response_format is not None:

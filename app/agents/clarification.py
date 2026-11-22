@@ -412,20 +412,22 @@ def request(mail, sid, draft):
 
             rfq.handle_rfq(root, sid)
             return
-        if not draft.evidence.get("rescue_before_clarification"):
-            draft.evidence["rescue_before_clarification"] = True
-            previous = db.validation_get(sid)
-            root = Mail(**previous["root"]) if previous else mail
-            rescued, draft = rescue_with_model(mail, sid, root, draft)
-            if rescued is not None:
-                db.validation_save(
-                    sid, "ready", draft.model_dump(mode="json"), dataclasses.asdict(root)
-                )
-                db.set_request(sid, rescued.model_dump())
-                from app.agents import rfq
-
-                rfq.handle_rfq(root, sid)
-                return
+    if (
+        draft.evidence.get("workflow", "rfq") == "rfq"
+        and not draft.evidence.get("rescue_before_clarification")
+    ):
+        draft.evidence["rescue_before_clarification"] = True
+        previous = db.validation_get(sid)
+        root = Mail(**previous["root"]) if previous else mail
+        rescued, draft = rescue_with_model(mail, sid, root, draft)
+        if rescued is not None:
+            db.validation_save(
+                sid, "ready", draft.model_dump(mode="json"), dataclasses.asdict(root)
+            )
+            db.set_request(sid, rescued.model_dump())
+            from app.agents import rfq
+            rfq.handle_rfq(root, sid)
+            return
     db.validation_save(
         sid,
         "awaiting_clarification",
