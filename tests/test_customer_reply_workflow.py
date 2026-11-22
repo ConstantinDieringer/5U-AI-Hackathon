@@ -321,9 +321,12 @@ def test_own_pdf_is_not_a_pdf_ask_after_quote(monkeypatch, api):
     assert db.reply_workflow(SID)["phase"] == "needs_review"
 
 
-def test_silent_customer_still_gets_a_fourth_follow_up(api):
-    """After three nudges the customer had heard nothing more from us; the follow-up budget
-    now goes past three, and a full budget still stops further nudges (counterexample)."""
+def test_silent_customer_still_gets_a_fourth_follow_up(api, monkeypatch):
+    """With a budget above three (FOLLOWUP_MAX), a fourth nudge still goes out, and a full
+    budget stops further nudges (counterexample). The default budget is 2."""
+    monkeypatch.setattr(
+        followup, "settings", dataclasses.replace(followup.settings, followup_max=10)
+    )
     quoted()
 
     def nudge(n):

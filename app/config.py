@@ -365,10 +365,11 @@ settings = Settings(
     airline_confirm_wait_s=max(0.0, float(_env("AIRLINE_CONFIRM_WAIT_S", "180"))),
     # customer silent after our quote -> nudge in the thread (app/agents/followup.py)
     followup_enabled=_flag("FOLLOWUP_ENABLED", True),
-    followup_after_s=float(_env("FOLLOWUP_AFTER_S", "30")),
-    followup_max=max(0, int(_env("FOLLOWUP_MAX", "10"))),
+    # capped at 5 s: a nudge never waits longer, even if Railway sets a higher value
+    followup_after_s=min(5.0, max(0.0, float(_env("FOLLOWUP_AFTER_S", "5")))),
+    followup_max=max(0, int(_env("FOLLOWUP_MAX", "2"))),  # 5 s apart: more reads as spam
     followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
-    followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "2"))),
+    followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "1"))),
     tracking_notice_check_every_s=max(5.0, float(_env("TRACKING_NOTICE_CHECK_EVERY_S", "30"))),
     # customer answers our quote with questions: answer them from the stored quote and ask
     # for the go-ahead (app/agents/prebook.py); false = today's generic clarification
