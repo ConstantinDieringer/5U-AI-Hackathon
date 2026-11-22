@@ -369,3 +369,75 @@ def test_simulation_policy_does_not_flag_genuine_saved_mail():
         if screening.simulation_contact_change(mail):
             false_positives.append(row["id"])
     assert false_positives == []
+
+
+# ---------------------------------------------------------------- send guards fail closed
+
+
+def test_reply_is_not_sent_when_the_quarantine_check_fails(box: Box, monkeypatch) -> None:
+    posted: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        hackloop,
+        "_request",
+        lambda *a, **kw: posted.append(kw.get("json") or {}) or httpx.Response(200, json={"id": 1}),
+    )
+
+    def broken(_mail_id: int) -> bool:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(db, "reply_blocked", broken)
+    with pytest.raises(hackloop.QuarantinedReply):
+        hackloop.send("customer@hackloop.mail", "Re: Request", "Hello", in_reply_to=9001)
+    assert posted == []
+
+
+def test_quote_is_not_sent_when_the_transport_marker_cannot_be_written(monkeypatch) -> None:
+    from datetime import date
+
+    from app.agents import rfq
+    from app.models import RateOption, Rfq
+
+    request = Rfq(
+        origin="DUS", destination="SYD", weight_kg=279, volume_cbm=2.47, pieces=9,
+        ready_date="2026-11-26", preference="fastest", language="en",
+    )  # fmt: skip
+    option = RateOption("Nova Atlas Cargo", "DUS", "SYD", 3, 202000, "EUR", 202000, "sheet")
+    monkeypatch.setattr(rfq.llm, "complete", lambda *a, **k: (_ for _ in ()).throw(RuntimeError()))
+    body = rfq.compose_quote_text(request, option, 202000, None, 1, today=date(2026, 11, 21))
+    sent: list[str] = []
+    monkeypatch.setattr(hackloop, "send", lambda *a, **k: sent.append(a[0]) or {"id": 1})
+    db.ingest_mail(
+        mail_id=123, sender="customer@hackloop.mail", recipient="team@hackloop.mail",
+        subject="Request", body="quote please", received_at="2026-11-21T08:00:00+00:00",
+        category="rfq",
+    )  # fmt: skip
+    db.set_request(123, request.model_dump())
+
+    def marker_fails() -> None:
+        raise RuntimeError("disk full")
+
+    with pytest.raises(hackloop.CustomerSendBlocked):
+        hackloop.send_customer(
+            "customer@hackloop.mail", "Your offer DUS to SYD", body, in_reply_to=123,
+            session_id=123, review=False, before_transport=marker_fails,
+        )  # fmt: skip
+    assert sent == []
+
+
+def test_reference_from_a_stranger_does_not_join_the_session(box: Box) -> None:
+    db.ingest_mail(
+        mail_id=7000, sender="weidner-spielwaren@hackloop.mail", recipient="team@hackloop.mail",
+        subject="Quote STR-EZE", body="quote please", category="rfq",
+        received_at="2026-11-21T08:00:00+00:00",
+    )  # fmt: skip
+    stranger = db.ingest_mail(
+        mail_id=7001, sender="someone-else@hackloop.mail", recipient="team@hackloop.mail",
+        subject="Re: [AP-7000] status", body="Your reference: AP-7000", category="customer",
+        received_at="2026-11-21T09:00:00+00:00",
+    )  # fmt: skip
+    owner = db.ingest_mail(
+        mail_id=7002, sender="weidner-spielwaren@hackloop.mail", recipient="team@hackloop.mail",
+        subject="Re: [AP-7000] status", body="Your reference: AP-7000", category="customer",
+        received_at="2026-11-21T09:05:00+00:00",
+    )  # fmt: skip
+    assert stranger is None and owner == 7000

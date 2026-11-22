@@ -226,6 +226,35 @@ def test_answering_customer_tracking_preserves_booking_status(two_bookings, monk
     assert len(api.sent) == 1
 
 
+# ---------------------------------------------------------------- who may see which booking
+
+
+@pytest.mark.core
+def test_customer_cannot_read_another_customers_booking(two_bookings, monkeypatch) -> None:
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    other = "auer-maschinenbau@hackloop.mail"
+    _tracking_session(3500, "Status", "Where is BK-6Z1GMPG3?")
+    tracking.handle(Mail(3500, 3500, other, TEAM, "Status", "Where is BK-6Z1GMPG3?", ""), 3500)
+    body = api.sent[-1]["body"]
+    assert "Fjordline" not in body and "EZE" not in body and "4.408" not in body
+
+
+def test_customer_reads_own_booking(two_bookings, monkeypatch) -> None:
+    owner = "weidner-spielwaren@hackloop.mail"
+    records = db.tracking_records()
+    assert tracking.find(
+        "Where is BK-6Z1GMPG3?", [r for r in records if tracking.visible_to(owner, r)]
+    )
+    assert tracking.visible_to(TRACK, records[0]) and tracking.visible_to(TRACK, records[1])
+
+
+def test_failed_booking_is_not_reported_as_booked() -> None:
+    _booked(1500, "weidner-spielwaren@hackloop.mail", "MUC", "ORD", "BK-FAILED01", False)
+    db.update_booking_status("BK-FAILED01", "failed")
+    assert all(r["booking_reference"] != "BK-FAILED01" for r in db.tracking_records())
+
+
 def test_question_naming_another_customer_never_gets_their_shipment():
     """Route and weight fit Weidner's booking, but the question is about Hofmann: no data of
     another customer, ask for the reference instead."""

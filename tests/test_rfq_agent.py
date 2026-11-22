@@ -188,3 +188,89 @@ def test_damaged_lithium_rfq_is_refused_not_quoted(stub) -> None:
     assert "A154" in reply["body"] and "€" not in reply["body"]
     s = db.get_session(265)
     assert s["status"] == "lost" and not s["quotes"]
+
+
+# ---------------------------------------------------------------- origin == destination
+
+
+# real round 2530 customer mail (attachment line dropped)
+_MAIL_2530 = (
+    "Hello,\n\nplease quote air freight for this shipment:\n\n"
+    "- Pickup: from our site at 21663 Lueneburg, Germany (please arrange the truck)\n"
+    "- Destination airport: Toronto (YYZ), CA\n"
+    "- Commodity: maintenance spray cans, 4 pieces\n"
+    "- Gross weight: 855 kg\n"
+    "- Volume: 3.74 cbm\n"
+    "- Ready date: 2026-11-26\n"
+    "- Service: the cheapest option\n"
+    "- The goods are general cargo, non-dangerous\n\n"
+    "Please reply with your all-in price in EUR.\n\nSara\nLindqvist Medtech"
+)
+
+
+def _door_rfq(monkeypatch, stub, extracted: dict, body: str, mid: int) -> None:
+    monkeypatch.setattr(rfq.llm, "complete", lambda *a, **k: json.dumps(extracted))
+    monkeypatch.setattr(bids, "wait", lambda *args, **kwargs: [])
+    mail = dataclasses.replace(_rfq_mail(mid), subject="Air freight quote request", body=body)
+    rfq.handle_rfq(mail, mid)
+
+
+def test_pickup_zip_never_yields_a_destination_to_destination_air_bid(stub, monkeypatch) -> None:
+    """Round 2530: pickup 21663 Lueneburg -> YYZ, the LLM copied YYZ into origin and four
+    airlines were asked for YYZ-YYZ. The pickup zone decides: HAM."""
+    body = _MAIL_2530
+    extracted = {
+        "origin": "YYZ",
+        "pickup_zip": "21663",
+        "destination": "YYZ",
+        "weight_kg": 855.0,
+        "volume_cbm": 3.74,
+        "pieces": 4,
+        "preference": "cheapest",
+        "ready_date": "2026-11-26",
+        "language": "en",
+        "customer_name": "Sara",
+    }
+    _door_rfq(monkeypatch, stub, extracted, body, 2530)
+    bid_requests = [m for m in stub.sent if m["to"] != CUSTOMER]
+    assert bid_requests
+    assert not any("YYZ to YYZ" in m["body"] or "YYZ-YYZ" in m["subject"] for m in bid_requests)
+    air = [m for m in bid_requests if "Please quote air freight" in m["body"]]
+    assert air and all("from HAM to YYZ" in m["body"] for m in air)
+    assert all("to HAM airport" in m["body"] for m in bid_requests if m not in air)
+
+
+def test_normal_german_pickup_to_yyz_asks_airlines_from_its_zone_airport(stub, monkeypatch) -> None:
+    """Counterexample: a Munich pickup with no LLM origin flies MUC-YYZ as before."""
+    body = _MAIL_2530.replace("21663 Lueneburg", "80331 Munich").replace("855 kg", "300 kg")
+    extracted = {
+        "origin": None,
+        "pickup_zip": "80331",
+        "destination": "YYZ",
+        "weight_kg": 300,
+        "volume_cbm": 3.74,
+        "pieces": 4,
+        "preference": "cheapest",
+        "ready_date": "2026-11-26",
+        "language": "en",
+        "customer_name": "Sara",
+    }
+    _door_rfq(monkeypatch, stub, extracted, body, 2531)
+    air = [m for m in stub.sent if "Please quote air freight" in m["body"]]
+    assert air and all("from MUC to YYZ" in m["body"] for m in air)
+
+
+def test_no_air_bid_or_option_when_origin_is_the_destination(stub) -> None:
+    """Guard behind resolve_origin: no bid mail and no rate option for an airport to itself."""
+    from app.models import Rfq
+    from app.pricing.pricing import resolve_origin
+
+    _rfq_mail(2532)
+    # Frankfurt pickup to FRA: the zone airport is the destination, so ask instead
+    same = Rfq(pickup_zip="60311", destination="FRA", weight_kg=100, volume_cbm=0.5)
+    assert resolve_origin(same) is None
+    airline = bids.Carrier("Lumen Air Cargo", "airline", "lumen-air-cargo@hackloop.mail", ("FRA",))
+    assert bids.request(2532, same, "FRA", [airline]) == 0
+    assert stub.sent == []
+    with pytest.raises(ValueError):
+        RateOption("Lumen Air Cargo", "YYZ", "yyz", 3, 100, "EUR", 100, "bid")
