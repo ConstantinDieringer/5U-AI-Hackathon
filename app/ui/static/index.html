@@ -333,6 +333,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3-1-5 1-8.5z"/></symbol>
   <symbol id="i-mountain" viewBox="0 0 24 24"><path d="m3 20 6.5-11 3 5 2-3L21 20z"/><path d="M11 5c.5-1 1.5-1.5 2.5-1"/></symbol>
   <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3 6 0 1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z"/><circle cx="12" cy="12" r="3"/></symbol>
 </svg>
 
@@ -350,6 +351,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <button class="nav" data-page="rates"><svg class="icon"><use href="#i-coin"/></svg><span class="lbl">Rates</span></button>
   <div class="spacer"></div>
   <button class="stop" id="global-pause" title="Stop all outgoing mail"><svg class="icon"><use href="#i-stop"/></svg><span>Stop mail</span></button>
+  <button class="nav support-nav" id="support-toggle" type="button" aria-expanded="false" aria-controls="support-panel" title="Ask the support assistant"><svg class="icon"><use href="#i-chat"/></svg><span class="lbl">Support</span></button>
   <button class="nav profile-settings" data-page="errors" id="settings-toggle" title="Settings and messages" aria-expanded="false" aria-controls="page-errors"><span class="avatar">AP</span><span class="lbl">Settings</span><svg class="icon"><use href="#i-settings"/></svg><span class="badge err" id="err-badge"></span></button>
 </nav>
 
@@ -358,6 +360,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
     <div class="right">
       <div id="view-controls"></div>
       <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Customer, subject or ID" autocomplete="off"></label>
+      <button class="btn mobile-only" id="mobile-support" type="button" title="Support"><svg class="icon"><use href="#i-chat"/></svg>Support</button>
       <button class="btn mobile-only" id="mobile-messages" title="Settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</button>
       <button class="btn mobile-only nav" data-page="requests">Requests</button>
       <button class="btn mobile-only nav" data-page="crm" title="Open CRM"><svg class="icon"><use href="#i-users"/></svg>CRM</button>
@@ -461,7 +464,7 @@ function show(page, updateHistory = true) {
   const hash = page === "session" ? "#session=" + S.selected : page === "crm" ? "#crm/" + S.crmTab : "#" + page;
   if (updateHistory && location.hash !== hash) history.pushState(null, "", hash);
 }
-document.querySelectorAll(".nav").forEach(n => n.addEventListener("click", () => show(n.dataset.page)));
+document.querySelectorAll(".nav[data-page]").forEach(n => n.addEventListener("click", () => show(n.dataset.page)));
 function openCrmTab(tab, updateHistory = true) {
   if (S.crmTab !== tab) { S.crmTab = tab; S.crmStatus = ""; S.crmSort = ""; S.crmAsc = false; S.crmPage = 0; }
   show("crm", updateHistory);
@@ -858,5 +861,6 @@ window.addEventListener("unhandledrejection", e => bufferMessage("Action could n
   connect();
 })();
 </script>
+<script src="/static/support.js"></script>
 </body>
 </html>

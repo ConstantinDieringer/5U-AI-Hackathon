@@ -25,7 +25,7 @@ from app import db
 from app.config import settings
 from app.mail import webhook
 from app.mail.router import address
-from app.ui import airport_events, rates
+from app.ui import airport_events, rates, support_chat
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
@@ -135,6 +135,21 @@ def api_booking_volume() -> dict[str, Any]:
 @app.get("/api/rates")
 def api_rates() -> dict[str, Any]:
     return rates.catalogue()
+
+
+@app.post("/api/support/chat")
+def api_support_chat(body: support_chat.ChatIn) -> dict[str, str]:
+    try:
+        return {"reply": support_chat.answer(body)}
+    except support_chat.SupportUnavailable as e:
+        raise HTTPException(429, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except Exception as e:  # gateway or network failure: the raw provider error stays in the log
+        log.warning("support chat failed: %s", type(e).__name__)
+        raise HTTPException(
+            502, "The assistant is not reachable right now. Please try again."
+        ) from e
 
 
 @app.get("/api/airport-events")
