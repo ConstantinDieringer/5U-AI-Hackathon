@@ -12,20 +12,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  ship-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
-      TEAM_API_KEY: hk_ci_dummy
-      OPENAI_API_KEY: sk-ci-dummy
+      TEAM_API_KEY: test-only
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"  # same as the Dockerfile
+          python-version: "3.11"
           cache: pip
-      - run: pip install -r requirements.txt
-      - name: Tests (incl. secrets scan in tests/test_ops_guardrails.py)
-        run: python -m pytest -q
-      - name: Ruff (blocking; pinned so a new ruff release cannot turn main red)
-        run: pip install ruff==0.16.9 && ruff check app tests
+      - run: pip install -r requirements.txt ruff==0.16.9
+      - name: Check customer contracts and architecture
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: python -m tools.ship_check "$BASE"
+      - name: Check integrated revision
+        if: github.event_name == 'push'
+        run: python -m tools.ship_check --full

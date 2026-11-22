@@ -209,6 +209,7 @@ def test_24802_update_reprices_preserves_unspecified_fields_and_scoring(monkeypa
     assert not api.bookings
 
 
+@pytest.mark.core
 def test_go_ahead_books_current_revision_once(monkeypatch, api):
     quoted()
     stub_pricing(monkeypatch)
@@ -229,6 +230,7 @@ def test_go_ahead_books_current_revision_once(monkeypatch, api):
     assert db.reply_workflow(SID)["phase"] == "booked"
 
 
+@pytest.mark.core
 def test_old_offer_approval_does_not_book_revision(monkeypatch, api):
     quoted()
     stub_pricing(monkeypatch)
@@ -324,6 +326,7 @@ def test_newer_mail_during_pricing_prevents_stale_quote(monkeypatch, api):
     assert active(db.get_session(SID)) is None
 
 
+@pytest.mark.core
 def test_duplicate_and_restart_after_dispatch_never_resend(api):
     quoted()
     mail = incoming("Please go ahead and book it.")

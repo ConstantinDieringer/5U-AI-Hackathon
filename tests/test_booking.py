@@ -207,6 +207,7 @@ def _accept(sid: int = 1223, mid: int = 1429) -> Mail:
     return Mail(mid, sid, CUSTOMER, TEAM, "Re: Fastest STR-EZE", ACCEPT, now, references=[sid])
 
 
+@pytest.mark.core
 def test_accept_books_portal_rate_and_confirms(monkeypatch) -> None:
     api = Api()
     monkeypatch.setattr(booking.hackloop, "send", api.send)
@@ -227,6 +228,7 @@ def test_accept_books_portal_rate_and_confirms(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("body", PREBOOK_QUESTIONS)
+@pytest.mark.core
 def test_prebooking_question_does_not_call_booking_or_send_confirmation(monkeypatch, body):
     from app.agents import clarification
 
@@ -243,6 +245,7 @@ def test_prebooking_question_does_not_call_booking_or_send_confirmation(monkeypa
 
 
 @pytest.mark.parametrize("body", EXPLICIT_DECLINES)
+@pytest.mark.core
 def test_explicit_decline_never_calls_booking(monkeypatch, body):
     api = Api()
     monkeypatch.setattr(booking.hackloop, "send", api.send)
@@ -283,6 +286,7 @@ def test_airline_confirmation_sets_confirmed(monkeypatch) -> None:
     assert db.get_session(1223)["bookings"][0]["status"] == "confirmed"
 
 
+@pytest.mark.core
 def test_catch_up_books_waiting_acceptance(monkeypatch) -> None:
     api = Api()
     monkeypatch.setattr(booking.hackloop, "send", api.send)

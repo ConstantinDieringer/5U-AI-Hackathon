@@ -35,7 +35,7 @@ Binding detail: TECH_SPEC §8 (LLM rules, rescue, validation) and §8a (answer c
 - **Insurance:** current-source rules require clarification for missing or conflicting terms. Partial terms accumulate; watchdog/rescue cannot omit an unpriced premium.
 - **Replay:** `python -m app.agents.rfq_replay run` compares stored rounds offline.
 
-## Tests (run these while iterating; the full suite only before the PR)
+## Area tests
 
 ```
 python -m pytest -q tests/test_arrival_constraints.py tests/test_cargo_insurance.py tests/test_rfq_agent.py tests/test_rfq_validation_gate.py tests/test_history_first_clarification.py tests/test_thread_rescue.py tests/test_rfq_watchdog.py tests/test_extract_retry.py tests/test_recent_rounds_e2e.py tests/test_rfq_replay.py

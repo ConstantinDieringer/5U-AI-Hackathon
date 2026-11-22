@@ -25,7 +25,7 @@ Binding detail: TECH_SPEC §8a (booking consent, pre-booking answers). Booking A
 - Quote selection is explicit: first for scoring, active for pre-booking, booking-bound for confirmations and tracking. Conditional consent never overrides an unresolved change, stop or unknown condition. Older bookings without a quote link retain their legacy lookup.
 - Foreign replies use a cached English working copy before these rules. Booking also requires an explicit unconditional consent decision with an exact current-message excerpt; translated conditions and option changes cannot book. Confirmations, tracking answers and required tracking invitations follow the customer's language. See `context/docs/multilingual-mail.md`.
 
-## Tests (run these while iterating; the full suite only before the PR)
+## Area tests
 
 ```
 python -m pytest -q tests/test_booking.py tests/test_prebook.py tests/test_tracking.py tests/test_tracking_notice.py tests/test_reply_replay.py

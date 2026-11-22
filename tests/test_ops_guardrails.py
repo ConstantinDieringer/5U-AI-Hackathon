@@ -147,6 +147,7 @@ def _tracked_files() -> list[Path]:
     return [ROOT / p for p in out.splitlines() if p]
 
 
+@pytest.mark.core
 def test_no_secrets_in_repo():
     hits = []
     for path in _tracked_files():
