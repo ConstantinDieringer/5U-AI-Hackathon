@@ -39,7 +39,10 @@ _TRANSCRIPT_LOCKS = tuple(threading.Lock() for _ in range(64))
 TEXT = {".txt", ".csv", ".tsv", ".md", ".json", ".xml", ".log", ".text"}
 IMAGES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
           ".gif": "image/gif", ".webp": "image/webp"}  # fmt: skip
-CONVERT_IMAGES = {".bmp", ".tif", ".tiff"}  # Pillow -> PNG
+CONVERT_IMAGES = {".bmp", ".tif", ".tiff", ".heic", ".heif", ".avif"}  # Pillow -> PNG
+# ISO-BMFF ("ftyp") brands of still images; the same box starts .m4a/.mp4 audio and video.
+_HEIF_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1"}
+_AVIF_BRANDS = {b"avif", b"avis"}
 AUDIO = {".mp3": "mp3", ".wav": "wav"}  # what the gateway's audio models accept as input
 CONVERT_AUDIO = {".m4a", ".mp4", ".aac", ".ogg", ".oga", ".opus", ".flac", ".webm", ".amr",
                  ".wma", ".3gp", ".caf", ".aiff", ".aif"}  # fmt: skip  # need ffmpeg
@@ -126,6 +129,12 @@ def sniff(name: str, data: bytes) -> str:
                                    and ext not in (".jpg", ".jpeg")):  # fmt: skip
         return ".mp3"
     if head[4:8] == b"ftyp":
+        # iPhone photos (HEIC) and AVIF share the ftyp box with m4a: the brand decides
+        brand = data[8:12]
+        if brand in _AVIF_BRANDS:
+            return ".avif"
+        if brand in _HEIF_BRANDS or ext in (".heic", ".heif"):
+            return ".heic"
         return ext if ext in CONVERT_AUDIO else ".m4a"
     if head.startswith(b"OggS"):
         return ".ogg"
@@ -417,6 +426,13 @@ def _eml(doc: Document, data: bytes, depth: int) -> None:
 
 def _image_to_png(data: bytes) -> bytes:
     from PIL import Image
+
+    try:  # HEIC/HEIF (iPhone photos); AVIF is read by Pillow itself
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+    except ImportError:  # pragma: no cover - pillow-heif is in requirements.txt
+        pass
 
     with Image.open(io.BytesIO(data)) as img:
         buf = io.BytesIO()

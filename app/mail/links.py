@@ -135,6 +135,9 @@ ALLOWED_CONTENT_TYPES = (
     "image/webp",
     "image/tiff",
     "image/bmp",
+    "image/heic",
+    "image/heif",
+    "image/avif",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel",
@@ -201,9 +204,11 @@ def _strip(url: str) -> str:
     return url
 
 
-def extract_links(text: str = "", html: str = "") -> list[tuple[str, str]]:
+def extract_links(
+    text: str = "", html: str = "", limit: int | None = MAX_LINKS_PER_MAIL
+) -> list[tuple[str, str]]:
     """Links in a mail as (url, visible text). Plain-text links have empty visible text.
-    Deduplicated, in order, at most MAX_LINKS_PER_MAIL."""
+    Deduplicated, in order, at most `limit` (None: all)."""
     found: list[tuple[str, str]] = []
     if html:
         p = _AnchorParser()
@@ -222,7 +227,7 @@ def extract_links(text: str = "", html: str = "") -> list[tuple[str, str]]:
             continue
         seen.add(url)
         out.append((url, shown))
-    return out[:MAX_LINKS_PER_MAIL]
+    return out if limit is None else out[:limit]
 
 
 # ---------------------------------------------------------------- checking links
@@ -396,14 +401,25 @@ def wanted(url: str) -> bool:
 
 
 _DRIVE = re.compile(r"^/file/d/([\w-]+)")
+# Shared Google Sheets/Docs open an editor page; their export URL returns the file itself.
+_GOOGLE_EXPORT = {"spreadsheets": "xlsx", "document": "docx"}
+_GOOGLE_DOC = re.compile(r"^/(spreadsheets|document)/d/([\w-]+)")
 
 
 def download_url(url: str) -> str:
-    """The direct download behind a share link (Google Drive view page, Dropbox preview)."""
+    """The direct download behind a share link (Google Drive view page, Google Sheets/Docs
+    editor, Dropbox preview)."""
     u = urllib.parse.urlsplit(url)
     host = (u.hostname or "").lower()
     if host == "drive.google.com" and (m := _DRIVE.match(u.path)):
         return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    if host == "docs.google.com" and (m := _GOOGLE_DOC.match(u.path)):
+        kind, doc_id = m.groups()
+        gid = dict(urllib.parse.parse_qsl(u.fragment)).get("gid") or dict(
+            urllib.parse.parse_qsl(u.query)
+        ).get("gid")
+        export = f"https://docs.google.com/{kind}/d/{doc_id}/export?format={_GOOGLE_EXPORT[kind]}"
+        return export + (f"&gid={gid}" if gid and gid.isdigit() and kind == "spreadsheets" else "")
     if _domain_matches(host, {"dropbox.com"}):
         q = [(k, v) for k, v in urllib.parse.parse_qsl(u.query) if k != "dl"] + [("dl", "1")]
         return urllib.parse.urlunsplit(u._replace(query=urllib.parse.urlencode(q)))
@@ -421,6 +437,9 @@ _SUFFIX_FOR_TYPE = {
     "image/webp": ".webp",
     "image/tiff": ".tiff",
     "image/bmp": ".bmp",
+    "image/heic": ".heic",
+    "image/heif": ".heic",
+    "image/avif": ".avif",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/vnd.ms-excel": ".xls",
@@ -468,11 +487,15 @@ def linked_files(
     if saved or local_only or not settings.link_fetch:
         return saved
     body = mail.body or ""
+    # The cap counts file links only: a website, terms and LinkedIn link before the rate
+    # sheet must not use up the slots (the fourth link was never opened).
     candidates = [
         (url, shown)
-        for url, shown in extract_links(text=body, html=body if "<a" in body.lower() else "")
+        for url, shown in extract_links(
+            text=body, html=body if "<a" in body.lower() else "", limit=None
+        )
         if wanted(url)
-    ]
+    ][:MAX_LINKS_PER_MAIL]
     paths: list[Path] = []
     deadline = time.monotonic() + TOTAL_S
     for n, (url, shown) in enumerate(candidates, start=1):
