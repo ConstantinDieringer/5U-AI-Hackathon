@@ -44,7 +44,6 @@ def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         raise RuntimeError(f"test tried a live call: {request.method} {request.url.path}")
 
     transport = httpx.MockTransport(refuse)
-    monkeypatch.setattr(hackloop, "_page_transport", transport)
     monkeypatch.setattr(
         hackloop, "_client", httpx.Client(base_url="https://blocked.invalid", transport=transport)
     )

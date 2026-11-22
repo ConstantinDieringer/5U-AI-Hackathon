@@ -1,0 +1,1 @@
+Removed the UI Portal-Check (page sum solved by a person): the portal web page no longer has a bot challenge, so the API and email desk remain the only portal paths. Flags `PORTAL_UI_CHECK`/`PORTAL_UI_URL` removed.
