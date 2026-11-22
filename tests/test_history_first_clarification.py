@@ -210,3 +210,16 @@ def test_volume_units(text, cbm):
 
     value = numeric_facts(text).get("volume_cbm")
     assert (value is None) if cbm is None else float(value) == pytest.approx(cbm, abs=0.001)
+
+
+def test_implausible_volume_is_confirmed_before_pricing():
+    """Round 109: 1478 kg at 306.18 cbm (4.8 kg/cbm) was quoted at 102,709 EUR, too_high."""
+    facts = {"origin": "MUC", "destination": "YYZ", "weight_kg": 1478, "volume_cbm": 306.18}
+    root = mail(1, "Air freight MUC to YYZ, 1478 kg gross, 306.18 cbm")
+    _, draft = validate(root, RfqDraft(facts=facts))
+    assert {"field": "volume_cbm", "code": "unproven"}.items() <= draft.issues[-1].items()
+
+    plausible = {**facts, "volume_cbm": 3.06}
+    root = mail(2, "Air freight MUC to YYZ, 1478 kg gross, 3.06 cbm")
+    _, draft = validate(root, RfqDraft(facts=plausible))
+    assert not [i for i in draft.issues if i["field"] == "volume_cbm"]
