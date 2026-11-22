@@ -1448,6 +1448,9 @@ def _handle(mail: Mail, sid: int) -> None:
     refusal = compliance.check(
         mail.subject or "", _clean(mail.body), *[str(t) for t in cached.get("texts", {}).values()]
     )
+    if refusal is None and (sea := compliance.sea_freight(mail.subject or "", _clean(mail.body))):
+        db.emit("out_of_scope", f"Seefracht ({sea}): Absage statt Rückfrage", sid, level="warn")
+        refusal = compliance.Refusal(False, (), sea_freight=True)
     if refusal is not None:
         _decline(mail, sid, rfq, refusal)
         return

@@ -89,6 +89,7 @@ class Settings:
     thread_rescue_max_age_s: float
     thread_rescue_max_parallel: int
     thread_rescue_max_questions: int
+    thread_rescue_max_blocked: int
     thread_rescue_max_mails: int
     thread_rescue_body_chars: int
     case_worker_enabled: bool
@@ -227,6 +228,8 @@ settings = Settings(
     # questions to one customer before the first quote; then a human takes over (session
     # 38891 asked for the Augsburg ZIP eleven times until the deadline passed)
     thread_rescue_max_questions=max(1, int(_env("THREAD_RESCUE_MAX_QUESTIONS", "3"))),
+    # blocked plans for one customer mail before the model stops (session 53348: 12 in 3 min)
+    thread_rescue_max_blocked=max(1, int(_env("THREAD_RESCUE_MAX_BLOCKED", "2"))),
     # Keep enough conversation to solve unfamiliar requests and accumulated corrections.
     thread_rescue_max_mails=max(2, int(_env("THREAD_RESCUE_MAX_MAILS", "24"))),
     thread_rescue_body_chars=max(500, int(_env("THREAD_RESCUE_BODY_CHARS", "8000"))),

@@ -184,6 +184,8 @@ def _eligible(sid: int, mail: Mail) -> bool:
         return False
     if _latest_customer(session, mail) != mail.id:
         return False
+    if db.kv_get(_stuck_key(sid, mail.id)) == "1":
+        return False  # the same plan kept failing for this mail: a person decides
     if _passive_after_quote(session, mail, root):
         return False
     if any(
@@ -569,6 +571,30 @@ def recover_request(
     return request, draft
 
 
+def _stuck_key(sid: int, mail_id: int) -> str:
+    return f"rescue.stuck.{sid}.{mail_id}"
+
+
+def _count_blocked(sid: int, mail_id: int, open_fields: list[str]) -> None:
+    """Each blocked plan is a new failure event, so the next plan gets a new key and another
+    model call. Session 53348 looped twelve times on the same port codes in three minutes.
+    After THREAD_RESCUE_MAX_BLOCKED blocked plans for one customer mail, no more model calls
+    until the customer writes again: a person takes over."""
+    key = f"rescue.blocked.{sid}.{mail_id}"
+    n = int(db.kv_get(key, "0") or 0) + 1
+    db.kv_set(key, str(n))
+    if n < settings.thread_rescue_max_blocked:
+        return
+    db.kv_set(_stuck_key(sid, mail_id), "1")
+    db.emit(
+        "thread_rescue_blocked",
+        f"Rettungsplan {n}× blockiert ({', '.join(open_fields)}), keine weiteren Modellaufrufe "
+        "bis zur nächsten Kundenmail. Bitte manuell übernehmen.",
+        sid,
+        level="error",
+    )
+
+
 def _questions_asked(session: dict) -> int:
     """Clarification mails already sent to the customer in this thread."""
     return sum(
@@ -682,6 +708,7 @@ def take_over(mail: Mail, sid: int) -> bool:
                     issues=checked.issues,
                     corrections=sorted(checked.evidence.get("corrections", {})),
                 )
+                _count_blocked(sid, mail.id, open_fields)
         elif (
             plan.action == "ask_customer" and plan.question_en.strip() and plan.question_de.strip()
         ):

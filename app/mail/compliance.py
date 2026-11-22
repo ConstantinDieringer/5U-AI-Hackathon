@@ -4,6 +4,8 @@
   (IATA DGR Special Provision A154). Asking for the Shipper's Declaration, as for ordinary
   UN3480/UN3481, would treat forbidden cargo as normal dangerous goods.
 - Destinations or transit points under embargo (Iran, North Korea, Russia, Belarus).
+- Sea freight (FCL/LCL, port to port): out of scope, we only export by air. Session 53348
+  asked port to port DEHAM to AEJEA and the rescue model looped twelve times on the port codes.
 
 A battery and a damage word must share a sentence; a negated mention ("not damaged") or an
 insurance sentence ("cover for damaged goods") does not count. Only the current message and the request's attachments are read.
@@ -48,14 +50,44 @@ _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n")
 _INSURANCE = re.compile(r"insur|versicher|assuran|seguro|assicura", re.IGNORECASE)
 
 
+# an explicit sea mode, never "port" alone (airport) and never "container" alone (ULD)
+_SEA = re.compile(
+    r"\b(?:sea|ocean)[ -]?freight\b|\bsee-?fracht\w*|\bfret maritime\b|\bflete mar[íi]timo\b|"
+    r"\btrasporto marittimo\b|\bby (?:sea|ship|vessel)\b|\bper schiff\b|\b(?:FCL|LCL)\b|"
+    r"\b\d+\s*[x×]\s*(?:20|40|45)\s*(?:ft|'|’|fu(?:ß|ss))|\bport[ -]to[ -]port\b|"
+    r"\bport of (?:loading|discharge)\b|\b(?:verschiffungs|lade|lösch|bestimmungs)hafen\b|"
+    r"\bbill of lading\b",
+    re.IGNORECASE,
+)
+# any air wording keeps it an air request ("usually by sea, this time by air")
+_AIR = re.compile(
+    r"\bair\b|\bairfreight\b|\bair[ -]?(?:freight|cargo|port|waybill)\b|\bAWB\b|\bluft\w*|"
+    r"\bflug\w*|\bflight\b|\ba[ée]rien\w*|\ba[ée]reo\b|\baereo\b|\bIATA\b",
+    re.IGNORECASE,
+)
+
+
+def sea_freight(*texts: str) -> str | None:
+    """The sea wording of a request with no air wording at all, else None. Request text
+    only (subject and current body): an attachment alone never decides the mode."""
+    text = "\n".join(t for t in texts if t)
+    if _AIR.search(text):
+        return None
+    m = _SEA.search(text)
+    return m[0] if m else None
+
+
 @dataclass(frozen=True)
 class Refusal:
     damaged_lithium: bool
     sanctioned: tuple[str, ...]  # countries, in order of mention
+    sea_freight: bool = False
 
     @property
     def reason(self) -> str:
         parts = []
+        if self.sea_freight:
+            parts.append("out_of_scope: sea freight, we only export by air")
         if self.damaged_lithium:
             parts.append("forbidden_cargo: damaged lithium batteries (IATA DGR SP A154)")
         if self.sanctioned:
@@ -100,6 +132,13 @@ def decline_text(refusal: Refusal, name: str | None, language: str, signature: s
     places = " und ".join(refusal.sanctioned) if german else " and ".join(refusal.sanctioned)
     if german:
         lines = [f"{'Hallo ' + name if name else 'Guten Tag'},", "vielen Dank für Ihre Anfrage."]
+        if refusal.sea_freight:
+            lines.append(
+                "Seefracht bieten wir leider nicht an, wir sind auf Luftfracht ab Deutschland "
+                "spezialisiert. Ein Angebot für den Container können wir Ihnen daher nicht machen."
+                "\n\nWenn Luftfracht für Sie in Frage kommt, antworten Sie einfach auf diese Mail, "
+                "dann schicken wir Ihnen sofort einen Preis."
+            )
         if refusal.damaged_lithium:
             lines.append(
                 "Diese Sendung dürfen wir leider nicht per Luftfracht befördern. Beschädigte, "
@@ -118,6 +157,12 @@ def decline_text(refusal: Refusal, name: str | None, language: str, signature: s
             )
     else:
         lines = [f"{'Hi ' + name if name else 'Hello'},", "thank you for your request."]
+        if refusal.sea_freight:
+            lines.append(
+                "Unfortunately we do not offer sea freight, we specialise in air freight from "
+                "Germany. So we cannot quote the container shipment.\n\nIf air freight could work "
+                "for you, just reply to this email and we will send you a price right away."
+            )
         if refusal.damaged_lithium:
             lines.append(
                 "Unfortunately we cannot fly this shipment. Damaged, defective or swollen "
