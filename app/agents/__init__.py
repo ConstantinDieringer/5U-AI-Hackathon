@@ -20,6 +20,7 @@ AGENTS = (
     "bid_reader",
     "consent_check",
     "quote_opening",
+    "multi_shipment",
 )
 
 
