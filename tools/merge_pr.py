@@ -64,7 +64,7 @@ def deploy_window(url: str, token: str | None) -> None:
         pricing = client.get("/api/sessions", params={"status": "pricing"})
         pricing.raise_for_status()
         sessions = pricing.json()
-        if not isinstance(sessions, list):
+        if not isinstance(sessions, list) or any(not isinstance(s, dict) for s in sessions):
             raise ValueError("pricing sessions active or unavailable")
         # Match db.deploy_busy: abandoned crash records must not block every future deploy.
         cutoff = datetime.now(UTC) - timedelta(seconds=400)

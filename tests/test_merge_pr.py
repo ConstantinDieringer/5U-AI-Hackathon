@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 from tools import merge_pr
-
 from tools.merge_pr import verify_pr
 
 
