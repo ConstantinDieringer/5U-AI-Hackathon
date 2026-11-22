@@ -1,0 +1,38 @@
+name: Runtime image
+on:
+  pull_request:
+    paths: [Dockerfile, .dockerignore, requirements.txt, .github/workflows/runtime-image.yml]
+permissions:
+  contents: read
+jobs:
+  runtime-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cold build and runtime smoke test
+        run: |
+          set -euo pipefail
+          time docker build --progress=plain -t forwarder:verify .
+          docker image inspect forwarder:verify --format '{{.Size}} bytes'
+          docker run --rm --network none -e TEAM_API_KEY=test-only -e HF_HUB_OFFLINE=1 forwarder:verify python -c "from app.pricing.reference import carriers,pickup_zones; from app.pricing.pricing import load_lanes; from app.mail.voice import customer_voice; from pathlib import Path; from faster_whisper import WhisperModel; assert carriers() and pickup_zones() and load_lanes() and customer_voice(); assert Path('data/portal_lanes.json').is_file(); assert Path('app/ui/static/index.html').is_file(); assert not Path('context').exists(); WhisperModel('base', device='cpu',compute_type='int8',download_root='/opt/whisper',local_files_only=True)"
+          cid=$(docker run -d --network none --tmpfs /data -e UI_PASSWORD=test-only -e TEAM_API_KEY=test-only -e AGENTS_ENABLED=false forwarder:verify)
+          trap 'docker rm -f "$cid"' EXIT
+          for attempt in {1..20}; do
+            if docker exec "$cid" python -c "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:8000/api/health').status == 200"; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Check model cache after documentation and ordinary app edits
+        run: |
+          set -euo pipefail
+          check_cache() {
+            time docker build --progress=plain -t forwarder:verify . 2>&1 | tee /tmp/rebuild.log
+            id=$(awk '/RUN python -c .*WhisperModel/{print $1;exit}' /tmp/rebuild.log)
+            test -n "$id"
+            grep -F "$id CACHED" /tmp/rebuild.log
+          }
+          echo 'build probe' >> README.md
+          check_cache
+          echo '# build probe' >> app/agents/rfq.py
+          check_cache
