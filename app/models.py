@@ -6,6 +6,7 @@ Money is integer cents (`*_minor`, context/code-standards.md: never floats); wei
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from enum import Enum
 from typing import Literal
 
@@ -38,17 +39,13 @@ def _to_iata(v: object) -> str | None:
 @dataclass
 class Mail:
     id: int
-    thread_root: (
-        int  # = references[0] if present, else id (session mapping: db.ingest_mail)
-    )
+    thread_root: int  # = references[0] if present, else id (session mapping: db.ingest_mail)
     sender: str
     to: str
     subject: str
     body: str
     received_at: str  # ISO 8601 UTC
-    attachments: list[dict] = field(
-        default_factory=list
-    )  # {id, filename, content_type, size}
+    attachments: list[dict] = field(default_factory=list)  # {id, filename, content_type, size}
     references: list[int] = field(default_factory=list)
     raw: dict = field(default_factory=dict)
 
@@ -76,15 +73,14 @@ class Rfq(BaseModel):
     # door-to-port without a ZIP: area from pickup_zones.csv found by code (body, signature or
     # the customer's earlier requests). Never filled by the LLM.
     pickup_city: str | None = None
-    pickup_assumed: bool = (
-        False  # pickup site inferred by code: the quote asks to confirm it
-    )
+    pickup_assumed: bool = False  # pickup site inferred by code: the quote asks to confirm it
     destination: str  # IATA
     weight_kg: float = Field(gt=0, le=100_000)  # total gross weight
     volume_cbm: float = Field(default=0.0, ge=0, le=1_000)  # total volume
     pieces: int | None = Field(default=None, ge=1)
     preference: Literal["cheapest", "fastest"] = "cheapest"
     ready_date: str | None = None  # ISO date
+    arrival_deadline: str | None = None  # latest arrival date, independent of preference
     language: str = "en"
     customer_name: str | None = None
     customer_questions: list[str] = Field(default_factory=list, max_length=5)
@@ -116,6 +112,11 @@ class Rfq(BaseModel):
     @classmethod
     def _zip(cls, v: object) -> object:
         return str(v).strip() or None if v is not None else None
+
+    @field_validator("arrival_deadline")
+    @classmethod
+    def _arrival_date(cls, value: str | None) -> str | None:
+        return date.fromisoformat(value).isoformat() if value is not None else None
 
     @property
     def pickup_zone(self) -> str | None:
@@ -177,12 +178,8 @@ class RateOption:
     rate_id: str | None = None  # portal only
     valid_until: str | None = None  # ISO 8601 UTC
     chargeable_kg: float = 0.0
-    billed_kg: float = (
-        0.0  # > chargeable_kg when billing at a higher weight break is cheaper
-    )
-    fx_eur_per_unit: str | None = (
-        None  # rate used for total_eur_minor when currency != EUR
-    )
+    billed_kg: float = 0.0  # > chargeable_kg when billing at a higher weight break is cheaper
+    fx_eur_per_unit: str | None = None  # rate used for total_eur_minor when currency != EUR
     fx_source: str | None = None
     fx_valid_until: str | None = None
     observed_at: str | None = None

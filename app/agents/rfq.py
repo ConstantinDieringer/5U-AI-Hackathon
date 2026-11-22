@@ -19,7 +19,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Any
 
 import openai
@@ -52,11 +52,13 @@ from app.pricing import served_lanes
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import (
+    earliest_schedule,
     most_balanced,
     pick,
     resolve_origin,
     sheet_options,
     to_minor,
+    within_arrival_deadline,
 )
 from app.pricing.pricing import today as pricing_today
 from app.pricing.reference import (
@@ -125,7 +127,12 @@ EXTRACT_PROMPT = (
     "destination: IATA code of the destination airport (a city -> its main cargo airport).\n"
     "weight_kg: total gross weight in kg (convert lb/t). volume_cbm: total volume in cbm; if only "
     "dimensions are given, compute pieces x L x W x H in metres.\n"
-    "preference: 'fastest' if they ask for the fastest/quickest/express option, else 'cheapest'.\n"
+    "preference is the customer's optimization goal, independent of any deadline. Use 'fastest' "
+    "only for an explicit shortest-transit priority, otherwise 'cheapest'. A latest arrival "
+    "date does NOT mean fastest. 'Among options meeting the deadline, price determines our "
+    "choice' means cheapest with an arrival_deadline. Preserve this distinction in every language.\n"
+    "arrival_deadline: explicit latest acceptable ARRIVAL date as ISO YYYY-MM-DD, else null. "
+    "Never confuse it with readiness, pickup, departure, quote validity or cargo cutoff.\n"
     "ready_date: ISO date or null. language: BCP 47 code of the customer's language, with no "
     "language restrictions. Read requests in any language and script. Keep customer_questions "
     "and service_constraints in English for the deterministic safety checks.\n"
@@ -154,6 +161,7 @@ RFQ_SCHEMA: dict[str, Any] = {
                 "pieces",
                 "preference",
                 "ready_date",
+                "arrival_deadline",
                 "language",
                 "customer_name",
                 "customer_questions",
@@ -168,6 +176,7 @@ RFQ_SCHEMA: dict[str, Any] = {
                 "pieces": {"type": ["integer", "null"]},
                 "preference": {"type": "string", "enum": ["cheapest", "fastest"]},
                 "ready_date": {"type": _N},
+                "arrival_deadline": {"type": _N},
                 "language": {"type": "string"},
                 "customer_name": {"type": _N},
                 "customer_questions": {
@@ -521,16 +530,7 @@ def _valid(option: RateOption) -> str | None:
 def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[date, date] | None:
     """Earliest departure and arrival: departure on the ready date (one day later when we
     truck it to the airport first, never before today), arrival = departure + transit."""
-    if not rfq.ready_date:
-        return None
-    try:
-        ready = date.fromisoformat(rfq.ready_date[:10])
-    except ValueError:
-        return None
-    dep = max(ready, today or datetime.now(UTC).date())
-    if rfq.door_to_port:
-        dep += timedelta(days=1)
-    return dep, dep + timedelta(days=transit_days)
+    return earliest_schedule(rfq, transit_days, today)
 
 
 def _date(d: date, lang: str) -> str:
@@ -991,6 +991,8 @@ def compose_quote_text(
         ),
         "exact_all_in_price": price,
         "requested_preference": rfq.preference,
+        "latest_arrival_requested": rfq.arrival_deadline,
+        "arrival_dates_are_estimates_not_guarantees": True,
         "excluded_airlines": rfq.excluded_airlines,
         "exclusion_acknowledgement_rule": (
             "Customer exclusions have already been applied to this selection. If useful, "
@@ -999,6 +1001,8 @@ def compose_quote_text(
         "selection_explanation": (
             "Selected for the shortest air transit among the compared air options."
             if rfq.preference == "fastest"
+            else "Selected for the lowest air price among options whose estimated arrival meets the customer's deadline."
+            if rfq.arrival_deadline
             else "Selected for the lowest air price among the compared air options."
         ),
         "origin": option.origin,
@@ -1651,12 +1655,51 @@ def _estimated_truck(rfq: Rfq, sid: int) -> bids.Offer | None:
     return bids.Offer(carrier, est.total_eur, None, 0, est.total_eur, "EUR", "1", "estimate")
 
 
+def checked_selection(mail: Mail, sid: int, rfq: Rfq) -> tuple[Rfq, RfqDraft]:
+    from app.mail import selection_intent
+
+    prior = db.validation_get(sid) or {}
+    evidence = prior.get("draft", {}).get("evidence", {})
+    cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}") or "{}")
+    sources = {
+        "body": _SIGNATURE.split(current_message(mail.body, mail.subject).facts, 1)[0],
+        **cached.get("texts", {}),
+        **evidence.get("attachment_texts", {}),
+    }
+    data, issues, proof = selection_intent.checked(
+        rfq.model_dump(), sources, evidence.get("corrections")
+    )
+    request = Rfq.model_validate(data)
+    return request, RfqDraft(facts=data, issues=issues, evidence={**evidence, **proof})
+
+
+def _arrival_question(mail: Mail, sid: int, rfq: Rfq, draft: RfqDraft | None = None) -> None:
+    from app.agents import clarification
+
+    draft = draft or RfqDraft(
+        facts=rfq.model_dump(),
+        issues=[{"field": "arrival_deadline", "code": "no_feasible_option"}],
+        evidence={
+            "question_en": "The available services do not meet your requested arrival date. Could you tell us the latest arrival date that would still work for you?",
+            "question_de": "Die verfügbaren Verbindungen passen nicht zu deinem gewünschten Ankunftstermin. Welches spätere Ankunftsdatum wäre für dich noch möglich?",
+        },
+    )
+    draft.evidence.update(
+        selection_blocked=True, rescue_before_clarification=True, blocking_clarification=True
+    )
+    clarification.request(mail, sid, draft)
+
+
 def _price_and_quote(
     mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str, forced: bool = False
 ) -> None:
     """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send.
     `forced` (RFQ watchdog): one more pricing pass from sheets, portal and the bids already
     received; no new bid mail, no waiting, no exclusion notice."""
+    rfq, selection = checked_selection(mail, sid, rfq)
+    if selection.issues:
+        _arrival_question(mail, sid, rfq, selection)
+        return
     # customer carrier preferences (round 10820, excluded_airline): stored per customer,
     # an excluded carrier is never asked for a bid and never quoted
     customer = address(mail.sender)
@@ -1765,6 +1808,22 @@ def _price_and_quote(
         for o in offers
         if o.carrier.kind == "airline"
     ]
+    considered = air + bid_opts
+    air = within_arrival_deadline(rfq, air)
+    bid_opts = within_arrival_deadline(rfq, bid_opts)
+    if rfq.arrival_deadline:
+        db.emit(
+            "arrival_selection",
+            "Ankunftsfrist vor der Preiswahl geprüft",
+            sid,
+            deadline=rfq.arrival_deadline,
+            preference=rfq.preference,
+            eligible=[o.airline for o in air + bid_opts],
+            rejected=[o.airline for o in considered if o not in air + bid_opts],
+        )
+        if considered and not air and not bid_opts:
+            _arrival_question(mail, sid, rfq)
+            return
     choice = best_air(air, bid_opts, rfq.preference)
     if liked:
         favourite = best_air(

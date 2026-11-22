@@ -648,6 +648,13 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         "un_numbers": re.findall(r"\bUN\s*\d{4}\b", combined, re.IGNORECASE),
         "declared": declared[1].strip()[:120] if declared else None,
     }
+    from app.mail import selection_intent
+
+    data, selection_issues, selection_evidence = selection_intent.checked(
+        data, sources, corrections
+    )
+    issues.extend(selection_issues)
+    evidence.update(selection_evidence)
     try:
         rfq = Rfq.model_validate(data)
     except ValueError as exc:
