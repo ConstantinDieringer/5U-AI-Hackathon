@@ -104,7 +104,9 @@ def board_loop() -> None:
                     cause=cause,
                 )
                 if changed and failed:
-                    log.error(
+                    # warning, not error: the board_verdict event already shows it on the
+                    # dashboard and alerts #sos; an ERROR line would repeat it as log_error
+                    log.warning(
                         "board: round %s (session %s) %s, reason %s",
                         round_id, sid, verdict, reason,
                     )  # fmt: skip

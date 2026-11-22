@@ -133,6 +133,16 @@ def api_problems(hours: float = 3) -> dict[str, Any]:
     return db.problems(hours=max(0.25, min(hours, 24)))
 
 
+@app.post("/api/problems/ack")
+def api_problems_ack(body: dict[str, Any]) -> dict[str, int]:
+    """Mark problem groups handled: `{"acks": {group_key: last_event_id}}`. A newer event of
+    the same group brings it back."""
+    acks = body.get("acks")
+    if not isinstance(acks, dict) or not acks or len(acks) > 300:
+        raise HTTPException(422, "acks must map 1-300 group keys to event ids")
+    return {"acked": db.ack_problems(acks)}
+
+
 @app.get("/api/context")
 def api_context() -> dict[str, str]:
     """Lagebild as markdown for the clipboard (manual help from any AI model)."""
