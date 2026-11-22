@@ -103,6 +103,7 @@ Details: Projekt-Doc `api-referenz.md` und `https://api.start-hack.5u.ai/openapi
 - Timeouts: **10 s** pro Request, max. **2 Retries** mit 1 s Abstand, nur bei Netzwerkfehler/5xx/429 (bei 429 `Retry-After` beachten).
 - Mailbox: signierte Pushes an `POST /hooks/mailbox`, Subscription über `PUT /v1/mailbox/webhook`. HMAC-SHA256 über Timestamp + Punkt + unveränderten Rohbody; Replay-Fenster 5 Minuten. Vor 202-Antwort dauerhaft in `mail_delivery` speichern; Agenten separat starten. Exakte Mail-ID dedupliziert Push/Poll auch bei vertauschter Reihenfolge. Nur Polling verändert `since_id`. Sicherheits-Polling alle 30 s bei konfiguriertem Signing-Secret, sonst mindestens 5 s, bei 429 `Retry-After` bzw. 30 s und Backoff beachten. Subscription niemals automatisch beim Start erneuern, weil PUT das Secret rotiert. Senden weiter über `POST /v1/mailbox/messages` mit `to`, `subject`, `body`, `in_reply_to`.
 - Portal: `ports` und `brackets` frei; `rates` **rate-limited (10/min, Stand 15:00)**, **eine Airline pro Aufruf** (1–4 Airlines je Lane) → nur über `hackloop.get_rate(origin, destination, airline, weight_kg, volume_cbm) -> dict` mit Rate-Limit-Zähler; `bookings` idempotent über `team_reference`. `app/pricing/portal_sync.py` erwartet zusätzlich `hackloop.get_ports() -> dict` und `hackloop.get_brackets(airline) -> dict` (rohe Antwort, Exception bei Nicht-2xx).
+- Portal-Webseite (`PORTAL_UI_URL`): nur `hackloop.portal_ui_load()`/`portal_ui_submit()` für den Portal-Check in der UI. Die Rechenaufgabe löst ausschließlich ein Mensch; ein Versuch pro Seitenprüfung.
 - LLM: OpenAI-SDK mit `base_url=f"{BASE_URL}/v1/gateway"` und `api_key=TEAM_API_KEY`.
 - Audio-Ausnahme auf Nutzerwunsch: `app/mail/audio.py` nutzt Groq Whisper mit eigenem `GROQ_API_KEY`, dann den bisherigen Gateway-Weg nur bei freigegebenem Audio-Modell, zuletzt offline CPU-Whisper `base`. Keine automatischen Konto-/Tarifänderungen; Free-Tarif separat einstellen. Gesamtes Zeitbudget 60 s, lokale Prozesse maximal 30 s, Provider-Cooldowns und atomarer Cache je Datei. Gesprochene Euro/Cent- und EN/DE-Zahlwörter werden regelbasiert normalisiert; Widersprüche bleiben blockiert. `audio_transcribed`/`audio_fallback` protokollieren den Provider, `/api/health.audio_transcription` zeigt nur Konfiguration ohne Schlüssel. Modell wird beim Docker-Build vorgeladen, kein Laufzeit-Download. Siehe `DEPLOY.md`.
 
@@ -154,6 +155,7 @@ class Rfq(BaseModel):         # Pydantic (LLM-Output); die Preisrechnung liest n
     origin: str | None        # IATA; None, wenn nur PLZ
     pickup_zip: str | None    # gesetzt = Door-to-Port
     destination: str          # IATA
+    arrival_deadline: str | None = None  # ISO-Datum; harte späteste Ankunft, kein Wunsch nach fastest
     weight_kg: float          # Gesamtgewicht
     volume_cbm: float = 0.0   # Gesamtvolumen
     pieces: int | None
@@ -163,13 +165,27 @@ class Rfq(BaseModel):         # Pydantic (LLM-Output); die Preisrechnung liest n
     customer_name: str | None
     customer_questions: list[str] = []     # jede explizite Kundenfrage, max. 5
     service_constraints: list[str] = []    # weitere Service-/Terminbedingungen, max. 10
+    insurance: CargoInsurance | None = None  # aus aktuellen Mail-/Dokumentbelegen
 ```
+
+`CargoInsurance` speichert Warenwert, Währung, Deckung und Prämiensatz als Dezimalstrings
+(`goods_value`, `currency`, `coverage_pct`, `premium_pct`), optional `minimum_premium` und
+`minimum_required`. Keine Standardkonditionen. Prämie = Warenwert × Deckung/100 × Satz/100,
+mindestens die vereinbarte Mindestprämie. Explizite FX-Konvertierung nach EUR; Addition
+nach Transportpreisanpassungen. Fehlende/widersprüchliche Konditionen sperren jedes
+automatische All-in-Angebot, auch Rescue/Watchdog/Shadow. Mehrere Sendungen mit gemeinsamem
+Versicherungswert benötigen eine Klärung der Zuordnung statt einer Vervielfachung der Prämie.
 
 Umgesetzt in `app/models.py` (21.11., 15:30).
 
 **Einheiten:** Gewicht in **kg** (float), Volumen in **cbm** (float), Geld als **ganzzahlige Cent** (`*_minor`) bzw. `Decimal`, nie float; gerundet an einer Stelle, Zeiten in **UTC ISO 8601**, Flughäfen als **IATA-Code in Großbuchstaben**, Währungscodes ISO 4217.
 
 ## 7. Datenbank (SQLite, `app/db.py`)
+
+`quotes.insurance_minor INTEGER NOT NULL DEFAULT 0` friert die Versicherungsprämie in
+EUR-Cent ein; additive Migration lässt Altangebote unverändert. Gesamtpreise enthalten
+diese Komponente; Airline-Buchungen verwenden nur den eingefrorenen Luftfrachtpreis.
+Günstigere Alternativen bei Preisänderungen behalten die Versicherungsprämie bei.
 
 `quotes.air_total_minor` und `quotes.air_currency` speichern den gewählten Luftfrachtpreis
 in Originalwährung getrennt vom EUR-Kundengesamtpreis (inklusive Truck/Preisanpassung).
@@ -411,6 +427,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - FastAPI auf Port `UI_PORT` (8000), Bindung `0.0.0.0`.
 - Endpunkte: siehe `context/docs/design/aufgabe-c.md` Abschnitt 6. SSE über `fastapi.sse.EventSourceResponse`, ohne `event:`-Feld; Mailinhalte im Frontend nur per `textContent` rendern.
+- Portal-Check: `GET`/`POST /api/sessions/{id}/portal-check` (Airlines der Strecke, neue Aufgabe), `POST /api/portal-check/{token}` (Antwort des Menschen, einmalig, 5 Min gültig).
 - JSON-Felder in **snake_case**.
 
 ## 11. Git-Workflow

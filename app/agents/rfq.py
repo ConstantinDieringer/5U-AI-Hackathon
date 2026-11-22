@@ -20,7 +20,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Any
 
 import openai
@@ -49,15 +49,17 @@ from app.mail.style import (
 from app.mail.subjects import shipment_subject
 from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
-from app.pricing import served_lanes
+from app.pricing import insurance, served_lanes
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import (
+    earliest_schedule,
     most_balanced,
     pick,
     resolve_origin,
     sheet_options,
     to_minor,
+    within_arrival_deadline,
 )
 from app.pricing.pricing import today as pricing_today
 from app.pricing.reference import (
@@ -126,7 +128,12 @@ EXTRACT_PROMPT = (
     "destination: IATA code of the destination airport (a city -> its main cargo airport).\n"
     "weight_kg: total gross weight in kg (convert lb/t). volume_cbm: total volume in cbm; if only "
     "dimensions are given, compute pieces x L x W x H in metres.\n"
-    "preference: 'fastest' if they ask for the fastest/quickest/express option, else 'cheapest'.\n"
+    "preference is the customer's optimization goal, independent of any deadline. Use 'fastest' "
+    "only for an explicit shortest-transit priority, otherwise 'cheapest'. A latest arrival "
+    "date does NOT mean fastest. 'Among options meeting the deadline, price determines our "
+    "choice' means cheapest with an arrival_deadline. Preserve this distinction in every language.\n"
+    "arrival_deadline: explicit latest acceptable ARRIVAL date as ISO YYYY-MM-DD, else null. "
+    "Never confuse it with readiness, pickup, departure, quote validity or cargo cutoff.\n"
     "ready_date: ISO date or null. language: BCP 47 code of the customer's language, with no "
     "language restrictions. Read requests in any language and script. Keep customer_questions "
     "and service_constraints in English for the deterministic safety checks.\n"
@@ -155,6 +162,7 @@ RFQ_SCHEMA: dict[str, Any] = {
                 "pieces",
                 "preference",
                 "ready_date",
+                "arrival_deadline",
                 "language",
                 "customer_name",
                 "customer_questions",
@@ -169,6 +177,7 @@ RFQ_SCHEMA: dict[str, Any] = {
                 "pieces": {"type": ["integer", "null"]},
                 "preference": {"type": "string", "enum": ["cheapest", "fastest"]},
                 "ready_date": {"type": _N},
+                "arrival_deadline": {"type": _N},
                 "language": {"type": "string"},
                 "customer_name": {"type": _N},
                 "customer_questions": {
@@ -551,16 +560,7 @@ def _valid(option: RateOption) -> str | None:
 def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[date, date] | None:
     """Earliest departure and arrival: departure on the ready date (one day later when we
     truck it to the airport first, never before today), arrival = departure + transit."""
-    if not rfq.ready_date:
-        return None
-    try:
-        ready = date.fromisoformat(rfq.ready_date[:10])
-    except ValueError:
-        return None
-    dep = max(ready, today or datetime.now(UTC).date())
-    if rfq.door_to_port:
-        dep += timedelta(days=1)
-    return dep, dep + timedelta(days=transit_days)
+    return earliest_schedule(rfq, transit_days, today)
 
 
 def _date(d: date, lang: str) -> str:
@@ -618,7 +618,7 @@ def _with_cutoff_notice(body: str, rfq: Rfq) -> str:
     return f"{body[:at].rstrip()}\n\n{notice}\n\n{body[at:]}" if at >= 0 else body
 
 
-def quote_text(
+def _base_quote_text(
     rfq: Rfq,
     option: RateOption,
     total_eur_minor: int,
@@ -847,6 +847,21 @@ def with_pickup_note(body: str, rfq: Rfq) -> str:
     return f"{body[:i].rstrip()}\n\n{note}\n\n{body[i:]}"
 
 
+def quote_text(
+    rfq: Rfq,
+    option: RateOption,
+    total_eur_minor: int,
+    truck: bids.Offer | None,
+    variant: int,
+    today: date | None = None,
+) -> str:
+    return insurance.with_notice(
+        _base_quote_text(rfq, option, total_eur_minor, truck, variant, today),
+        rfq.insurance,
+        rfq.language,
+    )
+
+
 def _validate_composed(
     raw: str,
     rfq: Rfq,
@@ -935,6 +950,7 @@ def _validate_composed(
         or re.search(r"best regards|kind regards|viele gr[üu]ße|thank you,", body, re.IGNORECASE)
     ):
         raise ValueError("answer does not follow the team mail style")
+    insurance.assert_copy(body, rfq.insurance)
     return body
 
 
@@ -969,9 +985,12 @@ def _template_first_quote(
         "earliest_arrival": written_date(when[1], lang) if when else None,
         "bookable_until": _valid(option),
         "cargo_acceptance_cutoff": "not confirmed",
+        "cargo_insurance_included": rfq.insurance is not None,
+        "cargo_insurance_terms": rfq.insurance.model_dump() if rfq.insurance else None,
     }
 
     def claim_check(text: str) -> None:
+        insurance.assert_copy(text, rfq.insurance)
         if carrier_prefs.mentions_excluded(text, rfq.excluded_airlines):
             raise ValueError("excluded carrier named")
         if _CUTOFF_TERMS.search(text) or _CUTOFF_QUESTIONS.search(text):
@@ -1020,7 +1039,11 @@ def compose_quote_text(
             else None
         ),
         "exact_all_in_price": price,
+        "cargo_insurance_included": rfq.insurance is not None,
+        "cargo_insurance_terms": rfq.insurance.model_dump() if rfq.insurance else None,
         "requested_preference": rfq.preference,
+        "latest_arrival_requested": rfq.arrival_deadline,
+        "arrival_dates_are_estimates_not_guarantees": True,
         "excluded_airlines": rfq.excluded_airlines,
         "exclusion_acknowledgement_rule": (
             "Customer exclusions have already been applied to this selection. If useful, "
@@ -1029,6 +1052,8 @@ def compose_quote_text(
         "selection_explanation": (
             "Selected for the shortest air transit among the compared air options."
             if rfq.preference == "fastest"
+            else "Selected for the lowest air price among options whose estimated arrival meets the customer's deadline."
+            if rfq.arrival_deadline
             else "Selected for the lowest air price among the compared air options."
         ),
         "origin": option.origin,
@@ -1126,7 +1151,7 @@ def compose_quote_text(
             )
             # the model signs with the team line only; code adds the signer's name above it
             signed = body.rstrip()[: -len(TEAM_LINE)] + SIGNATURE + "\n"
-            return _with_cutoff_notice(signed, rfq)
+            return insurance.with_notice(_with_cutoff_notice(signed, rfq), rfq.insurance, lang)
         except Exception as exc:  # noqa: BLE001 - optional repair (COMPOSE_REPAIR), then fallback
             last_error = exc
             if attempt + 1 < attempts:
@@ -1452,7 +1477,15 @@ def _sheets(rfq: Rfq) -> list[RateOption]:
     return [later.pop(o.airline, o) for o in today] + list(later.values())
 
 
-_FALLBACK_BLOCKERS = {"dangerous_goods", "pickup_zip", "weight_kg", "volume_cbm", "lots"}
+_FALLBACK_BLOCKERS = {
+    "dangerous_goods",
+    "pickup_zip",
+    "weight_kg",
+    "volume_cbm",
+    "lots",
+    "insurance",
+    "insurance_allocation",
+}
 
 
 def quote_without_answer(sid: int, reason: str, dg_asked: bool = False) -> bool:
@@ -1688,6 +1721,41 @@ def _estimated_truck(rfq: Rfq, sid: int) -> bids.Offer | None:
     return bids.Offer(carrier, est.total_eur, None, 0, est.total_eur, "EUR", "1", "estimate")
 
 
+def checked_selection(mail: Mail, sid: int, rfq: Rfq) -> tuple[Rfq, RfqDraft]:
+    from app.mail import selection_intent
+
+    prior = db.validation_get(sid) or {}
+    evidence = prior.get("draft", {}).get("evidence", {})
+    cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}") or "{}")
+    sources = {
+        "body": _SIGNATURE.split(current_message(mail.body, mail.subject).facts, 1)[0],
+        **cached.get("texts", {}),
+        **evidence.get("attachment_texts", {}),
+    }
+    data, issues, proof = selection_intent.checked(
+        rfq.model_dump(), sources, evidence.get("corrections")
+    )
+    request = Rfq.model_validate(data)
+    return request, RfqDraft(facts=data, issues=issues, evidence={**evidence, **proof})
+
+
+def _arrival_question(mail: Mail, sid: int, rfq: Rfq, draft: RfqDraft | None = None) -> None:
+    from app.agents import clarification
+
+    draft = draft or RfqDraft(
+        facts=rfq.model_dump(),
+        issues=[{"field": "arrival_deadline", "code": "no_feasible_option"}],
+        evidence={
+            "question_en": "The available services do not meet your requested arrival date. Could you tell us the latest arrival date that would still work for you?",
+            "question_de": "Die verfügbaren Verbindungen passen nicht zu deinem gewünschten Ankunftstermin. Welches spätere Ankunftsdatum wäre für dich noch möglich?",
+        },
+    )
+    draft.evidence.update(
+        selection_blocked=True, rescue_before_clarification=True, blocking_clarification=True
+    )
+    clarification.request(mail, sid, draft)
+
+
 @dataclass(frozen=True)
 class Priced:
     """One priced shipment: the chosen air option, the trucking and the EUR all-in total."""
@@ -1697,6 +1765,64 @@ class Priced:
     total: int  # EUR minor units, all-in
     truck: bids.Offer | None
     options: list[RateOption]  # every air option considered (sheet, portal, bids)
+    insurance_minor: int = 0
+
+
+def _insurance_terms(mail: Mail, sid: int, rfq: Rfq) -> tuple[Rfq, list[str]]:
+    """Recheck evidence even on watchdog, rescue and shadow-mode pricing paths."""
+    from app.models import CargoInsurance
+
+    row = db.validation_get(sid) or {}
+    evidence = row.get("draft", {}).get("evidence", {})
+    corrections = evidence.get("corrections", {})
+    if "insurance" in corrections:
+        policy = (
+            CargoInsurance.model_validate(corrections["insurance"])
+            if corrections["insurance"]
+            else None
+        )
+        problems = insurance.missing(policy) if policy else []
+    else:
+        cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}"))
+        attachments = evidence.get("attachment_texts", cached.get("texts", {}))
+        current = current_message(mail.body, mail.subject)
+        policy, problems = insurance.read(
+            [_SIGNATURE.split(current.facts, 1)[0], *attachments.values(), current.subject],
+            requested=rfq.insurance is not None,
+        )
+    return rfq.model_copy(update={"insurance": policy}), problems
+
+
+def _ask_insurance(
+    mail: Mail, sid: int, rfq: Rfq, problems: list[str], *, allocation: bool = False
+) -> None:
+    from app.agents import clarification
+
+    prior = db.validation_get(sid) or {}
+    evidence = dict(prior.get("draft", {}).get("evidence", {}))
+    evidence.update(blocking_clarification=True, rescue_before_clarification=True)
+    clarification.request(
+        mail,
+        sid,
+        RfqDraft(
+            facts=rfq.model_dump(),
+            evidence=evidence,
+            issues=[
+                {
+                    "field": "insurance_allocation" if allocation else "insurance",
+                    "code": "unpriced_service",
+                    "detail": ", ".join(problems),
+                }
+            ],
+        ),
+    )
+
+
+class SelectionBlocked(ValueError):
+    def __init__(self, request: Rfq, draft: RfqDraft | None = None):
+        super().__init__("Arrival constraint or selection goal needs clarification")
+        self.request = request
+        self.draft = draft
 
 
 def _price(
@@ -1716,6 +1842,44 @@ def _price(
     received; no new bid mail, no waiting, no exclusion notice."""
     slot = sid if slot is None else slot
     primary = slot == sid
+    if primary:
+        rfq, insurance_problems = _insurance_terms(mail, sid, rfq)
+        if rfq.insurance is not None and rfq.additional_shipments:
+            _ask_insurance(
+                mail, sid, rfq, ["Confirm insurance terms per shipment"], allocation=True
+            )
+            return None
+        if insurance_problems:
+            _ask_insurance(mail, sid, rfq, insurance_problems)
+            return None
+    premium = None
+    if rfq.insurance is not None:
+        if not settings.cargo_insurance:
+            db.emit(
+                "insurance_disabled",
+                "Versichertes Angebot bei deaktivierter Versicherung zurückgehalten",
+                sid,
+                level="warn",
+            )
+            if primary:
+                db.set_status(sid, "error", "Versicherung deaktiviert")
+            return None
+        try:
+            premium = insurance.premium(rfq.insurance)
+        except ValueError as exc:
+            db.emit(
+                "insurance_unpriced",
+                "Versicherung ohne gültigen Währungskurs nicht angeboten",
+                sid,
+                level="error",
+                reason=str(exc),
+            )
+            if primary:
+                db.set_status(sid, "error", "kein vollständiger Versicherungspreis")
+            return None
+    rfq, selection = checked_selection(mail, sid, rfq)
+    if selection.issues:
+        raise SelectionBlocked(rfq, selection)
 
     def limit(candidates: list[Carrier], reserved: int = 0) -> list[Carrier]:
         if primary:
@@ -1837,6 +2001,21 @@ def _price(
         for o in offers
         if o.carrier.kind == "airline"
     ]
+    considered = air + bid_opts
+    air = within_arrival_deadline(rfq, air)
+    bid_opts = within_arrival_deadline(rfq, bid_opts)
+    if rfq.arrival_deadline:
+        db.emit(
+            "arrival_selection",
+            "Ankunftsfrist vor der Preiswahl geprüft",
+            sid,
+            deadline=rfq.arrival_deadline,
+            preference=rfq.preference,
+            eligible=[o.airline for o in air + bid_opts],
+            rejected=[o.airline for o in considered if o not in air + bid_opts],
+        )
+        if considered and not air and not bid_opts:
+            raise SelectionBlocked(rfq)
     choice = best_air(air, bid_opts, rfq.preference)
     if liked:
         favourite = best_air(
@@ -1879,14 +2058,31 @@ def _price(
             sid,
         )
 
-    return Priced(rfq, choice, total, truck, air + bid_opts)
+    insurance_minor = premium.eur_minor if premium else 0
+    total += insurance_minor
+    if premium is not None:
+        from dataclasses import asdict
+
+        db.emit(
+            "insurance_priced",
+            "Transportversicherung im Gesamtpreis enthalten",
+            sid,
+            terms=rfq.insurance.model_dump(),
+            premium=asdict(premium),
+            slot=slot,
+        )
+    return Priced(rfq, choice, total, truck, air + bid_opts, insurance_minor)
 
 
 def _price_and_quote(
     mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str, forced: bool = False
 ) -> None:
     """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send."""
-    priced = _price(mail, sid, rfq, origin, t0, mode, forced)
+    try:
+        priced = _price(mail, sid, rfq, origin, t0, mode, forced)
+    except SelectionBlocked as exc:
+        _arrival_question(mail, sid, exc.request, exc.draft)
+        return
     if priced is None:
         return
     rfq, choice, total, truck = priced.rfq, priced.choice, priced.total, priced.truck
@@ -1898,6 +2094,10 @@ def _price_and_quote(
         body = _fallback_with_coverage(rfq, choice, total, truck, sid, None)
     else:
         body = compose_quote_text(rfq, choice, total, truck, sid)
+    try:
+        body = insurance.with_notice(body, rfq.insurance, rfq.language)
+    except ValueError:
+        body = _fallback_with_coverage(rfq, choice, total, truck, sid, None)
     if rfq.pickup_assumed and truck is not None:
         body = with_pickup_note(body, rfq)
     from dataclasses import asdict
@@ -1910,6 +2110,7 @@ def _price_and_quote(
         selected=asdict(choice),
         options=[asdict(o) for o in air + bid_opts],
         trucking=asdict(truck) if truck else None,
+        insurance_minor=priced.insurance_minor,
         use_breakpoints=settings.use_breakpoints,
     )
     if time.time() >= t0 + RFQ_LIFETIME_S:
@@ -1934,7 +2135,12 @@ def _price_and_quote(
             body,
             in_reply_to=mail.id,
             session_id=sid,
-            protected_terms=(choice.airline, choice.origin, choice.destination),
+            protected_terms=(
+                choice.airline,
+                choice.origin,
+                choice.destination,
+                *((insurance.notice(rfq.insurance, rfq.language),) if rfq.insurance else ()),
+            ),
             language_code=rfq.language,
             deadline_at=t0 + RFQ_LIFETIME_S,
             review=not template,
@@ -1967,6 +2173,7 @@ def _price_and_quote(
         currency="EUR",
         air_total_minor=choice.total_minor,
         air_currency=choice.currency,
+        insurance_minor=priced.insurance_minor,
         airline=choice.airline,
         origin=choice.origin,
         destination=choice.destination,
@@ -1998,8 +2205,20 @@ def _price_and_quote_multi(
     from app.agents import multi_shipment
 
     requests = [rfq, *extra]
+    checked, insurance_problems = _insurance_terms(mail, sid, rfq)
+    if checked.insurance is not None or insurance_problems or any(r.insurance for r in extra):
+        # One declared value cannot silently be duplicated across independent quotations.
+        _ask_insurance(
+            mail,
+            sid,
+            checked,
+            ["Confirm insurance terms and value for each shipment"],
+            allocation=True,
+        )
+        return
     origins = [origin, *(resolve_origin(r) or origin for r in extra)]
     results: list[Priced | None] = [None] * len(requests)
+    blocked: list[SelectionBlocked | None] = [None] * len(requests)
 
     def run(index: int) -> None:
         try:
@@ -2012,6 +2231,8 @@ def _price_and_quote_multi(
                 mode,
                 slot=bids.slot_for(sid, index),
             )
+        except SelectionBlocked as exc:
+            blocked[index] = exc
         except Exception:  # one shipment must not lose the others
             log.exception("session %s: pricing shipment %s failed", sid, index + 1)
 
@@ -2023,6 +2244,10 @@ def _price_and_quote_multi(
         worker.start()
     for worker in workers:
         worker.join(timeout=max(1.0, t0 + RFQ_LIFETIME_S - time.time()))
+    if any(blocked):
+        first_block = next(b for b in blocked if b is not None)
+        _arrival_question(mail, sid, rfq, first_block.draft)
+        return  # ask once; never send a partial combined quote around an unmet constraint
     priced = [r for r in results if r is not None]
     if not priced:
         db.emit("no_price", "Keine Sendung bepreist, kein Angebot", sid, level="error")
@@ -2117,6 +2342,7 @@ def _price_and_quote_multi(
         currency="EUR",
         air_total_minor=first.choice.total_minor,
         air_currency=first.choice.currency,
+        insurance_minor=first.insurance_minor,
         airline=first.choice.airline,
         origin=first.choice.origin,
         destination=first.choice.destination,

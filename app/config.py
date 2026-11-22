@@ -87,6 +87,8 @@ class Settings:
     email_review_enabled: bool
     reply_in_customer_language: bool
     quote_pdf: bool
+    portal_ui_check: bool
+    portal_ui_url: str
     quote_pdf_on_request: bool
     poll_interval_s: float
     db_path: str
@@ -123,6 +125,7 @@ class Settings:
     revision_not_acceptance: bool
     bid_llm_fallback: bool
     estimate_missing_truck: bool
+    cargo_insurance: bool
     consent_llm_check: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
@@ -214,6 +217,9 @@ settings = Settings(
     reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
     # 5U wants the quote as a PDF attachment: built by code from the priced option, no LLM
     quote_pdf=_flag("QUOTE_PDF", True),
+    # human-in-the-loop portal check: a person solves the portal page sum in our UI
+    portal_ui_check=_flag("PORTAL_UI_CHECK", True),
+    portal_ui_url=_env("PORTAL_UI_URL", "https://start-hack.5u.ai/portal/ui"),
     # team decision 22.11.: the PDF goes out only when the customer asks for it
     quote_pdf_on_request=_flag("QUOTE_PDF_ON_REQUEST", True),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
@@ -264,6 +270,8 @@ settings = Settings(
     bid_llm_fallback=_flag("BID_LLM_FALLBACK", True),
     # no trucker bid: estimate from earlier bids for the same pickup zone instead of silence
     estimate_missing_truck=_flag("ESTIMATE_MISSING_TRUCK", True),
+    # cargo insurance the customer asks for is added to the all-in total (value x cover x rate)
+    cargo_insurance=_flag("CARGO_INSURANCE", True),
     # round 60/70: a reply the consent rules cannot decide (or a yes next to a doubt word)
     # is checked by one cheap gateway call; the rules' explicit decline always wins
     consent_llm_check=_flag("CONSENT_LLM_CHECK", True),

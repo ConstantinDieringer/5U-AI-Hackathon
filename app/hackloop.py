@@ -6,6 +6,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -504,3 +505,112 @@ def webhook_subscribe(url: str) -> dict[str, Any]:
 
 def webhook_test() -> dict[str, Any]:
     return _json_obj(_request("POST", "/v1/mailbox/webhook/test", safe=False))
+
+
+# ---------------------------------------------------------------- portal page (human check)
+# The portal web page prices one rate per page check: a server-made sum that a PERSON solves
+# in our UI (app/ui/portal_check.py). Nothing here solves the sum. Protocol (page script):
+# POST <page> with X-Portal-Step: load -> {id, fields[], answer{name,image}, consent{name,value}};
+# POST <page> with X-Portal-Challenge: <id> and the form -> {html} or {error}.
+
+PORTAL_UI_ROLES = ("origin", "destination", "team key", "airline", "weight", "volume")
+SVG_PREFIX = "data:image/svg+xml;base64,"
+_page_transport: httpx.BaseTransport | None = None  # tests install a MockTransport here
+
+
+def _page_client(cookies: dict[str, str] | None = None) -> httpx.Client:
+    """A fresh client per page call, so cookies of two open checks never mix."""
+    return httpx.Client(timeout=TIMEOUT, transport=_page_transport, cookies=cookies)
+
+
+@dataclass(frozen=True)
+class PortalUiChallenge:
+    id: str
+    fields: tuple[tuple[str, str], ...]  # (form field name, role from PORTAL_UI_ROLES)
+    answer_name: str
+    image: str  # SVG data URL, shown to the person as <img>
+    consent_name: str
+    consent_value: str
+    cookies: tuple[tuple[str, str], ...]
+
+
+def _portal_ui_role(label: str) -> str:
+    low = label.strip().lower()
+    for role in PORTAL_UI_ROLES:
+        if low.startswith(role):
+            return role
+    raise HackloopError("POST", "/portal/ui", None, f"unknown portal page field {label!r}")
+
+
+def portal_ui_load() -> PortalUiChallenge:
+    """One fresh page check (field names, sum image). Raises HackloopError on any surprise."""
+    try:
+        with _page_client() as client:
+            resp = client.post(settings.portal_ui_url, headers={"X-Portal-Step": "load"})
+    except httpx.HTTPError as exc:
+        raise HackloopError("POST", "/portal/ui", None, type(exc).__name__) from exc
+    if not resp.is_success:
+        raise HackloopError("POST", "/portal/ui", resp.status_code, resp.text)
+    try:
+        j = resp.json()
+        fields = tuple(
+            (str(f["name"]), _portal_ui_role(str(f["label"]))) for f in j["fields"]
+        )
+        answer, consent = j["answer"], j["consent"]
+        challenge = PortalUiChallenge(
+            id=str(j["id"]),
+            fields=fields,
+            answer_name=str(answer["name"]),
+            image=str(answer["image"]),
+            consent_name=str(consent["name"]),
+            consent_value=str(consent["value"]),
+            cookies=tuple((k, v) for k, v in resp.cookies.items()),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HackloopError("POST", "/portal/ui", resp.status_code, "unexpected page shape") from exc
+    if not challenge.image.startswith(SVG_PREFIX) or not challenge.id:
+        raise HackloopError("POST", "/portal/ui", resp.status_code, "unexpected sum image")
+    return challenge
+
+
+def portal_ui_submit(
+    challenge: PortalUiChallenge,
+    *,
+    origin: str,
+    destination: str,
+    airline: str,
+    weight_kg: str,
+    volume_cbm: str,
+    answer: str,
+) -> str:
+    """Send the form with the person's answer; returns the page's result HTML. No retry: a
+    page check is single-use. The team key goes into the page's own key field."""
+    values = {
+        "origin": origin,
+        "destination": destination,
+        "team key": settings.api_key,
+        "airline": airline,
+        "weight": weight_kg,
+        "volume": volume_cbm,
+    }
+    form = {name: (None, values[role]) for name, role in challenge.fields}
+    form[challenge.answer_name] = (None, answer)
+    form[challenge.consent_name] = (None, challenge.consent_value)
+    try:
+        with _page_client(dict(challenge.cookies)) as client:
+            resp = client.post(
+                settings.portal_ui_url,
+                headers={"X-Portal-Challenge": challenge.id},
+                files=form,
+            )
+    except httpx.HTTPError as exc:
+        raise HackloopError("POST", "/portal/ui", None, type(exc).__name__) from exc
+    try:
+        j = resp.json()
+    except ValueError as exc:
+        raise HackloopError("POST", "/portal/ui", resp.status_code, "no JSON answer") from exc
+    html = j.get("html") if isinstance(j, dict) else None
+    if not resp.is_success or not isinstance(html, str) or not html:
+        err = j.get("error") if isinstance(j, dict) else None
+        raise HackloopError("POST", "/portal/ui", resp.status_code, str(err or "no rate"))
+    return html

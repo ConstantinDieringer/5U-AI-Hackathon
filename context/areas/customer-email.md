@@ -38,7 +38,7 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 
 - Team decision 22.11.: the offer goes out as a PDF **only when the customer asks for one** (`QUOTE_PDF_ON_REQUEST`, default on). Detection is rule-based in `app/mail/pdf_request.py`, no LLM: current message and non-reply subject only ("as PDF", "PDF format", "als PDF", "PDF-Angebot", "en PDF", "in formato PDF" ...). The customer's own attached PDFs, "no PDF needed", file names, quoted history and signatures do not count. A Notfall-Quote from the UI follows the same rule (any customer mail in the session).
 - The PDF is `Angebot_AP-n.pdf` (title/labels in de/en/fr/es/it, else en), sent via `attachments[]` on the mailbox API.
-- Only code-priced facts: reference, route, airline, transit, pickup, cargo, billed kg, validity and the same all-in total as the body (`style.amount`). No LLM call, no extra cost; the body keeps the total too.
+- Only code-priced facts, with the same all-in total as the body. Priced insurance is explicitly included in body and PDF; no separate premium amount. Contradictory composer claims fall back to the checked template.
 - A PDF fault never blocks the quote: it is sent without the attachment and an error event (#sos) is written. `QUOTE_PDF=false` turns PDFs off entirely; `QUOTE_PDF_ON_REQUEST=false` attaches it to every quote again.
 
 ## Composer
