@@ -743,9 +743,10 @@ function boardCard(s) { const c = el("div", { class: "card" }, el("div", { class
 function toggleReply(on, focus = true) { const r = $("#reply"); if (!r) return; r.style.display = on ? "block" : "none"; S.reply.open = on; if (on && focus) $("#reply-text").focus(); }
 let DRAFT = null;
 async function loadDraft() {
-  const sid = S.selected; toggleReply(true); const info = $("#draft-info"); info.textContent = "Berechne Preis aus Tarifblatt, Portal und Geboten …"; DRAFT = null;
+  const sid = S.selected; toggleReply(true); let info = $("#draft-info"); info.textContent = "Berechne Preis aus Tarifblatt, Portal und Geboten …"; DRAFT = null;
   try {
     const d = await post(`/api/sessions/${sid}/draft`); if (S.selected !== sid) return;
+    info = $("#draft-info");
     const customerMail = replyMails(S.detail).find((mail) => isCustomerMail(mail, S.detail));
     if (customerMail) $("#reply-mail").value = String(customerMail.id);
     DRAFT = d; $("#reply-text").value = d.body; $("#reply-text").style.minHeight = "300px";
@@ -753,7 +754,7 @@ async function loadDraft() {
     info.replaceChildren(el("b", {}, `Entwurf: ${money(d.total_minor)} · ${d.choice.airline} · ${d.preference === "fastest" ? "schnellste" : "günstigste"}`),
       d.truck ? ` · Lkw ${d.truck.name} ${euro(d.truck.eur_minor)}` : "", el("br"), "Optionen: " + opts,
       ...d.warnings.map((w) => el("div", { style: "color:#C93400" }, "⚠ " + w)));
-  } catch (e) { if (S.selected !== sid) return; info.textContent = "Entwurf konnte nicht erstellt werden. Details im Meldungspuffer."; bufferMessage("Kein Entwurf möglich: " + e.message, "error", sid); }
+  } catch (e) { if (S.selected !== sid) return; $("#draft-info").textContent = "Entwurf konnte nicht erstellt werden. Details im Meldungspuffer."; bufferMessage("Kein Entwurf möglich: " + e.message, "error", sid); }
 }
 async function sendReply() {
   const sid = S.selected, text = $("#reply-text").value.trim(); if (!text) return;
