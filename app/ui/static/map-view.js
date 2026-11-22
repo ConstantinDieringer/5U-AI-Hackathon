@@ -54,28 +54,40 @@ async function loadAirportEvents(points) {
   renderAirportEvents(data);
 }
 function eventDate(iso) {return iso?new Date(iso).toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"";}
-function eventItem_(e) {
+const EVENT_ICON={"Tropical cyclone":"wind","Earthquake":"activity","Volcano":"mountain","Flood":"droplet","Wildfire":"flame","Ground stop":"stop","Ground delay program":"clock","Delays":"clock","Airport closure":"x"};
+const EVENT_LEVEL={red:"Severe",orange:"Elevated",green:"Minor"};
+const sentence=text=>text?text.charAt(0).toUpperCase()+text.slice(1):"";
+function newsItem(e) {
   const go=()=>focusAirport(e.airports[0].iata);
-  return el("article",{class:"event-item "+e.level,tabindex:"0",role:"button","aria-label":e.title+". Show on map",onclick:go,onkeydown:k=>{if(["Enter"," "].includes(k.key)){k.preventDefault();go();}}},
-    el("div",{class:"event-top"},el("span",{class:"event-dot"}),el("strong",{},e.title)),
-    el("div",{class:"event-meta"},el("span",{class:"badge-s "+e.level},e.kind),...e.airports.slice(0,4).map(a=>el("span",{class:"chip"},a.distance_km?a.iata+" · "+a.distance_km+" km":a.iata))),
-    e.detail?el("p",{class:"caption"},e.detail):null,
-    el("div",{class:"event-foot caption"},el("span",{},[e.source,e.starts_at?eventDate(e.starts_at)+(e.ends_at?" to "+eventDate(e.ends_at):""):""].filter(Boolean).join(" · ")),
-      e.url?el("a",{href:e.url,target:"_blank",rel:"noopener noreferrer",onclick:k=>k.stopPropagation()},"Details"):null));
+  const when=e.starts_at?eventDate(e.starts_at)+(e.ends_at&&eventDate(e.ends_at)!==eventDate(e.starts_at)?" – "+eventDate(e.ends_at):""):"Now";
+  return el("li",{class:"news-item "+e.level,tabindex:"0",role:"button","aria-label":e.title+", "+EVENT_LEVEL[e.level]+". Show on map",onclick:go,onkeydown:k=>{if(["Enter"," "].includes(k.key)){k.preventDefault();go();}}},
+    el("span",{class:"news-icon"},icon(EVENT_ICON[e.kind]||"alert")),
+    el("div",{class:"news-body"},
+      el("div",{class:"news-title"},el("strong",{},e.title),el("span",{class:"news-level"},EVENT_LEVEL[e.level]||e.level)),
+      el("div",{class:"news-airports"},...e.airports.slice(0,3).map(a=>el("span",{class:"news-code"},a.iata,a.distance_km?el("small",{},a.distance_km+" km"):null)),e.airports.length>3?el("span",{class:"caption"},"+"+(e.airports.length-3)):null),
+      e.detail?el("p",{class:"news-detail"},sentence(e.detail)):null,
+      el("div",{class:"news-meta"},el("span",{},when),el("span",{"aria-hidden":"true"},"·"),
+        e.url?el("a",{href:e.url,target:"_blank",rel:"noopener noreferrer",onclick:k=>k.stopPropagation(),title:"Open the "+e.source+" source"},e.source,icon("external")):el("span",{},e.source))));
+}
+function newsGroup(title,events) {
+  return events.length?[el("li",{class:"news-group",role:"presentation"},title,el("span",{},events.length)),...events.map(newsItem)]:[];
 }
 function renderAirportEvents(data) {
   const list=NETWORK_CARD.querySelector(".event-list"),head=NETWORK_CARD.querySelector(".event-head");
   EVENT_LEVELS=new Map();
-  head.replaceChildren(el("h3",{},"Airport alerts"));
-  if(!data)list.replaceChildren(emptyState("alert","Alerts could not be loaded."));
-  else if(!data.enabled)list.replaceChildren(emptyState("check","Alerts are switched off (AIRPORT_EVENTS)."));
-  else {
-    const serious=data.events.filter(e=>e.level!=="green").length,down=data.sources.filter(s=>!s.ok).map(s=>s.name);
-    head.append(el("span",{class:"badge-s "+(serious?"orange":"green")},serious?serious+" active":"All clear"),
-      down.length?el("p",{class:"caption event-warn"},down.join(" and ")+" not reachable, showing the last known state."):"");
-    for(const e of data.events)for(const a of e.airports){const cur=EVENT_LEVELS.get(a.iata);if(!cur||EVENT_RANK[e.level]<EVENT_RANK[cur])EVENT_LEVELS.set(a.iata,e.level);}
-    list.replaceChildren(...(data.events.length?data.events.map(eventItem_):[emptyState("check","No known events near your airports right now.")]));
-  }
+  const title=el("div",{class:"news-heading"},el("h3",{},"Airport alerts"),el("span",{class:"caption"},"Near your airports · updated "+new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})));
+  head.replaceChildren(title);
+  if(!data){list.replaceChildren(emptyState("alert","Alerts could not be loaded."));markAffectedAirports();return;}
+  if(!data.enabled){list.replaceChildren(emptyState("check","Alerts are switched off (AIRPORT_EVENTS)."));markAffectedAirports();return;}
+  for(const e of data.events)for(const a of e.airports){const cur=EVENT_LEVELS.get(a.iata);if(!cur||EVENT_RANK[e.level]<EVENT_RANK[cur])EVENT_LEVELS.set(a.iata,e.level);}
+  const major=data.events.filter(e=>e.level!=="green"),filter=S.eventFilter==="major"?"major":"all",shown=filter==="major"?major:data.events;
+  const down=data.sources.filter(s=>!s.ok).map(s=>s.name);
+  head.append(el("div",{class:"seg news-filter",role:"tablist","aria-label":"Alert filter"},...[["all","All",data.events.length],["major","Major",major.length]].map(([key,label,n])=>
+    el("button",{role:"tab","aria-selected":filter===key,class:filter===key?"active":"",onclick:()=>{S.eventFilter=key;renderAirportEvents(data);}},label,el("span",{class:"news-count"},n)))),
+    down.length?el("p",{class:"news-warn"},icon("alert"),down.join(" and ")+" unreachable, showing the last known state."):"");
+  const ops=shown.filter(e=>e.source==="FAA"),hazards=shown.filter(e=>e.source!=="FAA");
+  list.replaceChildren(shown.length?el("ul",{class:"news-list"},...newsGroup("Airport operations",ops),...newsGroup("Natural hazards",hazards))
+    :emptyState("check",filter==="major"?"No major alerts near your airports.":"No known events near your airports right now."));
   markAffectedAirports();
 }
 async function focusAirport(iata) {
