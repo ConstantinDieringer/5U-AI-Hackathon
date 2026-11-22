@@ -31,27 +31,37 @@ function volumeChart(data) {
   const sig=JSON.stringify([currency,currencies,small,Math.floor(start/step),buckets.map(b=>b.minor)]);
   if(VOLUME_CARD&&sig===VOLUME_SIG)return VOLUME_CARD;
   const intro=!VOLUME_CARD;VOLUME_SIG=sig;
-  const card=el("section",{class:"card s12 volume-chart"+(intro?" intro":"")},el("div",{class:"card-h"},el("div",{},el("h2",{},"Gebuchtes Auftragsvolumen"),el("p",{class:"caption"},"Letzte 24 Stunden nach Buchungszeitpunkt. Kundenbeträge je Stunde.")),
-    currencies.length>1 ? crmSelect("Währung",currencies.map(c=>[c,c]),currency,e=>{S.chartCurrency=e.target.value;loadOverview();}) : el("span",{class:"badge-s aside"},currency==="EUR"?"€":currency)));
-  if(intro)setTimeout(()=>card.classList.remove("intro"),1400);
+  const total=buckets.reduce((sum,b)=>sum+b.minor,0);
+  const card=el("section",{class:"card s12 volume-chart"+(intro?" intro":"")},el("div",{class:"card-h"},el("div",{},el("h2",{},"Gebuchtes Auftragsvolumen"),el("p",{class:"caption"},"Kumuliert über die letzten 24 Stunden. Balken zeigen die Buchungen je Stunde.")),
+    el("div",{class:"volume-total aside"},el("b",{class:"num"},money(total,currency)),el("span",{class:"caption"},"in 24 Stunden")),
+    currencies.length>1 ? crmSelect("Währung",currencies.map(c=>[c,c]),currency,e=>{S.chartCurrency=e.target.value;loadOverview();}) : null));
+  if(intro)setTimeout(()=>card.classList.remove("intro"),1600);
   if(!events.length)card.append(el("p",{class:"caption"},"In den letzten 24 Stunden wurden noch keine Aufträge gebucht."));
-  const width=small?720:1000,height=small?300:240,left=small?155:85,right=20,top=16,bottom=40,inner=width-left-right,plot=height-top-bottom;
-  const max=niceMax(Math.max(1,...buckets.map(b=>b.minor))*1.25), scale=plot/max, slot=inner/buckets.length;
-  const chart=svg("svg",{viewBox:`0 0 ${width} ${height}`,class:"volume-svg",role:"img","aria-label":"Gebuchtes Auftragsvolumen nach Buchungszeitpunkt"});
+  const width=small?720:1000,height=small?300:250,left=small?155:85,right=20,top=16,bottom=40,inner=width-left-right,plot=height-top-bottom;
+  const max=niceMax(Math.max(1,total)*1.15), scale=plot/max, slot=inner/buckets.length;
+  const chart=svg("svg",{viewBox:`0 0 ${width} ${height}`,class:"volume-svg",role:"img","aria-label":"Kumuliertes gebuchtes Auftragsvolumen der letzten 24 Stunden"});
   for(let i=0;i<=4;i++) {const y=top+plot-i*plot/4;chart.append(svg("line",{x1:left,x2:width-right,y1:y,y2:y,class:"chart-grid"+(i?"":" base")}),svgText(money(Math.round(max*i/4),currency),{x:left-10,y:y+4,"text-anchor":"end",class:"chart-label"}));}
   const label=at=>new Date(at).toLocaleString("de-DE",step<86400000?{hour:"2-digit",minute:"2-digit"}:{day:"numeric",month:"short"});
-  const coords=buckets.map((b,i)=>[left+(i+.5)*slot,top+plot-b.minor*scale]);
-  const line=smoothPath(coords);
-  const defs=svg("defs"),gradient=svg("linearGradient",{id:"volume-gradient",x1:0,y1:0,x2:0,y2:1});
-  gradient.append(svg("stop",{offset:"0%","stop-color":"var(--blue)","stop-opacity":".16"}),svg("stop",{offset:"100%","stop-color":"var(--blue)","stop-opacity":"0"}));defs.append(gradient);
-  chart.append(defs,svg("path",{d:line+` L${coords.at(-1)[0]},${top+plot} L${coords[0][0]},${top+plot} Z`,class:"volume-area",fill:"url(#volume-gradient)"}),svg("path",{d:line,class:"volume-line",pathLength:1}));
+  // Hourly bookings as soft rounded bars on their own scale (lower third of the plot).
+  const barMax=Math.max(1,...buckets.map(b=>b.minor)),barScale=plot*.3/barMax;
   buckets.forEach((bucket,i)=>{
     if(!bucket.minor)return;
-    const [cx,cy]=coords[i],point=svg("circle",{cx,cy,r:3.5,class:"volume-dot",tabindex:"0",role:"img","aria-label":`${label(bucket.at)} ${money(bucket.minor,currency)}`});
-    const title=svg("title");title.textContent=new Date(bucket.at).toLocaleString("de-DE")+" · "+money(bucket.minor,currency);point.append(title);chart.append(point);
+    const h=Math.max(4,bucket.minor*barScale),bar=svg("rect",{x:left+i*slot+slot*.22,y:top+plot-h,width:slot*.56,height:h,rx:Math.min(4,slot*.2),class:"volume-bar"});
+    const title=svg("title");title.textContent=label(bucket.at)+" · "+money(bucket.minor,currency)+" gebucht";bar.append(title);chart.append(bar);
   });
+  // Running total at each hour boundary, drawn as a monotone curve: rises smoothly, never dips.
+  let running=0;
+  const coords=[[left,top+plot],...buckets.map((b,i)=>{running+=b.minor;return [left+(i+1)*slot,top+plot-running*scale];})];
+  const line=smoothPath(coords);
+  const defs=svg("defs"),gradient=svg("linearGradient",{id:"volume-gradient",x1:0,y1:0,x2:0,y2:1});
+  gradient.append(svg("stop",{offset:"0%","stop-color":"var(--blue)","stop-opacity":".18"}),svg("stop",{offset:"100%","stop-color":"var(--blue)","stop-opacity":"0"}));defs.append(gradient);
+  chart.prepend(defs);
+  chart.append(svg("path",{d:line+` L${coords.at(-1)[0]},${top+plot} L${coords[0][0]},${top+plot} Z`,class:"volume-area",fill:"url(#volume-gradient)"}),svg("path",{d:line,class:"volume-line",pathLength:1}));
+  const [ex,ey]=coords.at(-1),endDot=svg("circle",{cx:ex,cy:ey,r:4.5,class:"volume-dot",tabindex:"0",role:"img","aria-label":"Summe "+money(total,currency)});
+  const endTitle=svg("title");endTitle.textContent="Summe 24 Stunden · "+money(total,currency);endDot.append(endTitle);chart.append(endDot);
   for(let i=0;i<=6;i++){const at=start+(end-start)*i/6;chart.append(svgText(label(at),{x:left+inner*i/6,y:height-10,"text-anchor":i===0?"start":i===6?"end":"middle",class:"chart-label"}));}
-  const table=el("details",{class:"chart-data"},el("summary",{},"Diagrammdaten anzeigen"),el("div",{class:"table-scroll"},el("table",{class:"list"},el("thead",{},el("tr",{},el("th",{},"Zeitpunkt"),el("th",{},"Auftragsvolumen"))),el("tbody",{},...buckets.map(b=>el("tr",{},el("td",{},new Date(b.at).toLocaleString("de-DE")),el("td",{},money(b.minor,currency))))))));
+  let sum=0;
+  const table=el("details",{class:"chart-data"},el("summary",{},"Diagrammdaten anzeigen"),el("div",{class:"table-scroll"},el("table",{class:"list"},el("thead",{},el("tr",{},el("th",{},"Stunde ab"),el("th",{},"Gebucht"),el("th",{},"Kumuliert"))),el("tbody",{},...buckets.map(b=>{sum+=b.minor;return el("tr",{},el("td",{},new Date(b.at).toLocaleString("de-DE")),el("td",{class:"num"},money(b.minor,currency)),el("td",{class:"num"},money(sum,currency)));})))));
   card.append(chart,table);VOLUME_CARD=card;return card;
 }
 function niceMax(value) {const power=10**Math.floor(Math.log10(value)),unit=value/power;return [1,2,2.5,5,10].find(n=>n>=unit)*power;}
