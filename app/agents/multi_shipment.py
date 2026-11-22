@@ -63,6 +63,8 @@ def siblings(rfq: Rfq, body: str, sid: int) -> list[Rfq]:
             data["origin"] = item["origin"]
         if item.get("pickup_zip"):
             data["pickup_zip"] = item["pickup_zip"]
+        if item.get("ready_date"):  # "2. ... nach SFO, Ready 27.11." has its own pickup day
+            data["ready_date"] = item["ready_date"]
         try:
             sibling = Rfq.model_validate(data)
         except ValidationError as exc:

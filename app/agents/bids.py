@@ -16,7 +16,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from app import config, db, hackloop
@@ -103,6 +103,8 @@ def _slot_of_reply(mail: Mail, session_id: int) -> int:
     raw_parent = (mail.raw or {}).get("in_reply_to")
     if isinstance(raw_parent, int):
         parents.insert(0, raw_parent)
+    if not parents and (match := db.bid_request_for_reply(mail.sender, mail.subject, mail.body)):
+        parents = [match[1]]  # unthreaded reply: the one bid request it fits
     for parent in parents:
         stored = db.kv_get(f"bid.slot.{parent}", "")
         if stored:
@@ -124,6 +126,44 @@ def parse_price(text: str) -> tuple[Decimal, str] | None:
     per-unit, optional, waiting and insured-value amounts never count; several different
     totals give None (bid_unreadable), never the largest."""
     return mail_total(text)
+
+
+_PER_KG = re.compile(
+    rf"(?:(?P<cur1>{_CUR})\s*(?P<num1>{_MONEY})|(?P<num2>{_MONEY})\s*(?P<cur2>{_CUR}))"
+    r"\s*(?:/|per\s+|pro\s+|je\s+)\s*kg\b",
+    re.IGNORECASE,
+)
+_MINIMUM = re.compile(
+    rf"\bmin(?:imum|\.)?(?:\s+charge)?\s*[:=]?\s*"
+    rf"(?:(?P<cur1>{_CUR})\s*(?P<num1>{_MONEY})|(?P<num2>{_MONEY})\s*(?P<cur2>{_CUR}))",
+    re.IGNORECASE,
+)
+
+
+def _amount(m: re.Match) -> tuple[Decimal | None, str]:
+    num = _number(m.group("num1") or m.group("num2") or "")
+    return num, currency_code((m.group("cur1") or m.group("cur2") or "").upper())
+
+
+def per_kg_total(text: str, kg: float | Decimal | None) -> tuple[Decimal, str] | None:
+    """A bid priced per kg ("USD 1.60/kg + USD 0.55/kg fuel + USD 0.12/kg security, Min USD
+    140"): every per-kg component times the billed weight. As on the rate sheets the minimum
+    applies to the first (freight) component only. None without per-kg amounts, without a
+    known weight or with mixed currencies."""
+    rates = [_amount(m) for m in _PER_KG.finditer(text.translate(_SPACES))]
+    if not rates or not kg or any(r is None or r <= 0 for r, _ in rates):
+        return None
+    if len({c for _, c in rates}) != 1:
+        return None
+    currency = rates[0][1]
+    weight = Decimal(str(kg))
+    freight = rates[0][0] * weight
+    if (m := _MINIMUM.search(text.translate(_SPACES))) is not None:
+        minimum, cur = _amount(m)
+        if minimum is not None and cur == currency:
+            freight = max(freight, minimum)
+    surcharges = sum((r for r, _ in rates[1:]), Decimal(0)) * weight
+    return money(freight + surcharges), currency
 
 
 def parse_transit_days(text: str) -> float | None:
@@ -420,6 +460,18 @@ def _next_break(carrier: Carrier, rfq: Rfq, origin: str) -> float | None:
     return next_break(code, chargeable_kg(rfq.weight_kg, rfq.volume_cbm)) if code else None
 
 
+NON_STACKABLE = re.compile(
+    r"\bnon[- ]?stackable\b|\bnot stackable\b|\bdo not stack\b|\bno top[- ]?load\b|"
+    r"\bnicht stapelbar\b|\bnon gerbable\b|\bno apilable\b|\bnon impilabile\b",
+    re.IGNORECASE,
+)
+
+
+def non_stackable(rfq: Rfq) -> bool:
+    """The customer says nothing may be loaded on top (service_constraints are English)."""
+    return any(NON_STACKABLE.search(c) for c in rfq.service_constraints)
+
+
 def _body(rfq: Rfq, origin: str, kind: str, billed: float | None = None) -> str:
     pieces = f"{rfq.pieces} pieces, " if rfq.pieces else ""
     ready = f"Ready for pickup: {rfq.ready_date}.\n" if rfq.ready_date else ""
@@ -431,6 +483,12 @@ def _body(rfq: Rfq, origin: str, kind: str, billed: float | None = None) -> str:
     return (
         f"Hello,\n\n{what}\n"
         f"Shipment: {pieces}{rfq.weight_kg:g} kg gross, {rfq.volume_cbm:g} cbm.\n{ready}"
+        # the rate sheets know no stackability rule; a carrier's bid then includes its own
+        + (
+            "The cargo is non-stackable, nothing may be loaded on top.\n"
+            if non_stackable(rfq)
+            else ""
+        )
         + (f"Please quote it billed at {billed:g} kg, your next weight break.\n" if billed else "")
         + "\n"
         "Please reply with your all-in price in € and the transit time in days.\n\n"
@@ -449,6 +507,8 @@ def request(
         already_sent = db.bid_request_recipients(session_id)
     else:
         already_sent = set(json.loads(db.kv_get(f"bid.sent.{slot}", "[]")))
+    # per-kg bids are totalled with this weight (survives a restart, see _bid_kg)
+    db.kv_set(f"bid.kg.{slot}", str(chargeable_kg(rfq.weight_kg, rfq.volume_cbm)))
     with _cond:
         req = _open.setdefault(slot, _Request())
     before = _resume(session_id, req) if slot == session_id else set()
@@ -534,7 +594,10 @@ def session_of(mail: Mail, session_id: int | None) -> int | None:
     if session_id is not None:
         return session_id
     m = TAG.search(mail.subject or "") or TAG.search(mail.body or "")
-    return int(m.group(1)) if m else None
+    if m:
+        return int(m.group(1))
+    match = db.bid_request_for_reply(mail.sender, mail.subject, mail.body)
+    return match[0] if match else None
 
 
 def _attachment_paths(mail: Mail, sid: int | None = None) -> list[Path]:
@@ -700,6 +763,15 @@ def _evaluate(
         )
         return
     evidence, price, issue = _bid_evidence(body, files, spoken)
+    # "1.60/kg + 0.55/kg fuel + 0.12/kg security": no stated total, the components times
+    # the weight are the price (before, the minimum charge was read as the total)
+    if (
+        price is None
+        and not files
+        and not spoken
+        and (composite := per_kg_total(body, _bid_kg(mail, sid)))
+    ):
+        price, issue = composite, None
     if price is None:
         issue = issue or "kein Preis erkannt"
         # two sources naming different prices stay unreadable: the model must not pick one
@@ -710,6 +782,18 @@ def _evaluate(
             _unreadable(carrier, sid, issue)
         return
     _add_offer(mail, sid, carrier, evidence, price, [n for n, _ in files + spoken])
+
+
+def _bid_kg(mail: Mail, sid: int) -> Decimal | None:
+    """The weight a per-kg bid is billed at: our next-break request's weight, else the
+    chargeable weight we asked the carriers for."""
+    if billed := _BILLED.search(mail.subject or ""):
+        return Decimal(billed[1])
+    raw = db.kv_get(f"bid.kg.{sid}", "")
+    try:
+        return Decimal(raw) if raw else None
+    except InvalidOperation:
+        return None
 
 
 def _read_with_model(

@@ -237,14 +237,18 @@ _UNIT_WEIGHT = [
 ]
 _UNIT_VOLUME = rf"(?:volumen|volume)\s*(?:\(cbm\))?\s*(?:[:|]\s*)*({_NUM})\s*(?:cbm|m3|m³)\b"
 _COUNT = re.compile(
-    r"\b(\d+)\s*(?:pieces|pcs|pallets?|cartons?|boxes|crates|cases|colli|packages|stück"
+    r"\b(\d+)\s*(?:(?:euro|wooden|plastic|heavy|large|small)\s+)?"
+    r"(?:pieces|pcs|pallets?|cartons?|boxes|crates|cases|colli|packages|stück"
     r"|paletten|kartons|kisten)\b",
     re.IGNORECASE,
 )
 _DIMS = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*cm\b",
+    r"(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*"
+    r"(cm|inches|inch|in(?=[.,;)]|\s*$|\s+each\b)|\"|'')(?=\W|$)",
     re.IGNORECASE,
 )
+# cubic metres per cubic unit of the stated dimensions (US customers give inches)
+_CBM_PER = {"cm": Decimal("0.000001"), "in": Decimal("0.0254") ** 3}
 _EACH = re.compile(
     r"\b(?:each|per (?:piece|pallet|carton)|je|pro (?:stück|palette))\b", re.IGNORECASE
 )
@@ -325,10 +329,11 @@ def _unit_facts(text, expect, known=()):
         found["volume_cbm"] = Decimal(match[1].replace(",", "."))
     dims, counts = _DIMS.findall(text), {int(c) for c in _COUNT.findall(text)}
     if "volume_cbm" not in found and len(dims) == 1 and len(counts) == 1 and _EACH.search(text):
-        length, width, height = (Decimal(x.replace(",", ".")) for x in dims[0])
-        found["volume_cbm"] = (
-            next(iter(counts)) * length * width * height / Decimal(1_000_000)
-        ).quantize(Decimal("0.0001"))
+        length, width, height = (Decimal(x.replace(",", ".")) for x in dims[0][:3])
+        per = _CBM_PER["cm" if dims[0][3].lower() == "cm" else "in"]
+        found["volume_cbm"] = (next(iter(counts)) * length * width * height * per).quantize(
+            Decimal("0.0001")
+        )
     return found
 
 
