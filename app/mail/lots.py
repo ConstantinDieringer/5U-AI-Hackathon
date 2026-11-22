@@ -16,19 +16,23 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from app.mail import measurements
+
 _LOT = re.compile(
     r"^\s*(?:lot|los|position|pos\.?)\s*\d+\s*[:.)-]\s*(?P<rest>.+)$",
     re.IGNORECASE | re.MULTILINE,
 )
 _COUNT = re.compile(r"^\s*(\d+)\s*(?:x\s*)?[a-zäöü]", re.IGNORECASE)
 _NUM = r"(\d+(?:[.,]\d+)?)"
-_WEIGHT = re.compile(
-    _NUM + r"\s*(kg|kgs|lbs?|t)\b(?:\s*(gross|brutto|net|netto))?", re.IGNORECASE
-)
-_VOLUME = re.compile(_NUM + r"\s*(cbm|m3|m³)", re.IGNORECASE)
+_WEIGHT = re.compile(_NUM + r"\s*(kg|kgs|lbs?|t)\b(?:\s*(gross|brutto|net|netto))?", re.IGNORECASE)
+_VOLUME = measurements.VOLUME
 _DIMS = re.compile(
-    _NUM + r"\s*[x×]\s*" + _NUM + r"\s*[x×]\s*" + _NUM
-    + r"\s*(mm|cm|m|inches|inch|in(?=[.,;)]|\s*$|\s+each\b)|\"|'')(?=\W|$)",
+    _NUM
+    + r"\s*[x×]\s*"
+    + _NUM
+    + r"\s*[x×]\s*"
+    + _NUM
+    + r"\s*(mm|cm|m|ft|feet|foot|inches|inch|in(?=[.,;)]|\s*$|\s+each\b)|\"|'')(?=\W|$)",
     re.IGNORECASE,
 )
 _EACH = re.compile(r"(each|per piece|per unit|je|pro stück)\s*$", re.IGNORECASE)
@@ -74,13 +78,16 @@ def _lot(rest: str) -> tuple[Decimal, Decimal] | None:
     volume = None
     v = _VOLUME.search(rest)
     if v is not None:
-        volume = _dec(v.group(1))
+        volume = measurements.quantity(v["number"])
+        if volume is None:
+            return None
+        volume *= measurements.volume_factor(v["unit"])
         if _EACH.search(_before(rest, v.start())):
             volume *= count
     else:
         d = _DIMS.search(rest)
         if d is not None:
-            f = _TO_M[d.group(4).lower()]
+            f = measurements.length_factor(d.group(4))
             volume = _dec(d.group(1)) * _dec(d.group(2)) * _dec(d.group(3)) * f**3
             if not _TOTAL.search(_before(rest, d.start())):
                 volume *= count  # dimensions describe one piece
