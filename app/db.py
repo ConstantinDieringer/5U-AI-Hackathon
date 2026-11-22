@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS quotes (
   currency          TEXT NOT NULL,
   air_total_minor   INTEGER,
   air_currency      TEXT,
+  insurance_minor   INTEGER NOT NULL DEFAULT 0 CHECK (insurance_minor >= 0),
   transit_days      INTEGER,
   source            TEXT CHECK (source IN ('sheet','portal','bid','manual')),
   rate_id           TEXT,
@@ -325,6 +326,10 @@ def init_db(path: str | None = None) -> None:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_total_minor INTEGER")
         if "air_currency" not in quote_columns:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_currency TEXT")
+        if "insurance_minor" not in quote_columns:
+            migration.execute(
+                "ALTER TABLE quotes ADD COLUMN insurance_minor INTEGER NOT NULL DEFAULT 0"
+            )
         booking_columns = {row["name"] for row in migration.execute("PRAGMA table_info(bookings)")}
         # price the airline actually confirmed, and where the customer side of the booking
         # stands (see booking.py: awaiting_airline, confirmed_sent, price_change_asked, ...)
@@ -1627,13 +1632,14 @@ def record_quote(
     mail_id: int | None = None,
     air_total_minor: int | None = None,
     air_currency: str | None = None,
+    insurance_minor: int = 0,
 ) -> int:
     with tx() as c:
         cur = c.execute(
             "INSERT INTO quotes(session_id, airline, origin, destination, total_minor, currency,"
             " transit_days, source, rate_id, valid_until, alternatives_json, mail_id, sent_at,"
-            " air_total_minor, air_currency)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " air_total_minor, air_currency, insurance_minor)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 session_id,
                 airline,
@@ -1650,6 +1656,7 @@ def record_quote(
                 now(),
                 air_total_minor,
                 air_currency,
+                insurance_minor,
             ),
         )
         c.execute(
