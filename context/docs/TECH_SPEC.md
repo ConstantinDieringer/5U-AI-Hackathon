@@ -140,7 +140,7 @@ class RateOption:             # Ergebnis aus Sheet, Portal oder Bid – immer gl
     origin: str               # IATA
     destination: str          # IATA
     transit_days: int
-    total_minor: int          # all-in, in Cent (nie float, siehe context/code-standards.md)
+    total_minor: int          # all-in, in Cent (nie float, siehe CONTEXT.md)
     currency: str             # "EUR" / "USD"
     total_eur_minor: int      # zum Vergleichen umgerechnet, Kurs mitloggen
     source: str               # "sheet" | "portal" | "bid"

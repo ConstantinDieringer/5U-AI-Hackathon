@@ -14,7 +14,7 @@ Implement the requested customer behaviour. Start at its owner, exercise the nor
 | Dashboard or manual quote | app/ui/drafts.py and the shared business function | tests/test_arrival_constraints.py |
 | Deploy or alerts | `DEPLOY.md` | tests/test_ops_guardrails.py |
 
-Follow the matching area in context/areas/ for its business rules. Use `context/code-standards.md` for details, the matching TECH_SPEC section for schema or dependency changes, and Git/PRs for history. Update the owner document when its contract changes.
+Read `CONTEXT.md` as the single project context. Consult technical references only when needed for the task. Update context only for major capabilities, architecture decisions or essential contracts, under 500 words. `CHANGELOG.md` is the only changelog, with at most eight short entries for truly significant changes. Combine related changes and replace older entries when full. Do not create area summaries, progress trackers, history archives or per PR change fragments. Small fixes and test evidence belong in Git and PRs.
 
 5U calls go through app/hackloop.py, model calls through app/llm.py, SQL through app/db.py and environment settings through app/config.py. Validate external data. Keep money in minor units or Decimal with currency; use real rates. Keep consent current and explicit. Preserve send claims, pause/manual state, deadlines and retry semantics. Customer copy follows `app/mail/customer_voice.md`.
 

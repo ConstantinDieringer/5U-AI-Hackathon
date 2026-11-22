@@ -127,7 +127,7 @@ def tx():
 - Das Event wird **in derselben Transaktion** wie die Zustandsänderung geschrieben.
 - **Keine** Netzwerk-/LLM-/Mail-Calls innerhalb einer Transaktion.
 - Ergebnisse immer komplett holen (`fetchall()`) und als `dict(row)` zurückgeben. Offene Cursor blockieren WAL-Checkpoints.
-- **Geld nie als float** (`context/code-standards.md`): Beträge als ganzzahlige Cent (`*_minor`), LLM-Kosten als Mikro-USD (`*_micro_usd`), immer mit Währung. Umrechnung für die Anzeige nur im Frontend bzw. in einer Formatierungsfunktion.
+- **Geld nie als float** (`CONTEXT.md`): Beträge als ganzzahlige Cent (`*_minor`), LLM-Kosten als Mikro-USD (`*_micro_usd`), immer mit Währung. Umrechnung für die Anzeige nur im Frontend bzw. in einer Formatierungsfunktion.
 - Zeitstempel in Python erzeugen: `datetime.now(timezone.utc).isoformat(timespec="seconds")`.
 - Bei Fehlern `e.sqlite_errorname` loggen: `SQLITE_BUSY_SNAPSHOT` = Programmierfehler (lesen→schreiben ohne IMMEDIATE), `SQLITE_BUSY` = Transaktion zu lang.
 - DB-Datei nicht in einem synchronisierten Ordner (Dropbox/OneDrive) oder auf einem Netzlaufwerk ablegen.
@@ -355,7 +355,7 @@ Laufen als Threads aus `run.py`:
 └──────────────────────────┴────────────────────────────┴───────────────────┘
 ```
 
-Vorgaben aus `context/ui-context.md`: **dunkles Theme zuerst**, Farben/Abstände nur über CSS-Variablen (Design-Tokens in `:root`), Radius-Skala klein→Karte→Modal, **ein** Icon-Set (z. B. inline-SVG aus einer Quelle).
+UI Gestaltung: **dunkles Theme zuerst**, Farben/Abstände nur über CSS-Variablen (Design-Tokens in `:root`), Radius-Skala klein→Karte→Modal, **ein** Icon-Set (z. B. inline-SVG aus einer Quelle).
 
 Design-Regeln (gestützt auf OpenAI-Agents-Tracing, Temporal UI, LangChain Agent Inbox, Intercom Fin, Microsoft HAX, siehe Report):
 - **Master-Detail:** Liste links, Detail mit Timeline rechts – das gängige Muster in Agent-Konsolen.

@@ -1,8 +1,7 @@
 """Keep the AI context small so every change starts fast.
 
-AGENTS.md routes each task to the files it needs; the always-read files and the area files
-have byte budgets. Exceeding one means moving content out (to an area file or
-context/history/), not raising the budget.
+CONTEXT.md is the only project summary; CHANGELOG.md keeps only major changes.
+Detailed history belongs in Git, not additional summaries or change fragments.
 """
 
 import re
@@ -19,3 +18,10 @@ def test_always_read_files_stay_within_budget() -> None:
     assert (ROOT / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
     assert _size("AGENTS.md") + _size("CLAUDE.md") <= 4000
     assert not re.search(r"^@", (ROOT / "AGENTS.md").read_text(), re.MULTILINE)
+    assert len((ROOT / "CONTEXT.md").read_text(encoding="utf-8").split()) <= 500
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    entries = re.findall(r"^\* (.+)$", changelog, re.MULTILINE)
+    assert len(entries) <= 8
+    assert all(len(entry.split()) <= 40 for entry in entries)
+    assert _size("CHANGELOG.md") <= 2500
+    assert not [p for p in (ROOT / "context").rglob("*.md") if "docs" not in p.parts]
