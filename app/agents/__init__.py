@@ -21,6 +21,8 @@ AGENTS = (
     "consent_check",
     "customer_reply",
     "reply_conditions",
+    "quote_opening",
+    "multi_shipment",
 )
 
 

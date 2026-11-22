@@ -417,7 +417,6 @@ def stub(monkeypatch):
         "portal_result",
         lambda r, **kw: PortalResult([opt("Aurelia Air Cargo", 2000, 3, "portal")]),
     )
-    monkeypatch.setattr(rfq, "settings", dataclasses.replace(rfq.settings, quote_target_s=5.0))
     return s
 
 

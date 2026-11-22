@@ -32,7 +32,6 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 - Body AND subject are rendered and independently asserted immediately before sending; Unicode punctuation and HTML entities cannot bypass the rules. Re/Fw prefixes are removed without changing `in_reply_to`.
 - The actually submitted body and subject are persisted. Carrier/trucker machine messages are unchanged.
 - Quotes, booking confirmations and follow-ups name the verified current airport route in the subject; missing route facts keep the existing subject.
-- Versioned replies and natural booking invitations: `context/docs/reply-workflow.md`.
 - Every RFQ customer send inserts a deterministic reply-by-email tracking paragraph before the signature (conditional before booking, direct after). `tracking_notice` checks active quotes/bookings every 30 s and repairs at most one missing notice; ambiguous transport is alerted, never resent.
 
 ## Quote PDF
@@ -45,7 +44,8 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 ## Composer
 
 - Every quote uses `LLM_COMPOSE_MODEL` (`gpt-5-mini`) with bounded current-thread and earlier same-customer correspondence; older monetary amounts are removed. A failed check sends the deterministic quote copy; the second composer call is opt-in (`COMPOSE_REPAIR`, off for cost). Only verified current facts support price/service promises.
-- Language: current request/attachment prose and the latest meaningful reply set the language; short acknowledgements inherit it. Composer/repair receive the full code. EN/DE/FR/ES/IT/NL/PL/TR retain verified native templates; other languages use checked, cached translation at the shared send boundary. No unverified English fallback. Native tracking paragraphs survive translation and recovery. Details, costs and limits: `context/docs/multilingual-mail.md`.
+- Language: current request/attachment prose and the latest meaningful reply set the language; short acknowledgements inherit it. Composer/repair receive the full code. EN/DE/FR/ES/IT retain verified native templates; other languages use checked, cached translation at the shared send boundary. No unverified English fallback. Native tracking paragraphs survive translation and recovery. Details, costs and limits: `context/docs/multilingual-mail.md`.
+- `QUOTE_TEMPLATE_FIRST` (off): template carries the facts, one small call (`app/agents/quote_opening.py`) adds a checked opening and answers; failures send the plain template.
 - Voice: close, cheerful best-friend tone; German defaults to du unless formal address is requested. No invented shared history.
 - One validated repair attempt, then the deterministic template fallback. Fallback templates reject placeholders and embedded headers.
 - Never promise unverified cargo cutoffs; a requested cutoff is stated as unconfirmed.

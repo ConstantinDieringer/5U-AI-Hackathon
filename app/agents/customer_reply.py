@@ -141,6 +141,14 @@ def _revise(mail: Mail, sid: int, session: dict, decision: ReplyDecision) -> Non
     from app.agents import bids, rfq
     from app.mail.rfq_validation import validate
 
+    if (session.get("request") or {}).get("additional_shipments"):
+        db.reply_suspend_offer(sid)
+        _review(
+            mail,
+            sid,
+            ["Bei mehreren Sendungen muss die Änderung zuerst eindeutig zugeordnet werden"],
+        )
+        return
     updated = dict(session.get("request") or {})
     evidence = {}
     for change in decision.changes:
@@ -185,6 +193,8 @@ def _revise(mail: Mail, sid: int, session: dict, decision: ReplyDecision) -> Non
                     "pickup_zip",
                     "pickup_city",
                     "ready_date",
+                    "arrival_deadline",
+                    "preference",
                     "pieces",
                     "weight_kg",
                     "volume_cbm",
@@ -200,6 +210,12 @@ def _revise(mail: Mail, sid: int, session: dict, decision: ReplyDecision) -> Non
                 or ["Unvollständige Sendungsdaten"],
             )
             return
+        draft.evidence["corrections"] = {
+            **draft.evidence.get("corrections", {}),
+            "preference": checked.preference,
+            **({"arrival_deadline": checked.arrival_deadline} if checked.arrival_deadline else {}),
+        }
+        db.validation_save(sid, "ready", draft.model_dump(mode="json"), dataclasses.asdict(mail))
         request = rfq.with_stated_origin(checked, mail, sid)
         origin = rfq.resolve_origin(request)
         if not origin:

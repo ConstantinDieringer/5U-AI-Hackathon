@@ -97,6 +97,9 @@ def text_for(draft, lang):
         "attachments": "a readable, corrected packing specification",
         "dangerous_goods": "the applicable dangerous goods declaration and safety data sheet, the UN number and class, and clarification of any conflicting declarations",
         "shipment": "the missing or corrected shipment details",
+        "arrival_deadline": "the latest acceptable arrival date",
+        "ready_date": "the date the shipment will be ready",
+        "preference": "whether price or the shortest transit is your priority within the arrival deadline",
     }
     de = {
         "pickup_zip": "die Postleitzahl der Abholadresse",
@@ -109,6 +112,9 @@ def text_for(draft, lang):
         "attachments": "eine lesbare, korrigierte Packliste",
         "dangerous_goods": "die zutreffende Gefahrguterklärung und das Sicherheitsdatenblatt, UN-Nummer und Klasse und eine Klärung widersprüchlicher Angaben",
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
+        "arrival_deadline": "das späteste akzeptable Ankunftsdatum",
+        "ready_date": "das Datum der Versandbereitschaft",
+        "preference": "ob innerhalb der Ankunftsfrist der Preis oder die kürzeste Laufzeit Vorrang hat",
     }
     labels = de if lang == "de" else en
     if "dangerous_goods" in fields:
@@ -387,7 +393,9 @@ def recover_history(mail, sid, draft):
 
 
 def request(mail, sid, draft):
-    if draft.evidence.get("workflow", "rfq") == "rfq":
+    if draft.evidence.get("workflow", "rfq") == "rfq" and not draft.evidence.get(
+        "selection_blocked"
+    ):
         recovered, draft = recover_history(mail, sid, draft)
         if recovered is not None and not draft.issues:
             previous = db.validation_get(sid)
@@ -468,8 +476,10 @@ def request(mail, sid, draft):
                 sid,
                 level="warn",
             )
+        # No send follows, for every workflow. Left at "pending", the 1 s worker called this
+        # again every second (session 24377: 422 events in two minutes, until rescue).
+        db.clarification_sent(sid, "capped")
         if settings.clarify_cap_resolve and workflow == "rfq":
-            db.clarification_sent(sid, "capped")  # no send follows; not an unknown outcome
             resolve_at_cap(mail, sid, draft)
         return
     if not db.clarification_claim(sid):
@@ -711,6 +721,9 @@ def answer_draft(mail, sid, root, draft):
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
+    from app.mail import selection_intent
+
+    corrections.update(selection_intent.answer(own, asked))
     known = known_weights(draft, sid, mail) if settings.thousands_evidence else ()
     corrections.update(
         {k: float(v) for k, v in numeric_facts(own, known=known).items() if k in asked}
@@ -937,23 +950,29 @@ def run(stop):
 
     while not stop.wait(1):
         try:
-            for saved in db.clarification_unhandled_replies():
-                if rescue.is_owner(saved["session_id"]):
-                    rescue.take_over(_stored_mail(saved), saved["session_id"])
-                else:
-                    handle_reply(_stored_mail(saved), saved["session_id"])
-            for item in db.validation_pending():
-                row = db.validation_get(item["session_id"])
-                if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
-                    request(
-                        Mail(**row["root"]),
-                        item["session_id"],
-                        RfqDraft.model_validate(row["draft"]),
-                    )
-            if settings.clarify_once:
-                fallback_due()
+            tick(rescue)
         except Exception:
             logging.getLogger(__name__).exception("Clarification worker failed")
+
+
+def tick(rescue) -> None:
+    """One pass of the worker. A paused or taken-over session keeps its pending question
+    untouched until it is released (calling request() for it re-emitted
+    `validation_blocked` every second)."""
+    for saved in db.clarification_unhandled_replies():
+        if rescue.is_owner(saved["session_id"]):
+            rescue.take_over(_stored_mail(saved), saved["session_id"])
+        else:
+            handle_reply(_stored_mail(saved), saved["session_id"])
+    for item in db.validation_pending():
+        sid = item["session_id"]
+        if db.is_paused(sid) or db.is_manual(sid):
+            continue
+        row = db.validation_get(sid)
+        if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
+            request(Mail(**row["root"]), sid, RfqDraft.model_validate(row["draft"]))
+    if settings.clarify_once:
+        fallback_due()
 
 
 def fallback_due(now=None):

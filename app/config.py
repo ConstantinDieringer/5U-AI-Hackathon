@@ -17,10 +17,19 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, "").strip() or default
 
 
+_ON = frozenset({"1", "true", "yes", "on"})
+_OFF = frozenset({"0", "false", "no", "off"})
+
+
 def _flag(name: str, default: bool = False) -> bool:
-    """An on/off switch: "true"/"false" in the environment win, otherwise the default."""
-    value = _env(name, "true" if default else "false").lower()
-    return value == "true" if value in ("true", "false") else default
+    """An on/off switch, the one parser for every boolean setting: 1/true/yes/on and
+    0/false/no/off (any case) win, an empty or unknown value keeps the default."""
+    value = _env(name).lower()
+    if value in _ON:
+        return True
+    if value in _OFF:
+        return False
+    return default
 
 
 def _domains(name: str, default: str) -> frozenset[str]:
@@ -73,6 +82,7 @@ class Settings:
     thread_rescue_body_chars: int
     llm_compose_model: str
     compose_repair: bool
+    quote_template_first: bool
     llm_review_model: str
     email_review_enabled: bool
     reply_in_customer_language: bool
@@ -83,15 +93,12 @@ class Settings:
     ui_port: int
     log_level: str
     inbox_dir: Path
-    carrier_list: Path
     board_sync_every_s: float
     deadline_check_every_s: float
     ui_user: str
     ui_password: str
     review_token: str
     agents_enabled: bool
-    quote_target_s: float
-    bid_max_wait_s: float
     quote_full_score_deadline_s: float
     quote_final_deadline_s: float
     min_bid_carriers: int
@@ -100,7 +107,6 @@ class Settings:
     max_bid_carriers: int
     max_trucker_bids: int
     price_adjust_pct: float
-    carrier_observation_ttl_s: float
     allow_incomplete_door_quote: bool
     trucker_balance: str
     self_delivery_recovery: bool
@@ -117,6 +123,7 @@ class Settings:
     revision_not_acceptance: bool
     bid_llm_fallback: bool
     estimate_missing_truck: bool
+    cargo_insurance: bool
     consent_llm_check: bool
     all_excluded_notice: bool
     clarify_fallback_after_s: float
@@ -185,7 +192,7 @@ settings = Settings(
     # than all other calls of a quote together (cost points: 0 at 0.10 USD per quote)
     llm_retry_model=_env("LLM_RETRY_MODEL", "gpt-5-mini"),  # repair when extraction fails
     llm_rescue_model=_env("LLM_RESCUE_MODEL", "gpt-5-mini"),
-    thread_rescue_enabled=_env("THREAD_RESCUE_ENABLED", "true").lower() == "true",
+    thread_rescue_enabled=_flag("THREAD_RESCUE_ENABLED", True),
     thread_rescue_max_calls=max(1, int(_env("THREAD_RESCUE_MAX_CALLS", "2"))),
     thread_rescue_after_s=max(10.0, float(_env("THREAD_RESCUE_AFTER_S", "45"))),
     # only fresh customer input: older threads are history, not a live workflow (a restart
@@ -200,8 +207,11 @@ settings = Settings(
     # a second composer call after a failed check doubles the quote's biggest cost; off =
     # the checked deterministic quote copy goes out instead
     compose_repair=_flag("COMPOSE_REPAIR", False),
+    # true = the checked template carries the facts and one small call adds a personal
+    # opening and answers (cheaper than the full composer); false = full composer
+    quote_template_first=_flag("QUOTE_TEMPLATE_FIRST", False),
     llm_review_model=_env("LLM_REVIEW_MODEL", "gpt-5"),
-    email_review_enabled=_env("EMAIL_REVIEW_ENABLED", "false").lower() == "true",
+    email_review_enabled=_flag("EMAIL_REVIEW_ENABLED"),
     reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
     # 5U wants the quote as a PDF attachment: built by code from the priced option, no LLM
     quote_pdf=_flag("QUOTE_PDF", True),
@@ -212,7 +222,6 @@ settings = Settings(
     ui_port=int(_env("PORT", _env("UI_PORT", "8000"))),  # PORT is set by Railway/Render
     log_level=_env("LOG_LEVEL", "INFO"),
     inbox_dir=Path(_env("INBOX_DIR", str(ROOT / "data" / "inbox"))),
-    carrier_list=ROOT / "data" / "start-kit" / "carrier-list.csv",
     board_sync_every_s=float(_env("BOARD_SYNC_EVERY_S", "15")),
     deadline_check_every_s=float(_env("DEADLINE_CHECK_EVERY_S", "10")),
     ui_user=_env("UI_USER", "team"),
@@ -220,9 +229,7 @@ settings = Settings(
     # read-only bearer token for review agents (GET only), so they never need the team key
     review_token=_env("REVIEW_TOKEN"),
     # false = UI only: no polling, no sending, no catch-up (used while moving the DB online)
-    agents_enabled=_env("AGENTS_ENABLED", "true").lower() not in ("0", "false", "no", "off"),
-    quote_target_s=float(_env("QUOTE_TARGET_S", "110")),
-    bid_max_wait_s=float(_env("BID_MAX_WAIT_S", "300")),
+    agents_enabled=_flag("AGENTS_ENABLED", True),
     quote_full_score_deadline_s=float(
         _env("QUOTE_FULL_SCORE_DEADLINE_S", _env("QUOTE_TARGET_S", "110"))
     ),
@@ -238,8 +245,7 @@ settings = Settings(
     # % taken off the computed all-in total (0 = quote our cost). Experimental lever against
     # too_high; whether 5U also rejects prices far below its best price is not documented.
     price_adjust_pct=min(10.0, max(0.0, float(_env("PRICE_ADJUST_PCT", "0")))),
-    carrier_observation_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", "3600")),
-    allow_incomplete_door_quote=(_env("ALLOW_INCOMPLETE_DOOR_QUOTE", "false").lower() == "true"),
+    allow_incomplete_door_quote=_flag("ALLOW_INCOMPLETE_DOOR_QUOTE"),
     trucker_balance=_trucker_balance(),
     # on by default since 21.11 (fehler-log): rounds 28/35, revision/all-excluded/December edge
     # cases; each still switches off with NAME=false in Railway
@@ -259,6 +265,8 @@ settings = Settings(
     bid_llm_fallback=_flag("BID_LLM_FALLBACK", True),
     # no trucker bid: estimate from earlier bids for the same pickup zone instead of silence
     estimate_missing_truck=_flag("ESTIMATE_MISSING_TRUCK", True),
+    # cargo insurance the customer asks for is added to the all-in total (value x cover x rate)
+    cargo_insurance=_flag("CARGO_INSURANCE", True),
     # round 60/70: a reply the consent rules cannot decide (or a yes next to a doubt word)
     # is checked by one cheap gateway call; the rules' explicit decline always wins
     consent_llm_check=_flag("CONSENT_LLM_CHECK", True),
@@ -267,7 +275,7 @@ settings = Settings(
     clarify_fallback_after_s=float(_env("CLARIFY_FALLBACK_AFTER_S", "45")),
     # RFQ_WATCHDOG: an RFQ still without our quote this long after it arrived gets the best
     # quote real prices allow (app/agents/watchdog.py); never a second quote, never paused
-    rfq_watchdog=_env("RFQ_WATCHDOG", "false").lower() == "true",
+    rfq_watchdog=_flag("RFQ_WATCHDOG"),
     rfq_watchdog_after_s=max(30.0, float(_env("RFQ_WATCHDOG_AFTER_S", "200"))),
     # deploy gate: RFQs arrive about every 6 min 4 s; the phase is read from real arrivals
     rfq_interval_s=max(60.0, float(_env("RFQ_INTERVAL_S", "364"))),
@@ -281,7 +289,7 @@ settings = Settings(
     ),
     usd_eur_rate=_env("USD_EUR_RATE"),
     usd_eur_valid_until=_env("USD_EUR_VALID_UNTIL"),
-    use_breakpoints=_env("USE_BREAKPOINTS", "true").lower() == "true",
+    use_breakpoints=_flag("USE_BREAKPOINTS", True),
     served_lanes_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))),
     rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "enforce"),
     webhook_secret=_env("MAILBOX_WEBHOOK_SECRET"),
@@ -303,7 +311,7 @@ settings = Settings(
     # the booking to the customer anyway; 0 confirms right after booking as before
     airline_confirm_wait_s=max(0.0, float(_env("AIRLINE_CONFIRM_WAIT_S", "180"))),
     # customer silent after our quote -> nudge in the thread (app/agents/followup.py)
-    followup_enabled=_env("FOLLOWUP_ENABLED", "true").lower() not in ("0", "false", "no", "off"),
+    followup_enabled=_flag("FOLLOWUP_ENABLED", True),
     followup_after_s=float(_env("FOLLOWUP_AFTER_S", "30")),
     followup_max=max(0, int(_env("FOLLOWUP_MAX", "3"))),
     followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
@@ -313,7 +321,7 @@ settings = Settings(
     # for the go-ahead (app/agents/prebook.py); false = today's generic clarification
     reply_workflow_mode=_env("REPLY_WORKFLOW_MODE", "shadow").lower(),
     reply_workers=max(1, min(16, int(_env("REPLY_WORKERS", "4")))),
-    prebook_answer=_env("PREBOOK_ANSWER", "false").lower() in ("1", "true", "yes", "on"),
+    prebook_answer=_flag("PREBOOK_ANSWER"),
     # phishing gate: off | shadow (classify and log, block nothing) | enforce
     phishing_gate_mode=_env("PHISHING_GATE_MODE", "enforce").lower(),
     # what an LLM-only verdict may do; it never does more than PHISHING_GATE_MODE allows.
@@ -321,7 +329,7 @@ settings = Settings(
     phishing_gate_llm_mode=_env("PHISHING_GATE_LLM_MODE", "off").lower(),
     phishing_gate_model=_env("PHISHING_GATE_MODEL", "gpt-5-nano"),
     # mail guard (app/mail/guard.py): empty/automatic mail, RFQ floods, outgoing mail loops
-    mail_guard_enabled=_env("MAIL_GUARD_ENABLED", "true").lower() != "false",
+    mail_guard_enabled=_flag("MAIL_GUARD_ENABLED", True),
     inbound_flood_max=max(1, int(_env("INBOUND_FLOOD_MAX", "3"))),  # new RFQs per sender
     inbound_flood_s=float(_env("INBOUND_FLOOD_S", "600")),  # 5U sends one RFQ per 6 min
     outbound_burst_max=max(1, int(_env("OUTBOUND_BURST_MAX", "6"))),  # mails to one customer
@@ -335,7 +343,7 @@ settings = Settings(
     speech_model_dir=_env("SPEECH_MODEL_DIR"),  # Docker bakes the model into /opt/whisper
     llm_vision_model=_env("LLM_VISION_MODEL"),
     # false = no recognition of audio/scans (deterministic text readers stay enabled)
-    attachment_transcription=_env("ATTACHMENT_TRANSCRIPTION", "true").lower() != "false",
+    attachment_transcription=_flag("ATTACHMENT_TRANSCRIPTION", True),
     groq_api_key=_env("GROQ_API_KEY"),
     groq_audio_model=_env("GROQ_AUDIO_MODEL", "whisper-large-v3"),
     audio_timeout_s=max(1.0, float(_env("AUDIO_TIMEOUT_S", "60"))),

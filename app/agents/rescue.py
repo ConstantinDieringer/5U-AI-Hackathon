@@ -76,7 +76,7 @@ rejection/cancellation (never cancel a booking). Existing tools verify actual co
 No invented prices, dates, carrier promises, customer approvals, DG documents or shipment facts.
 Do not waive missing required fields, unsupported routes, DG checks, deadlines, human controls,
 phishing, send uncertainty, or one-quote limits. No arbitrary code, URL access or direct sending.
-Correction values are strings. Use ISO ready_date, JSON arrays for list fields, true for no_pickup,
+Correction values are strings. Use ISO ready_date and arrival_deadline, JSON arrays for list fields, true for no_pickup,
 IATA airport codes, kg, cbm and five-digit pickup ZIPs. Omit fields without evidence.
 For an unambiguous short yes to the current offer, add booking_consent=true with the exact current
 customer affirmation as evidence. This never overrides a condition, revision, question or rejection.
@@ -393,7 +393,7 @@ def _corrected(draft: RfqDraft, plan: Plan, evidence: str, known: tuple = ()) ->
                 value = _rescue_value(field, raw, known, draft.facts)
             except (ValueError, InvalidOperation, OverflowError):
                 continue
-        elif field == "ready_date":
+        elif field in {"ready_date", "arrival_deadline"}:
             try:
                 value = date.fromisoformat(raw).isoformat()
             except ValueError:

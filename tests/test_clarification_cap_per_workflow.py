@@ -104,3 +104,37 @@ def test_rfq_questions_still_count_toward_the_rfq_cap(sent) -> None:
     _rfq_question(8000)
     _rfq_question(8001)
     assert clarification._questions_sent(SID, "rfq") == 2
+
+
+def _events(kind: str) -> int:
+    return sum(1 for e in db.get_session(SID)["events"] if e["kind"] == kind)
+
+
+def test_capped_booking_question_is_not_retried_every_second(sent) -> None:
+    """Session 24377: at the booking cap `send_state` stayed `pending`, so the 1 s worker
+    called request() again every second (422 events in two minutes)."""
+    from app.agents import rescue
+
+    _reply(3000, HESITATE_1)
+    _reply(3001, HESITATE_2)
+    _reply(3002, HESITATE_3)  # third: capped
+    assert db.validation_get(SID)["send_state"] == "capped"
+    assert all(p["session_id"] != SID for p in db.validation_pending())
+    before = (_events("validation_blocked"), _events("clarification_loop"))
+    for _ in range(5):  # five worker seconds
+        clarification.tick(rescue)
+    assert (_events("validation_blocked"), _events("clarification_loop")) == before
+    assert len(sent) == 2
+
+
+def test_paused_session_keeps_its_question_without_event_spam(sent, monkeypatch) -> None:
+    from app.agents import rescue
+
+    calls = []
+    monkeypatch.setattr(clarification, "request", lambda *a: calls.append(a))
+    db.validation_save(SID, "awaiting_clarification", {"evidence": {"workflow": "booking"}}, {})
+    db.set_paused(SID, True)
+    for _ in range(3):
+        clarification.tick(rescue)
+    assert calls == []  # skipped while paused, still pending for the resume
+    assert db.validation_get(SID)["send_state"] == "pending"

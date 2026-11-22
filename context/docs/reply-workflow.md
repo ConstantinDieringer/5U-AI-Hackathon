@@ -39,7 +39,9 @@ Starting the new worker never scans historical mail for approvals to execute.
 
 Unspecified request fields are inherited. Explicit new values are validated, applied as a new
 version and immediately invalidate the old offer. Full pricing runs again, including trucking.
-Only confirmed transport of the replacement activates it. A correction and approval in one mail
+Only confirmed transport of the replacement activates it. Existing arrival constraints,
+selection preference and insurance terms survive a quantity-only amendment. An amendment to a
+multi-shipment request requires an unambiguous shipment target and otherwise goes to review. A correction and approval in one mail
 still require fresh approval after the changed total is shown. The original six-minute scoring
 deadline is not reset. Revisions target 120 s and have the existing RFQ 360 s ceiling from the
 correction message; late or incomplete work is surfaced for review.

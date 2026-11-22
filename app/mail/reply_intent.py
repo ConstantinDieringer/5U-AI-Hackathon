@@ -22,6 +22,7 @@ ShipmentField = Literal[
     "pickup_zip",
     "pickup_city",
     "ready_date",
+    "arrival_deadline",
     "preference",
     "service_constraints",
     "excluded_airlines",
@@ -143,7 +144,7 @@ def validate_evidence(
                 str(value)
             ):
                 raise ValueError("Correction value is not supported by its excerpt")
-        elif change.field == "ready_date":
+        elif change.field in ("ready_date", "arrival_deadline"):
             parsed = date.fromisoformat(value)
             supported = value in change.evidence or any(
                 day == parsed.day
@@ -218,7 +219,7 @@ def rules(text: str, session: dict) -> ReplyDecision | None:
         else:
             # Extra new route/date/constraints must also be interpreted.
             if not re.search(
-                r"\b(?:to|nach)\s+[A-Z]{3}\b|\b\d{5}\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:date|pickup|airline|fastest|cheapest|only|must|except)\b",
+                r"\b(?:to|nach)\s+[A-Z]{3}\b|\b\d{5}\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:date|pickup|airline|fastest|cheapest|only|must|except|arrival|arrive|deadline|insurance)\b",
                 own,
             ):
                 return ReplyDecision(changes=changes)

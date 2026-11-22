@@ -1,0 +1,2 @@
+Every boolean in `app/config.py` goes through `_flag` (1/true/yes/on, 0/false/no/off, else the default); defaults unchanged. Unread settings `carrier_list`, `quote_target_s`, `bid_max_wait_s`, `carrier_observation_ttl_s` removed; their env names still work as fallbacks. `.env.example` lists every variable (tested).
+Not verified: Railway variables with unusual spellings (`THREAD_RESCUE_ENABLED=1` was off, is now on).

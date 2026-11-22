@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_updated ON sessions(updated_at DESC);
 CREATE INDEX IF NOT EXISTS ix_sessions_status ON sessions(status);
+CREATE INDEX IF NOT EXISTS ix_sessions_created ON sessions(created_at);
 
 CREATE TABLE IF NOT EXISTS mails (
   id           INTEGER PRIMARY KEY,
@@ -133,6 +134,10 @@ CREATE TABLE IF NOT EXISTS mails (
   raw_json     TEXT CHECK (raw_json IS NULL OR json_valid(raw_json))
 );
 CREATE INDEX IF NOT EXISTS ix_mails_session ON mails(session_id, received_at);
+-- category first: background loops filter by category (+direction, +session); an index led
+-- by direction alone would pull direction-only queries off the cheaper table scan
+CREATE INDEX IF NOT EXISTS ix_mails_category ON mails(category, direction, session_id);
+CREATE INDEX IF NOT EXISTS ix_mails_reply ON mails(in_reply_to);
 
 CREATE TABLE IF NOT EXISTS quotes (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -272,6 +277,7 @@ CREATE INDEX IF NOT EXISTS ix_mail_screening_thread ON mail_screening(thread_roo
 _local = threading.local()
 _db_path: str = settings.db_path  # from .env via app/config.py (default data/forwarder.db)
 _generation = 0  # bumped by init_db so threads reopen after a path change (tests)
+_initialised: str | None = None  # path init_db last completed for in this process
 
 
 def now() -> str:
@@ -319,8 +325,14 @@ def close_thread_connection() -> None:
 
 
 def init_db(path: str | None = None) -> None:
-    """Create the database file and schema. Call once at startup (and per test)."""
-    global _db_path, _generation
+    """Create the database file and schema. Call once at startup (and per test).
+
+    Startup reaches this from several entry points (run.py, the poller's store, the UI
+    lifespan). A repeat call without a path is a no-op once this process has initialised
+    the current file; an explicit path always initialises in full (tests, import)."""
+    global _db_path, _generation, _initialised
+    if path is None and _initialised == _db_path and os.path.exists(_db_path):
+        return
     path_changed = path is not None
     if path is not None:
         _db_path = path
@@ -370,6 +382,7 @@ def init_db(path: str | None = None) -> None:
             migration.execute("ALTER TABLE board_results ADD COLUMN cause_json TEXT")
     remap_unassigned()
     backfill_bookings_from_confirmations()
+    _initialised = _db_path
     if path_changed:
         # A database path can later be replaced by the UI import endpoint, which runs in a
         # different thread. Do not leave the initializing thread holding its WAL on Windows.
@@ -569,6 +582,14 @@ def delivery_enqueue(mail_id: int, raw: dict, source: str) -> bool:
 
 
 def delivery_claim(at: float) -> dict | None:
+    # the worker polls about once a second: an empty queue costs one indexed read, no write
+    # lock. The claim itself re-reads inside the transaction, so it stays atomic.
+    if not _one(
+        conn().execute(
+            "SELECT 1 FROM mail_delivery WHERE status='pending' AND retry_at<=? LIMIT 1", (at,)
+        )
+    ):
+        return None
     with tx() as c:
         row = _one(
             c.execute(
@@ -1357,6 +1378,18 @@ def session_export_extras(session_id: int) -> dict[str, Any]:
     }
 
 
+# shared by list_sessions and session_ids: both must pick and order the same rows
+_NEEDS_ATTENTION = """CASE WHEN s.status = 'error' OR s.paused = 1
+             OR EXISTS (SELECT 1 FROM rfq_validation v WHERE v.session_id=s.id
+                        AND v.state IN ('awaiting_clarification','manual_review','resolving'))
+             OR (s.status IN ('new','pricing') AND s.deadline_at IS NOT NULL
+                 AND (julianday(s.deadline_at) - julianday('now')) * 86400 < ?)
+           THEN 1 ELSE 0 END"""
+_LIST_ORDER = """ ORDER BY needs_attention DESC,
+               CASE WHEN s.status IN ('new','pricing') THEN s.deadline_at END ASC,
+               s.updated_at DESC LIMIT ?"""
+
+
 def list_sessions(
     status: str | None = None,
     q: str | None = None,
@@ -1365,18 +1398,13 @@ def list_sessions(
 ) -> list[dict[str, Any]]:
     """Sessions for the list view. Attention first (error, paused, deadline close), then by
     deadline, then most recently updated."""
-    sql = """
+    sql = f"""
     SELECT s.*,
       (SELECT message FROM events e WHERE e.session_id = s.id ORDER BY e.id DESC LIMIT 1) AS last_event,
       (SELECT COALESCE(SUM(cost_micro_usd),0) FROM llm_calls l WHERE l.session_id = s.id) AS llm_cost_micro_usd,
       (SELECT total_minor FROM quotes qq WHERE qq.session_id = s.id ORDER BY qq.id LIMIT 1) AS quote_total_minor,
       (SELECT currency FROM quotes qq WHERE qq.session_id = s.id ORDER BY qq.id LIMIT 1) AS quote_currency,
-      CASE WHEN s.status = 'error' OR s.paused = 1
-             OR EXISTS (SELECT 1 FROM rfq_validation v WHERE v.session_id=s.id
-                        AND v.state IN ('awaiting_clarification','manual_review','resolving'))
-             OR (s.status IN ('new','pricing') AND s.deadline_at IS NOT NULL
-                 AND (julianday(s.deadline_at) - julianday('now')) * 86400 < ?)
-           THEN 1 ELSE 0 END AS needs_attention
+      {_NEEDS_ATTENTION} AS needs_attention
     FROM sessions s WHERE 1=1
     """
     args: list[Any] = [ATTENTION_WINDOW_S]
@@ -1388,14 +1416,22 @@ def list_sessions(
         args += [f"%{q}%", f"%{q}%", q]
     if attention:
         sql += " AND needs_attention = 1"
-    sql += """ ORDER BY needs_attention DESC,
-               CASE WHEN s.status IN ('new','pricing') THEN s.deadline_at END ASC,
-               s.updated_at DESC LIMIT ?"""
+    sql += _LIST_ORDER
     args.append(limit)
     rows = _rows(conn().execute(sql, args))
     for r in rows:
         r.pop("request_json", None)
     return rows
+
+
+def session_ids(status: str, limit: int = 200) -> list[int]:
+    """Ids of list_sessions(status=status, limit=limit), same rows in the same order, without
+    the per-row display columns. For background loops that only walk the sessions."""
+    sql = (
+        f"SELECT s.id, {_NEEDS_ATTENTION} AS needs_attention FROM sessions s"
+        f" WHERE s.status = ? {_LIST_ORDER}"
+    )
+    return [int(r["id"]) for r in conn().execute(sql, (ATTENTION_WINDOW_S, status, limit))]
 
 
 def list_unassigned(limit: int = 100) -> list[dict[str, Any]]:
@@ -2472,6 +2508,18 @@ def recent_rfqs(limit: int = 12) -> list[dict[str, Any]]:
 def expire_overdue() -> list[int]:
     """Mark open RFQ sessions past their deadline as expired. Returns their ids."""
     t = now()
+    # the deadline loop calls this every few seconds: take the write lock only when a row
+    # would change. Both writes below re-select inside the transaction.
+    due = conn().execute(
+        "SELECT EXISTS(SELECT 1 FROM sessions WHERE status IN ('new','pricing')"
+        " AND deadline_at IS NOT NULL AND deadline_at < ? AND first_reply_at IS NULL)"
+        " OR EXISTS(SELECT 1 FROM rfq_validation v JOIN sessions s ON s.id = v.session_id"
+        " WHERE v.state IN ('awaiting_clarification','resolving') AND s.deadline_at <= ?"
+        " AND s.first_reply_at IS NULL)",
+        (t, t),
+    )
+    if not due.fetchone()[0]:
+        return []
     with tx() as c:
         c.execute(
             "UPDATE rfq_validation SET state='expired',updated_at=? WHERE "
@@ -3560,6 +3608,7 @@ def _reply_enroll(c: sqlite3.Connection, sid: int, mid: int) -> None:
         and session
         and json.loads(quote["request_snapshot_json"])
         == json.loads(session["request_json"] or "null")
+        and not json.loads(session["request_json"] or "{}").get("additional_shipments")
     )
     c.execute(
         "INSERT INTO thread_workflow(session_id,request_version,active_quote_id,phase,last_mail_id,updated_at) VALUES (?,1,?,'interpreting',?,?)",

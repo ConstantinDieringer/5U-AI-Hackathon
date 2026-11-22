@@ -1,0 +1,2 @@
+Cheaper quote path: the checked template writes every fact and one small call (`compose_quote_opening`, prompt under 1.5 KB instead of about 13 KB) adds a validated opening and answers to customer questions; invalid text is dropped, a failed call sends the plain template. Flag `QUOTE_TEMPLATE_FIRST` default off.
+Not verified: tone and quality with a real model (tests stub the call); the German opening uses Sie to match the template.

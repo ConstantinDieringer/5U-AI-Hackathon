@@ -17,6 +17,7 @@ from app import db, hackloop, llm
 from app.agents import bids, booking, customer_reply, followup, reply_conditions, rfq
 from app.mail import multilingual, reply_intent
 from app.mail.reply_intent import Change, Condition, ReplyDecision
+from app.mail.style import amount
 from app.models import Mail, RateOption, Rfq
 from app.pricing.reference import Carrier
 from app.quotes import active, booked, first
@@ -185,7 +186,7 @@ def stub_pricing(monkeypatch):
         rfq,
         "compose_quote_text",
         lambda request, *args: (
-            f"Hi Petra,\n\nYour updated shipment has {request.pieces} pieces and weighs {request.weight_kg:g} kg. The total is 1.500 €.\n\nLet me know if you would like us to book it.\n\nYour austrian Power Team\n"
+            f"Hi Petra,\n\nYour updated shipment has {request.pieces} pieces and weighs {request.weight_kg:g} kg. The total is {amount(args[1])}.\n\nLet me know if you would like us to book it.\n\nYour austrian Power Team\n"
         ),
     )
 
@@ -644,8 +645,8 @@ def test_additive_migration_preserves_legacy_quote_and_never_replays_consent(tmp
         ):
             c.execute(f"ALTER TABLE quotes DROP COLUMN {column}")
         c.execute("ALTER TABLE bookings DROP COLUMN quote_id")
-    db.init_db()
-    db.init_db()
+    db.init_db(str(tmp_path / "workflow.db"))
+    db.init_db(str(tmp_path / "workflow.db"))
     session = db.get_session(SID)
     assert first(session)["total_minor"] == 150000
     assert session["workflow"] is None
@@ -678,3 +679,49 @@ def test_tracking_in_owned_thread_uses_queue_and_one_durable_send(monkeypatch, a
     # A repeat direct invocation also reuses the persisted send outcome.
     tracking.handle(mail, SID, booked_session=SID)
     assert len(api.sent) == 1
+
+
+def test_repricing_inherits_arrival_limit_and_selection_goal(monkeypatch, api):
+    session = quoted()
+    request = {**session["request"], "arrival_deadline": "2026-12-01", "preference": "fastest"}
+    db.set_request(SID, request)
+    with db.tx() as c:
+        c.execute(
+            "UPDATE quotes SET request_snapshot_json=? WHERE session_id=?",
+            (json.dumps(request), SID),
+        )
+    stub_pricing(monkeypatch)
+    run(incoming(UPDATE))
+    result = db.get_session(SID)
+    assert active(result) is not None
+    assert result["request"]["arrival_deadline"] == "2026-12-01"
+    assert result["request"]["preference"] == "fastest"
+
+
+def test_repricing_inherits_original_insurance_terms(monkeypatch, api):
+    quoted()
+    with db.tx() as c:
+        c.execute(
+            "UPDATE mails SET body=body || ? WHERE id=?",
+            (
+                " Please include cargo insurance in the all in price. Goods value 22000 EUR, insured at 110 % of that value, premium rate 0.40 %.",
+                SID,
+            ),
+        )
+    stub_pricing(monkeypatch)
+    run(incoming(UPDATE))
+    assert active(db.get_session(SID))["total_minor"] == 159680
+    assert "1.596,80 €" in api.sent[-1]["body"]
+
+
+def test_multi_shipment_correction_needs_unambiguous_target(api):
+    session = quoted()
+    request = {
+        **session["request"],
+        "additional_shipments": [{"destination": "JFK", "weight_kg": 900, "volume_cbm": 4}],
+    }
+    db.set_request(SID, request)
+    run(incoming(UPDATE))
+    assert active(db.get_session(SID)) is None
+    assert db.reply_workflow(SID)["phase"] == "needs_review"
+    assert not api.bookings
