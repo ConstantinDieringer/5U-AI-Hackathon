@@ -132,3 +132,22 @@ def test_handle_quotes_both_shipments_in_one_reply(tmp_path, monkeypatch) -> Non
     assert quote["subject"] == "Air freight from FRA to GRU and TLV"
     assert calls.count("extract_rfq") == 1
     assert not db.claim_quote_send(25788)
+
+
+def test_each_shipment_keeps_its_own_ready_date(tmp_path) -> None:
+    """Case 2 of the edge-case review: JFK ready 25.11., SFO ready 27.11. in one mail."""
+    from app.agents import multi_shipment
+
+    _init(tmp_path)
+    first = FIRST.model_copy(
+        update={
+            "ready_date": "2026-11-25",
+            "additional_shipments": [
+                {**FIRST.additional_shipments[0], "ready_date": "2026-11-27"},
+                {**FIRST.additional_shipments[0], "destination": "JFK", "ready_date": None},
+            ],
+        }
+    )
+    later, same = multi_shipment.siblings(first, BODY, 25788)
+    assert later.ready_date == "2026-11-27"
+    assert same.ready_date == "2026-11-25"  # not stated: the first shipment's day

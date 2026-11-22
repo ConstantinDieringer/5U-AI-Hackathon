@@ -109,6 +109,13 @@ def handle(raw: dict, *, recover: bool = False) -> None:
         session_hint = db.session_for_headerless_reply(mail.sender, mail.subject)
         if session_hint is not None:
             category, rule = Category.CUSTOMER, f"header-less reply to session {session_hint}"
+        else:
+            # a booking approval sent as a new mail to the customer's open quote (case 6)
+            session_hint = db.session_for_unthreaded_acceptance(
+                mail.sender, mail.subject, mail.body
+            )
+            if session_hint is not None:
+                category, rule = Category.CUSTOMER, f"new-mail approval for {session_hint}"
     try:  # empty or automatic mail: held below, never worth a phishing-gate LLM call
         early = guard.precheck(mail, category)
     except Exception:

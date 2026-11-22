@@ -30,7 +30,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids, carrier_prefs, quote_opening
 from app.config import settings
-from app.mail import language, lots, multilingual, parse, pdf_request
+from app.mail import compliance, language, lots, multilingual, parse, pdf_request
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.quote_locales import COPY as QUOTE_LOCALES
@@ -128,7 +128,7 @@ EXTRACT_PROMPT = (
     "pickup_zip: postal code of the pickup site if they want trucking/pickup from a site, else null.\n"
     "destination: IATA code of the destination airport (a city -> its main cargo airport).\n"
     "weight_kg: total gross weight in kg (convert lb/t). volume_cbm: total volume in cbm; if only "
-    "dimensions are given, compute pieces x L x W x H in metres.\n"
+    "dimensions are given, compute pieces x L x W x H in metres (inches x 0.0254).\n"
     "preference is the customer's optimization goal, independent of any deadline. Use 'fastest' "
     "only for an explicit shortest-transit priority, otherwise 'cheapest'. A latest arrival "
     "date does NOT mean fastest. 'Among options meeting the deadline, price determines our "
@@ -209,7 +209,15 @@ _schema["properties"]["additional_shipments"] = {
     "items": {
         "type": "object",
         "additionalProperties": False,
-        "required": ["origin", "pickup_zip", "destination", "weight_kg", "volume_cbm", "pieces"],
+        "required": [
+            "origin",
+            "pickup_zip",
+            "destination",
+            "weight_kg",
+            "volume_cbm",
+            "pieces",
+            "ready_date",
+        ],
         "properties": {
             "origin": {"type": ["string", "null"]},
             "pickup_zip": {"type": ["string", "null"]},
@@ -217,6 +225,7 @@ _schema["properties"]["additional_shipments"] = {
             "weight_kg": {"type": "number"},
             "volume_cbm": {"type": "number"},
             "pieces": {"type": ["integer", "null"]},
+            "ready_date": {"type": ["string", "null"]},
         },
     },
 }
@@ -224,7 +233,8 @@ EXTRACT_PROMPT += (
     "\nIf the CURRENT message asks for several separate shipments (different destinations or "
     "cargo lots each needing its own price), the top-level fields describe only the FIRST "
     "shipment and additional_shipments lists every further shipment with its own weight, "
-    "volume and pieces; origin/pickup_zip there only if they differ from the first, else null. "
+    "volume and pieces; origin/pickup_zip/ready_date there only if they differ from the "
+    "first, else null. "
     "Never add the shipments together. One shipment: additional_shipments is []."
 )
 for _field in ("destination", "weight_kg", "volume_cbm"):
@@ -1381,6 +1391,19 @@ def _handle(mail: Mail, sid: int) -> None:
         rfq = checked_rfq
     draft.evidence["attachment_texts"] = cached.get("texts", {})
     draft.evidence["corrections"] = corrections
+    if isinstance(rfq, Rfq) and bids.non_stackable(rfq):
+        db.emit(
+            "non_stackable",
+            "Nicht stapelbar: Preis nach Tarifformel, Carrier informiert, bitte prüfen",
+            sid,
+            level="warn",
+        )
+    refusal = compliance.check(
+        mail.subject or "", _clean(mail.body), *[str(t) for t in cached.get("texts", {}).values()]
+    )
+    if refusal is not None:
+        _decline(mail, sid, rfq, refusal)
+        return
     mode = settings.rfq_validation_mode
     db.emit(
         "validation_result",
@@ -1654,6 +1677,33 @@ def _tell_all_excluded(mail: Mail, sid: int, rfq: Rfq) -> None:
         recipient=mail.sender,
         subject=subject,
         body=body,
+        category="notice",
+        session_id=sid,
+        references=[*mail.references, mail.id],
+        in_reply_to=mail.id,
+        raw=sent,
+    )
+
+
+def _decline(mail: Mail, sid: int, rfq: Rfq | RfqDraft, refusal: compliance.Refusal) -> None:
+    """Forbidden cargo or a sanctioned destination: no price, no DG document request, a
+    reasoned refusal in the thread, and a person is alerted (#sos)."""
+    db.emit("needs_human", f"Anfrage abgelehnt: {refusal.reason}", sid, level="error")
+    db.set_status(sid, "lost", refusal.reason)
+    if db.is_paused(sid) or db.is_manual(sid):
+        return
+    facts = rfq.facts if isinstance(rfq, RfqDraft) else rfq.model_dump()
+    name = facts.get("customer_name")
+    if not name or has_template_artifacts(str(name)):
+        name = None
+    body = compliance.decline_text(refusal, name, str(facts.get("language") or "en"), SIGNATURE)
+    subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    sent = hackloop.send_customer(mail.sender, subject, body, in_reply_to=mail.id, session_id=sid)
+    db.record_outgoing(
+        mail_id=int(sent["id"]),
+        recipient=mail.sender,
+        subject=sent["subject"],
+        body=sent["body"],
         category="notice",
         session_id=sid,
         references=[*mail.references, mail.id],

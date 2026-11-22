@@ -27,14 +27,17 @@ _WEIGHT = re.compile(
 )
 _VOLUME = re.compile(_NUM + r"\s*(cbm|m3|m³)", re.IGNORECASE)
 _DIMS = re.compile(
-    _NUM + r"\s*[x×]\s*" + _NUM + r"\s*[x×]\s*" + _NUM + r"\s*(mm|cm|m)\b",
+    _NUM + r"\s*[x×]\s*" + _NUM + r"\s*[x×]\s*" + _NUM
+    + r"\s*(mm|cm|m|inches|inch|in(?=[.,;)]|\s*$|\s+each\b)|\"|'')(?=\W|$)",
     re.IGNORECASE,
 )
 _EACH = re.compile(r"(each|per piece|per unit|je|pro stück)\s*$", re.IGNORECASE)
 _TOTAL = re.compile(r"(together|total|in total|insgesamt|zusammen)\s*$", re.IGNORECASE)
 _TO_KG = {"kg": Decimal(1), "kgs": Decimal(1), "lb": Decimal("0.45359237"),
           "lbs": Decimal("0.45359237"), "t": Decimal(1000)}  # fmt: skip
-_TO_M = {"mm": Decimal("0.001"), "cm": Decimal("0.01"), "m": Decimal(1)}
+_INCH = Decimal("0.0254")
+_TO_M = {"mm": Decimal("0.001"), "cm": Decimal("0.01"), "m": Decimal(1), "in": _INCH,
+         "inch": _INCH, "inches": _INCH, '"': _INCH, "''": _INCH}  # fmt: skip
 
 
 @dataclass(frozen=True)
