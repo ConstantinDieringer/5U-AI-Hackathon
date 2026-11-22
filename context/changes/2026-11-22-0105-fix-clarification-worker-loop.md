@@ -1,0 +1,1 @@
+Clarification worker loop fixed: at the question cap `send_state` is now `capped` for booking/tracking too (was left `pending`, retried every second, session 24377: 422 events in 2 min); paused/manual sessions are skipped instead of re-emitting `validation_blocked` every second.
