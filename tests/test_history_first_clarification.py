@@ -173,3 +173,40 @@ def test_free_text_weight_never_takes_the_blind_decimal(body, expected):
     from app.mail.rfq_validation import free_text_answer
 
     assert free_text_answer(body, {"weight_kg"}, "LAX").get("weight_kg") == expected
+
+
+WEIDNER_IMPERIAL = (
+    "Could you send me an all-in price in EUR for the cheapest air freight option from MUC to"
+    " YYZ. The import shipment consists of 5 pieces of automotive sensors, with a gross weight"
+    " of 3258.44 lb and a total volume of 306.18 cubic feet. The goods will be ready on"
+    " 2026-11-25, and we'll deliver them to MUC ourselves."
+)
+
+
+@pytest.mark.core
+def test_cubic_feet_volume_is_converted_before_pricing():
+    """Round 109 (session 32120, too_high): "306.18 cubic feet" was priced as 306.18 cbm,
+    51 t chargeable instead of about 1.5 t. Code totals override the model's number."""
+    root = mail(1, WEIDNER_IMPERIAL)
+    model = {"origin": "MUC", "destination": "YYZ", "weight_kg": 1478.0, "volume_cbm": 306.18}
+    checked, _ = validate(root, RfqDraft(facts=model))
+    assert checked.volume_cbm == pytest.approx(8.6701, abs=0.001)
+    assert checked.weight_kg == pytest.approx(1478.0, abs=0.1)
+
+
+@pytest.mark.parametrize(
+    ("text", "cbm"),
+    [
+        ("total volume of 306.18 cubic feet", 8.6701),
+        ("total volume of 120 cu ft", 3.3980),
+        ("total volume of 4.63 cbm", 4.63),  # counterexample: metric stays as written
+        ("total volume of 4.63 cubic metres", 4.63),
+        ("total volume of 850 litres", 0.85),
+        ("total volume of 3 cubic yards", None),  # unknown unit is asked, never guessed
+    ],
+)
+def test_volume_units(text, cbm):
+    from app.mail.rfq_validation import numeric_facts
+
+    value = numeric_facts(text).get("volume_cbm")
+    assert (value is None) if cbm is None else float(value) == pytest.approx(cbm, abs=0.001)

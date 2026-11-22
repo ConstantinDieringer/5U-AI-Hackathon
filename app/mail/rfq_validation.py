@@ -362,6 +362,27 @@ def _total_patterns():
     }
 
 
+# cubic metres per stated volume unit; "306.18 cubic feet" read as cbm priced a 1478 kg
+# shipment as 51 t chargeable (round 109, too_high). No unit or cbm/m3 counts as cbm.
+_VOLUME_UNITS = (
+    (r"(?:cubic\s+met(?:re|er)s?|cbm|m3|m³|cu\.?\s*m)\b", Decimal(1)),
+    (r"(?:cubic\s+f(?:oo|ee)t|cu\.?\s*ft\.?|ft3|ft³|cbft|cft|ft)\b", Decimal("0.028316846592")),
+    (r"(?:cubic\s+inch(?:es)?|cu\.?\s*in\.?|in3|in³)\b", Decimal("0.000016387064")),
+    (r"(?:litres?|liters?|ltrs?)\b", Decimal("0.001")),
+)
+
+
+def volume_factor(suffix):
+    """Cubic metres per unit for the words after a volume figure; None for an unknown
+    cubic unit (asked, never guessed)."""
+    for pattern, factor in _VOLUME_UNITS:
+        if re.match(pattern, suffix, re.IGNORECASE):
+            return factor
+    if re.match(r"(?:cubic|cu\b|yd|yards?)", suffix, re.IGNORECASE):
+        return None
+    return Decimal(1)
+
+
 def numeric_facts(text, expect=None, known=()):
     """Totals the text states. `known`: weights already known for this shipment (other mails
     of the thread, attachments) that THOUSANDS_EVIDENCE may use to read "1,674 kg"."""
@@ -397,10 +418,11 @@ def numeric_facts(text, expect=None, known=()):
                         amount *= Decimal(1000)
                     elif re.match(r"lbs?\b", suffix, re.IGNORECASE):
                         amount *= Decimal("0.45359237")
-                elif field == "volume_cbm" and re.match(
-                    r"(?:ft|cu\s*ft|litres?|liters?)", suffix, re.IGNORECASE
-                ):
-                    continue
+                elif field == "volume_cbm":
+                    factor = volume_factor(suffix)
+                    if factor is None:
+                        continue  # a unit we cannot convert: leave it to the question
+                    amount *= factor
                 result[field] = amount
                 break
     if config.settings.unit_evidence:
