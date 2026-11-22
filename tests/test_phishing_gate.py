@@ -422,3 +422,22 @@ def test_quote_is_not_sent_when_the_transport_marker_cannot_be_written(monkeypat
             session_id=123, review=False, before_transport=marker_fails,
         )  # fmt: skip
     assert sent == []
+
+
+def test_reference_from_a_stranger_does_not_join_the_session(box: Box) -> None:
+    db.ingest_mail(
+        mail_id=7000, sender="weidner-spielwaren@hackloop.mail", recipient="team@hackloop.mail",
+        subject="Quote STR-EZE", body="quote please", category="rfq",
+        received_at="2026-11-21T08:00:00+00:00",
+    )  # fmt: skip
+    stranger = db.ingest_mail(
+        mail_id=7001, sender="someone-else@hackloop.mail", recipient="team@hackloop.mail",
+        subject="Re: [AP-7000] status", body="Your reference: AP-7000", category="customer",
+        received_at="2026-11-21T09:00:00+00:00",
+    )  # fmt: skip
+    owner = db.ingest_mail(
+        mail_id=7002, sender="weidner-spielwaren@hackloop.mail", recipient="team@hackloop.mail",
+        subject="Re: [AP-7000] status", body="Your reference: AP-7000", category="customer",
+        received_at="2026-11-21T09:05:00+00:00",
+    )  # fmt: skip
+    assert stranger is None and owner == 7000

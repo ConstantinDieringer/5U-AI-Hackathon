@@ -1175,14 +1175,48 @@ _AP_TAG = re.compile(r"\bAP-(\d+)\b")
 _BK_REF = re.compile(r"\bBK-[A-Z0-9]{4,}\b")
 
 
-def _session_by_reference(c: sqlite3.Connection, subject: str, body: str) -> int | None:
+def _may_reference(c: sqlite3.Connection, session_id: int, sender: str) -> bool:
+    """A sender may join a session by quoting its reference only when it is that session's
+    customer, a known carrier, 5U's rate desk or tracking agent, or someone we wrote to in
+    that session. Anyone else quoting "AP-<n>" would read or steer another shipment."""
+    from app.config import settings
+    from app.pricing.reference import carrier_by_email
+
+    addr = parseaddr(sender or "")[1].strip().lower()
+    if not addr:
+        return False
+    if addr in (settings.ratedesk_address, settings.tracking_address) or carrier_by_email(addr):
+        return True
+    row = _one(c.execute("SELECT customer FROM sessions WHERE id = ?", (session_id,)))
+    if row and parseaddr(row["customer"] or "")[1].strip().lower() == addr:
+        return True
+    return bool(
+        _one(
+            c.execute(
+                "SELECT 1 FROM mails WHERE session_id = ? AND direction = 'out'"
+                " AND lower(recipient) = ? LIMIT 1",
+                (session_id, addr),
+            )
+        )
+    )
+
+
+def _session_by_reference(
+    c: sqlite3.Connection, subject: str, body: str, sender: str, category: str | None = None
+) -> int | None:
     """Fallback for replies whose headers point to a mail we never stored (bid requests and
     bookings sent outside record_outgoing): our tag "[AP-<session>]" in the subject, our
-    "Your reference: AP-<session>" in the body, or a known BK booking reference."""
+    "Your reference: AP-<session>" in the body, or a known BK booking reference. Only for a
+    sender allowed in that session (see _may_reference), never for quarantined mail."""
+    if category == "phishing":
+        return None
     for text in (subject or "", body or ""):
         for m in _AP_TAG.finditer(text):
-            if _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (int(m.group(1)),))):
-                return int(m.group(1))
+            sid = int(m.group(1))
+            if _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (sid,))) and _may_reference(
+                c, sid, sender
+            ):
+                return sid
     for m in _BK_REF.finditer(f"{subject or ''} {body or ''}"):
         r = _one(
             c.execute(
@@ -1190,7 +1224,7 @@ def _session_by_reference(c: sqlite3.Connection, subject: str, body: str) -> int
                 (m.group(0),),
             )
         )
-        if r:
+        if r and _may_reference(c, int(r["session_id"]), sender):
             return int(r["session_id"])
     return None
 
@@ -1201,12 +1235,13 @@ def remap_unassigned() -> int:
     with tx() as c:
         rows = _rows(
             c.execute(
-                "SELECT id, subject, body FROM mails WHERE session_id IS NULL AND direction = 'in'"
+                "SELECT id, subject, body, sender, category FROM mails"
+                " WHERE session_id IS NULL AND direction = 'in'"
             )
         )
         n = 0
         for r in rows:
-            sid = _session_by_reference(c, r["subject"], r["body"])
+            sid = _session_by_reference(c, r["subject"], r["body"], r["sender"], r["category"])
             if sid is not None:
                 c.execute("UPDATE mails SET session_id = ? WHERE id = ?", (sid, r["id"]))
                 n += 1
@@ -1334,7 +1369,7 @@ def ingest_mail(
         ):
             session_id = _session_by_subject(c, subject, body)
         if session_id is None and (category not in SESSION_CATEGORIES or category == "customer"):
-            session_id = _session_by_reference(c, subject, body)
+            session_id = _session_by_reference(c, subject, body, sender, category)
         if session_id is None and category == "carrier_bid" and not refs and in_reply_to is None:
             match = bid_request_for_reply(sender, subject, body, c)
             session_id = match[0] if match else None

@@ -135,3 +135,44 @@ def test_late_preferred_airline_cannot_bypass_arrival_filter(flow, monkeypatch):
     rfq._price_and_quote(root, root.id, request(), "STR", time.time(), "enforce")
     assert len(sent) == 1
     assert db.get_session(root.id)["quotes"][0]["airline"] == "Solace Air Cargo"
+
+
+# ---------------------------------------------------------------- carrier preferences
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We do not need a QA certificate.",
+        "No CS required.",
+        "Yes please book it. No need for HA paperwork.",
+        "No CS, no QA certificate.",
+    ],
+)
+def test_ordinary_abbreviations_never_exclude_a_carrier(text) -> None:
+    from app.agents import carrier_prefs
+
+    assert carrier_prefs.parse(text) == []
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Please avoid Juniper.", [("Juniper Cargo Lines", "exclude")]),
+        ("Please do not offer Zephyr Steppe Cargo (ZS).", [("Zephyr Steppe Cargo", "exclude")]),
+        ("No ZS flights please.", [("Zephyr Steppe Cargo", "exclude")]),
+        (
+            "Please avoid ZS, MD or QA.",
+            [
+                ("Meridian Freightways", "exclude"),
+                ("Quetzal Air Freight", "exclude"),
+                ("Zephyr Steppe Cargo", "exclude"),
+            ],
+        ),
+        ("We prefer airline FQ.", [("Fjordline Air Cargo", "prefer")]),
+    ],
+)
+def test_named_or_coded_carriers_are_still_recognised(text, expected) -> None:
+    from app.agents import carrier_prefs
+
+    assert carrier_prefs.parse(text) == expected
