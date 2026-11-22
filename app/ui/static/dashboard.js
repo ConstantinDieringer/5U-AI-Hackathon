@@ -32,47 +32,33 @@ function volumeChart(data) {
   if(VOLUME_CARD&&sig===VOLUME_SIG)return VOLUME_CARD;
   const intro=!VOLUME_CARD;VOLUME_SIG=sig;
   const total=buckets.reduce((sum,b)=>sum+b.minor,0);
-  const card=el("section",{class:"card s12 volume-chart"+(intro?" intro":"")},el("div",{class:"card-h"},el("div",{},el("h2",{},"Gebuchtes Auftragsvolumen"),el("p",{class:"caption"},"Kumuliert über die letzten 24 Stunden. Balken zeigen die Buchungen je Stunde.")),
+  const card=el("section",{class:"card s12 volume-chart"+(intro?" intro":"")},el("div",{class:"card-h"},el("div",{},el("h2",{},"Gebuchtes Auftragsvolumen"),el("p",{class:"caption"},"Letzte 24 Stunden nach Buchungszeitpunkt. Kundenbeträge je Stunde.")),
     el("div",{class:"volume-total aside"},el("b",{class:"num"},money(total,currency)),el("span",{class:"caption"},"in 24 Stunden")),
     currencies.length>1 ? crmSelect("Währung",currencies.map(c=>[c,c]),currency,e=>{S.chartCurrency=e.target.value;loadOverview();}) : null));
   if(intro)setTimeout(()=>card.classList.remove("intro"),1600);
   if(!events.length)card.append(el("p",{class:"caption"},"In den letzten 24 Stunden wurden noch keine Aufträge gebucht."));
   const width=small?720:1000,height=small?300:250,left=small?155:85,right=20,top=16,bottom=40,inner=width-left-right,plot=height-top-bottom;
-  const max=niceMax(Math.max(1,total)*1.15), scale=plot/max, slot=inner/buckets.length;
-  const chart=svg("svg",{viewBox:`0 0 ${width} ${height}`,class:"volume-svg",role:"img","aria-label":"Kumuliertes gebuchtes Auftragsvolumen der letzten 24 Stunden"});
+  const max=niceMax(Math.max(1,...buckets.map(b=>b.minor))*1.15), scale=plot/max, slot=inner/buckets.length;
+  const chart=svg("svg",{viewBox:`0 0 ${width} ${height}`,class:"volume-svg",role:"img","aria-label":"Gebuchtes Auftragsvolumen je Stunde der letzten 24 Stunden"});
   for(let i=0;i<=4;i++) {const y=top+plot-i*plot/4;chart.append(svg("line",{x1:left,x2:width-right,y1:y,y2:y,class:"chart-grid"+(i?"":" base")}),svgText(money(Math.round(max*i/4),currency),{x:left-10,y:y+4,"text-anchor":"end",class:"chart-label"}));}
   const label=at=>new Date(at).toLocaleString("de-DE",step<86400000?{hour:"2-digit",minute:"2-digit"}:{day:"numeric",month:"short"});
-  // Hourly bookings as soft rounded bars on their own scale (lower third of the plot).
-  const barMax=Math.max(1,...buckets.map(b=>b.minor)),barScale=plot*.3/barMax;
+  // One rounded bar per hour; empty hours keep a faint stub so the 24-hour rhythm stays readable.
+  const barWidth=slot*.62,radius=Math.min(6,barWidth/2);
   buckets.forEach((bucket,i)=>{
-    if(!bucket.minor)return;
-    const h=Math.max(4,bucket.minor*barScale),bar=svg("rect",{x:left+i*slot+slot*.22,y:top+plot-h,width:slot*.56,height:h,rx:Math.min(4,slot*.2),class:"volume-bar"});
-    const title=svg("title");title.textContent=label(bucket.at)+" · "+money(bucket.minor,currency)+" gebucht";bar.append(title);chart.append(bar);
+    const x=left+i*slot+(slot-barWidth)/2,h=bucket.minor?Math.max(radius*2,bucket.minor*scale):3,y=top+plot-h;
+    const bar=svg("path",{d:roundedBar(x,y,barWidth,h,bucket.minor?radius:1.5),class:"volume-bar"+(bucket.minor?"":" empty"),style:`--i:${i}`,tabindex:bucket.minor?"0":null,role:bucket.minor?"img":null,"aria-label":bucket.minor?`${label(bucket.at)} ${money(bucket.minor,currency)}`:null});
+    const title=svg("title");title.textContent=new Date(bucket.at).toLocaleString("de-DE",{hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit"})+" · "+money(bucket.minor,currency);bar.append(title);chart.append(bar);
   });
-  // Running total at each hour boundary, drawn as a monotone curve: rises smoothly, never dips.
-  let running=0;
-  const coords=[[left,top+plot],...buckets.map((b,i)=>{running+=b.minor;return [left+(i+1)*slot,top+plot-running*scale];})];
-  const line=smoothPath(coords);
-  const defs=svg("defs"),gradient=svg("linearGradient",{id:"volume-gradient",x1:0,y1:0,x2:0,y2:1});
-  gradient.append(svg("stop",{offset:"0%","stop-color":"var(--blue)","stop-opacity":".18"}),svg("stop",{offset:"100%","stop-color":"var(--blue)","stop-opacity":"0"}));defs.append(gradient);
-  chart.prepend(defs);
-  chart.append(svg("path",{d:line+` L${coords.at(-1)[0]},${top+plot} L${coords[0][0]},${top+plot} Z`,class:"volume-area",fill:"url(#volume-gradient)"}),svg("path",{d:line,class:"volume-line",pathLength:1}));
-  const [ex,ey]=coords.at(-1),endDot=svg("circle",{cx:ex,cy:ey,r:4.5,class:"volume-dot",tabindex:"0",role:"img","aria-label":"Summe "+money(total,currency)});
-  const endTitle=svg("title");endTitle.textContent="Summe 24 Stunden · "+money(total,currency);endDot.append(endTitle);chart.append(endDot);
   for(let i=0;i<=6;i++){const at=start+(end-start)*i/6;chart.append(svgText(label(at),{x:left+inner*i/6,y:height-10,"text-anchor":i===0?"start":i===6?"end":"middle",class:"chart-label"}));}
   let sum=0;
   const table=el("details",{class:"chart-data"},el("summary",{},"Diagrammdaten anzeigen"),el("div",{class:"table-scroll"},el("table",{class:"list"},el("thead",{},el("tr",{},el("th",{},"Stunde ab"),el("th",{},"Gebucht"),el("th",{},"Kumuliert"))),el("tbody",{},...buckets.map(b=>{sum+=b.minor;return el("tr",{},el("td",{},new Date(b.at).toLocaleString("de-DE")),el("td",{class:"num"},money(b.minor,currency)),el("td",{class:"num"},money(sum,currency)));})))));
   card.append(chart,table);VOLUME_CARD=card;return card;
 }
 function niceMax(value) {const power=10**Math.floor(Math.log10(value)),unit=value/power;return [1,2,2.5,5,10].find(n=>n>=unit)*power;}
-// Monotone cubic (Fritsch-Carlson): rounded curve that never overshoots below zero or above a peak.
-function smoothPath(points) {
-  const n=points.length;if(n<3)return points.map(([x,y],i)=>(i?"L":"M")+x.toFixed(2)+","+y.toFixed(2)).join(" ");
-  const dx=[],slope=[];for(let i=0;i<n-1;i++){dx[i]=points[i+1][0]-points[i][0];slope[i]=(points[i+1][1]-points[i][1])/dx[i];}
-  const tangent=[slope[0]];for(let i=1;i<n-1;i++)tangent[i]=slope[i-1]*slope[i]<=0?0:3*(dx[i-1]+dx[i])/((2*dx[i]+dx[i-1])/slope[i-1]+(dx[i]+2*dx[i-1])/slope[i]);tangent[n-1]=slope[n-2];
-  let d="M"+points[0][0].toFixed(2)+","+points[0][1].toFixed(2);
-  for(let i=0;i<n-1;i++){const [x0,y0]=points[i],[x1,y1]=points[i+1],h=dx[i]/3;d+=` C${(x0+h).toFixed(2)},${(y0+h*tangent[i]).toFixed(2)} ${(x1-h).toFixed(2)},${(y1-h*tangent[i+1]).toFixed(2)} ${x1.toFixed(2)},${y1.toFixed(2)}`;}
-  return d;
+// Bar with rounded top corners and a flat base.
+function roundedBar(x,y,w,h,r) {
+  r=Math.min(r,w/2,h);const b=y+h;
+  return `M${x},${b} L${x},${y+r} Q${x},${y} ${x+r},${y} L${x+w-r},${y} Q${x+w},${y} ${x+w},${y+r} L${x+w},${b} Z`;
 }
 function svgText(text,attrs) {const node=svg("text",attrs);node.textContent=text;return node;}
 function openAirport(iata) {S.q="";$("#global-q").value="";S.requestStatus="";S.requestKind="rfq";S.requestDays=S.metricDays ?? 1;S.requestAirport=iata;S.requestOffset=0;show("requests");}

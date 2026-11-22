@@ -38,12 +38,7 @@
 .chart-grid { stroke: var(--hairline); stroke-width: 1; }
 .chart-grid.base { stroke: var(--hairline-strong); }
 .chart-label { fill: var(--ink-3); font-size: 12px; font-family: inherit; }
-/* Draw-in animation only on the first render; refreshes reuse the card without it. */
-.volume-line { fill: none; stroke: var(--blue); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.volume-chart.intro .volume-line { stroke-dasharray: 1; animation: drawLine 1100ms var(--ease) both; }
-.volume-chart.intro .volume-area, .volume-chart.intro .volume-dot { animation: areaReveal 900ms ease-out both; }
-.volume-dot { fill: var(--blue); stroke: var(--card); stroke-width: 2; transition: r 160ms; }
-.volume-dot:hover, .volume-dot:focus { r: 5.5; }
+/* Bars grow in only on the first render; refreshes reuse the card without it. */
 .chart-data { margin-top: 16px; }
 .world-map { display: block; width: 100%; height: auto; border-radius: var(--r-md); touch-action: none; cursor: grab; }
 .world-map:active { cursor: grabbing; }
@@ -113,8 +108,8 @@ button:disabled { cursor: default; opacity: .4; }
 @keyframes areaReveal { from { opacity: 0; } to { opacity: 1; } }
 @keyframes flightFlow { to { stroke-dashoffset: -1; } }
 @media (prefers-reduced-motion:reduce) {
-  .page.active, .select-popover, .volume-line, .volume-area, .volume-dot, .flight-route, .flight-flow { animation: none !important; }
-  .kpi, .select-trigger, .select-chevron, .volume-dot { transition: none !important; }
+  .page.active, .select-popover, .volume-bar, .flight-route, .flight-flow { animation: none !important; }
+  .kpi, .select-trigger, .select-chevron, .volume-bar { transition: none !important; }
 }
 @media (max-width:1199px) {
   .business-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -148,7 +143,8 @@ button:disabled { cursor: default; opacity: .4; }
 }
 .volume-total { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .volume-total b { font-size: 20px; line-height: 24px; font-weight: 650; letter-spacing: -0.02em; }
-.volume-bar { fill: var(--blue); opacity: .22; transition: opacity var(--fast); }
-.volume-bar:hover { opacity: .45; }
-.volume-chart.intro .volume-bar { animation: areaReveal 900ms ease-out both; }
-@media (prefers-reduced-motion:reduce) { .volume-bar { animation: none !important; } }
+.volume-bar { fill: var(--blue); opacity: .85; transform-box: fill-box; transform-origin: bottom; transition: opacity var(--fast); }
+.volume-bar:hover, .volume-bar:focus { opacity: 1; outline: none; }
+.volume-bar.empty { fill: var(--fill-2); opacity: 1; }
+.volume-chart.intro .volume-bar { animation: barGrow 700ms var(--ease) both; animation-delay: calc(var(--i) * 18ms); }
+@keyframes barGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }

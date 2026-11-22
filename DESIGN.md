@@ -57,7 +57,7 @@ white cards with hairline borders and soft shadows on a light-gray canvas, mediu
 Status mapping: `new`/`pricing` = blue · `quoted` = indigo · `accepted`/`booked`/`confirmed`/
 `answered` = green · `lost`/`expired`/`error` = red · `paused`/`manual` = orange.
 Tags and badges always use tint background + `--*-ink` text. Gradients only for the brand mark,
-the hero KPI card (blue tint fading to white) and the area-chart fill (18 % to 0 %).
+the hero KPI card (blue tint fading to white). The booking chart uses solid rounded bars.
 
 ### Typography
 Font stack: `"Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`.
