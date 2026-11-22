@@ -60,6 +60,256 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_workflow_thread_owner ON workflow_actions(s
  WHERE kind='reply' AND status='processing';
 """
 
+CASE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS case_jobs (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES sessions(id),
+ mail_id INTEGER NOT NULL UNIQUE, version INTEGER NOT NULL, status TEXT NOT NULL,
+ workspace_json TEXT NOT NULL DEFAULT '{}', lease_owner TEXT, lease_until REAL NOT NULL DEFAULT 0,
+ steps INTEGER NOT NULL DEFAULT 0, llm_calls INTEGER NOT NULL DEFAULT 0,
+ wake_requested INTEGER NOT NULL DEFAULT 0,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_case_pending ON case_jobs(status,id);
+CREATE TABLE IF NOT EXISTS case_steps (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL REFERENCES case_jobs(id),
+ signature TEXT NOT NULL, tool TEXT NOT NULL, arguments_json TEXT NOT NULL,
+ status TEXT NOT NULL, result_json TEXT, updated_at TEXT NOT NULL,
+ UNIQUE(job_id,signature)
+);
+"""
+
+
+def case_latest(sid: int) -> dict[str, Any] | None:
+    row = _one(
+        conn().execute(
+            "SELECT * FROM case_jobs WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,)
+        )
+    )
+    if row:
+        row["workspace"] = json.loads(row.pop("workspace_json"))
+        row.pop("lease_owner", None)
+    return row
+
+
+def case_owns(sid: int) -> bool:
+    # Enrollment is durable: changing the rollout flag cannot resume a legacy sender
+    # around an unresolved requirement or an uncertain external operation.
+    return case_latest(sid) is not None
+
+
+def case_enqueue(sid: int, mid: int) -> None:
+    with tx() as c:
+        previous = _one(
+            c.execute("SELECT * FROM case_jobs WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,))
+        )
+        if c.execute("SELECT 1 FROM case_jobs WHERE mail_id=?", (mid,)).fetchone():
+            return
+        workspace = json.loads(previous["workspace_json"]) if previous else {}
+        # Every new customer input invalidates calculated prices and prepared documents.
+        # Keep evidence and outstanding obligations; the model must explicitly supersede
+        # an obsolete obligation with a citation from the new customer message.
+        for key in ("shipments", "prices", "artifacts", "last_audit"):
+            workspace[key] = {}
+        c.execute(
+            "UPDATE case_jobs SET status='superseded' WHERE session_id=? "
+            "AND status IN ('pending','waiting','running')",
+            (sid,),
+        )
+        c.execute(
+            "INSERT INTO case_jobs(session_id,mail_id,version,status,workspace_json,created_at,updated_at) "
+            "VALUES (?,?,?,'pending',?,?,?)",
+            (
+                sid,
+                mid,
+                (previous["version"] + 1) if previous else 1,
+                _json(workspace),
+                now(),
+                now(),
+            ),
+        )
+        _emit(c, "case_queued", "Fallbearbeitung eingeplant", sid, payload={"mail_id": mid})
+
+
+def case_wake(sid: int) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE case_jobs SET status=CASE WHEN status='waiting' THEN 'pending' ELSE status END,"
+            "wake_requested=1,updated_at=? WHERE id="
+            "(SELECT MAX(id) FROM case_jobs WHERE session_id=?) AND status IN ('waiting','running')",
+            (now(), sid),
+        )
+
+
+def case_wake_mail(mid: int) -> None:
+    row = _one(conn().execute("SELECT session_id FROM mails WHERE id=?", (mid,)))
+    if row and row["session_id"] is not None:
+        case_wake(int(row["session_id"]))
+
+
+def case_claim(owner: str, at: float) -> dict[str, Any] | None:
+    with tx() as c:
+        expired = _rows(
+            c.execute(
+                "SELECT id,session_id FROM case_jobs WHERE status IN ('running','superseded') "
+                "AND lease_until<? AND (status='running' OR EXISTS "
+                "(SELECT 1 FROM case_steps e WHERE e.job_id=case_jobs.id AND e.status='dispatching'))",
+                (at,),
+            )
+        )
+        for row in expired:
+            uncertain = c.execute(
+                "SELECT 1 FROM case_steps WHERE job_id=? AND status='dispatching'", (row["id"],)
+            ).fetchone()
+            state = "unknown" if uncertain else "pending"
+            c.execute(
+                "UPDATE case_jobs SET status=?,lease_owner=NULL WHERE id=?", (state, row["id"])
+            )
+            if uncertain:
+                _emit(
+                    c,
+                    "case_unknown",
+                    "Externer Ausgang unklar, keine Wiederholung",
+                    row["session_id"],
+                    level="error",
+                )
+        row = _one(
+            c.execute(
+                "SELECT j.* FROM case_jobs j JOIN sessions s ON s.id=j.session_id "
+                "WHERE j.status='pending' AND s.paused=0 AND s.mode='auto' "
+                "AND NOT EXISTS (SELECT 1 FROM case_jobs b WHERE b.session_id=j.session_id "
+                "AND (b.status='unknown' OR (b.status='running' AND b.lease_until>?))) "
+                "AND NOT EXISTS (SELECT 1 FROM case_steps e JOIN case_jobs b ON b.id=e.job_id "
+                "WHERE b.session_id=j.session_id AND e.status='dispatching') "
+                "ORDER BY j.id LIMIT 1",
+                (at,),
+            )
+        )
+        if row and not is_global_paused():
+            c.execute(
+                "UPDATE case_jobs SET status='running',lease_owner=?,lease_until=? WHERE id=?",
+                (owner, at + 90, row["id"]),
+            )
+            row["workspace"] = json.loads(row.pop("workspace_json"))
+            return row
+    return None
+
+
+def case_current(job: int, owner: str, at: float) -> bool:
+    row = _one(
+        conn().execute(
+            "SELECT j.session_id,j.mail_id FROM case_jobs j JOIN sessions s ON s.id=j.session_id "
+            "WHERE j.id=? AND j.status='running' AND j.lease_owner=? AND j.lease_until>? "
+            "AND s.paused=0 AND s.mode='auto' "
+            "AND NOT EXISTS (SELECT 1 FROM mails m WHERE m.session_id=j.session_id "
+            "AND m.direction='in' AND (lower(m.sender)=lower(s.customer) OR m.category IN ('rfq','customer','tracking')) "
+            "AND m.id>j.mail_id) "
+            "AND NOT EXISTS (SELECT 1 FROM case_jobs n WHERE n.session_id=j.session_id AND n.id>j.id)",
+            (job, owner, at),
+        )
+    )
+    return bool(row) and not is_global_paused()
+
+
+def case_heartbeat(job: int, owner: str, at: float) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE case_jobs SET lease_until=? WHERE id=? AND lease_owner=? AND status='running'",
+                (at + 90, job, owner),
+            ).rowcount
+            == 1
+        )
+
+
+def case_save(job: int, owner: str, workspace: dict, status: str = "running") -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE case_jobs SET workspace_json=?,status=CASE WHEN ?='waiting' AND wake_requested=1 "
+                "THEN 'pending' ELSE ? END,wake_requested=CASE WHEN ?='waiting' THEN 0 ELSE wake_requested END,"
+                "updated_at=? WHERE id=? AND lease_owner=? AND status='running'",
+                (_json(workspace), status, status, status, now(), job, owner),
+            ).rowcount
+            == 1
+        )
+
+
+def case_spend_step(job: int, owner: str, maximum: int) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE case_jobs SET steps=steps+1 WHERE id=? AND lease_owner=? "
+                "AND status='running' AND steps<?",
+                (job, owner, maximum),
+            ).rowcount
+            == 1
+        )
+
+
+def reserve_case_call(sid: int, job: int, maximum: int) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE case_jobs SET llm_calls=llm_calls+1 WHERE id=? AND session_id=? "
+                "AND status='running' AND llm_calls<?",
+                (job, sid, maximum),
+            ).rowcount
+            == 1
+        )
+
+
+def case_step(job: int, signature: str, tool: str, arguments: str) -> dict:
+    with tx() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO case_steps(job_id,signature,tool,arguments_json,status,updated_at) "
+            "VALUES (?,?,?,?,'prepared',?)",
+            (job, signature, tool, arguments, now()),
+        )
+        row = _one(
+            c.execute("SELECT * FROM case_steps WHERE job_id=? AND signature=?", (job, signature))
+        )
+        assert row is not None
+        row["result"] = json.loads(row.pop("result_json") or "null")
+        return row
+
+
+def case_step_state(step: int, state: str, result: dict | None = None) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE case_steps SET status=?,result_json=?,updated_at=? WHERE id=?",
+            (state, _json(result), now(), step),
+        )
+
+
+def case_steps(job: int) -> list[dict]:
+    rows = _rows(conn().execute("SELECT * FROM case_steps WHERE job_id=? ORDER BY id", (job,)))
+    for row in rows:
+        row["result"] = json.loads(row.pop("result_json") or "null")
+    return rows
+
+
+def case_set_context(job: int, owner: str, step: int | None = None) -> None:
+    _local.case_context = (job, owner, step)
+
+
+def case_clear_context() -> None:
+    _local.case_context = None
+
+
+def case_transport_guard() -> None:
+    """Fail closed immediately before transport, including delegated business tools."""
+    import time
+
+    context = getattr(_local, "case_context", None)
+    if context is None:
+        return
+    job, owner, step = context
+    if not case_current(job, owner, time.time()):
+        raise RuntimeError("Case input, ownership or human control changed before transport")
+    if step is not None:
+        case_step_state(step, "dispatching")
+
+
 DEADLINE = timedelta(minutes=6)
 ATTENTION_WINDOW_S = 90
 
@@ -351,6 +601,7 @@ def init_db(path: str | None = None) -> None:
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     c.executescript(REPLY_SCHEMA)
+    c.executescript(CASE_SCHEMA)
     with tx() as migration:
         columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
         if "accounting_json" not in columns:
@@ -1509,6 +1760,7 @@ def get_session(session_id: int) -> dict[str, Any] | None:
         for column in ("request_snapshot_json", "pricing_snapshot_json"):
             q[column.removesuffix("_json")] = json.loads(q.pop(column) or "null")
     s["workflow"] = reply_workflow(session_id)
+    s["case_worker"] = case_latest(session_id)
     s["quotes"] = quotes
     s["bookings"] = _rows(c.execute("SELECT * FROM bookings WHERE session_id = ?", (session_id,)))
     s["events"] = [
@@ -1632,6 +1884,76 @@ def list_sessions(
     for r in rows:
         r.pop("request_json", None)
     return rows
+
+
+def request_catalog(
+    *,
+    q: str = "",
+    status: str = "",
+    kind: str = "",
+    airport: str = "",
+    days: int = 0,
+    sort: str = "created_at",
+    direction: str = "desc",
+    offset: int = 0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Complete paginated request catalogue; no legacy 200-row list truncation."""
+    columns = {
+        k: k
+        for k in (
+            "created_at",
+            "updated_at",
+            "customer",
+            "status",
+            "origin",
+            "destination",
+            "weight_kg",
+            "total_minor",
+            "id",
+        )
+    }
+    if sort not in columns or direction not in ("asc", "desc"):
+        raise ValueError("invalid request sorting")
+    where, args = ["1=1"], []
+    if status:
+        where.append("status=?")
+        args.append(status)
+    if kind:
+        where.append("kind=?")
+        args.append(kind)
+    if airport:
+        where.append("(origin=? OR destination=?)")
+        args.extend([airport.upper(), airport.upper()])
+    if days:
+        where.append("created_at>=?")
+        args.append((datetime.now(UTC) - timedelta(days=days)).isoformat())
+    if q:
+        where.append(
+            "(customer LIKE ? OR subject LIKE ? OR CAST(id AS TEXT)=?"
+            " OR origin LIKE ? OR destination LIKE ? OR booking_reference LIKE ?)"
+        )
+        args.extend([f"%{q}%", f"%{q}%", q.lstrip("#"), f"%{q}%", f"%{q}%", f"%{q}%"])
+    base = (
+        "WITH catalogue AS (SELECT s.id,s.kind,s.customer,s.subject,s.status,s.paused,s.mode,"
+        " s.created_at,s.updated_at,s.first_reply_at,s.deadline_at,"
+        " COALESCE(json_extract(s.request_json,'$.origin'),q.origin) AS origin,"
+        " COALESCE(json_extract(s.request_json,'$.destination'),q.destination) AS destination,"
+        " json_extract(s.request_json,'$.weight_kg') AS weight_kg,"
+        " q.total_minor,q.currency,q.airline,b.booking_reference,b.status AS booking_status"
+        " FROM sessions s LEFT JOIN quotes q ON q.id=(SELECT MAX(id) FROM quotes WHERE session_id=s.id)"
+        " LEFT JOIN bookings b ON b.session_id=s.id) SELECT * FROM catalogue WHERE "
+        + " AND ".join(where)
+    )
+    c = conn()
+    total = c.execute("SELECT COUNT(*) FROM (" + base + ")", args).fetchone()[0]
+    order = (
+        "currency ASC," if sort == "total_minor" else ""
+    ) + f"{columns[sort]} {direction},id {direction}"
+    items = _rows(
+        c.execute(base + " ORDER BY " + order + " LIMIT ? OFFSET ?", [*args, limit, offset])
+    )
+    return {"items": items, "total": total, "offset": offset, "limit": limit}
 
 
 def session_ids(status: str, limit: int = 200) -> list[int]:
@@ -2204,7 +2526,7 @@ def reserve_llm_call(session_id: int, limit: int) -> int | None:
         kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (key,)))
         logged = _one(
             c.execute(
-                "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose<>'thread_rescue'",
+                "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose NOT IN ('thread_rescue','case_plan','case_audit')",
                 (session_id,),
             )
         )
@@ -2638,7 +2960,7 @@ def llm_calls_used(session_id: int) -> int:
     kv = _one(c.execute("SELECT value FROM kv WHERE key = ?", (f"llm_calls:{session_id}",)))
     logged = _one(
         c.execute(
-            "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose<>'thread_rescue'",
+            "SELECT COUNT(*) AS n FROM llm_calls WHERE session_id = ? AND purpose NOT IN ('thread_rescue','case_plan','case_audit')",
             (session_id,),
         )
     )
@@ -2902,6 +3224,133 @@ WON = ("accepted", "booked", "confirmed")
 LOST = ("lost", "expired", "error")
 
 
+def business_metrics(days: int = 0) -> dict[str, Any]:
+    """RFQ cohort metrics, without CRM display limits or mixing currency amounts.
+
+    Booked order value is an agreed customer total, not airline cost or invoiced revenue.
+    Revisions count once. Pending customer price approval is never booked value.
+    """
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat() if days else ""
+    c = conn()
+    rows = _rows(
+        c.execute(
+            "SELECT s.id,s.customer,s.status,s.created_at,s.first_reply_at,s.request_json,"
+            " q.id AS quote_id,q.total_minor,q.currency,"
+            " w.session_id AS workflow_id,w.active_quote_id,w.phase,"
+            " b.status AS booking_status,b.customer_state,b.customer_total_minor,b.created_at AS booked_at,"
+            " bq.total_minor AS booked_quote_minor,bq.currency AS booked_currency,"
+            " bq.request_snapshot_json AS booked_request_json"
+            " FROM sessions s"
+            " LEFT JOIN thread_workflow w ON w.session_id=s.id"
+            " LEFT JOIN quotes q ON q.id=(SELECT MAX(id) FROM quotes WHERE session_id=s.id)"
+            " LEFT JOIN bookings b ON b.session_id=s.id"
+            " LEFT JOIN quotes bq ON bq.id=COALESCE(b.quote_id,"
+            " (SELECT MIN(id) FROM quotes WHERE session_id=s.id))"
+            " WHERE s.kind='rfq' AND s.created_at>=?",
+            (since,),
+        )
+    )
+    totals: dict[str, dict[str, int]] = {k: {} for k in ("booked", "offered", "pipeline")}
+    counts = {
+        "requests": len(rows),
+        "quoted": 0,
+        "booked": 0,
+        "awaiting_price": 0,
+        "open": 0,
+        "customers": len({r["customer"] for r in rows if r["customer"]}),
+        "unknown_booked_value": 0,
+        "answered": 0,
+        "answered_within_120s": 0,
+    }
+    response: list[float] = []
+    weight = 0.0
+    weight_known = 0
+    booked_events: list[dict[str, Any]] = []
+    airports: dict[str, dict[str, Any]] = {}
+
+    def add(kind: str, amount: int | None, currency: str | None) -> bool:
+        if amount is None or not currency:
+            return False
+        code = currency.upper()
+        totals[kind][code] = totals[kind].get(code, 0) + amount
+        return True
+
+    for r in rows:
+        try:
+            shipment = json.loads(r["request_json"] or "{}")
+            for key in ("origin", "destination"):
+                code = shipment.get(key)
+                if isinstance(code, str) and re.fullmatch(r"[A-Z]{3}", code):
+                    point = airports.setdefault(
+                        code, {"iata": code, "departures": 0, "arrivals": 0}
+                    )
+                    point["departures" if key == "origin" else "arrivals"] += 1
+        except (ValueError, TypeError, AttributeError):
+            pass
+        if r["quote_id"]:
+            counts["quoted"] += 1
+            add("offered", r["total_minor"], r["currency"])
+        settled = r["booking_status"] in ("booked", "confirmed") and r["customer_state"] in (
+            None,
+            "confirmed_sent",
+            "price_accepted",
+        )
+        if settled:
+            counts["booked"] += 1
+            # A legacy unbound booking uses the first quote, never a later revision.
+            amount = r["customer_total_minor"]
+            if amount is None:
+                amount = r["booked_quote_minor"]
+            if not add("booked", amount, r["booked_currency"]):
+                counts["unknown_booked_value"] += 1
+            else:
+                booked_events.append(
+                    {
+                        "at": r["booked_at"],
+                        "minor": amount,
+                        "currency": r["booked_currency"].upper(),
+                    }
+                )
+            try:
+                cargo = json.loads(r["booked_request_json"] or r["request_json"] or "{}")
+                kg = cargo.get("weight_kg")
+                if isinstance(kg, (int, float)) and 0 <= kg < float("inf"):
+                    weight += kg
+                    weight_known += 1
+            except (ValueError, TypeError, AttributeError):
+                pass
+        elif r["customer_state"] == "price_change_asked" and r["booking_status"] != "failed":
+            counts["awaiting_price"] += 1
+        elif r["status"] not in (*LOST, "booked", "confirmed", "accepted"):
+            counts["open"] += 1
+            current_offer = not r["workflow_id"] or (
+                r["active_quote_id"] == r["quote_id"]
+                and r["phase"] not in ("repricing", "closed", "deferred")
+            )
+            if r["quote_id"] and current_offer:
+                add("pipeline", r["total_minor"], r["currency"])
+        created, answered = _ts(r["created_at"]), _ts(r["first_reply_at"])
+        if created and answered:
+            seconds = max(0, (answered - created).total_seconds())
+            response.append(seconds)
+            counts["answered"] += 1
+            counts["answered_within_120s"] += seconds <= 120
+    return {
+        "days": days,
+        "cohort": "request_created_at",
+        **counts,
+        "amounts": {
+            k: [{"currency": ccy, "minor": amount} for ccy, amount in sorted(v.items())]
+            for k, v in totals.items()
+        },
+        "avg_response_s": round(sum(response) / len(response), 1) if response else None,
+        "booked_weight_kg": round(weight, 2) if weight_known else None,
+        "weight_known_bookings": weight_known,
+        "booked_events": booked_events,
+        "airports": sorted(airports.values(), key=lambda a: a["iata"]),
+    }
+
+
 def crm(limit: int = 200) -> dict[str, Any]:
     """CRM view: KPIs, customers with won/lost, quote history, bookings."""
     c = conn()
@@ -2969,6 +3418,7 @@ def crm(limit: int = 200) -> dict[str, Any]:
     )
     return {
         "pricing": pricing_history(),
+        "limit": limit,
         "totals": {k: (v or 0) for k, v in totals.items()},
         "booked_minor": booked["v"] if booked else 0,
         "customers": customers,
@@ -3128,6 +3578,27 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             "status": r["status"],
         }
         for r in clarification_cap_open(limit)
+    ]
+    items += [
+        {
+            "session_id": row["session_id"],
+            "kind": "case_worker",
+            "reason": "Externer Ausgang unklar"
+            if row["status"] == "unknown"
+            else "Fallbearbeitung benötigt Prüfung",
+            "subject": row["subject"],
+            "customer": row["customer"],
+            "status": row["status"],
+        }
+        for row in _rows(
+            c.execute(
+                "SELECT j.session_id,j.status,s.subject,s.customer FROM case_jobs j "
+                "JOIN sessions s ON s.id=j.session_id WHERE j.status='unknown' OR "
+                "(j.status='review' AND j.id=(SELECT MAX(n.id) FROM case_jobs n WHERE n.session_id=j.session_id)) "
+                "ORDER BY j.updated_at DESC LIMIT ?",
+                (limit,),
+            )
+        )
     ]
     items += [
         {

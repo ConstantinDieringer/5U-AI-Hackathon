@@ -53,11 +53,59 @@ DB_PATH=data/demo.db AGENTS_ENABLED=false python run.py
 
 ## Test it
 
+For the optional local portal-browser experiment, install `requirements-browser.txt`
+and Google Chrome, then run:
+
+```bash
+python -m tools.portal_browser_check --pure-wu --interactive --output-dir /path/to/screenshots
+```
+
+This opens visible Chrome using the Pure-WU browser settings. Add `--headless`
+for comparison. It records screenshots and whether the Cloudflare page remains;
+it does not verify rates, send credentials, run mail agents or change live pricing.
+
+The unattended experiment starts and controls its own Chrome process and temporary
+application profile, without ChatGPT browser control or your personal Chrome profile:
+
+```bash
+python -m tools.portal_pipeline_check --mode chrome-cdp --chrome-path /path/to/chrome --output-dir /path/to/results
+python -m tools.portal_pipeline_check --mode reader --output-dir /path/to/results
+```
+
+Chrome runs headlessly by default; `--headed` compares a visible application-owned
+browser. Verification attempts are bounded with `--attempts` (0 to 2). Reader mode
+tests Pure-WU's Jina fallback using only the public URL, without credentials.
+
+For SeleniumBase with a normal Chromium browser on a virtual Linux display:
+
+```bash
+docker build -f Dockerfile.portal-browser -t 5u-portal-browser .
+docker run --rm --shm-size=256m -v /absolute/path/to/results:/results 5u-portal-browser
+```
+
+This separate test image uses SeleniumBase and Xvfb, without a hosted solver or a
+personal Chrome profile. It records the browser's actual display/headless mode,
+portal-form availability and screenshots. It never claims rates were verified
+merely because a CAPTCHA was clicked or the portal form became visible.
+
 ```bash
 python -m tools.ship_check     # the essential test suite + ruff, same command as CI
 ```
 
 Tests never call 5U or a model: the mailbox, portal and gateway are blocked in `tests/conftest.py`.
+
+## Exploratory case worker
+
+Opt in with `CASE_WORKER_ENABLED=true`. The model discovers sourced tasks, investigates
+documents and speech, prepares independent shipments, uses existing real-price tools,
+evaluates unit-aware selection expressions and verifies coverage before delivery. PDFs
+are generated and checked as actual files. The dashboard shows tasks and tool results.
+
+`CASE_WORKER_WORKERS`, `CASE_WORKER_MAX_STEPS` and `CASE_WORKER_MAX_CALLS` bound concurrency
+and work per input. State and receipts survive restarts. Unknown services require evidence
+or review; the model cannot invent prices. Booking retains existing consent checks;
+combined-offer booking requires review. Keep the default disabled until gateway access,
+real-model quality, cost and timing have been evaluated for rollout.
 
 ## More
 

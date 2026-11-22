@@ -94,7 +94,32 @@ def slot_for(session_id: int, index: int) -> int:
 
 def owner(slot: int) -> int:
     """Session a bid slot belongs to."""
+    if slot <= -(2**60):
+        saved = json.loads(db.kv_get(f"bid.case.{slot}", "null"))
+        if not saved:
+            raise ValueError("Unknown case bid slot")
+        return int(saved["session_id"])
     return slot if slot >= 0 else (-slot) // 10
+
+
+def case_slot(session_id: int, job_id: int, request_key: str) -> int:
+    """A stable slot per case input AND shipment definition, isolated from older bids."""
+    import hashlib
+
+    identity = {"session_id": session_id, "job_id": job_id, "request_key": request_key}
+    raw = json.dumps(identity, sort_keys=True)
+    slot = -(2**60 + int(hashlib.sha256(raw.encode()).hexdigest()[:15], 16))
+    previous = db.kv_get(f"bid.case.{slot}")
+    if previous is not None and json.loads(previous) != identity:
+        raise ValueError("Case bid slot collision")
+    db.kv_set(f"bid.case.{slot}", raw)
+    return slot
+
+
+def resume_case_slot(session_id: int, slot: int) -> None:
+    with _cond:
+        req = _open.setdefault(slot, _Request())
+    _resume(session_id, req, slot=slot)
 
 
 def _slot_of_reply(mail: Mail, session_id: int) -> int:
@@ -571,7 +596,7 @@ def request(
     return sent
 
 
-def _resume(session_id: int, req: _Request) -> set[str]:
+def _resume(session_id: int, req: _Request, *, slot: int | None = None) -> set[str]:
     """After a restart: re-register carriers we already asked for this session (from the db)
     and replay the replies they already sent. Returns their emails (empty on a fresh RFQ)."""
     s = db.get_session(session_id) or {}
@@ -580,6 +605,8 @@ def _resume(session_id: int, req: _Request) -> set[str]:
     asked: set[str] = set()
     for m in mails:
         if m["direction"] == "out" and m["category"] == "bid_request":
+            if slot is not None and db.kv_get(f"bid.slot.{m['id']}") != str(slot):
+                continue
             c = carrier_by_email(str(m["recipient"] or ""))
             if c is not None:
                 asked.add(c.email)
@@ -587,12 +614,12 @@ def _resume(session_id: int, req: _Request) -> set[str]:
                     req.asked[c.email] = c
     for m in mails:
         if m["direction"] == "in" and m["category"] == "carrier_bid":
-            on_bid_mail(
-                Mail(int(m["id"]), session_id, str(m["sender"] or ""), "", str(m["subject"] or ""),
+            recovered = Mail(int(m["id"]), session_id, str(m["sender"] or ""), "", str(m["subject"] or ""),
                      str(m["body"] or ""), str(m["received_at"] or ""),
-                     references=[m["in_reply_to"]] if m.get("in_reply_to") else []),
-                session_id,
-            )  # fmt: skip
+                     references=[m["in_reply_to"]] if m.get("in_reply_to") else [])  # fmt: skip
+            if slot is not None and _slot_of_reply(recovered, session_id) != slot:
+                continue
+            on_bid_mail(recovered, session_id)
     return asked
 
 

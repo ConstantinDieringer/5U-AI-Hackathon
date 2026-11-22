@@ -108,8 +108,8 @@ Rounds 4, 9, 15, 16 and 17 had one to four pushes between 2 minutes before and 4
 their RFQ and got no answer (a correlation, not a proven cause).
 
 **The rule: every team member can merge one PR at a time while the deploy light is green.**
-The light sits in the dashboard's top bar ("Deploy: frei" / "Deploy: warten", hover for the
-reason) and is `GET /api/deploy-gate` (`safe`, `reason`, `seconds_to_next`). Green means the
+The customer dashboard deliberately hides deployment controls. Read the deploy light through
+`GET /api/deploy-gate` (`safe`, `reason`, `seconds_to_next`) or the merge command. Green means the
 newest RFQ has our answer (or its 360 s window is over) and the next RFQ is more than
 `DEPLOY_GATE_MARGIN_S` (90 s) away. RFQs come about every 6 min 4 s; the spacing and phase are
 read from the last arrivals, nothing is hardcoded. Railway builds before it restarts: push at

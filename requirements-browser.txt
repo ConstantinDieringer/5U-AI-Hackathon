@@ -1,0 +1,2 @@
+# Optional local portal experiment. Not installed in the production container.
+playwright==1.65.2

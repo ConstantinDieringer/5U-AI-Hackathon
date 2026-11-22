@@ -190,6 +190,8 @@ def session_context(sid: int) -> str | None:
     ]
     if s.get("workflow"):
         out += ["", "## Bearbeitungsstand", *_fence(_json(s["workflow"]), "json")]
+    if s.get("case_worker"):
+        out += ["", "## Fallbearbeitung", *_fence(_cut(_json(s["case_worker"]), 20000), "json")]
     if s.get("request"):
         out += ["", "## Erkannte Anfrage", "```json", _json(s["request"]), "```"]
     v = s.get("validation")

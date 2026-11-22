@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -63,8 +64,19 @@ def deploy_window(url: str, token: str | None) -> None:
         pricing = client.get("/api/sessions", params={"status": "pricing"})
         pricing.raise_for_status()
         sessions = pricing.json()
-        if not isinstance(sessions, list) or sessions:
+        if not isinstance(sessions, list) or any(not isinstance(s, dict) for s in sessions):
             raise ValueError("pricing sessions active or unavailable")
+        # Match db.deploy_busy: abandoned crash records must not block every future deploy.
+        cutoff = datetime.now(UTC) - timedelta(seconds=400)
+        for session in sessions:
+            try:
+                updated = datetime.fromisoformat(session["updated_at"])
+                if updated.tzinfo is None:
+                    raise ValueError("missing timezone")
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("pricing sessions active or unavailable") from None
+            if updated >= cutoff:
+                raise ValueError("pricing sessions active or unavailable")
         gate = client.get("/api/deploy-gate")
         gate.raise_for_status()
         result = gate.json()
