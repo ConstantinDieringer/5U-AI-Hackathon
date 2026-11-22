@@ -699,8 +699,14 @@ def test_repricing_inherits_arrival_limit_and_selection_goal(monkeypatch, api):
 
 
 def test_repricing_inherits_original_insurance_terms(monkeypatch, api):
-    quoted()
+    from app.pricing import insurance
+    session=quoted()
+    policy,problems=insurance.read(["Please include cargo insurance in the all in price. Goods value 22000 EUR, insured at 110 % of that value, premium rate 0.40 %."])
+    assert policy is not None and not problems
+    request={**session["request"],"insurance":policy.model_dump()}
+    db.set_request(SID,request)
     with db.tx() as c:
+        c.execute("UPDATE quotes SET request_snapshot_json=?,total_minor=159680,insurance_minor=9680 WHERE session_id=?",(json.dumps(request),SID))
         c.execute(
             "UPDATE mails SET body=body || ? WHERE id=?",
             (

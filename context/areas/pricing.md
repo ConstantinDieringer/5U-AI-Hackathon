@@ -12,12 +12,14 @@ Binding detail: TECH_SPEC §6 (data models), portal API in `context/docs/5u-api.
 | `app/agents/tariff.py` | durable tariff queue and worker |
 | `app/pricing/portal_sync.py`, `lanes.py`, `served_lanes.py` | portal lanes/brackets, lane index, airline "We fly" lists |
 | `app/pricing/fx.py`, `audit.py` | explicit EUR/USD conversion, board evidence audit |
+| `app/pricing/insurance.py` | evidenced cargo-insurance terms, Decimal premium, EUR conversion |
 | `app/agents/bids.py` | carrier/trucker bid requests, parsing, waits |
 | `app/agents/carrier_prefs.py` | per-customer exclusions/preferences |
 
 ## Rules
 
 - **Pricing is deterministic code, never the LLM.** Decimal amounts and integer cents; currency travels with every amount. Customer output stays EUR.
+- **Insurance:** current mail/document terms only, no defaults. Goods value × coverage × premium rate, with any agreed minimum, is added after transport adjustments. Missing/conflicting terms block quotes even in shadow/rescue/watchdog paths. The premium is persisted separately from air cost; a shared value across multiple shipments requires allocation clarification.
 - **Arrival constraints:** `Rfq.arrival_deadline` is an evidenced latest-arrival date, separate from cheapest/fastest. Filter sheet, portal and bid options by the same earliest-arrival calculation used in the quote, before balancing bids or applying carrier preferences. Unknown readiness or no feasible option asks for clarification; no late option or deadline guarantee is sent. Normal, resumed, forced and emergency-draft pricing share this gate.
 - Tracked `data/tariffs.json` and `data/portal_lanes.json` are seed data; runtime tariffs and portal snapshots live in `settings.runtime_dir` on the persistent volume.
 - **Tariffs:** one durable SQLite queue and worker; text/table parsed locally, images/scans transcribed through `llm.complete` with no pricing decisions. Sender and values validated before atomic publication and cache reload.
@@ -36,4 +38,4 @@ Binding detail: TECH_SPEC §6 (data models), portal API in `context/docs/5u-api.
 ```
 python -m pytest -q tests/test_pricing.py tests/test_pricing_hardening.py tests/test_parse_tariffs.py tests/test_portal_and_reference.py tests/test_portal_fallback_capacity.py tests/test_served_lanes.py tests/test_trucker_balance.py tests/test_bid_attachments.py tests/test_bid_next_break.py tests/test_document_totals.py tests/test_carrier_prefs.py tests/test_carrier_exclusion_guard.py tests/test_rounds_66_68_offers.py
 ```
-- **Cargo insurance (`CARGO_INSURANCE`, on):** when the mail asks for insurance in the all-in price and states goods value in EUR and premium rate, code adds value x coverage x rate (`app/pricing/insurance.py`, coverage 100 % if unstated) to the total; the mail says it is included, without a second amount. Unreadable terms: error event, nothing added. Not applied to multi-shipment replies.
+- `CARGO_INSURANCE=false` holds insured quotes instead of sending an incomplete total. Default on.

@@ -17,7 +17,7 @@ from app.mail.style import amount, written_date
 
 if TYPE_CHECKING:
     from app.agents.bids import Offer
-    from app.models import RateOption, Rfq
+    from app.models import CargoInsurance, RateOption, Rfq
 
 CONTENT_TYPE = "application/pdf"
 
@@ -135,6 +135,7 @@ class QuoteDoc:
     total_minor: int
     currency: str
     valid_until: date | None
+    insurance: CargoInsurance | None = None
 
 
 def _lang(code: str | None) -> str:
@@ -185,6 +186,7 @@ def quote_doc(
         total_minor=total_minor,
         currency=currency,
         valid_until=_iso_date(choice.valid_until),
+        insurance=rfq.insurance,
     )
 
 
@@ -254,6 +256,10 @@ def _rows(doc: QuoteDoc) -> list[tuple[str, str]]:
         rows.append((t["chargeable"], _kg(doc.chargeable_kg)))
     if doc.valid_until is not None:
         rows.append((t["valid"], written_date(doc.valid_until, doc.lang)))
+    if doc.insurance is not None:
+        from app.pricing.insurance import notice
+
+        rows.append(("", notice(doc.insurance, doc.lang)))
     return rows
 
 

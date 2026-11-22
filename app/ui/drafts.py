@@ -18,6 +18,7 @@ from app import db
 from app.agents import bids, rfq
 from app.mail import multilingual
 from app.models import Mail, Rfq
+from app.pricing import insurance
 from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import resolve_origin, sheet_options, to_minor, within_arrival_deadline
 from app.pricing.reference import carrier_by_name
@@ -87,6 +88,14 @@ def build(session_id: int) -> dict[str, Any]:
     request, selection = rfq.checked_selection(mail, session_id, request)
     if selection.issues:
         raise ValueError("Auswahlziel oder Ankunftsfrist muss zuerst geklärt werden")
+    request, insurance_problems = rfq._insurance_terms(mail, session_id, request)
+    if insurance_problems or (request.insurance and request.additional_shipments):
+        raise ValueError("Versicherungskonditionen müssen zuerst geklärt werden")
+    premium_minor = 0
+    if request.insurance is not None:
+        if not rfq.settings.cargo_insurance:
+            raise ValueError("Versicherungsberechnung ist deaktiviert")
+        premium_minor = insurance.premium(request.insurance).eur_minor
     origin = resolve_origin(request)
     if origin is None:
         raise ValueError("kein Abflughafen erkennbar: Ort oder PLZ beim Kunden erfragen")
@@ -133,7 +142,7 @@ def build(session_id: int) -> dict[str, Any]:
     truck = rfq.best_truck(offers) if request.door_to_port else None
     if request.door_to_port and truck is None:
         warnings.append("Kein Trucker-Gebot: Preis enthält keine Abholung, bitte ergänzen")
-    total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0)
+    total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0) + premium_minor
     if not air:
         warnings.append("Kein Tarifblatt-/Portalpreis, nur Carrier-Gebote")
     body = rfq.quote_text(request, choice, total, truck, session_id)
@@ -147,6 +156,7 @@ def build(session_id: int) -> dict[str, Any]:
         "body": body,
         "total_minor": total,
         "currency": "EUR",
+        "insurance_minor": premium_minor,
         "preference": request.preference,
         "choice": {
             k: v
@@ -161,6 +171,8 @@ def build(session_id: int) -> dict[str, Any]:
                 "rate_id",
                 "valid_until",
                 "total_eur_minor",
+                "total_minor",
+                "currency",
             )
         },
         "truck": {"name": truck.carrier.name, "eur_minor": to_minor(truck.total_eur)}

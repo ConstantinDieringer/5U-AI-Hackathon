@@ -5,6 +5,7 @@ Money is integer cents (`*_minor`, context/code-standards.md: never floats); wei
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
@@ -61,6 +62,45 @@ class Category(str, Enum):
     PHISHING = "phishing"  # quarantined by the phishing gate: stored, never answered
 
 
+class CargoInsurance(BaseModel):
+    """Agreed insurance inputs as decimal strings, safe to persist as JSON.
+
+    Missing terms remain explicit so clarification can fill them without guessing.
+    """
+
+    goods_value: str | None = None
+    currency: str | None = None
+    coverage_pct: str | None = None
+    premium_pct: str | None = None
+    minimum_premium: str | None = None
+    minimum_required: bool = False
+
+    @field_validator("goods_value", "coverage_pct", "premium_pct", "minimum_premium", mode="before")
+    @classmethod
+    def _decimal(cls, value: object) -> str | None:
+        from decimal import Decimal, InvalidOperation
+
+        if value is None:
+            return None
+        try:
+            number = Decimal(str(value))
+        except InvalidOperation as exc:
+            raise ValueError("invalid insurance number") from exc
+        if not number.is_finite() or number < 0:
+            raise ValueError("insurance numbers must be finite and nonnegative")
+        return format(number, "f")
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", value):
+            raise ValueError("insurance currency must be an ISO code")
+        return value
+
+
 class Rfq(BaseModel):
     """What the LLM extracts from a customer RFQ. Pricing reads only these fields.
 
@@ -86,6 +126,7 @@ class Rfq(BaseModel):
     customer_questions: list[str] = Field(default_factory=list, max_length=5)
     service_constraints: list[str] = Field(default_factory=list, max_length=10)
     excluded_airlines: list[str] = Field(default_factory=list)
+    insurance: CargoInsurance | None = None
     # further shipments of the same mail (board reason one_of_two): raw extraction items,
     # checked and turned into sibling requests by app.agents.multi_shipment
     additional_shipments: list[dict] = Field(default_factory=list, max_length=4)

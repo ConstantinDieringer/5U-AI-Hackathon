@@ -177,13 +177,16 @@ def _revise(mail: Mail, sid: int, session: dict, decision: ReplyDecision) -> Non
     version = db.reply_revise(sid, mail.id, updated, evidence)
     try:
         request = Rfq.model_validate(updated)
-        # Revalidate the full new state, with only this message's actual new evidence.
+        # Inherit agreed insurance only when this correction says nothing about it.
+        from app.pricing import insurance
+        current_sources = [mail.body, *session.get("reply_sources",{}).values()]
+        inherited_policy = {} if any(insurance.requested(text) or insurance.declined(text) for text in current_sources) else {"insurance":updated.get("insurance")}
         checked, draft = validate(
             mail,
             request,
-            {},
+            session.get("reply_sources",{}),
             [],
-            {
+            {**inherited_policy, **{
                 key: value
                 for key, value in updated.items()
                 if key
@@ -200,7 +203,7 @@ def _revise(mail: Mail, sid: int, session: dict, decision: ReplyDecision) -> Non
                     "volume_cbm",
                 )
                 and value is not None
-            },
+            }},
         )
         if checked is None or draft.issues:
             _review(
@@ -213,6 +216,7 @@ def _revise(mail: Mail, sid: int, session: dict, decision: ReplyDecision) -> Non
         draft.evidence["corrections"] = {
             **draft.evidence.get("corrections", {}),
             "preference": checked.preference,
+            "insurance": checked.insurance.model_dump() if checked.insurance else None,
             **({"arrival_deadline": checked.arrival_deadline} if checked.arrival_deadline else {}),
         }
         db.validation_save(sid, "ready", draft.model_dump(mode="json"), dataclasses.asdict(mail))
