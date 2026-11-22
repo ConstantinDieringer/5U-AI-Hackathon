@@ -89,6 +89,38 @@ _CANCEL_TERMS = re.compile(
     re.IGNORECASE,
 )
 _CONFIRMED = re.compile(r"\bBooking\s+(BK-[A-Za-z0-9]+)\s+confirmed\b", re.IGNORECASE)
+# 5U may reword the airline's confirmation: one sentence (or the subject) naming a BK
+# reference and a confirmation word, with no negation, pending or cancellation in it
+_BK_REF = re.compile(r"\bBK-[A-Za-z0-9]{4,}\b", re.IGNORECASE)
+_CONFIRM_WORD = re.compile(
+    r"\b(?:confirm\w*|best(?:ä|ae)tig\w*|confirm(?:é|e)\w*|confirmad\w*|confermat\w*)",
+    re.IGNORECASE,
+)
+_NOT_CONFIRMED = re.compile(
+    r"\b(?:not|no|cannot|can't|could\s+not|couldn't|unable|pending|awaiting|await|yet|"
+    r"cancel\w*|declin\w*|reject\w*|nicht|kein\w*|noch|ausstehend|storn\w*|"
+    r"pas|annul\w*|en\s+attente|pendiente|cancelad\w*|non|annullat\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _confirmed_reference(subject: str, body: str) -> str | None:
+    """The BK reference an airline mail confirms, or None."""
+    m = _CONFIRMED.search(f"{subject}\n{body}")
+    if m:
+        return m.group(1)
+    for sentence in [subject, *re.split(r"(?<=[.!?])\s+|\n+", body)]:
+        refs = _BK_REF.findall(sentence)
+        if refs and _CONFIRM_WORD.search(sentence) and not _NOT_CONFIRMED.search(sentence):
+            return refs[0]
+    # a confirmation subject without the reference ("Confirmation") names it in the body
+    if _CONFIRM_WORD.search(subject) and not _NOT_CONFIRMED.search(f"{subject}\n{body}"):
+        refs = {r.upper() for r in _BK_REF.findall(body)}
+        if len(refs) == 1:
+            return refs.pop()
+    return None
+
+
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 _locks: dict[int, threading.RLock] = {}
@@ -1198,19 +1230,19 @@ def _late_price_change(sid: int) -> None:
 
 def on_airline_mail(mail: Mail) -> bool:
     """'Booking BK-… confirmed' -> booking confirmed. Returns True if it was such a mail."""
-    m = _CONFIRMED.search(f"{mail.subject}\n{mail.body}")
-    if not m:
+    ref = _confirmed_reference(mail.subject, mail.body)
+    if not ref:
         return False
-    sid = db.update_booking_status(m.group(1), "confirmed")
+    sid = db.update_booking_status(ref, "confirmed")
     if sid is None:  # booked by email: no BK ref stored yet; match our AP- tag
         tag = re.search(r"\bAP-(\d+)\b", f"{mail.subject}\n{mail.body}")
         if tag:
             # keep the airline's BK reference: customer confirmation and tracking answers
             # must name it, not our AP tag (rounds 27/29/45/46/51/52 scored half tracking)
             sid = db.update_booking_status(
-                f"AP-{tag.group(1)}", "confirmed", booking_reference=m.group(1).upper()
+                f"AP-{tag.group(1)}", "confirmed", booking_reference=ref.upper()
             )
-    log.info("airline confirmation %s -> session %s", m.group(1), sid)
+    log.info("airline confirmation %s -> session %s", ref, sid)
     if sid is not None:
         from app.agents.bids import parse_price
 
