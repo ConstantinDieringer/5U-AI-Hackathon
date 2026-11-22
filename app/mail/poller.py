@@ -229,6 +229,11 @@ def release(mail_id: int) -> dict[str, object]:
 def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
     """Hand a new mail to its agent. RFQs run in their own thread so polling goes on (bid
     replies for a waiting RFQ arrive through this same loop)."""
+    if session_id is not None:
+        from app.agents import case_worker
+
+        if case_worker.enqueue(mail, session_id, category):
+            return
     if (
         category == Category.CUSTOMER
         and session_id is not None
@@ -308,6 +313,8 @@ def _bid(handler, mail: Mail, session_id: int | None) -> None:
             level="error",
             mail_id=mail.id,
         )
+    finally:
+        db.case_wake_mail(mail.id)
 
 
 RATE_LIMIT_RETRY_S = 6.0  # just over the mailbox limit of one poll per 5 s

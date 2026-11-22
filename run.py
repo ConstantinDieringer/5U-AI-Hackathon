@@ -49,6 +49,9 @@ def main() -> None:
         _serve_ui(log, stop)
         return
     db.delivery_recover()
+    from app.agents import case_worker
+
+    threading.Thread(target=case_worker.run, args=(stop,), name="case-worker", daemon=True).start()
     from app.agents import booking
     from app.pricing import served_lanes
 

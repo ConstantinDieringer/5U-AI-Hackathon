@@ -143,11 +143,19 @@ def complete(
     response_format: dict[str, Any] | None = None,
     model_name: str | None = None,
     timeout_s: float | None = None,
+    case_job_id: int | None = None,
 ) -> str:
     """One chat completion through the gateway. Returns the message text and logs the cost.
     `model_name` overrides LLM_MODEL for configured retry, rescue and compose calls.
     `timeout_s` caps the whole call (no retry), for checks that must not delay a mail."""
-    if purpose == "thread_rescue" and session_id is not None:
+    if purpose in ("case_plan", "case_audit") and session_id is not None:
+        if case_job_id is None or not db.reserve_case_call(
+            session_id, case_job_id, settings.case_worker_max_calls
+        ):
+            raise LlmBudgetError(
+                "Case planning/review budget exhausted or case is no longer active"
+            )
+    elif purpose == "thread_rescue" and session_id is not None:
         if db.reserve_rescue_call(session_id, settings.thread_rescue_max_calls) is None:
             raise LlmBudgetError(f"session {session_id} exhausted its thread rescue budget")
     else:

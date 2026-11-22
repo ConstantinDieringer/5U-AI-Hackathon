@@ -1274,6 +1274,8 @@ def catch_up() -> int:
     since = datetime.fromtimestamp(time.time() - TOO_OLD_S, UTC).isoformat()
     n = 0
     for r in db.resumable_rfqs(since):
+        if db.case_owns(int(r["session_id"])):
+            continue
         validation = db.validation_get(int(r["session_id"]))
         if validation and validation["state"] in (
             "awaiting_clarification",
@@ -1313,6 +1315,8 @@ def _resume(mail: Mail, sid: int) -> None:
 
 def handle_rfq(mail: Mail, session_id: int) -> None:
     """Whole flow for one RFQ. Never raises (runs in a worker thread)."""
+    if db.case_owns(session_id):
+        return
     with working(session_id):
         try:
             _handle(mail, session_id)
@@ -2043,7 +2047,8 @@ def _price(
     customer = address(mail.sender)
     if primary:
         carrier_prefs.remember(customer, _clean(mail.body), sid)
-    banned, liked = carrier_prefs.excluded(customer), carrier_prefs.preferred(customer)
+    banned = carrier_prefs.excluded(customer) | set(rfq.excluded_airlines)
+    liked = carrier_prefs.preferred(customer)
     rfq = rfq.model_copy(update={"excluded_airlines": sorted(banned)})
     if primary:
         db.set_request(sid, rfq.model_dump())
