@@ -526,7 +526,7 @@ def api_health() -> dict[str, Any]:
             "local_enabled": settings.local_audio_enabled,
             "local_model": settings.local_audio_model,
         },
-        "tracking_notice_version": "required-v1",
+        "tracking_notice_version": "booking-mail-and-replies-v2",
         "tracking_notice_recovery_enabled": settings.agents_enabled,
         "thread_rescue_enabled": settings.thread_rescue_enabled,
         "reply_workflow_mode": settings.reply_workflow_mode,

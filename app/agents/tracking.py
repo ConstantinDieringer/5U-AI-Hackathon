@@ -11,12 +11,11 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from app import db, hackloop
+from app import db
 from app.agents.rfq import schedule
-from app.config import settings
 from app.mail import multilingual
 from app.mail.content import current_message
 from app.mail.router import address
@@ -360,6 +359,47 @@ def _not_found_text(lang: str, name: str | None = None) -> str:
     )
 
 
+def booking_notice_text(record: dict[str, Any], lang: str, name: str | None = None) -> str:
+    """A separate booking update with verified references and planning, without a new price."""
+    de = lang.startswith("de")
+    ref = record.get("booking_reference") or record["team_reference"]
+    route = ""
+    if record.get("origin") and record.get("destination"):
+        route = (
+            f" von {record['origin']} nach {record['destination']}"
+            if de
+            else f" from {record['origin']} to {record['destination']}"
+        )
+    greeting = (
+        (f"Hallo {name}," if name else "Hallo,") if de else (f"Hi {name}," if name else "Hi,")
+    )
+    carrier = (
+        (f" bei {record['airline']}" if de else f" with {record['airline']}")
+        if record.get("airline")
+        else ""
+    )
+    text = (
+        f"Hier ist der Trackingstand zu deiner Sendung {ref}{route}. Sie ist{carrier} gebucht."
+        if de
+        else f"Here is the tracking information for your shipment {ref}{route}. It is booked{carrier}."
+    )
+    confirmed = record.get("status") == "confirmed"
+    state = (
+        (
+            "Die Airline hat die Buchung bestätigt."
+            if confirmed
+            else "Die Bestätigung der Airline steht noch aus."
+        )
+        if de
+        else (
+            "The airline has confirmed the booking."
+            if confirmed
+            else "The airline confirmation is still pending."
+        )
+    )
+    return f"{greeting}\n\n{text}\n\n{state}\n\n{SIGNATURE}\n"
+
+
 def _reply(
     mail: Mail,
     body: str,
@@ -377,60 +417,55 @@ def _reply(
         return False
     to = address(mail.sender)
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    from app.mail import tracking_delivery
+
+    session = db.get_session(session_id) if session_id is not None else None
+    if any(
+        m["direction"] == "out" and m.get("in_reply_to") == mail.id
+        for m in (session or {}).get("mails", [])
+    ):
+        return True
     workflow = db.reply_workflow(session_id) if session_id is not None else None
-    version = workflow["request_version"] if workflow else 0
-    if workflow:
-        effect = db.reply_effect(session_id, mail.id, category, version)
-        if effect["status"] == "done":
-            return True
-        if effect["status"] != "pending":
-            return False
-
-    def before_send() -> None:
-        if workflow:
-            if not db.reply_current(session_id, mail.id, version):
-                raise hackloop.CustomerSendBlocked("Tracking reply superseded")
-            db.reply_effect(session_id, mail.id, category, version, dispatch=True)
-
-    sent = hackloop.send_customer(
-        to,
-        subject,
-        body,
-        in_reply_to=mail.id,
-        session_id=session_id,
-        protected_terms=protected_terms,
-        language_code=multilingual.mail_language(mail),
-        guard_transport=before_send if workflow else None,
-    )
-    body = sent["body"]
-    subject = sent["subject"]
-    db.record_outgoing(
-        mail_id=int(sent["id"]),
+    return tracking_delivery.send(
+        key=f"tracking.reply.{mail.id}",
         recipient=to,
         subject=subject,
         body=body,
-        category=category,
+        parent_id=mail.id,
         session_id=session_id,
-        sender=settings.team_mailbox,
-        in_reply_to=mail.id,
-        raw=sent,
+        category=category,
+        language_code=multilingual.mail_language(mail),
+        protected_terms=protected_terms,
+        workflow_version=workflow["request_version"] if workflow else None,
     )
-    if workflow:
-        db.reply_effect(session_id, mail.id, category, version, result={"mail_id": sent["id"]})
-    return True
 
 
 def handle(mail: Mail, session_id: int | None, booked_session: int | None = None) -> None:
     """Answer one tracking question. `booked_session` is set when a customer asks in the
     thread of their own booking. Never raises (runs in a worker thread)."""
     try:
-        mail = multilingual.prepare(mail, session_id)
+        session = db.get_session(session_id) or {}
+        previous = [
+            m
+            for m in session.get("mails", [])
+            if m["direction"] == "in"
+            and m["id"] < mail.id
+            and address(m.get("sender") or "") == address(mail.sender)
+        ]
+        anchor = previous[-1]["id"] if previous else session_id
+        established = multilingual.reply_language(address(mail.sender), session_id, anchor, "en")
+        mail = multilingual.prepare(mail, session_id, established)
         text = f"{mail.subject}\n{mail.body}"
         lang = multilingual.mail_language(mail)
         name = first_name(mail.body)
         variant = session_id if session_id is not None else mail.id
         # a question in the customer's own booked thread keeps that session's status
-        own_session = session_id if booked_session is None else None
+        own_session = (
+            session_id
+            if booked_session is None
+            and (db.get_session(session_id) or {}).get("kind") == "tracking"
+            else None
+        )
         records = db.tracking_records()
         if booked_session is not None:
             rec = next((r for r in records if r["session_id"] == booked_session), None)
@@ -457,20 +492,9 @@ def handle(mail: Mail, session_id: int | None, booked_session: int | None = None
                 session_id,
                 level="warn",
             )
-            if session_id is not None and db.get_session(session_id):
-                from app.agents import clarification
-
-                clarification.ask(
-                    mail,
-                    session_id,
-                    "tracking",
-                    "Could you send us the booking reference or our AP reference? We could not identify a unique shipment from this thread and our records.",
-                    "Könnten Sie uns die Buchungsnummer oder unsere AP-Referenz nennen? Aus diesem Verlauf und unseren Unterlagen konnten wir keine eindeutige Sendung zuordnen.",
-                )
-            else:
-                sent = _reply(mail, _not_found_text(lang, name), session_id, "tracking_answer")
-                if sent and own_session is not None:
-                    db.set_status(own_session, "answered", "nach Buchungsnummer gefragt")
+            sent = _reply(mail, _not_found_text(lang, name), session_id, "tracking_answer")
+            if sent and own_session is not None:
+                db.set_status(own_session, "answered", "nach Buchungsnummer gefragt")
             return
         body = answer_text(rec, lang, name, variant)
         if not _reply(
@@ -496,4 +520,37 @@ def handle(mail: Mail, session_id: int | None, booked_session: int | None = None
             f"Tracking fehlgeschlagen: {type(e).__name__}: {e}"[:300],
             session_id,
             level="error",
+        )
+
+
+def recover_pending() -> None:
+    """Retry unanswered accepted tracking inputs; the transport ledger bounds every send."""
+    from app.agents import clarification
+
+    now = datetime.now(UTC)
+    rows = db.tracking_unanswered(
+        (now - timedelta(hours=24)).isoformat(), (now - timedelta(seconds=10)).isoformat()
+    )
+    for row in rows:
+        sid = row["session_id"]
+        session = db.get_session(sid) or {}
+        if session.get("workflow") and db.reply_has_pending(sid):
+            continue
+        if (
+            session.get("kind") != "tracking"
+            and row["category"] != "tracking"
+            and not re.search(
+                r"\b(?:tracking|track\w*|status|where|eta|arriv\w*|sendungsverfolg\w*|wo ist|wann|ankunft)\b",
+                multilingual.working_text(row["id"], row["body"]),
+                re.IGNORECASE,
+            )
+        ):
+            continue
+        mail = clarification._stored_mail(row)
+        handle(
+            mail,
+            sid,
+            booked_session=sid
+            if session.get("kind") == "rfq" and session.get("bookings")
+            else None,
         )

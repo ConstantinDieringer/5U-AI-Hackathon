@@ -1,4 +1,4 @@
-"""Repair a missing tracking invitation once, with no model or new quote."""
+"""Deliver a separate booking tracking mail and recover unanswered tracking requests."""
 
 import logging
 import threading
@@ -8,8 +8,6 @@ from datetime import datetime
 from app import db, hackloop
 from app.config import settings
 from app.mail import multilingual
-from app.mail.language import detect
-from app.mail.outgoing import CustomerStyleError
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.mail.tracking_notice import customer_context, has_notice
@@ -44,8 +42,8 @@ def _already_received(session: dict) -> bool:
 
 
 def repair(sid: int) -> bool:
-    from app.agents import booking
-    from app.mail.guard import OutboundLoopBlocked
+    from app.agents import booking, tracking
+    from app.mail import tracking_delivery
 
     with booking._lock(sid):
         session = db.get_session(sid)
@@ -58,29 +56,47 @@ def repair(sid: int) -> bool:
             return False
         customer = address(session.get("customer") or "")
         booked = customer_context(session, customer)
-        if booked is None or session["status"] not in ("quoted", "booked", "confirmed"):
+        if booked is None:
             return False
         incoming = [
             m
             for m in session["mails"]
             if m["direction"] == "in" and address(m.get("sender") or "") == customer
         ]
-        outgoing = [
-            m
-            for m in session["mails"]
-            if m["direction"] == "out" and address(m.get("recipient") or "") == customer
-        ]
-        if any(has_notice(m.get("body", "")) for m in outgoing):
+        if not incoming:
             return False
-        if (
-            not incoming
-            or booking.classify_reply(
-                multilingual.working_text(incoming[-1]["id"], incoming[-1]["body"])
+        key = f"tracking.notice.recovery.{sid}"
+        parent = incoming[-1]
+        lang = multilingual.mail_language(booking._last_customer_mail(sid))
+        if booked:
+            booking_row = next(
+                b
+                for b in session["bookings"]
+                if b["status"] in ("booked", "confirmed")
+                and b.get("customer_state") in (None, "confirmed_sent", "price_accepted")
             )
-            == "no"
-        ):
-            return False
-        if not booked:
+            key += f".booking.{booking_row['id']}"
+            record = next((r for r in db.tracking_records() if r["session_id"] == sid), None)
+            if record is None:
+                return False
+            body = tracking.booking_notice_text(
+                record, lang, (session.get("request") or {}).get("customer_name")
+            )
+        else:
+            if session["status"] not in ("quoted", "booked", "confirmed"):
+                return False
+            outgoing = [
+                m
+                for m in session["mails"]
+                if m["direction"] == "out" and address(m.get("recipient") or "") == customer
+            ]
+            if any(has_notice(m.get("body", "")) for m in outgoing):
+                return False
+            if (
+                booking.classify_reply(multilingual.working_text(parent["id"], parent["body"]))
+                == "no"
+            ):
+                return False
             quotes = session.get("quotes") or []
             if (
                 not quotes
@@ -88,73 +104,34 @@ def repair(sid: int) -> bool:
                 > settings.followup_window_s
             ):
                 return False
-        if _already_received(session):
-            return False
-        key = f"tracking.notice.recovery.{sid}"
-        if not db.claim_tracking_notice(sid):
-            if db.kv_get(key) == "reserved" and db.kv_claim(key + ".alert"):
-                db.emit(
-                    "tracking_notice_unknown",
-                    "Trackinghinweis nach Neustart unklar, bitte Versand prüfen",
-                    sid,
-                    level="error",
-                )
-            return False
-        parent = incoming[-1]
-        lang = detect(parent["body"])
-        greeting = {"de": "Hallo,", "fr": "Bonjour,", "es": "Hola,", "it": "Buongiorno,"}.get(
-            lang, "Hi,"
-        )
-        body = f"{greeting}\n\n{SIGNATURE}\n"  # shared send boundary inserts the required notice
-        db.kv_set("tracking.notice.recovery.last_attempt", f"{sid}:{time.time_ns()}")
-        try:
-            sent = hackloop.send_customer(
-                customer,
-                parent["subject"],
-                body,
-                in_reply_to=parent["id"],
-                session_id=sid,
-                review=False,
-            )
-        except (hackloop.CustomerSendBlocked, OutboundLoopBlocked, CustomerStyleError):
-            db.release_tracking_notice(sid)
-            return False
-        except Exception as exc:  # noqa: BLE001 - ambiguous delivery must never be retried blindly
-            if isinstance(exc, hackloop.HackloopError) and exc.status == 429:
-                db.release_tracking_notice(sid)
-                db.emit(
-                    "tracking_notice_deferred",
-                    "Trackinghinweis wegen Ratenlimit zurückgestellt",
-                    sid,
-                    level="warn",
-                )
+            if _already_received(session):
                 return False
-            db.kv_set(key, "unknown")
-            db.emit(
-                "tracking_notice_unknown",
-                "Versand des Trackinghinweises unklar, keine doppelte Nachsendung",
-                sid,
-                level="error",
-                reason=type(exc).__name__,
-            )
-            return False
-        # Record the receipt first so a local recording failure cannot send the mail twice.
-        db.kv_set(key, f"sent:{sent['id']}")
-        db.record_outgoing(
-            mail_id=int(sent["id"]),
+            greeting = "Hallo," if lang.startswith("de") else "Hi,"
+            body = f"{greeting}\n\n{SIGNATURE}\n"
+        delivered = tracking_delivery.send(
+            key=key,
             recipient=customer,
-            subject=sent["subject"],
-            body=sent["body"],
-            category="tracking_notice",
+            subject=parent["subject"],
+            body=body,
+            parent_id=parent["id"],
             session_id=sid,
-            in_reply_to=parent["id"],
-            raw=sent,
+            category="tracking_notice",
+            language_code=lang,
+            tracking_booked=booked,
         )
-        db.emit("tracking_notice_recovered", "Fehlenden Trackinghinweis einmalig nachgesendet", sid)
-        return True
+        if delivered:
+            db.emit(
+                "tracking_notice_recovered",
+                "Trackingmail zur Buchung oder fehlender Hinweis versendet",
+                sid,
+            )
+        return delivered
 
 
 def tick() -> None:
+    from app.agents import tracking
+
+    tracking.recover_pending()
     for sid in db.tracking_notice_candidates():
         before = db.kv_get("tracking.notice.recovery.last_attempt")
         try:
