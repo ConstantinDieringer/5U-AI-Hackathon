@@ -87,6 +87,8 @@ class Settings:
     email_review_enabled: bool
     reply_in_customer_language: bool
     quote_pdf: bool
+    portal_ui_check: bool
+    portal_ui_url: str
     quote_pdf_on_request: bool
     poll_interval_s: float
     db_path: str
@@ -213,6 +215,9 @@ settings = Settings(
     reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
     # 5U wants the quote as a PDF attachment: built by code from the priced option, no LLM
     quote_pdf=_flag("QUOTE_PDF", True),
+    # human-in-the-loop portal check: a person solves the portal page sum in our UI
+    portal_ui_check=_flag("PORTAL_UI_CHECK", True),
+    portal_ui_url=_env("PORTAL_UI_URL", "https://start-hack.5u.ai/portal/ui"),
     # team decision 22.11.: the PDF goes out only when the customer asks for it
     quote_pdf_on_request=_flag("QUOTE_PDF_ON_REQUEST", True),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),

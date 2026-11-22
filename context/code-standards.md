@@ -46,7 +46,7 @@
 - Before booking, re-fetch a rate ID that is older than 15 minutes.
 - Never confirm a booking price to the customer that the airline has not confirmed. A changed price is put to the customer first; the agent never rebooks on its own.
 - Retry transient failures with backoff.
-- Never bypass the portal page's bot challenge. Use the API or the email desk.
+- Never bypass the portal page's bot challenge. Use the API or the email desk. Only a person may solve it, in the UI Portal-Check; no code reads or solves the sum.
 
 ## Config and Secrets
 
