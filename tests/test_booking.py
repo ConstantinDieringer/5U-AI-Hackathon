@@ -319,3 +319,102 @@ def test_question_about_cancellation_terms_cancels_nothing(monkeypatch):
     monkeypatch.setattr(booking.hackloop, "cancel_booking", lambda ref: pytest.fail("cancelled"))
     booking.handle_reply(_reply(1500, "Quick question: what is your cancellation fee?"), 1223)
     assert db.get_session(1223)["bookings"][0]["status"] in ("booked", "confirmed")
+
+
+# ---------------------------------------------------------------- rounds 144 and 147
+
+FASTEST_IF_SO = (
+    "Hi Moritz,\n\nCould you please confirm that this is the fastest option from STR to EZE? "
+    "If so, please go ahead with the booking.\n\nKlaus"
+)
+
+
+def _quoted_with_options(other_days: int, sid: int = 1223) -> None:
+    """The quoted Fjordline option (4 days) next to one stored alternative."""
+    _quoted_session(sid)
+    with db.tx() as c:
+        c.execute(
+            "UPDATE quotes SET alternatives_json = ? WHERE session_id = ?",
+            (
+                db._json(
+                    [
+                        {"airline": "Fjordline Air Cargo", "transit_days": 4,
+                         "total_eur_minor": 440852},
+                        {"airline": "Gannet Airways", "transit_days": other_days,
+                         "total_eur_minor": 390000},
+                    ]
+                ),
+                sid,
+            ),
+        )  # fmt: skip
+
+
+def _model_says_question(monkeypatch) -> Api:
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    from app.agents import consent_check
+
+    monkeypatch.setattr(consent_check, "classify", lambda *_a, **_k: "question")
+    return api
+
+
+@pytest.mark.core
+def test_yes_on_a_fastest_condition_the_quote_proves_books(monkeypatch):
+    """Round 147: the conditional yes was answered with questions until the customer left."""
+    api = _model_says_question(monkeypatch)
+    _quoted_with_options(other_days=6)
+    booking.handle_reply(replace(_accept(), body=FASTEST_IF_SO), 1223)
+    assert api.booked == [("R-xLidjNtljIRSGuVR", "AP-1223")]
+
+
+@pytest.mark.parametrize(
+    ("other_days", "body"),
+    [
+        (3, FASTEST_IF_SO),  # a faster option is stored: the condition fails
+        (6, FASTEST_IF_SO.replace("If so, please go ahead", "Please wait with the booking")),
+        (6, FASTEST_IF_SO.replace("from STR to EZE", "from MUC to EZE")),  # another airport
+        (6, FASTEST_IF_SO.replace("the fastest option", "the latest drop off time")),
+    ],
+)
+def test_conditional_yes_without_proof_never_books(other_days, body, monkeypatch):
+    api = _model_says_question(monkeypatch)
+    _quoted_with_options(other_days=other_days)
+    booking.handle_reply(replace(_accept(), body=body), 1223)
+    assert api.booked == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        (
+            "Thank you for your offer. It suits us well, and we would like to place the shipment "
+            "with you. However, another forwarder has offered us a rate 10 percent lower for the "
+            "same shipment.\n\nCould you match their rate?"
+        ),
+        (
+            "Thank you. To decide I need a clear answer: does your price stay as offered, or "
+            "what is your new all-in total?"
+        ),
+    ],
+)
+def test_price_match_request_gets_our_unchanged_total(body):
+    """Round 144: both questions got "shall we book?" and the customer booked elsewhere."""
+    from app.agents import prebook
+
+    _quoted_with_options(other_days=6)
+    assert booking.classify_reply(body) == "question"
+    result = prebook.answer(body, prebook.facts_for(db.get_session(1223)), "en", "Deniz")
+    assert result.body is not None, result.reason
+    assert "stays as offered" in result.body
+    assert result.body.count("4.408,52") == 1  # the total once, no invented discount
+
+
+def test_price_match_is_answered_on_the_live_path_without_booking(monkeypatch):
+    api = _model_says_question(monkeypatch)
+    assert booking.settings.prebook_answer is False  # production default
+    _quoted_with_options(other_days=6)
+    body = "Does your price stay as offered, or what is your new all-in total?\n\nKlaus"
+    booking.handle_reply(replace(_accept(), body=body), 1223)
+    assert api.booked == []
+    assert len(api.sent) == 1 and "stays as offered" in api.sent[0]["body"]
