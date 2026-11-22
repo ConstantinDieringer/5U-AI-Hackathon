@@ -120,7 +120,7 @@ def arrival_dates(
 
 def _positive(pattern: re.Pattern, text: str) -> bool:
     return any(
-        not _NEGATED.search(text[max(0, m.start() - 18) : m.start()])
+        not _NEGATED.search(text[max(0, m.start() - 64) : m.start()])
         for m in pattern.finditer(text)
     )
 
@@ -138,6 +138,11 @@ def checked(
     }
     evidence, issues = {}, []
     active = "\n".join(sources.values())
+    stated_price_priority = any(
+        not re.search(r"\b(?:not|never|nicht|kein\w*)\b", match[0], re.IGNORECASE)
+        and not _NEGATED.search(active[max(0, match.start() - 64) : match.start()])
+        for match in _PRICE_PRIORITY.finditer(active)
+    )
     limit_without_date = any(
         _ARRIVAL.search(clause)
         and _LIMIT.search(clause)
@@ -159,10 +164,8 @@ def checked(
             issues.append({"field": "arrival_deadline", "code": "missing"})
     else:
         evidence["arrival_deadline"] = {"source": "customer_correction"}
-    if (
-        data.get("arrival_deadline") or _PRICE_PRIORITY.search(active)
-    ) and "preference" not in corrections:
-        price_priority = bool(_PRICE_PRIORITY.search(active)) or (
+    if (data.get("arrival_deadline") or stated_price_priority) and "preference" not in corrections:
+        price_priority = stated_price_priority or (
             _positive(_CHEAP, active) and not _positive(_FAST, active)
         )
         if price_priority or not _positive(_FAST, active):

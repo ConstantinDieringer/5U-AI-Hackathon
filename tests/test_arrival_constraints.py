@@ -94,6 +94,16 @@ def test_genuine_fastest_priority_remains_fastest():
     assert chosen.airline == "Aurelia Air Cargo"
 
 
+def test_negated_price_priority_does_not_override_explicit_fastest():
+    data, issues, _ = selection_intent.checked(
+        request().model_dump(),
+        {
+            "body": "Choose the fastest option arriving by 2 December 2026. Price will not determine our choice."
+        },
+    )
+    assert not issues and data["preference"] == "fastest"
+
+
 def test_ready_departure_and_validity_dates_are_not_arrival_deadlines():
     text = "Ready by 2026-11-26. Quote valid until 2026-12-02. Latest departure 2026-11-28."
     assert selection_intent.arrival_dates(text) == {}
