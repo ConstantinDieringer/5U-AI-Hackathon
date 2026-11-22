@@ -19,6 +19,7 @@ AGENTS = (
     "rescue",
     "bid_reader",
     "consent_check",
+    "quote_opening",
 )
 
 

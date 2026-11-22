@@ -26,7 +26,7 @@ import openai
 from pydantic import ValidationError
 
 from app import db, hackloop, llm
-from app.agents import bids, carrier_prefs
+from app.agents import bids, carrier_prefs, quote_opening
 from app.config import settings
 from app.mail import language, lots, multilingual, parse, pdf_request
 from app.mail.content import current_message
@@ -774,6 +774,15 @@ COMPOSE_SCHEMA: dict[str, Any] = {
 }
 
 
+_ROAD_DURATION = re.compile(
+    r"\b(?:road|driving|drive|fahrzeit|transportdauer|routier|carretera|strada)\b"
+    r"[^.!?\n]{0,100}\b(?:hours?|stunden|heures?|horas?|ore)\b"
+    r"|\b(?:hours?|stunden|heures?|horas?|ore)\b[^.!?\n]{0,100}"
+    r"\b(?:road|driving|drive|fahrzeit|transportdauer|routier|carretera|strada)\b",
+    re.IGNORECASE,
+)
+
+
 def _fallback_with_coverage(
     rfq: Rfq,
     option: RateOption,
@@ -860,18 +869,7 @@ def _validate_composed(
         without_notices = without_notices.replace(notice, "")
     if _CUTOFF_TERMS.search(without_notices):
         raise ValueError("cargo acceptance deadline is not verified; use cutoff_notice")
-    if (
-        truck is not None
-        and truck.timing_kind != "road_transit"
-        and re.search(
-            r"\b(?:road|driving|drive|fahrzeit|transportdauer|routier|carretera|strada)\b"
-            r"[^.!?\n]{0,100}\b(?:hours?|stunden|heures?|horas?|ore)\b"
-            r"|\b(?:hours?|stunden|heures?|horas?|ore)\b[^.!?\n]{0,100}"
-            r"\b(?:road|driving|drive|fahrzeit|transportdauer|routier|carretera|strada)\b",
-            body,
-            re.IGNORECASE,
-        )
-    ):
+    if truck is not None and truck.timing_kind != "road_transit" and _ROAD_DURATION.search(body):
         raise ValueError("carrier collection/unspecified lead is not verified road duration")
     if not all(
         isinstance(items, list)
@@ -910,6 +908,65 @@ def _validate_composed(
     return body
 
 
+def _template_first_quote(
+    rfq: Rfq,
+    option: RateOption,
+    total_eur_minor: int,
+    truck: bids.Offer | None,
+    session_id: int,
+    today: date | None,
+) -> str:
+    """QUOTE_TEMPLATE_FIRST: the checked template carries every fact; one small call adds a
+    personal opening and answers. Any failure sends the plain template."""
+    template = _fallback_with_coverage(rfq, option, total_eur_minor, truck, session_id, today)
+    lang = quote_opening.write_language(rfq.language)
+    when = schedule(rfq, option.transit_days, today)
+    pickup = truck is not None and rfq.door_to_port
+    name = rfq.customer_name
+    facts = {
+        "origin": option.origin,
+        "destination": option.destination,
+        "airline": option.airline,
+        "air_transit_days": option.transit_days,
+        "all_in_total_already_in_mail": _amount(total_eur_minor, lang),
+        "selected_because": "shortest air transit among the options checked"
+        if rfq.preference == "fastest"
+        else "lowest air price among the options checked",
+        "pickup_included": pickup,
+        "pickup_place": rfq.pickup_label if pickup else None,
+        "exact_pickup_time": "not confirmed" if pickup else None,
+        "earliest_departure": written_date(when[0], lang) if when else None,
+        "earliest_arrival": written_date(when[1], lang) if when else None,
+        "bookable_until": _valid(option),
+        "cargo_acceptance_cutoff": "not confirmed",
+    }
+
+    def claim_check(text: str) -> None:
+        if carrier_prefs.mentions_excluded(text, rfq.excluded_airlines):
+            raise ValueError("excluded carrier named")
+        if _CUTOFF_TERMS.search(text) or _CUTOFF_QUESTIONS.search(text):
+            raise ValueError("cargo acceptance deadline is not verified")
+        if (truck is None or truck.timing_kind != "road_transit") and _ROAD_DURATION.search(text):
+            raise ValueError("road duration is not verified")
+
+    try:
+        return quote_opening.personalize(
+            template,
+            lang=lang,
+            price=_amount(total_eur_minor, lang),
+            customer_name=name if name and not has_template_artifacts(name) else None,
+            customer_message=quote_conversation(session_id)["current_customer_message"],
+            customer_questions=rfq.customer_questions,
+            facts=facts,
+            session_id=session_id,
+            cutoff_notice=_CUTOFF_NOTICES.get(lang, _CUTOFF_NOTICES["en"]),
+            claim_check=claim_check,
+        )
+    except Exception as exc:  # noqa: BLE001 - the checked template is always available
+        log.warning("session %s: plain quote template (%s)", session_id, exc)
+        return template
+
+
 def compose_quote_text(
     rfq: Rfq,
     option: RateOption,
@@ -919,6 +976,8 @@ def compose_quote_text(
     today: date | None = None,
 ) -> str:
     """Generate and verify a general answer; deterministic copy is always available."""
+    if settings.quote_template_first:
+        return _template_first_quote(rfq, option, total_eur_minor, truck, session_id, today)
     lang = language.normalize(rfq.language)
     price = _amount(total_eur_minor, lang)
     when = schedule(rfq, option.transit_days, today)
