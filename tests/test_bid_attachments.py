@@ -84,3 +84,42 @@ def test_document_total_and_collection_lead_reach_offer(extension, monkeypatch):
     assert offer.total_eur == Decimal("165.70")
     assert offer.transit_days == 29 / 24 and offer.timing_kind == "collection_lead"
     assert offer.mail_id == 456
+
+
+@pytest.mark.core
+@pytest.mark.parametrize(
+    ("transcript", "expected"),
+    [
+        # "hundred" was dropped: one hundred twenty euros and thirty six cents read as 20.36
+        ("The total all in price is one hundred twenty euros and thirty six cents.", "120.36"),
+        ("All-in it comes to two thousand three hundred and forty-five euros.", "2345.00"),
+        ("A hundred and fifteen euros total, pickup in four hours.", "115.00"),
+        (
+            "Insgesamt zweihundertfünfunddreißig Euro und vierzig Cent, Abholung in zwölf Stunden.",
+            "235.40",
+        ),
+        ("Der Gesamtpreis beträgt hundertzwanzig Euro.", "120.00"),
+        ("Gesamt zwohundertundzwanzig Euro.", "220.00"),
+        # counterexample: digits and waiting-time amounts behave as before
+        (
+            "Our all-in price is 358 euros and 64 cents. Waiting time costs 25 euros, not part of the price.",
+            "358.64",
+        ),
+    ],
+)
+def test_spoken_price_reads_hundreds_and_thousands(transcript, expected):
+    from decimal import Decimal
+
+    from app.agents.bids import normalize_spoken, spoken_price
+
+    assert spoken_price(normalize_spoken(transcript)) == (Decimal(expected), "EUR")
+
+
+def test_unreadable_number_word_never_yields_a_smaller_price():
+    """A scale word the parser cannot place leaves no price rather than a wrong one."""
+    from app.agents.bids import normalize_spoken, spoken_price
+
+    assert (
+        spoken_price(normalize_spoken("Gesamt anderthalbtausend Euro, Abholung in 5 Stunden."))
+        is None
+    )
