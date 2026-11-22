@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
@@ -117,6 +117,13 @@ def api_dashboard() -> dict[str, Any]:
     return db.dashboard()
 
 
+@app.get("/api/business-metrics")
+def api_business_metrics(days: int = 0) -> dict[str, Any]:
+    if days not in (0, 1, 7, 30):
+        raise HTTPException(422, "days must be 0, 1, 7 or 30")
+    return db.business_metrics(days)
+
+
 @app.get("/api/overview")
 def api_overview(hours: int = 6) -> dict[str, Any]:
     return db.overview(hours=max(0, min(hours, 24 * 7)))
@@ -204,6 +211,36 @@ def api_session(session_id: int) -> dict[str, Any]:
     if not s:
         raise HTTPException(404, "session not found")
     return s
+
+
+@app.get("/api/requests")
+def api_requests(
+    q: str = "",
+    status: str = "",
+    kind: str = "",
+    airport: str = "",
+    days: int = 0,
+    sort: str = "created_at",
+    direction: str = "desc",
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+) -> dict[str, Any]:
+    if days not in (0, 1, 7, 30) or kind not in ("", "rfq", "tracking"):
+        raise HTTPException(422, "invalid request filters")
+    try:
+        return db.request_catalog(
+            q=q,
+            status=status,
+            kind=kind,
+            airport=airport,
+            days=days,
+            sort=sort,
+            direction=direction,
+            offset=offset,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.get("/api/unassigned")

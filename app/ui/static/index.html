@@ -295,6 +295,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   .event-entry > .log-body { padding-left: 0; }
 }
 </style>
+<link rel="stylesheet" href="/static/workspace.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -321,16 +322,17 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
   <symbol id="i-cart" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3 6 0 1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z"/><circle cx="12" cy="12" r="3"/></symbol>
 </svg>
 
 <nav class="sidebar" aria-label="Hauptnavigation">
   <div class="brand"><span class="mark"><svg class="icon"><use href="#i-plane"/></svg></span><div><b>Austrian Power</b><small>Forwarder Console</small></div></div>
-  <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Übersicht</span></button>
+  <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></button>
+  <button class="nav" data-page="requests"><svg class="icon"><use href="#i-inbox"/></svg><span class="lbl">Anfragen</span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
-  <button class="nav" data-page="errors" title="Fehler & Warnungen"><svg class="icon"><use href="#i-alert"/></svg><span class="lbl">Meldungen</span><span class="badge err" id="err-badge" title="Gesammelte Fehler und Warnungen"></span></button>
   <div class="spacer"></div>
-  <div class="conn"><span class="dot" id="live-dot"></span><span class="lbl" id="live-text">verbinde…</span></div>
   <button class="stop" id="global-pause" title="Alle ausgehenden Mails stoppen"><svg class="icon"><use href="#i-stop"/></svg><span>Mails stoppen</span></button>
+  <button class="nav profile-settings" data-page="errors" id="settings-toggle" title="Einstellungen und Meldungen" aria-expanded="false" aria-controls="page-errors"><span class="avatar">AP</span><span class="lbl">Einstellungen</span><svg class="icon"><use href="#i-settings"/></svg><span class="badge err" id="err-badge"></span></button>
 </nav>
 
 <div class="main">
@@ -338,15 +340,17 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
     <div><h1 id="page-title">Übersicht</h1><div class="sub" id="page-sub">Wie läuft der Forwarder gerade?</div></div>
     <div class="right">
       <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Kunde, Betreff oder ID" autocomplete="off"></label>
-      <button class="btn mobile-only" id="mobile-messages" title="Meldungspuffer"><svg class="icon"><use href="#i-alert"/></svg>Meldungen</button>
-      <span class="badge-s" id="deploy-gate" role="status" aria-live="polite" title="Deploy-Ampel: Push auf main nur bei Grün (DEPLOY.md)">Deploy …</span>
-      <div class="avatar" title="Team Austrian Power">AP</div>
+      <button class="btn mobile-only" id="mobile-messages" title="Einstellungen"><svg class="icon"><use href="#i-settings"/></svg>Einstellungen</button>
+      <button class="btn mobile-only nav" data-page="requests">Anfragen</button>
+      <button class="btn mobile-only nav" data-page="crm" title="CRM öffnen"><svg class="icon"><use href="#i-users"/></svg>CRM</button>
     </div>
   </header>
   <div class="banner" id="global-banner"><svg class="icon"><use href="#i-alert"/></svg>Alle ausgehenden Mails sind gestoppt. Der Agent sendet nichts, bis ihr sie wieder freigebt.</div>
 
+  <nav id="breadcrumbs" class="breadcrumbs" aria-label="Navigationspfad"></nav>
   <section class="page active" id="page-overview"><div class="bento" id="overview"></div></section>
 
+  <section class="page" id="page-requests"><div class="bento" id="requests"></div></section>
   <section class="page" id="page-session"><div class="request-detail" id="detail"></div></section>
 
   <section class="page" id="page-crm"><div class="bento" id="crm"></div></section>
@@ -357,6 +361,8 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-label="Kunde"><header><h3 id="drawer-title"></h3><button class="btn ghost" id="drawer-close" style="margin-left:auto" aria-label="Schließen"><svg class="icon"><use href="#i-x"/></svg></button></header><div class="body" id="drawer-body"></div></aside>
 
+<script src="/static/workspace.js"></script>
+<script src="/static/dashboard.js"></script>
 <script>
 "use strict";
 // ---------- helpers: text only via textContent (mail bodies are untrusted) ----------
@@ -384,7 +390,7 @@ const api = async (p, o) => {
   return r.json();
 };
 const post = (p, b) => api(p, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }, body: b ? JSON.stringify(b) : undefined });
-const money = (m, c) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (c || "EUR");
+const money = (m, c) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { minimumFractionDigits: m % 100 ? 2 : 0, maximumFractionDigits: 2 }) + " " + (!c || c === "EUR" ? "€" : c);
 const euro = (m) => m == null ? "–" : (m / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 }) + " €";
 const usd = (u) => u == null ? "–" : "$" + (u / 1e6).toFixed(u < 10000 ? 4 : 3);
 const time = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
@@ -403,7 +409,7 @@ function emptyState(ic, text) { return el("div", { class: "empty" }, el("span", 
 
 // ---------- state ----------
 const S = { page: "overview", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", returnPage: "overview", foldOpen: new Set(), problemExpanded: new Set(), reply: {}, detailRequest: 0 };
-const PAGES = { overview: ["Übersicht", "Die letzten Anfragen auf einen Blick."], session: ["Anfrage", "E-Mail-Verlauf und aktueller Stand."], crm: ["CRM", "Kunden, Angebote und Buchungen."], errors: ["Meldungspuffer", "Fehler und Warnungen gesammelt, ohne Pop-ups."] };
+const PAGES = { overview: ["Dashboard", ""], requests: ["Anfragen", ""], session: ["Anfrage", "E-Mail-Verlauf und aktueller Stand."], crm: ["CRM", "Kunden, Angebote und Buchungen."], errors: ["Einstellungen", "Team, Meldungen und Systemkontext."] };
 
 // ---------- countdown ----------
 const remaining = (d) => d ? (new Date(d) - Date.now()) / 1000 : null;
@@ -416,16 +422,19 @@ setInterval(() => document.querySelectorAll("[data-deadline]").forEach((n) => { 
 function show(page, updateHistory = true) {
   if (!PAGES[page] || page === "session" && S.selected == null) page = "overview";
   S.page = page;
+  $("#settings-toggle").setAttribute("aria-expanded", String(page === "errors"));
+  renderBreadcrumbs();
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + page));
   document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.page === (page === "session" ? S.returnPage : page)));
   $("#page-title").textContent = PAGES[page][0]; $("#page-sub").textContent = PAGES[page][1];
-  if (page === "overview") loadOverview(); if (page === "crm") loadCrm(); if (page === "errors") loadErrors();
+  if (page === "overview") loadOverview(); if (page === "requests") loadRequests(); if (page === "crm") loadCrm(); if (page === "errors") loadErrors();
   const hash = page === "session" ? "#session=" + S.selected : "#" + page;
   if (updateHistory && location.hash !== hash) history.pushState(null, "", hash);
 }
 document.querySelectorAll(".nav").forEach(n => n.addEventListener("click", () => show(n.dataset.page)));
 $("#mobile-messages").addEventListener("click", () => show("errors"));
-$("#global-q").addEventListener("keydown", e => { if (e.key === "Enter") { S.q = e.target.value.trim(); show("overview"); } });
+$("#global-q").addEventListener("keydown", e => { if (e.key === "Enter") { clearTimeout(S.globalSearchTimer); S.q = e.target.value.trim(); S.requestOffset = 0; show("requests"); } });
+$("#global-q").addEventListener("input", e => { const value = e.target.value.trim(); clearTimeout(S.globalSearchTimer); S.globalSearchTimer = setTimeout(() => { S.q = value; S.requestOffset = 0; show("requests"); }, 350); });
 document.addEventListener("toggle", e => {
   if (e.target.matches("#detail details[data-fold]")) {
     const key = e.target.dataset.fold;
@@ -472,6 +481,7 @@ function problemRow(g) {
         el("span", {}, `${hm(g.last_at)} · ${ago(g.last_at)}` + (g.count > 1 ? ` · seit ${hm(g.first_at)}` : "")),
         ...g.sessions.map((x) => el("button", { class: "chip", title: [x.subject, x.customer].filter(Boolean).join(" · "), onclick: () => select(x.id) }, "#" + x.id + (x.customer ? " " + x.customer.replace("@hackloop.mail", "").split("-")[0] : ""))))),
     el("div", { class: "count" }, g.count + "×", el("small", {}, g.sessions.length ? g.sessions.length + " Sess." : "System"),
+      el("button", { class: "chip", onclick: e => copyMail(g.message || "", e.currentTarget) }, "Kopieren"),
       el("button", { class: "chip", title: "Als erledigt ausblenden, bis die Meldung neu auftritt", onclick: () => ackProblems([g]) }, icon("check"), "Erledigt")));
 }
 async function ackProblems(groups) {
@@ -497,52 +507,10 @@ async function copyText(url, btn) {
   const old = btn.innerHTML; btn.disabled = true;
   try {
     const { text } = await api(url);
-    try { await navigator.clipboard.writeText(text); }
-    catch { const ta = el("textarea", { style: "position:fixed;opacity:0" }); ta.value = text; document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+    await copyPlainText(text, btn);
     btn.title = `Kopiert · ${Math.round(text.length / 1000)}k Zeichen`;
   } catch (e) { bufferMessage("Kopieren fehlgeschlagen: " + e.message); }
   finally { btn.disabled = false; btn.innerHTML = old; }
-}
-async function loadOverview() {
-  const request = S.overviewRequest = (S.overviewRequest || 0) + 1, query = S.q;
-  const [d, p] = await Promise.all([api("/api/status").catch(() => null), api("/api/problems?hours=24").catch(() => null)]); if (!d || S.page !== "overview" || request !== S.overviewRequest) return;
-  PROBLEMS = p || PROBLEMS || { groups: [], errors: 0, warnings: 0, hours: 24 };
-  if (S.problemsSeen == null) S.problemsSeen = Math.max(0, ...PROBLEMS.groups.map((g) => g.last_event_id)) ; // first load: nothing is "neu"
-  const card = (cls, ...kids) => el("div", { class: "card " + cls }, ...kids);
-  const head = (title, sub, aside) => el("div", { class: "card-h" }, el("div", {}, el("h3", {}, title), sub ? el("div", { class: "caption" }, sub) : null), aside || null);
-
-  // 1. Status strip: verdict, one pill per pipeline part, score in one line
-  const bad = d.checks.filter((c) => c.level === "bad").length, warn = d.checks.filter((c) => c.level === "warn").length;
-  const recentErr = PROBLEMS.groups.filter((g) => g.level === "error" && Date.now() - new Date(g.last_at) < 15 * 60000).length;
-  const tone = bad || recentErr ? "red" : warn ? "orange" : "green";
-  const verdictText = bad ? `${bad} Problem${bad > 1 ? "e" : ""}` : recentErr ? `${recentErr} neue Fehler` : warn ? `${warn} Warnung${warn > 1 ? "en" : ""}` : "Alles läuft";
-  const sc = d.score;
-  const strip = card("s12 strip",
-    el("div", { class: "verdict" }, el("i", { class: "lamp " + tone }), el("div", {}, recentErr && !bad ? el("button", { class: "linklike", title: "Zu Fehler & Warnungen", onclick: () => show("errors") }, el("b", {}, verdictText)) : el("b", {}, verdictText), el("div", { class: "caption" }, `Systemcheck · letzte ${d.window_hours} h`))),
-    el("div", { class: "pills" }, ...d.checks.map((c) => el("span", { class: "pill " + c.level, title: `${c.name}: ${c.value} · ${c.hint}` }, el("i"), c.name))),
-    el("div", { class: "score", title: "Ø Punkte je akzeptierter Quote (Preis als voll angenommen)" }, el("b", { class: "num" }, sc.per_quote == null ? "–" : Math.round(sc.per_quote)), el("span", { class: "caption" }, `/ 100 · ${sc.accepted} von ${sc.rated} akzeptiert`)),
-    el("button", { class: "btn", title: "Lagebild (Systemcheck, Meldungen und letzte Anfragen) als Text kopieren, zum Einfügen in ChatGPT/Claude", onclick: (e) => copyText("/api/context", e.currentTarget) }, icon("inbox"), "Lagebild kopieren"));
-
-  // Letzte Anfragen stehen unmittelbar unter dem Systemstatus.
-  // 4. Letzte Anfragen: each request step by step
-  const queried = query ? await api("/api/sessions?q=" + encodeURIComponent(query)).catch(() => []) : null;
-  if (S.page !== "overview" || request !== S.overviewRequest) return;
-  const requests = queried ? queried.map(s => d.requests.find(r => r.id === s.id) || {
-    ...s, quote_minor: s.quote_total_minor, quote_currency: s.quote_currency,
-    steps: { quote: { state: s.first_reply_at ? "ok" : "run", label: s.first_reply_at ? "Beantwortet" : "Offen" }, board: { state: "none", label: "Im Detail" }, booking: { state: s.status === "booked" ? "ok" : "none", label: s.status === "booked" ? "Gebucht" : "Im Detail" } }
-  }) : d.requests;
-  const rows = requests.map((r) => el("tr", { onclick: () => select(r.id), tabindex: "0", onkeydown: e => { if (["Enter", " "].includes(e.key)) { e.preventDefault(); select(r.id); } } },
-    el("td", { class: "muted num" }, hm(r.created_at)),
-    el("td", {}, el("div", { class: "req" }, el("b", { title: r.lane || r.subject || "#" + r.id }, r.lane || r.subject || "#" + r.id), el("span", { class: "muted", title: [(r.customer || ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ") }, [(r.customer || "").replace("@hackloop.mail", ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ")))),
-    el("td", {}, stepChip(r.steps.quote)), el("td", {}, stepChip(r.steps.board)), el("td", {}, stepChip(r.steps.booking))));
-  const reqs = card("s12",
-    head(query ? "Suchergebnisse" : "Letzte Anfragen", "Anfrage auswählen und E-Mail-Verlauf öffnen.", query ? el("button", { class: "btn ghost aside", onclick: () => { S.q = ""; $("#global-q").value = ""; loadOverview(); } }, "Suche löschen") : el("span", { class: "aside caption" }, requests.length + " Anfragen")),
-    rows.length ? el("div", { class: "table-scroll", role: "region", "aria-label": "Letzte Anfragen", tabindex: "0" },
-      el("table", { class: "list steps" }, el("colgroup", {}, ...["time", "request", "quote", "board", "booking"].map((name) => el("col", { class: "col-" + name }))),
-        el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Anfrage"), el("th", {}, "Quote"), el("th", {}, "5U"), el("th", {}, "Buchung"))), el("tbody", {}, ...rows))) : emptyState("inbox", "Noch keine Anfragen."));
-
-  $("#overview").replaceChildren(strip, reqs);
-  errBadge();
 }
 // A passive counter replaces automatic error and warning pop-ups.
 function errBadge() {
@@ -562,7 +530,10 @@ async function loadErrors() {
       el("div", { style: "min-width:0;flex:1" }, el("div", { class: "t" }, q.subject || "Mail " + q.mail_id), el("div", { class: "d" }, q.sender || "")),
       el("button", { class: "btn sm", onclick: e => releaseMail(q.mail_id, e.currentTarget) }, "Freigeben")))));
   quarantineBox.open = Boolean($("#errors details")?.open);
-  $("#errors").replaceChildren(el("div", { class: "card s12" },
+  $("#errors").replaceChildren(el("section", {class:"card s12 settings-intro"},
+    el("div", {class:"avatar"}, "AP"), el("div", {}, el("h3", {}, "Austrian Power"), el("p", {class:"caption"}, "Meldungen prüfen und den aktuellen Systemkontext kopieren.")),
+    el("button", {class:"btn", onclick:e => copyText("/api/context", e.currentTarget)}, icon("inbox"), "Lagebild kopieren")),
+    el("div", { class: "card s12" },
     el("div", { class: "card-h" }, el("div", {}, el("h3", {}, "Gesammelte Meldungen"), el("div", { class: "caption" }, `Servermeldungen der letzten ${hours} h. Browsermeldungen bleiben auf diesem Gerät bis zur Bestätigung gespeichert.`)), range),
     el("div", { class: "seg", id: "prob-seg", style: "margin-bottom:16px" }), el("div", { id: "problems" })), ...(quarantine.length ? [quarantineBox] : []));
   renderProblems(); errBadge();
@@ -683,9 +654,7 @@ function renderDetail() {
       el("textarea", { id: "reply-text", placeholder: "Hallo …" }), el("div", { class: "actions" }, el("button", { class: "btn primary", onclick: sendReply }, icon("send"), "Senden"), el("button", { class: "btn ghost", onclick: () => toggleReply(false) }, "Abbrechen"))));
   const tl = el("ul", { class: "tl", id: "timeline" }); s.events.forEach(e => tl.append(eventItem(e)));
   const mails = el("div", { class: "mail-list" });
-  for (const m of s.mails) mails.append(el("article", { class: "mail " + m.direction, "data-mail-id": m.id },
-    el("div", { class: "h" }, el("span", {}, m.direction === "in" ? "Von " + (m.sender || "Unbekannt") : "An " + (m.recipient || "Unbekannt")), el("span", {}, dateTime(m.received_at))),
-    el("div", { class: "s" }, m.subject || "Ohne Betreff"), el("div", { class: "mail-body" }, m.body || "Kein Nachrichtentext.")));
+  for (const m of s.mails) mails.append(conversationMail(m, s));
   const conversation = el("section", { class: "card conversation", "aria-label": "E-Mail-Verlauf" },
     el("div", { class: "card-h" }, el("h3", {}, "E-Mail-Verlauf"), el("span", { class: "aside caption" }, s.mails.length + " Nachrichten")),
     s.mails.length ? mails : emptyState("mail", "Noch keine E-Mails."));
@@ -705,20 +674,21 @@ function renderDetail() {
   if (reply.mailId && [...$("#reply-mail").options].some(o => o.value === reply.mailId)) $("#reply-mail").value = reply.mailId;
   $("#draft-info").textContent = reply.info || "";
   toggleReply(Boolean(reply.open), false); S.renderedSession = s.id;
+  renderBreadcrumbs();
 }
 function requestInfo(s) {
   const r = s.request || {}, q = currentQuote(s);
   const quantity = (value, unit) => value == null ? "Noch offen" : Number(value).toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " " + unit;
-  const facts = [["Gewicht", quantity(r.weight_kg, "kg")], ["Volumen", quantity(r.volume_cbm, "m³")],
-    ["Packstücke", r.pieces ?? "Noch offen"], ["Bereit ab", r.ready_date ? new Date(r.ready_date).toLocaleDateString("de-DE") : "Noch offen"],
+  const facts = [["Route", [r.origin || q?.origin, r.destination || q?.destination].filter(Boolean).join(" → ") || "Noch offen"], ["Gewicht", quantity(r.weight_kg, "kg")], ["Volumen", quantity(r.volume_cbm, "m³")],
+    ["Packstücke", r.pieces ?? "Noch offen"], ["Bereit ab", r.ready_date ? new Date(r.ready_date).toLocaleDateString("de-DE", {day:"numeric",month:"long",year:"numeric"}) : "Noch offen"],
     ["Angebot", q ? money(q.total_minor, q.currency) : "Noch offen"], ["Priorität", ({cheapest:"Günstigster Preis",fastest:"Kürzeste Laufzeit"})[r.preference] || "Noch offen"]];
-  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Sendungsinfos")),
+  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Sendungsinfos"), el("button", {class:"btn ghost aside", "aria-label":"Sendungsinfos kopieren", title:"Sendungsinfos kopieren", onclick:e => copyMail(facts.map(([label,value]) => label + "\n" + value).join("\n\n"),e.currentTarget)}, icon("inbox"))),
     el("dl", { class: "facts" }, ...facts.map(([key, value]) => el("div", {}, el("dt", {}, key), el("dd", {}, value)))));
 }
 function flowCard(s, notices) {
   const q = currentQuote(s), b = s.bookings[0];
   const phases = { interpreting:"Kundenantwort wird geprüft",repricing:"Geänderte Anfrage wird kalkuliert",answering:"Kundenfragen werden beantwortet",awaiting_customer:"Wartet auf Kundenfreigabe",awaiting_price_approval:"Wartet auf Preisfreigabe",booking:"Buchung läuft",booked:"Gebucht",needs_review:"Prüfung erforderlich",closed:"Abgeschlossen",deferred:"Vom Kunden zurückgestellt" };
-  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Flow"), el("span", { class: "aside" }, badge(s.status))),
+  return el("section", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Bearbeitungsstand"), el("button", {class:"btn ghost aside", "aria-label":"Bearbeitungsstand kopieren", title:"Bearbeitungsstand kopieren", onclick:e => copyMail(["Anfrage #" + s.id, "Status " + (STATUS[s.status]?.[0] || s.status), q ? "Angebot " + money(q.total_minor,q.currency) : "Angebot noch offen", b ? "Buchung " + (b.booking_reference || b.team_reference) : "Buchung noch offen"].join("\n"),e.currentTarget)}, icon("inbox"))),
     el("div", { class: "flow-steps" }, ...[["Anfrage", true, hm(s.created_at)], ["Angebot", Boolean(q), q ? hm(q.sent_at) : "Noch offen"], ["Buchung", Boolean(b && b.status === "confirmed"), b ? b.status : "Noch offen"]].map(([label, done, text]) =>
       el("div", { class: "flow-step" + (done ? " done" : "") }, el("span", { class: "flow-dot" }, icon(done ? "check" : "clock")), el("b", {}, label), el("small", {}, text)))),
     s.workflow ? el("p", { class: "caption" }, phases[s.workflow.phase] || "Bearbeitung läuft") : null,
@@ -786,57 +756,10 @@ async function sendReply() {
 // ---------- CRM ----------
 // ---------- CRM ----------
 async function loadCrm() { S.crm = await api("/api/crm").catch(() => S.crm); renderCrm(); }
-function renderCrm() {
-  const d = S.crm; if (!d) return; const t = d.totals;
-  const kpi = (label, value, sub, cls = "s3") => el("div", { class: "card kpi " + cls }, el("div", { class: "label" }, label), el("div", { class: "value" }, value), el("div", { class: "meta" }, sub));
-  const tabs = el("div", { class: "seg" }, ...[["customers", "Kunden"], ["quotes", "Quotes"], ["pricing", "Preise"], ["bookings", "Buchungen"]].map(([k, l]) => el("button", { class: S.crmTab === k ? "active" : "", onclick: () => { S.crmTab = k; renderCrm(); } }, l)));
-  const search = el("label", { class: "search aside", style: "width:240px" }, icon("search"), el("input", { placeholder: "Suchen", value: S.crmQ, oninput: (e) => { S.crmQ = e.target.value.trim(); renderCrmTable(); } }));
-  const tableBox = el("div", { id: "crm-table" });
-  $("#crm").replaceChildren(
-    kpi("Anfragen", String(t.requests), `${t.customers} Kunden`),
-    kpi("Quote-Rate", pct(t.quoted, t.requests), `${t.quoted} von ${t.requests} beantwortet`),
-    kpi("Gewonnen / verloren", `${t.won} / ${t.lost}`, "gebucht vs. abgelaufen, verloren, Fehler"),
-    kpi("Gebuchtes Volumen", euro(d.booked_minor), `${d.bookings.length} Buchungen`),
-    el("div", { class: "card s12" }, el("div", { class: "card-h" }, tabs, search), tableBox));
-  renderCrmTable();
-}
-function renderCrmTable() {
-  const d = S.crm, q = S.crmQ.toLowerCase(), hit = (...v) => !q || v.some((x) => String(x ?? "").toLowerCase().includes(q)); let table;
-  const head = (cols) => el("thead", {}, el("tr", {}, ...cols.map(([h, r]) => el("th", { class: r ? "r" : "" }, h))));
-  if (S.crmTab === "customers") { const rows = d.customers.filter((c) => hit(c.customer));
-    table = rows.length ? el("table", { class: "list" }, head([["Kunde"], ["Anfragen", 1], ["Quotiert", 1], ["Gewonnen", 1], ["Verloren", 1], ["Offen", 1], ["Gebucht", 1], ["Letzter Kontakt"]]),
-      el("tbody", {}, ...rows.map((c) => el("tr", { onclick: () => openCustomer(c) }, el("td", {}, who(c.customer)), el("td", { class: "r num" }, c.requests), el("td", { class: "r num" }, c.quoted),
-        el("td", { class: "r num" }, c.won ? el("span", { class: "badge-s green" }, c.won) : "0"), el("td", { class: "r num" }, c.lost ? el("span", { class: "badge-s red" }, c.lost) : "0"), el("td", { class: "r num" }, c.open),
-        el("td", { class: "r num" }, euro(c.booked_minor)), el("td", { class: "muted" }, dateTime(c.last_contact)))))) : emptyState("users", "Noch keine Kunden.");
-  } else if (S.crmTab === "quotes") { const rows = d.quotes.filter((r) => hit(r.customer, r.airline, r.origin, r.destination, r.subject));
-    const out = (o) => el("span", { class: "badge-s " + (o === "won" ? "green" : o === "lost" ? "red" : "indigo") }, o === "won" ? "gewonnen" : o === "lost" ? "verloren" : "offen");
-    table = rows.length ? el("table", { class: "list" }, head([["Zeit"], ["Kunde"], ["Strecke"], ["Airline"], ["Preis", 1], ["Ergebnis"], ["5U"]]),
-      el("tbody", {}, ...rows.map((r) => el("tr", { onclick: () => select(r.session_id) }, el("td", { class: "muted" }, dateTime(r.sent_at)), el("td", {}, who(r.customer)), el("td", {}, `${r.origin || "?"} → ${r.destination || "?"}`),
-        el("td", {}, r.airline || ""), el("td", { class: "r num" }, money(r.total_minor, r.currency)), el("td", {}, out(r.outcome)), el("td", {}, r.verdict ? verdictBadge(r.verdict) : el("span", { class: "faint" }, "–")))))) : emptyState("send", "Noch keine Quotes gesendet.");
-  } else if (S.crmTab === "pricing") { const rows = (d.pricing || []).filter((r) => hit(r.customer, r.origin, r.destination, r.selected.airline));
-    const day = (n) => n == null ? "" : `${n} ${n === 1 ? "Tag" : "Tage"}`;
-    const alt = (o, sel) => el("span", { class: "step " + (o.airline === sel.airline && o.eur_minor === sel.eur_minor ? "blue" : ""), title: o.source }, `${o.airline.split(" ")[0]} · ${day(o.transit_days)} · ${euro(o.eur_minor)}`);
-    table = rows.length ? el("div", {}, el("div", { class: "caption", style: "margin:0 0 12px" }, "Alle Optionen je RFQ. Blau = gewählt. Lkw = gewählter Trucker-Preis, dahinter die Zahl der Trucker- und Airline-Gebote. Rot im 5U-Feld heißt: Preis prüfen."),
-      el("table", { class: "list" }, head([["Zeit"], ["Strecke · Wunsch"], ["Unser Preis", 1], ["Luftfracht-Optionen"], ["Lkw"], ["Gebote"], ["5U"]]),
-      el("tbody", {}, ...rows.map((r) => el("tr", { onclick: () => select(r.session_id) },
-        el("td", { class: "muted" }, dateTime(r.created_at)),
-        el("td", {}, el("div", { class: "req" }, el("b", {}, `${r.origin || "?"} → ${r.destination || "?"}`), el("span", { class: "muted" }, [r.preference === "fastest" ? "schnellste" : "günstigste", r.chargeable_kg ? Math.round(r.chargeable_kg) + " kg fr." : null, r.pickup ? "ab " + r.pickup + (r.pickup_assumed ? " (angenommen)" : "") : null].filter(Boolean).join(" · ")))),
-        el("td", { class: "r num", style: "font-weight:600" }, money(r.quote_minor)),
-        el("td", { class: "wrap" }, el("div", { style: "display:flex;flex-wrap:wrap;gap:4px" }, ...r.options.map((o) => alt(o, r.selected)))),
-        el("td", { class: "num" }, r.truck ? `${r.truck.name.split(" ")[0]} · ${euro(r.truck.eur_minor)}` : el("span", { class: "faint" }, "–")),
-        el("td", { class: "num muted" }, `${r.truck_bids} Lkw · ${r.airline_bids} Air`),
-        el("td", {}, r.verdict ? verdictBadge(r.verdict + (r.reason ? ` (${r.reason})` : "")) : el("span", { class: "faint" }, "–"))))))) : emptyState("coin", "Noch keine bepreisten Anfragen.");
-  } else { const rows = d.bookings.filter((b) => hit(b.customer, b.booking_reference, b.airline));
-    table = rows.length ? el("table", { class: "list" }, head([["Referenz"], ["Kunde"], ["Airline"], ["Preis", 1], ["Status"], ["Gebucht am"]]),
-      el("tbody", {}, ...rows.map((b) => el("tr", { onclick: () => select(b.session_id) }, el("td", { style: "font-weight:600" }, b.booking_reference || b.team_reference), el("td", {}, who(b.customer)), el("td", {}, b.airline || ""),
-        el("td", { class: "r num" }, money(b.price_minor, b.currency)), el("td", {}, el("span", { class: "badge-s " + (b.status === "failed" ? "red" : "green") }, b.status)), el("td", { class: "muted" }, dateTime(b.created_at)))))) : emptyState("box", "Noch keine Buchungen.");
-  }
-  $("#crm-table").replaceChildren(table);
-}
 async function openCustomer(c) {
   $("#drawer-title").textContent = c.customer.replace("@hackloop.mail", "");
   const sessions = await api("/api/customers/" + encodeURIComponent(c.customer) + "/sessions").catch(() => []);
-  $("#drawer-body").replaceChildren(el("div", { class: "mini" }, el("div", {}, el("span", { class: "caption" }, "Anfragen"), el("b", {}, c.requests)), el("div", {}, el("span", { class: "caption" }, "Gewonnen"), el("b", { style: "color:#248A3D" }, c.won)), el("div", {}, el("span", { class: "caption" }, "Gebucht"), el("b", {}, euro(c.booked_minor)))),
+  $("#drawer-body").replaceChildren(el("div", { class: "mini" }, el("div", {}, el("span", { class: "caption" }, "Anfragen"), el("b", {}, c.requests)), el("div", {}, el("span", { class: "caption" }, "Gewonnen"), el("b", { style: "color:#248A3D" }, c.won)), el("div", {}, el("span", { class: "caption" }, "Buchungsquote"), el("b", {}, pct(c.won, c.requests)))),
     el("div", { class: "caption", style: "margin-bottom:8px" }, "Verlauf"),
     sessions.length ? el("table", { class: "list" }, el("tbody", {}, ...sessions.map((s) => el("tr", { onclick: () => { closeDrawer(); select(s.id); } }, el("td", { class: "muted" }, dateTime(s.created_at)), el("td", { class: "wrap" }, s.subject || ""), el("td", {}, badge(s.status)), el("td", { class: "r num" }, s.quote_total_minor != null ? money(s.quote_total_minor, s.quote_currency) : "–"))))) : emptyState("inbox", "Keine Sessions."));
   $("#drawer").classList.add("open"); $("#scrim").classList.add("open");
@@ -855,7 +778,7 @@ $("#global-pause").addEventListener("click", async () => { const stop = !S.globa
 let refreshT = null;
 function refreshSoon() {
   clearTimeout(refreshT); refreshT = setTimeout(() => {
-    loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "session") loadSessions(); if (S.page === "crm") loadCrm(); if (S.page === "errors") loadErrors();
+    loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "requests") loadRequests(); if (S.page === "session") loadSessions(); if (S.page === "crm") loadCrm(); if (S.page === "errors") loadErrors();
   }, 500);
 }
 function onEvent(e) {
@@ -872,9 +795,9 @@ function onEvent(e) {
   refreshSoon();
 }
 function connect() { const es = new EventSource("/api/stream?since=" + S.lastId);
-  es.onopen = () => { $("#live-dot").className = "dot on"; $("#live-text").textContent = "Live verbunden"; };
   es.onmessage = (m) => { try { onEvent(JSON.parse(m.data)); } catch (err) { console.warn(err); } };
-  es.onerror = () => { $("#live-dot").className = "dot retry"; $("#live-text").textContent = "verbinde neu…"; }; }
+  // EventSource reconnects automatically without a status badge.
+}
 
 // ---------- keyboard & boot ----------
 document.addEventListener("keydown", e => {
@@ -882,24 +805,15 @@ document.addEventListener("keydown", e => {
   if (e.key === "p" && S.detail && S.page === "session") act(S.detail.paused ? "resume" : "pause")();
   if (e.key === "/") { e.preventDefault(); $("#global-q").focus(); }
 });
-setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "session") loadDetail(); }, 20000);
+setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "requests") loadRequests(); else if (S.page === "session") loadDetail(); }, 20000);
 function routeFromHash() {
   const hash = location.hash, match = hash.match(/^#session=(\d+)$/);
-  if (match) select(Number(match[1]), false); else show(hash === "#crm" ? "crm" : hash === "#errors" ? "errors" : "overview", false);
+  if (match) select(Number(match[1]), false); else show(hash === "#requests" ? "requests" : hash === "#crm" ? "crm" : hash === "#errors" ? "errors" : "overview", false);
 }
 window.addEventListener("popstate", routeFromHash);
 window.addEventListener("hashchange", routeFromHash);
 window.addEventListener("error", e => bufferMessage("Darstellungsfehler: " + e.message, "error", null));
 window.addEventListener("unhandledrejection", e => bufferMessage("Aktion konnte nicht abgeschlossen werden: " + (e.reason?.message || e.reason), "error", null));
-// Deploy-Ampel:// Deploy-Ampel: green = newest RFQ answered and the next one more than 90 s away
-async function loadGate() {
-  const g = await api("/api/deploy-gate").catch(() => null), b = $("#deploy-gate"); if (!g) return;
-  b.className = "badge-s " + (g.safe ? "green" : "red");
-  b.textContent = g.safe ? "Deploy: frei" : "Deploy: warten";
-  b.title = "Deploy-Ampel: " + g.reason + ". Push auf main nur bei Grün, nur eine Person (DEPLOY.md).";
-}
-setInterval(loadGate, 5000);
-loadGate();
 (async function boot() {
   const ev = await api("/api/events?since=0&limit=500").catch(() => []); S.lastId = ev.length ? ev[ev.length - 1].id : 0; ev.forEach((e) => S.seen.add(e.id));
   await Promise.all([loadStats(), loadSessions()]);
