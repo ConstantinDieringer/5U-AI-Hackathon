@@ -213,10 +213,13 @@ guarantee exactly-once effects across provider/network failures.
 - Board transitions other than `accepted` generate warning events (including `open`
   and `pending`); unchanged polls do not duplicate alerts. Dataset changes invalidate
   rates and trigger background snapshot refresh.
-- For USD sheets/bids set `USD_EUR_RATE` (EUR per USD, from a documented source) and
-  `USD_EUR_VALID_UNTIL` (UTC ISO timestamp with offset). Both are required; expired or
-  missing rates exclude the USD option with a warning. Portal USD prices use only
-  their own supplied `fx_eur_per_usd`. Other currencies are unsupported.
+- Foreign-currency sheets/bids (USD, JPY, GBP, CHF, ...): set `FX_EUR_RATES`
+  (EUR per unit, documented source, e.g. `USD=0.92,JPY=0.0061,GBP=1.17,CHF=1.06`) and
+  `FX_VALID_UNTIL` (UTC ISO timestamp with offset). A currency without a valid rate is
+  recognised but its option is skipped with a warning, never guessed. The legacy
+  `USD_EUR_RATE`/`USD_EUR_VALID_UNTIL` pair still covers USD if `FX_EUR_RATES` has none.
+  Portal prices use the portal's own `fx_eur_per_<ccy>` when present, else the configured
+  rate. Customer quotes stay in EUR.
 - `USE_BREAKPOINTS=true` preserves existing pricing. `python -m app.pricing.audit` prints
   the stored pricing/board evidence without sending quotes. Accepted verdicts alone
   do not establish which breakpoint formula the scorer uses; keep the default until
