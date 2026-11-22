@@ -16,7 +16,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from app import config, db, hackloop
