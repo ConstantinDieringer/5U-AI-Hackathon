@@ -1,7 +1,7 @@
 # DESIGN.md – Austrian Power Forwarder Console
 
-Status: **v0.3** (21.11.2026, Übersicht: Fehler zuerst, Kontext kopieren). Replaces the dark v0.1. Direction set by Moritz: light, airy,
-Apple-inspired bento grid. Values are the source of truth for the `:root` block in
+Status: **v0.4** (22.11.2026, Twenty-style restyle). Light, flat, hairline-bordered UI modelled on
+the Twenty CRM. Values are the source of truth for the `:root` block in
 `app/ui/static/index.html`; components use tokens only, never raw values.
 
 ## 1. Product & tone
@@ -13,72 +13,75 @@ carries meaning (status, data, the one hero KPI).
 Principles
 1. **Quiet monitoring.** Errors and warnings collect in the message buffer with a passive
    navigation badge. No automatic pop-ups or disappearing error notices interrupt the user.
-2. **Generous whitespace.** Fewer, larger cards; one idea per card.
-3. **Color with purpose.** Neutral base; system colors only for status, charts, active pills and
-   the single featured hero card.
+2. **Dense but calm.** Compact 13 px type, 36 px table rows, one idea per card.
+3. **Color with purpose.** Neutral grays; color only for status tags, charts, the primary action
+   and the hero KPI value.
 4. **Show the why.** Every quote shows the options compared.
 5. **Numbers are tabular,** bold for KPIs, with unit and currency.
 
 ## 2. Tokens
 
+Visual language follows the Twenty CRM UI (github.com/twentyhq/twenty, `twenty-ui` light theme):
+flat white surfaces, hairline borders instead of shadows, small radii, 13 px Inter, quiet grays
+and pastel tags. Only visual tokens are borrowed; no Twenty code or assets.
+
 ### Canvas & surfaces
 | Token | Value | Use |
 |---|---|---|
-| `--canvas` | `#F5F5F7` | app background |
-| `--card` | `#FFFFFF` | cards |
-| `--glass` | `rgba(255,255,255,.75)` + `backdrop-filter: blur(24px) saturate(1.6)` | floating sidebar, top bar |
-| `--fill-1` | `#F2F2F5` | inputs, segmented control track, hover rows |
-| `--fill-2` | `#E8E8ED` | pressed, progress tracks |
-| `--hairline` | `rgba(0,0,0,.05)` | card borders (1 px) |
-| `--hairline-strong` | `rgba(0,0,0,.08)` | dividers in tables |
+| `--canvas` | `#FCFCFC` | app background behind the sidebar and content panel |
+| `--card` | `#FFFFFF` | content panel, cards, popovers |
+| `--fill-1` | `#F5F5F5` | tracks, empty-state circles |
+| `--fill-2` | `#EBEBEB` | progress tracks |
+| `--hover` / `--pressed` | `rgba(0,0,0,.04)` / `rgba(0,0,0,.08)` | hover and selected rows, nav, menu items |
+| `--hairline` | `#F1F1F1` | row dividers, cell separators, chart grid |
+| `--hairline-strong` | `#EBEBEB` | card, input and panel borders |
+| `--border-strong` | `#D6D6D6` | emphasised borders |
 
 ### Text
 | Token | Value | Use |
 |---|---|---|
-| `--ink` | `#1D1D1F` | primary text, KPI numbers |
-| `--ink-2` | `#86868B` | secondary metadata |
-| `--ink-3` | `#AEAEB2` | placeholders, axis labels |
+| `--ink` | `#333333` | primary text, KPI numbers |
+| `--ink-2` | `#666666` | secondary text, buttons |
+| `--ink-3` | `#999999` | labels, table headers, captions, axis |
+| `--ink-4` | `#B3B3B3` | disabled, idle dots |
 
-### System colors (Apple palette) + pastel tints
-| Token | Value | Tint (`--*-tint`) | Meaning |
-|---|---|---|---|
-| `--blue` | `#007AFF` | `rgba(0,122,255,.10)` | primary action, active nav, in progress |
-| `--green` | `#34C759` | `rgba(52,199,89,.12)` | won, booked, on target |
-| `--orange` | `#FF9500` | `rgba(255,149,0,.12)` | attention, < 2 min, paused |
-| `--indigo` | `#5856D6` | `rgba(88,86,214,.10)` | quoted (waiting for customer) |
-| `--red` | `#FF3B30` | `rgba(255,59,48,.10)` | error, lost, expired, stop-all |
+### Colors + tag tints
+| Token | Value | Tint (`--*-tint`) | Text on tint (`--*-ink`) | Meaning |
+|---|---|---|---|---|
+| `--blue` | `#3E63DD` | `#EEF2FD` | `#3A5AC1` | primary action, chart series, in progress |
+| `--green` | `#55A271` | `#E9F6EC` | `#308052` | won, booked |
+| `--orange` | `#E67333` | `#FCEFD9` | `#C25700` | attention, paused |
+| `--indigo` | `#8551C0` | `#F6EEFC` | `#7848AF` | quoted (Twenty purple) |
+| `--red` | `#D45453` | `#FBECEC` | `#BE3B38` | error, lost, stop-all |
 
 Status mapping: `new`/`pricing` = blue · `quoted` = indigo · `accepted`/`booked`/`confirmed`/
 `answered` = green · `lost`/`expired`/`error` = red · `paused`/`manual` = orange.
-
-Gradients (selective): hero KPI card mesh = radial blobs of blue, indigo, green tints on white;
-area-chart fill = vertical gradient from the series color at 28 % to 0 %.
+Tags and badges always use tint background + `--*-ink` text. No gradients except the
+area-chart fill (series color 16 % to 0 %).
 
 ### Typography
-Font stack: `"SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Inter",
-"Segoe UI", Roboto, sans-serif`. Mono: `"SF Mono", ui-monospace, Menlo`.
-| Token | Size / line-height / weight / tracking | Use |
+Font stack: `"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`.
+Mono: `"DM Mono", ui-monospace, "SF Mono", Menlo`. Weights 400 / 500 / 600 only.
+| Role | Size / line-height / weight | Use |
 |---|---|---|
-| `--t-caption` | 12 / 16 / 500 / 0 | metadata, axis, badges |
-| `--t-body` | 14 / 20 / 400 / -0.01em | body, tables |
-| `--t-title` | 17 / 22 / 600 / -0.02em | card titles |
-| `--t-page` | 28 / 34 / 700 / -0.03em | page title |
-| `--t-kpi` | 34 / 40 / 700 / -0.035em | KPI numbers |
-| `--t-hero` | 48 / 52 / 700 / -0.04em | hero KPI |
+| caption | 12 / 16 / 400 | metadata, axis, badges |
+| body | 13 / 1.5 / 400 | body, tables, buttons, nav |
+| title | 14 / 20 / 600 | card titles |
+| kpi | 24 / 32 / 600, -0.02em | KPI numbers |
 Numbers: `font-variant-numeric: tabular-nums`.
 
 ### Spacing, radius, elevation, motion
-- Spacing (4-pt): 4 · 8 · 12 · 16 · 20 · 24 · 32 · 40. Card padding 24, grid gap 20.
-- Radius: `--r-pill` 999 · `--r-sm` 10 (inputs, buttons) · `--r-md` 14 (inner panels) ·
-  `--r-card` 22 (cards) · `--r-xl` 28 (sidebar).
-- Shadow: `--shadow-card` `0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04)` ·
-  `--shadow-float` `0 12px 40px rgba(0,0,0,.08)` (sidebar, drawer).
-- Motion: 150 ms hover, 250 ms drawer/page, easing `cubic-bezier(.2,.8,.2,1)`; respect
-  `prefers-reduced-motion`.
+- Spacing (4-pt): 4 · 8 · 12 · 16 · 24 · 32. Card padding 16, grid gap 12.
+- Radius: `--r-xs` 2 · `--r-sm` 4 (buttons, inputs, tags, nav) · `--r-md` 8 (cards, panel,
+  popovers, drawer) · `--r-xl` 12 · `--r-pill` 999 (chips).
+- Elevation: cards have no shadow, only a 1 px `--hairline-strong` border. `--shadow-light`
+  for small floating controls, `--shadow-float` for popovers, drawer and map popups.
+- Motion: 100 ms hover, 300 ms drawer; easing `cubic-bezier(.2,.8,.2,1)`; respect
+  `prefers-reduced-motion`. Charts animate only on their first render, never on refresh.
 
 ### Icons
-One set: inline SVG, 24-grid, 1.75 px stroke, round caps (SF Symbols / Lucide feel),
-monochrome `--ink-2`, active `--blue`.
+One set: inline SVG, 24-grid drawn at 16 px, 2 px stroke, round caps (Tabler / Lucide feel),
+`--ink-3` idle, `--ink` on hover and active.
 
 ## 3. Layout
 
@@ -87,11 +90,11 @@ request table uses fixed column proportions with ellipsis and full-text tooltips
 readable minimum width, only the table scrolls horizontally inside its card. Grid/flex children
 must shrink to the available card width; score labels and verdict badges wrap within the card.
 
-- **App shell:** floating frosted-glass sidebar (240 px, 16 px inset from the edges, radius 28)
-  with minimal monochrome icons; main area with a sticky glass **top bar** (page title, search
-  pill, date-range segmented control, user avatar).
-- **Bento grid:** 12 columns, 20 px gap, max width 1360 px. Cards span 3, 4, 6, 8 or 12.
-- **Breakpoints:** ≥ 1200 full grid · 900–1199 sidebar collapses to a 72 px icon rail, KPIs 2×2 ·
+- **App shell:** flat sidebar on the `--canvas` background (220 px, 28 px nav rows, monochrome
+  16 px icons); the main area is one white panel with a hairline border and 8 px radius, inset
+  8 px, with a sticky top bar (controls, search) separated by a hairline.
+- **Bento grid:** 12 columns, 12 px gap, max width 1440 px. Cards span 3, 4, 6, 8 or 12.
+- **Breakpoints:** ≥ 1200 full grid · 900–1199 sidebar collapses to a 56 px icon rail, KPIs 2×2 ·
   < 900 sidebar hidden behind a menu button, cards full width.
 
 Screens

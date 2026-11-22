@@ -92,8 +92,10 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
-        "img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; connect-src 'self'"
+        "img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; "
+        # The dashboard map loads its Positron style, tiles, glyphs and sprites here.
+        "connect-src 'self' https://tiles.openfreemap.org"
     )
     response.headers["Cache-Control"] = "no-store"
     return response

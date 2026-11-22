@@ -5,7 +5,7 @@ Only major capabilities or behavior changes belong here. Combine related work, n
 ## 22 November 2026
 
 * Opt-in exploratory case worker plans from sourced tasks, investigates attachments and speech, compares real offers with unit-aware expressions, creates checked multipage PDFs and verifies coverage before delivery. Durable receipts protect restarts and concurrent customer changes.
-* Dashboard uses OpenFreeMap Positron with airport and requested-route overlays. The line chart covers exactly 24 hours by booking time. Searchable dropdowns, compact navigation and a complete filterable request catalogue support daily work.
+* Twenty-style console: OpenFreeMap Positron airport map (allowed by the content policy), smoothed 24-hour booking chart animating only on first load, searchable dropdowns and a filterable request catalogue.
 * Fixed simulation identities: mailbox changes, lost mail access and communication rerouting claims are quarantined before workflow actions, including from known senders. Automatic contact changes and historical redirects are disabled by default.
 * Customer replies support versioned offers and explicit approval of revised terms. Execution remains rollout controlled, with shadow evaluation as the default.
 * Multilingual text and vision retain checked units, currencies and consent evidence; exact conversions prevent cubic feet being priced as cubic metres.

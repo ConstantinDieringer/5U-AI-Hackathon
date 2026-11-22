@@ -21,31 +21,48 @@ function chartBuckets(events,from,to) {
   for(const event of events){const at=new Date(event.at).getTime();if(at<start||at>end)continue;const i=Math.min(23,Math.floor((at-start)/step));if(i>=0)buckets[i].minor+=event.minor;}
   return {buckets,step,start,end};
 }
+let VOLUME_CARD=null,VOLUME_SIG="";
 function volumeChart(data) {
   if(!data)return el("section",{class:"card s12"},el("h2",{},"Gebuchtes Auftragsvolumen"),el("p",{class:"caption"},"Das 24 Stunden Diagramm ist momentan nicht verfügbar."));
   const currencies=data.amounts.map(a=>a.currency), currency=currencies.includes(S.chartCurrency)?S.chartCurrency:currencies.includes("EUR")?"EUR":currencies[0]||"EUR";
   const events=data.events.filter(e=>e.currency===currency), {buckets,step,start,end}=chartBuckets(events,data.from,data.to);
-  const card=el("section",{class:"card s12 volume-chart"},el("div",{class:"card-h"},el("div",{},el("h2",{},"Gebuchtes Auftragsvolumen"),el("p",{class:"caption"},"Letzte 24 Stunden nach Buchungszeitpunkt. Kundenbeträge je Stunde.")),
-    currencies.length>1 ? crmSelect("Währung",currencies.map(c=>[c,c]),currency,e=>{S.chartCurrency=e.target.value;loadOverview();}) : el("span",{class:"badge-s aside"},currency==="EUR"?"€":currency)));
-  if(!events.length)card.append(el("p",{class:"caption"},"In den letzten 24 Stunden wurden noch keine Aufträge gebucht."));
   const small=matchMedia("(max-width:600px)").matches;
-  const width=small?720:1000,height=small?340:280,left=small?155:85,right=20,top=20,bottom=45,inner=width-left-right,plot=height-top-bottom;
-  const max=Math.max(1,...buckets.map(b=>b.minor)), scale=plot/max, slot=inner/buckets.length;
+  // Refreshes arrive every few seconds; rebuild (and animate) only when the plotted values change.
+  const sig=JSON.stringify([currency,currencies,small,Math.floor(start/step),buckets.map(b=>b.minor)]);
+  if(VOLUME_CARD&&sig===VOLUME_SIG)return VOLUME_CARD;
+  const intro=!VOLUME_CARD;VOLUME_SIG=sig;
+  const card=el("section",{class:"card s12 volume-chart"+(intro?" intro":"")},el("div",{class:"card-h"},el("div",{},el("h2",{},"Gebuchtes Auftragsvolumen"),el("p",{class:"caption"},"Letzte 24 Stunden nach Buchungszeitpunkt. Kundenbeträge je Stunde.")),
+    currencies.length>1 ? crmSelect("Währung",currencies.map(c=>[c,c]),currency,e=>{S.chartCurrency=e.target.value;loadOverview();}) : el("span",{class:"badge-s aside"},currency==="EUR"?"€":currency)));
+  if(intro)setTimeout(()=>card.classList.remove("intro"),1400);
+  if(!events.length)card.append(el("p",{class:"caption"},"In den letzten 24 Stunden wurden noch keine Aufträge gebucht."));
+  const width=small?720:1000,height=small?300:240,left=small?155:85,right=20,top=16,bottom=40,inner=width-left-right,plot=height-top-bottom;
+  const max=niceMax(Math.max(1,...buckets.map(b=>b.minor))*1.25), scale=plot/max, slot=inner/buckets.length;
   const chart=svg("svg",{viewBox:`0 0 ${width} ${height}`,class:"volume-svg",role:"img","aria-label":"Gebuchtes Auftragsvolumen nach Buchungszeitpunkt"});
-  for(let i=0;i<=4;i++) {const y=top+plot-i*plot/4;chart.append(svg("line",{x1:left,x2:width-right,y1:y,y2:y,class:"chart-grid"}),svgText(money(Math.round(max*i/4),currency),{x:left-10,y:y+4,"text-anchor":"end",class:"chart-label"}));}
+  for(let i=0;i<=4;i++) {const y=top+plot-i*plot/4;chart.append(svg("line",{x1:left,x2:width-right,y1:y,y2:y,class:"chart-grid"+(i?"":" base")}),svgText(money(Math.round(max*i/4),currency),{x:left-10,y:y+4,"text-anchor":"end",class:"chart-label"}));}
   const label=at=>new Date(at).toLocaleString("de-DE",step<86400000?{hour:"2-digit",minute:"2-digit"}:{day:"numeric",month:"short"});
   const coords=buckets.map((b,i)=>[left+(i+.5)*slot,top+plot-b.minor*scale]);
-  const line=coords.map(([x,y],i)=>(i?"L":"M")+x.toFixed(2)+","+y.toFixed(2)).join(" ");
+  const line=smoothPath(coords);
   const defs=svg("defs"),gradient=svg("linearGradient",{id:"volume-gradient",x1:0,y1:0,x2:0,y2:1});
-  gradient.append(svg("stop",{offset:"0%","stop-color":"var(--blue)","stop-opacity":".22"}),svg("stop",{offset:"100%","stop-color":"var(--blue)","stop-opacity":".015"}));defs.append(gradient);
+  gradient.append(svg("stop",{offset:"0%","stop-color":"var(--blue)","stop-opacity":".16"}),svg("stop",{offset:"100%","stop-color":"var(--blue)","stop-opacity":"0"}));defs.append(gradient);
   chart.append(defs,svg("path",{d:line+` L${coords.at(-1)[0]},${top+plot} L${coords[0][0]},${top+plot} Z`,class:"volume-area",fill:"url(#volume-gradient)"}),svg("path",{d:line,class:"volume-line",pathLength:1}));
   buckets.forEach((bucket,i)=>{
-    const [cx,cy]=coords[i],point=svg("circle",{cx,cy,r:bucket.minor?4:2,class:"volume-dot",tabindex:bucket.minor?"0":null,role:"img","aria-label":`${label(bucket.at)} ${money(bucket.minor,currency)}`});
+    if(!bucket.minor)return;
+    const [cx,cy]=coords[i],point=svg("circle",{cx,cy,r:3.5,class:"volume-dot",tabindex:"0",role:"img","aria-label":`${label(bucket.at)} ${money(bucket.minor,currency)}`});
     const title=svg("title");title.textContent=new Date(bucket.at).toLocaleString("de-DE")+" · "+money(bucket.minor,currency);point.append(title);chart.append(point);
   });
-  for(let i=0;i<=6;i++){const at=start+(end-start)*i/6;chart.append(svgText(label(at),{x:left+inner*i/6,y:height-12,"text-anchor":i===0?"start":i===6?"end":"middle",class:"chart-label"}));}
+  for(let i=0;i<=6;i++){const at=start+(end-start)*i/6;chart.append(svgText(label(at),{x:left+inner*i/6,y:height-10,"text-anchor":i===0?"start":i===6?"end":"middle",class:"chart-label"}));}
   const table=el("details",{class:"chart-data"},el("summary",{},"Diagrammdaten anzeigen"),el("div",{class:"table-scroll"},el("table",{class:"list"},el("thead",{},el("tr",{},el("th",{},"Zeitpunkt"),el("th",{},"Auftragsvolumen"))),el("tbody",{},...buckets.map(b=>el("tr",{},el("td",{},new Date(b.at).toLocaleString("de-DE")),el("td",{},money(b.minor,currency))))))));
-  card.append(chart,table);return card;
+  card.append(chart,table);VOLUME_CARD=card;return card;
+}
+function niceMax(value) {const power=10**Math.floor(Math.log10(value)),unit=value/power;return [1,2,2.5,5,10].find(n=>n>=unit)*power;}
+// Monotone cubic (Fritsch-Carlson): rounded curve that never overshoots below zero or above a peak.
+function smoothPath(points) {
+  const n=points.length;if(n<3)return points.map(([x,y],i)=>(i?"L":"M")+x.toFixed(2)+","+y.toFixed(2)).join(" ");
+  const dx=[],slope=[];for(let i=0;i<n-1;i++){dx[i]=points[i+1][0]-points[i][0];slope[i]=(points[i+1][1]-points[i][1])/dx[i];}
+  const tangent=[slope[0]];for(let i=1;i<n-1;i++)tangent[i]=slope[i-1]*slope[i]<=0?0:3*(dx[i-1]+dx[i])/((2*dx[i]+dx[i-1])/slope[i-1]+(dx[i]+2*dx[i-1])/slope[i]);tangent[n-1]=slope[n-2];
+  let d="M"+points[0][0].toFixed(2)+","+points[0][1].toFixed(2);
+  for(let i=0;i<n-1;i++){const [x0,y0]=points[i],[x1,y1]=points[i+1],h=dx[i]/3;d+=` C${(x0+h).toFixed(2)},${(y0+h*tangent[i]).toFixed(2)} ${(x1-h).toFixed(2)},${(y1-h*tangent[i+1]).toFixed(2)} ${x1.toFixed(2)},${y1.toFixed(2)}`;}
+  return d;
 }
 function svgText(text,attrs) {const node=svg("text",attrs);node.textContent=text;return node;}
 function openAirport(iata) {S.q="";$("#global-q").value="";S.requestStatus="";S.requestKind="rfq";S.requestDays=S.metricDays ?? 1;S.requestAirport=iata;S.requestOffset=0;show("requests");}
