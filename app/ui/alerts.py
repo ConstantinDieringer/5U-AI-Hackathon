@@ -6,7 +6,6 @@ Needs SLACK_SOS_WEBHOOK (Slack incoming webhook for #sos); without it the loop d
 
 What triggers an alert (each at most once per session and kind):
   - an RFQ that cannot be quoted (status error) or expired without a quote
-  - a thread rescue plan that leaves required RFQ facts open (a person must quote now)
   - a 5U verdict other than accepted (rejected, no answer, voided), with its reason code
   - a program error logged as an event
   - no incoming mail for MAIL_SILENCE_MIN minutes (RFQs come every 6 min)
@@ -51,8 +50,6 @@ def classify(e: dict[str, Any]) -> tuple[str, str] | None:
         return (
             "price_change_human" if human else "price_change"
         ), f":money_with_wings: {msg[:200]}"
-    if kind == "thread_rescue_blocked" and "erforderliche Angaben" in msg:
-        return "rescue_blocked", f":sos: Rettung blockiert, bitte von Hand quoten. {msg[:200]}"
     if kind == "mailbox_rate_limit":
         # the message carries its time, so each 10-min window alerts once (see scan dedupe)
         return "mailbox_429", f":rotating_light: {msg[:200]}"

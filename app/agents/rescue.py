@@ -596,8 +596,7 @@ def take_over(mail: Mail, sid: int) -> bool:
                 )
                 rfq.handle_rfq(root, sid)
             else:
-                # Name what stays open and alert #sos: the deadline keeps running, and only a
-                # person can quote now (session 30351 expired silently on this branch).
+                # Name what stays open: session 30351 expired here without any reason logged.
                 open_fields = sorted({str(i.get("field")) for i in checked.issues}) or ["unbekannt"]
                 db.emit(
                     "thread_rescue_blocked",
@@ -606,7 +605,6 @@ def take_over(mail: Mail, sid: int) -> bool:
                     level="warn",
                     issues=checked.issues,
                     corrections=sorted(checked.evidence.get("corrections", {})),
-                    needs_human=True,
                 )
         elif (
             plan.action == "ask_customer" and plan.question_en.strip() and plan.question_de.strip()

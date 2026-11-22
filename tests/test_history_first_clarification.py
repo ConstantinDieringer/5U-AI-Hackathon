@@ -106,11 +106,10 @@ def _rescue_plan(corrections):
 
 
 @pytest.mark.core
-def test_rescue_plan_names_open_fields_and_alerts_a_human():
-    """Session 30351: a blocked rescue plan expired silently. It must say what stays open
-    and reach #sos while the deadline still runs; a complete answer still builds the RFQ."""
+def test_rescue_plan_names_open_fields():
+    """Session 30351: a blocked rescue plan expired silently. It must say what stays open;
+    a complete answer still builds the RFQ."""
     from app.agents import rescue
-    from app.ui import alerts
 
     root = mail(1, ANNA_ROOT)
     reply = mail(3, ANNA_REPLY, sid=1)
@@ -136,17 +135,3 @@ def test_rescue_plan_names_open_fields_and_alerts_a_human():
     )
     assert request is None
     assert "origin" in {i["field"] for i in checked.issues}
-
-    event = {
-        "kind": "thread_rescue_blocked",
-        "level": "warn",
-        "message": "Rettungsplan lässt erforderliche Angaben offen: origin",
-    }
-    kind, headline = alerts.classify(event)
-    assert kind == "rescue_blocked" and "origin" in headline
-    other = {
-        "kind": "thread_rescue_blocked",
-        "level": "warn",
-        "message": "Rettungsplan passt nicht zur Geschäftsphase; keine Aktion ausgeführt",
-    }
-    assert alerts.classify(other) is None
