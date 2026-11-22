@@ -155,10 +155,10 @@ def free_text_answer(text, asked, destination, known=(), facts=None):
         elif not zips and (area := find_area(body)):
             found["pickup_city"] = area
     if "weight_kg" in asked and len(weights := set(_KG.findall(body))) == 1:
-        raw = next(iter(weights))
-        if not config.settings.thousands_evidence:
-            found["weight_kg"] = float(raw.replace(",", "."))  # today: "1,674 kg" is 1.674
-        elif (value := weight_reading(raw, known=known, context=body, facts=facts)) is not None:
+        # never the blind decimal: "1,841 kg" read as 1.841 priced a 1841 kg shipment at
+        # the minimum (session 30351); an unresolved reading stays open and is asked
+        value = weight_reading(next(iter(weights)), known=known, context=body, facts=facts)
+        if value is not None:
             found["weight_kg"] = float(value)
     return found
 

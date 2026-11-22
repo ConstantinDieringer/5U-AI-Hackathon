@@ -259,7 +259,7 @@ settings = Settings(
     tariff_on_ready_date=_flag("TARIFF_ON_READY_DATE", True),
     unit_evidence=_flag("UNIT_EVIDENCE", True),
     totals_same_line=_flag("TOTALS_SAME_LINE"),
-    thousands_evidence=_flag("THOUSANDS_EVIDENCE"),
+    thousands_evidence=_flag("THOUSANDS_EVIDENCE", True),
     clarify_cap_resolve=_flag("CLARIFY_CAP_RESOLVE"),
     revision_not_acceptance=_flag("REVISION_NOT_ACCEPTANCE", True),
     # round 63-65: a bid the rules cannot read gets one cheap checked extraction call

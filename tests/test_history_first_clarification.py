@@ -135,3 +135,41 @@ def test_rescue_plan_names_open_fields():
     )
     assert request is None
     assert "origin" in {i["field"] for i in checked.issues}
+
+
+@pytest.mark.core
+def test_rescue_reads_grouped_weight_from_customer_answer():
+    """Session 30351 again: the live plan only released holds and left the values to the
+    customer's own words. "1,841 kg" next to 6 pieces and 4.63 cbm is 1841 kg, never 1.841."""
+    from app.agents import rescue
+
+    root = mail(1, ANNA_ROOT)
+    reply = mail(3, ANNA_REPLY, sid=1)
+    facts = {"destination": "LAX", "preference": "cheapest", "ready_date": "2026-11-29"}
+    _, draft = validate(root, RfqDraft(facts=facts))
+    evidence = rescue._normal(ANNA_ROOT + "\n" + ANNA_REPLY)
+    plan = _rescue_plan([])
+    plan.releases = [
+        rescue.Release(
+            field="shipment",
+            code="invalid",
+            evidence="with a total gross weight of 1,841 kg",
+            reason="the customer gave the weight",
+        )
+    ]
+    request, _ = rescue._apply(reply, 1, root, draft.model_copy(deep=True), plan, evidence)
+    assert request and request.origin == "STR"
+    assert request.weight_kg == 1841 and request.volume_cbm == 4.63
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("6 pieces, total gross weight 1,841 kg, 4.63 cbm", 1841.0),
+        ("one small parcel of 2,5 kg", 2.5),  # counterexample: a real decimal stays a decimal
+    ],
+)
+def test_free_text_weight_never_takes_the_blind_decimal(body, expected):
+    from app.mail.rfq_validation import free_text_answer
+
+    assert free_text_answer(body, {"weight_kg"}, "LAX").get("weight_kg") == expected
