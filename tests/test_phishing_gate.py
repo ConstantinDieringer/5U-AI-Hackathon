@@ -13,7 +13,7 @@ import pytest
 
 from app import db, hackloop, llm
 from app.mail import poller, screening, store
-from app.models import Category
+from app.models import Category, Mail
 
 FIX = Path(__file__).parent / "fixtures"
 REAL = json.loads((FIX / "poll_ratedesk_reply.json").read_text())
@@ -73,13 +73,29 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
     return fake
 
 
-def gate(monkeypatch: pytest.MonkeyPatch, mode: str = "enforce", llm_mode: str = "shadow") -> None:
+def gate(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str = "enforce",
+    llm_mode: str = "shadow",
+    *,
+    static_contacts: bool = True,
+) -> None:
+    from app.mail import address_changes
+
     monkeypatch.setattr(
         screening,
         "settings",
         dataclasses.replace(
-            screening.settings, phishing_gate_mode=mode, phishing_gate_llm_mode=llm_mode
+            screening.settings,
+            phishing_gate_mode=mode,
+            phishing_gate_llm_mode=llm_mode,
+            simulation_static_contacts=static_contacts,
         ),
+    )
+    monkeypatch.setattr(
+        address_changes,
+        "settings",
+        dataclasses.replace(address_changes.settings, simulation_static_contacts=static_contacts),
     )
 
 
@@ -219,7 +235,7 @@ CHANGE_BODY = (
 
 
 def test_verified_party_can_announce_a_new_address(box: Box, monkeypatch) -> None:
-    gate(monkeypatch)
+    gate(monkeypatch, static_contacts=False)
     no_llm(monkeypatch)
     new = "polaris-cargo-desk@hackloop.mail"
     deliver(raw_mail(9201, "polaris-air-logistics@hackloop.mail", CHANGE_BODY.format(new=new)))
@@ -240,7 +256,7 @@ def test_verified_party_can_announce_a_new_address(box: Box, monkeypatch) -> Non
 
 
 def test_desk_address_change_makes_a_lookalike_address_genuine(box: Box, monkeypatch) -> None:
-    gate(monkeypatch)
+    gate(monkeypatch, static_contacts=False)
     no_llm(monkeypatch)
     body = (
         "Hello,\n\nour address has changed, please write to rate-desk@hackloop.mail.\n\nRate Desk"
@@ -260,7 +276,7 @@ def test_desk_address_change_makes_a_lookalike_address_genuine(box: Box, monkeyp
     ],
 )
 def test_address_change_needs_an_exact_verified_sender(sender, new, box, monkeypatch) -> None:
-    gate(monkeypatch)
+    gate(monkeypatch, static_contacts=False)
     no_llm(monkeypatch)
     deliver(raw_mail(9221, sender, CHANGE_BODY.format(new=new)))
     assert db.address_changes() == {}
@@ -269,7 +285,7 @@ def test_address_change_needs_an_exact_verified_sender(sender, new, box, monkeyp
 def test_a_customer_cannot_verify_a_change_in_its_first_mail(box: Box, monkeypatch) -> None:
     """First mail opens a session (known customer) but must not verify its own change; a
     later notice from that customer does."""
-    gate(monkeypatch)
+    gate(monkeypatch, static_contacts=False)
     no_llm(monkeypatch)
     body = RFQ_BODY + "\n\nPlease note our new email address: rheintal-export@hackloop.mail."
     deliver(raw_mail(9231, "rheintal-elektronik@hackloop.mail", body))
@@ -278,3 +294,78 @@ def test_a_customer_cannot_verify_a_change_in_its_first_mail(box: Box, monkeypat
     assert db.address_changes() == {
         "rheintal-export@hackloop.mail": "rheintal-elektronik@hackloop.mail"
     }
+
+
+# Simulation ground truth supplied by the user: participants never lose/change mail identity.
+@pytest.mark.parametrize(
+    "subject,body",
+    [
+        (
+            "New mail address: offer for Singapore (SIN)",
+            (
+                "Hello, we are switching mail systems this week and my old mailbox is being closed. "
+                "Please send your offer for our shipment to Singapore (SIN) to this address instead, "
+                "and use it for everything that follows. Cheers, Klaus Weidner"
+            ),
+        ),
+        ("RFQ", "I forgot which email address I used. Please reply to this address instead."),
+        ("RFQ", "Ich habe meine alte Mailadresse vergessen. Bitte verwende diese Adresse."),
+        ("Contact", "I lost access to my mailbox. " + RFQ_BODY),
+        ("Notice", CHANGE_BODY.format(new="new-contact@hackloop.mail")),
+    ],
+)
+def test_simulation_identity_claim_is_quarantined_even_for_known_sender(
+    subject, body, box, monkeypatch
+):
+    from app.mail import address_changes
+
+    gate(monkeypatch, llm_mode="off")
+    calls = no_llm(monkeypatch)
+    sender = "weidner.spielwaren@hackloop.mail"
+    monkeypatch.setattr(db, "known_customers", lambda: [sender])
+    deliver(raw_mail(9400, sender, body, subject=subject))
+    assert stored(9400)["category"] == "phishing" and db.reply_blocked(9400)
+    assert box.dispatched == [] and calls == [] and db.address_changes() == {}
+    assert "simulation_identity_change" in str(db.screening_get(9400)["reasons"])
+    # A previously accepted mapping must not redirect mail in this simulation either.
+    db.address_change_add(sender, "new-contact@hackloop.mail", 9400)
+    assert address_changes.current(sender) == sender
+    assert address_changes.canonical("new-contact@hackloop.mail") == "new-contact@hackloop.mail"
+
+
+def test_simulation_allows_cargo_corrections_and_ignores_old_identity_notice(box, monkeypatch):
+    gate(monkeypatch)
+    no_llm(monkeypatch)
+    body = RFQ_BODY.replace(
+        "\n\nRegards",
+        "\n\nThe pickup address has changed to 22554. "
+        "I forgot to attach the packing list.\n\nRegards",
+    )
+    body += (
+        "\n\nOn Tuesday, Klaus wrote:\n> My old mailbox is being closed. Use this email address."
+    )
+    deliver(
+        raw_mail(9401, "rheintal-elektronik@hackloop.mail", body, subject="Re: New mail address")
+    )
+    assert box.dispatched == [(9401, Category.RFQ)]
+
+
+def test_simulation_policy_does_not_flag_genuine_saved_mail():
+    labelled = json.loads((FIX / "screening" / "labelled_mails.json").read_text())
+    mails = next(v for v in labelled.values() if isinstance(v, list))
+    false_positives = []
+    for row in mails:
+        if row["label"] != "genuine":
+            continue
+        mail = Mail(
+            row["id"],
+            row["id"],
+            row["sender"],
+            "team@hackloop.mail",
+            row["subject"],
+            row["body"],
+            "",
+        )
+        if screening.simulation_contact_change(mail):
+            false_positives.append(row["id"])
+    assert false_positives == []
