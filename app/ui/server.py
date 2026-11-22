@@ -117,6 +117,13 @@ def api_dashboard() -> dict[str, Any]:
     return db.dashboard()
 
 
+@app.get("/api/business-metrics")
+def api_business_metrics(days: int = 0) -> dict[str, Any]:
+    if days not in (0, 1, 7, 30):
+        raise HTTPException(422, "days must be 0, 1, 7 or 30")
+    return db.business_metrics(days)
+
+
 @app.get("/api/overview")
 def api_overview(hours: int = 6) -> dict[str, Any]:
     return db.overview(hours=max(0, min(hours, 24 * 7)))
