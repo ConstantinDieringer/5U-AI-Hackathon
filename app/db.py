@@ -971,6 +971,18 @@ def clarification_reply_claim(sid: int, mid: int) -> bool:
         )
 
 
+def clarification_handover(sid: int, mid: int) -> bool:
+    """Record a customer reply handed to the booking or tracking owner, whatever state our
+    question is in. False if this mail was already handed over (poller and worker race)."""
+    with tx() as c:
+        return (
+            c.execute(
+                "INSERT OR IGNORE INTO clarification_answers VALUES (?,?)", (sid, mid)
+            ).rowcount
+            == 1
+        )
+
+
 def clarification_reopen(sid: int, draft: dict, root: dict | None = None) -> None:
     """Only called after consuming a new reply, or opening a different post-quote workflow."""
     with tx() as c:

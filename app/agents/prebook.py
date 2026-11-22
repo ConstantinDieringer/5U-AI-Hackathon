@@ -98,6 +98,10 @@ _TOPICS: tuple[tuple[Topic, re.Pattern[str]], ...] = (
         "price",
         re.compile(
             r"\bmatch\w*\s+(?:their|the|this|that|his|her|a|its)?\s*(?:rate|price|offer|quote)|"
+            # round 157: "another forwarder is 7% cheaper. Can you match that? Please let me
+            # know where your price stands." ("match that date?" names a date, not a price)
+            r"\bmatch(?:es|ing)?\s+(?:that|it|this|them)\s*[?.!]*\s*$|"
+            r"\b(?:price|rate|offer|quote)\s+stands\b|"
             r"\b(?:price|rate|offer|total)\s+(?:stays?|remains?)\b|\bstays?\s+as\s+offered|"
             r"\bnew\s+(?:all\s*-?\s*in\s+)?(?:total|price|rate)|"
             r"\b(?:better|lower|reduced?)\s+(?:price|rate|total)|\bdiscount\w*|"

@@ -396,6 +396,11 @@ def test_conditional_yes_without_proof_never_books(other_days, body, monkeypatch
             "Thank you. To decide I need a clear answer: does your price stay as offered, or "
             "what is your new all-in total?"
         ),
+        (  # round 157
+            "Thank you for your offer, we would like to give this shipment to you. Before I "
+            "confirm: another forwarder has offered us the same shipment 7% cheaper. Can you "
+            "match that? Please let me know where your price stands.\n\nMira Petersen"
+        ),
     ],
 )
 def test_price_match_request_gets_our_unchanged_total(body):
@@ -489,3 +494,93 @@ def test_followup_waits_a_minute_by_default():
     from app.config import settings
 
     assert settings.followup_after_s == 60.0
+
+
+def test_matching_a_date_is_no_price_question():
+    from app.agents import prebook
+
+    assert prebook.parse("Can you match that date?") is None
+
+
+# ---------------------------------------------------------------- restated cargo (round 158)
+
+
+def test_restated_cargo_with_english_decimal_volume_still_books(monkeypatch):
+    """Round 158: "1,797 kg gross, 15.278 cbm" restated the quote; read as 15278 cbm it handed
+    the thread to a person and the clear yes after it was never booked."""
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    _quoted_session()
+    db.set_request(
+        1223,
+        {**db.get_session(1223)["request"], "weight_kg": 1797, "volume_cbm": 15.278, "pieces": 15},
+    )
+    restated = (
+        "Could you please send a firm quote? All 15 pieces (1,797 kg gross, 15.278 cbm) are to "
+        "ship together on one air waybill. Please hold off on booking for now."
+    )
+    assert booking.cargo_revision(restated, db.get_session(1223)["request"]) == []
+    booking.handle_reply(replace(_accept(mid=1428), body=restated), 1223)
+    booking.handle_reply(_accept(), 1223)
+    assert api.booked == [("R-xLidjNtljIRSGuVR", "AP-1223")]
+
+
+def test_changed_volume_with_separator_is_still_a_revision():
+    request = {"weight_kg": 753, "volume_cbm": 15.278}
+    assert booking.cargo_revision("Sorry, it is 1.317 kg.", request) == ["Gewicht 753 → 1317 kg"]
+    assert booking.cargo_revision("Volume is now 16.500 cbm.", request) == [
+        "Volumen 15.278 → 16.5 cbm"
+    ]
+
+
+# ------------------------------------------------- yes while our booking question waits (r156)
+
+
+def _booking_question_pending(sid: int = 1223, root: int = 1427) -> None:
+    from app.agents.clarification import RfqDraft
+
+    now = datetime.now(UTC).isoformat()
+    db.ingest_mail(
+        mail_id=root, sender=CUSTOMER, recipient=TEAM, subject="Re: Fastest STR-EZE",
+        body="Is it MIA? If so, go ahead.", category="customer", received_at=now,
+        in_reply_to=sid, references=[sid],
+    )  # fmt: skip
+    draft = RfqDraft(
+        evidence={"workflow": "booking", "question_en": "Book?", "question_de": "Buchen?"},
+        issues=[{"field": "shipment", "code": "needs_confirmation"}],
+    )
+    root_mail = Mail(root, sid, CUSTOMER, TEAM, "Re: Fastest STR-EZE", "Is it MIA?", now)
+    assert db.clarification_open_workflow(
+        sid, draft.model_dump(mode="json"), root_mail.__dict__
+    )  # our question is still unsent: its send state stays "pending"
+
+
+def test_yes_while_booking_question_is_unsent_books_once(monkeypatch):
+    """Round 156: the clear yes came while our booking question was held (translation); the
+    one-claim rule for RFQ answers dropped it and nothing was booked."""
+    from app.agents import clarification
+
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    _quoted_session()
+    _booking_question_pending()
+    yes = _accept()
+    assert clarification.handle_reply(yes, 1223) is True
+    if not clarification.handle_reply(yes, 1223):  # delivered twice, as the poller routes it
+        booking.handle_reply(yes, 1223)
+    assert api.booked == [("R-xLidjNtljIRSGuVR", "AP-1223")]
+    assert db.validation_get(1223)["state"] == "ready"  # the held question is not resent
+
+
+def test_unclear_reply_while_booking_question_is_unsent_does_not_book(monkeypatch):
+    from app.agents import clarification
+
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    _quoted_session()
+    _booking_question_pending()
+    clarification.handle_reply(replace(_accept(), body="Please hold off for now."), 1223)
+    assert api.booked == []

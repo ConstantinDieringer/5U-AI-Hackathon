@@ -874,6 +874,8 @@ def handle_reply(mail, sid, *, resume=False):
         db.validation_save(sid, "manual_review", row["draft"], {})
         return True
     resuming = resume and row["state"] == "resolving" and row["reply_mail_id"] == mail.id
+    if workflow != "rfq":
+        return _hand_over(mail, sid, row, workflow, resuming)
     if not resuming and not db.clarification_reply_claim(sid, mail.id):
         return True
     draft = RfqDraft.model_validate(row["draft"])
@@ -882,17 +884,6 @@ def handle_reply(mail, sid, *, resume=False):
         return True
     if db.is_paused(sid) or db.is_manual(sid):
         db.validation_save(sid, "manual_review", draft.model_dump(mode="json"), {})
-        return True
-    if workflow != "rfq":
-        db.validation_save(sid, "ready", draft.model_dump(mode="json"), {})
-        if workflow == "booking":
-            from app.agents import booking
-
-            booking.handle_reply(mail, sid)
-        else:
-            from app.agents import tracking
-
-            tracking.handle(mail, sid)
         return True
     root = Mail(**row["root"])
     rfq, checked = answer_draft(mail, sid, root, draft)
@@ -913,6 +904,29 @@ def handle_reply(mail, sid, *, resume=False):
     from app.agents import rfq as agent
 
     agent.handle_rfq(root, sid)
+    return True
+
+
+def _hand_over(mail, sid, row, workflow, resuming):
+    """A booking or tracking question: every newer customer reply goes to its owner. The
+    one-claim rule for RFQ answers dropped round 156's clear "please go ahead and book it",
+    which came while our booking question was still unsent (its translation was held)."""
+    if mail.id <= int((row.get("root") or {}).get("id") or 0):
+        return True  # the mail that raised the question, not an answer to it
+    if not resuming and not db.clarification_handover(sid, mail.id):
+        return True  # already handed over by the poller or the worker
+    state = "manual_review" if db.is_paused(sid) or db.is_manual(sid) else "ready"
+    db.validation_save(sid, state, row["draft"], {})
+    if state == "manual_review":
+        return True
+    if workflow == "booking":
+        from app.agents import booking
+
+        booking.handle_reply(mail, sid)
+    else:
+        from app.agents import tracking
+
+        tracking.handle(mail, sid)
     return True
 
 

@@ -253,6 +253,18 @@ def _parse_number(raw: str) -> Decimal | None:
         return None
 
 
+def _readings(raw: str) -> list[Decimal]:
+    """Every value the figure can mean: "15.278" is 15278 or 15.278 (a single separator before
+    three digits), "1.234.567" only thousands."""
+    first = _parse_number(raw)
+    values = [first] if first else []
+    if re.fullmatch(r"\d{1,3}[.,]\d{3}", raw):
+        decimal = Decimal(raw.replace(",", "."))
+        if decimal and decimal not in values:
+            values.append(decimal)
+    return values
+
+
 def cargo_revision(body: str, request: dict[str, Any] | None) -> list[str]:
     """What the customer's own words change against the quoted request, e.g.
     ["Gewicht 753 → 1317 kg"]. Empty when nothing differs or nothing is stated."""
@@ -262,11 +274,18 @@ def cargo_revision(body: str, request: dict[str, Any] | None) -> list[str]:
         quoted = (request or {}).get(field)
         if quoted is None:
             continue
-        values = [v for v in (_parse_number(m.group(1)) for m in pattern.finditer(text)) if v]
-        if not values:
+        mentions = [r for r in (_readings(m.group(1)) for m in pattern.finditer(text)) if r]
+        if not mentions:
             continue
         old = Decimal(str(quoted))
-        new = [v for v in values if abs(v - old) > Decimal(str(tolerance))]
+        allowed = Decimal(str(tolerance))
+        # round 158: "1,797 kg gross, 15.278 cbm" restated the quoted 15.278 cbm; read as
+        # 15278 cbm it blocked the old offer and the customer's clear yes after it
+        new = [
+            min(r, key=lambda v: abs(v - old))
+            for r in mentions
+            if all(abs(v - old) > allowed for v in r)
+        ]
         if new:  # "800 kg instead of 640 kg" names the old figure too
             changes.append(f"{label} {old.normalize():f} → {new[0].normalize():f} {unit}")
     return changes
