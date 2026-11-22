@@ -1,0 +1,2 @@
+# Optional, local SeleniumBase/Xvfb experiment. No hosted CAPTCHA service.
+seleniumbase==4.58.3
