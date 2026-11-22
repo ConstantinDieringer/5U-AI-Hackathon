@@ -727,7 +727,7 @@ def answer_draft(mail, sid, root, draft):
 
     corrections.update(selection_intent.answer(own, asked))
     known = known_weights(draft, sid, mail) if settings.thousands_evidence else ()
-    if "insurance" in asked:
+    if {"insurance", "insurance_allocation"} & asked:
         from app.models import CargoInsurance
         from app.pricing import insurance
 

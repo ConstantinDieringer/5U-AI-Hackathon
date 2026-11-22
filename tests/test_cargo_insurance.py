@@ -411,3 +411,25 @@ def test_emergency_draft_includes_insurance_or_blocks_before_rates(monkeypatch):
     monkeypatch.setattr(drafts, "sheet_options", lambda *a: pytest.fail("unpriced emergency quote"))
     with pytest.raises(ValueError, match="Versicherungskonditionen"):
         drafts.build(other.id)
+
+
+@pytest.mark.parametrize("label", ["cargo", "invoice", "commercial", "declared", "insured"])
+def test_insure_request_and_other_explicit_value_labels(label):
+    policy, problems = insurance.read(
+        [
+            f"Please insure this shipment, {label} value EUR 22000, covered for 110%, premium rate 0.40%"
+        ]
+    )
+    assert not problems and insurance.premium(policy).eur_minor == 9680
+
+
+def test_multishipment_customer_can_explicitly_decline_insurance():
+    root = mail()
+    req = request().model_copy(
+        update={"insurance": POLICY, "additional_shipments": [{"destination": "GRU"}]}
+    )
+    _, draft = validate(root, req)
+    reply = dataclasses.replace(root, id=30004, body="No cargo insurance needed.")
+    _, cleared = clarification.answer_draft(reply, root.id, root, draft)
+    assert cleared.facts["insurance"] is None
+    assert not {"insurance", "insurance_allocation"} & {i["field"] for i in cleared.issues}

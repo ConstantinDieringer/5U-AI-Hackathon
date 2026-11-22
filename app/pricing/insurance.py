@@ -16,7 +16,7 @@ from app.pricing.fx import eur_rate
 from app.pricing.pricing import money, to_minor
 
 _TERM = re.compile(
-    r"\binsur(?:ance|ed)\b|\b(?:transport|waren|fracht)?versicherung\b|"
+    r"\binsur(?:ance|ed|e)\b|\bversicher\w*|\b(?:transport|waren|fracht)?versicherung\b|"
     r"\bassurance\b|\bassicurazione\b|\bseguro\b",
     re.IGNORECASE,
 )
@@ -32,11 +32,12 @@ _CUR = r"EUR|USD|GBP|CHF|€|\$"
 _MONEY = rf"(?:(?P<before>{_CUR})\s*(?P<n1>{_NUM})|(?P<n2>{_NUM})\s*(?P<after>{_CUR}))"
 _VALUE = re.compile(
     rf"\b(?:goods\s*(?:value|are\s+worth)|value\s+of\s+(?:the\s+)?goods|"
-    rf"merchandise\s+value|declared\s+value|warenwert)\s*(?:is|of|ist|beträgt|:|=)?\s*{_MONEY}",
+    rf"(?:cargo|commercial|invoice|merchandise|declared|insured)\s+value|warenwert)"
+    rf"\s*(?:is|of|ist|beträgt|:|=)?\s*{_MONEY}",
     re.IGNORECASE,
 )
 _COVER = re.compile(
-    rf"\b(?:insured\s*(?:at|for)|cover(?:age)?\s*(?:is|at|of)?|"
+    rf"\b(?:insured\s*(?:at|for)|covered\s*(?:at|for)?|cover(?:age)?\s*(?:is|at|of)?|"
     rf"versichert\s*(?:zu|mit|auf)|deckung)\s*[:=]?\s*({_NUM})\s*(?:%|percent|prozent)",
     re.IGNORECASE,
 )
@@ -215,8 +216,8 @@ def assert_copy(text: str, policy: CargoInsurance | None) -> None:
         raise ValueError("insurance agreement incomplete")
     for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
         if _TERM.search(sentence) and re.search(
-            r"not (?:yet )?(?:available|included|confirmed)|unavailable|extra|on top|"
-            r"nicht (?:verfügbar|enthalten|bestätigt)|noch nicht|non inclus|no incluido|"
+            r"\bnot\b|\bwithout\b|unavailable|extra|on top|"
+            r"\bnicht\b|\bkeine?\b|noch nicht|non inclus|no incluido|"
             r"not able|cannot|can't|can't yet|unable|non disponibile|no disponible|pas inclus",
             sentence,
             re.IGNORECASE,
