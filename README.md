@@ -64,6 +64,18 @@ This opens visible Chrome using the Pure-WU browser settings. Add `--headless`
 for comparison. It records screenshots and whether the Cloudflare page remains;
 it does not verify rates, send credentials, run mail agents or change live pricing.
 
+The unattended experiment starts and controls its own Chrome process and temporary
+application profile, without ChatGPT browser control or your personal Chrome profile:
+
+```bash
+python -m tools.portal_pipeline_check --mode chrome-cdp --chrome-path /path/to/chrome --output-dir /path/to/results
+python -m tools.portal_pipeline_check --mode reader --output-dir /path/to/results
+```
+
+Chrome runs headlessly by default; `--headed` compares a visible application-owned
+browser. Verification attempts are bounded with `--attempts` (0 to 2). Reader mode
+tests Pure-WU's Jina fallback using only the public URL, without credentials.
+
 ```bash
 python -m tools.ship_check     # the essential test suite + ruff, same command as CI
 ```
