@@ -18,6 +18,8 @@ from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel, ValidationError
 
+from app.pricing.fx import currency_code
+
 log = logging.getLogger(__name__)
 
 MAX_TEXT_CHARS = 6000  # a bid is short; a huge attachment is cut, never sent whole
@@ -91,7 +93,7 @@ def check(raw: str, text: str, allowed_currencies: set[str]) -> Reading | None:
     except InvalidOperation:
         return None
     currency = data.currency.strip().upper()
-    currency = {"€": "EUR", "$": "USD"}.get(currency, currency)
+    currency = currency_code(currency)
     if amount <= 0 or currency not in allowed_currencies:
         return None
     if amount not in _numbers_in(text):  # the model may not invent or compute a total

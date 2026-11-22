@@ -27,6 +27,7 @@ from typing import Any
 
 from app.config import settings
 from app.models import RateOption, Rfq
+from app.pricing.fx import eur_rate
 from app.pricing.pricing import chargeable_kg, money, resolve_origin, to_minor
 
 log = logging.getLogger(__name__)
@@ -60,9 +61,7 @@ def build_portal_lanes(
         {
             "origin": str(lane["origin"]).upper(),
             "destination": str(lane["destination"]).upper(),
-            "airlines": [
-                {"code": a["code"], "name": a["name"]} for a in lane["airlines"]
-            ],
+            "airlines": [{"code": a["code"], "name": a["name"]} for a in lane["airlines"]],
         }
         for lane in ports["lanes"]
     ]
@@ -70,8 +69,7 @@ def build_portal_lanes(
         "synced_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "lanes": lanes,
         "brackets": {
-            code: [int(b) for b in br["breaks_kg"]]
-            for code, br in sorted(brackets.items())
+            code: [int(b) for b in br["breaks_kg"]] for code, br in sorted(brackets.items())
         },
     }
 
@@ -159,9 +157,7 @@ def _note_dataset_version(version: object) -> None:
             log.exception("could not persist portal dataset observation")
             changed = _seen_dataset_version is not None
         if _seen_dataset_version is not None:
-            log.warning(
-                "portal dataset_version changed %s -> %s", _seen_dataset_version, v
-            )
+            log.warning("portal dataset_version changed %s -> %s", _seen_dataset_version, v)
         _seen_dataset_version = v
         if changed:
             with _lock:
@@ -175,7 +171,8 @@ def parse_rate(raw: dict[str, Any]) -> RateOption:
     try:
         total = money(Decimal(str(raw["total"])))
         currency = str(raw["currency"]).strip().upper()
-        fx = raw.get("fx_eur_per_usd")
+        # the portal names its rate per currency (fx_eur_per_usd); same key for any code
+        fx = raw.get(f"fx_eur_per_{currency.lower()}")
         fx_rate = Decimal(str(fx)) if fx not in (None, "") else None
         chargeable = float(Decimal(str(raw["chargeable_weight_kg"])))
         transit = int(raw["transit_days"])
@@ -193,17 +190,18 @@ def parse_rate(raw: dict[str, Any]) -> RateOption:
         or len(currency) != 3
     ):
         raise ValueError(f"implausible portal rate: {raw!r}")
+    fx_source, fx_valid = "identity", None
     if currency == "EUR":
         total_eur, fx_rate = total, None
-    elif (
-        currency == "USD"
-        and fx_rate is not None
-        and fx_rate.is_finite()
-        and fx_rate > 0
-    ):
+    elif fx_rate is not None and fx_rate.is_finite() and fx_rate > 0:
         total_eur = money(total * fx_rate)
+        fx_source, fx_valid = f"portal:fx_eur_per_{currency.lower()}", valid_until
     else:
-        raise ValueError(f"{currency} rate without a usable fx_eur_per_usd: {raw!r}")
+        try:  # no portal rate for this currency: only an explicitly configured one
+            fx_rate, fx_source, fx_valid = eur_rate(currency)
+        except ValueError as exc:
+            raise ValueError(f"{currency} rate without a usable FX rate: {raw!r}") from exc
+        total_eur = money(total * fx_rate)
     _note_dataset_version(raw.get("dataset_version"))
     return RateOption(
         airline=airline,
@@ -219,8 +217,8 @@ def parse_rate(raw: dict[str, Any]) -> RateOption:
         chargeable_kg=chargeable,
         billed_kg=chargeable,
         fx_eur_per_unit=str(fx_rate) if fx_rate is not None else None,
-        fx_source="portal:fx_eur_per_usd" if currency == "USD" else "identity",
-        fx_valid_until=valid_until if currency == "USD" else None,
+        fx_source=fx_source,
+        fx_valid_until=fx_valid,
         observed_at=datetime.now(UTC).isoformat(),
         tariff_version=str(raw.get("dataset_version", "")),
     )
@@ -318,9 +316,7 @@ def portal_result(
         return result
     with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL, len(keys))) as pool:
         results = list(pool.map(lambda k: _one_rate(fetch, k, result), keys))
-    best: dict[
-        str, RateOption
-    ] = {}  # per airline the cheaper of exact weight / next break
+    best: dict[str, RateOption] = {}  # per airline the cheaper of exact weight / next break
     for r in results:
         if r is not None and (
             r.airline not in best or r.total_eur_minor < best[r.airline].total_eur_minor
@@ -336,11 +332,7 @@ def portal_options(rfq: Rfq, fetch: RateFetcher | None = None) -> list[RateOptio
 
 def next_break(code: str, chargeable: Decimal) -> float | None:
     """The airline's lowest weight break above the chargeable weight (portal brackets)."""
-    above = [
-        b
-        for b in load_portal_lanes().get("brackets", {}).get(code, [])
-        if b > chargeable
-    ]
+    above = [b for b in load_portal_lanes().get("brackets", {}).get(code, []) if b > chargeable]
     return float(min(above)) if above else None
 
 
