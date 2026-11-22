@@ -189,9 +189,7 @@ def flow(tmp_path, monkeypatch):
     monkeypatch.setattr(rfq, "_sheets", lambda *a: options())
     monkeypatch.setattr(bids, "wait", lambda *a, **k: None)
     monkeypatch.setattr(rfq, "_quote_pdf", lambda *a, **k: None)
-    monkeypatch.setattr(
-        rfq, "within_arrival_deadline", lambda r, opts: within_arrival_deadline(r, opts, TODAY)
-    )
+    monkeypatch.setattr("app.pricing.selection.pricing_day", lambda: TODAY)
     monkeypatch.setattr(rfq, "settings", dataclasses.replace(rfq.settings, price_adjust_pct=0))
     monkeypatch.setattr(
         rfq, "compose_quote_text", lambda r, o, *a: f"Checked quote for {o.airline}"
@@ -221,6 +219,7 @@ def test_full_quote_path_23465_checks_intent_even_with_stored_wrong_extraction(f
     assert any(e["kind"] == "arrival_selection" for e in session["events"])
 
 
+@pytest.mark.core
 def test_no_feasible_option_asks_before_claim_and_never_quotes_late(flow, monkeypatch):
     root, sent = flow
     only_late = dataclasses.replace(options()[2], transit_days=30)
@@ -295,13 +294,17 @@ def test_explicit_price_priority_wins_even_without_a_deadline():
     assert not issues and data["preference"] == "cheapest"
 
 
+@pytest.mark.core
 def test_emergency_draft_uses_same_intent_and_deadline_gate(flow, monkeypatch):
     root, _ = flow
     db.set_request(root.id, request().model_dump())
     monkeypatch.setattr(drafts, "sheet_options", lambda *a: options())
     monkeypatch.setattr(drafts, "portal_result", lambda *a, **k: PortalResult([], [], {}))
     result = drafts.build(root.id)
-    assert result["choice"]["airline"] == "Solace Air Cargo" and result["total_minor"] == 606000
+    rfq._price_and_quote(root, root.id, request(), "STR", time.time(), "enforce")
+    quote = db.get_session(root.id)["quotes"][0]
+    assert quote["airline"] == result["choice"]["airline"] == "Solace Air Cargo"
+    assert quote["total_minor"] == result["total_minor"] == 606000
 
 
 def test_forced_selection_retains_deadline_evidence_from_cached_attachment(flow):
@@ -319,6 +322,7 @@ def test_forced_selection_retains_deadline_evidence_from_cached_attachment(flow)
     assert not draft.issues and checked.preference == "cheapest"
 
 
+@pytest.mark.core
 def test_late_preferred_airline_cannot_bypass_arrival_filter(flow, monkeypatch):
     from app.agents import carrier_prefs
 

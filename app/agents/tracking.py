@@ -377,6 +377,21 @@ def _reply(
         return False
     to = address(mail.sender)
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
+    workflow = db.reply_workflow(session_id) if session_id is not None else None
+    version = workflow["request_version"] if workflow else 0
+    if workflow:
+        effect = db.reply_effect(session_id, mail.id, category, version)
+        if effect["status"] == "done":
+            return True
+        if effect["status"] != "pending":
+            return False
+
+    def before_send() -> None:
+        if workflow:
+            if not db.reply_current(session_id, mail.id, version):
+                raise hackloop.CustomerSendBlocked("Tracking reply superseded")
+            db.reply_effect(session_id, mail.id, category, version, dispatch=True)
+
     sent = hackloop.send_customer(
         to,
         subject,
@@ -385,6 +400,7 @@ def _reply(
         session_id=session_id,
         protected_terms=protected_terms,
         language_code=multilingual.mail_language(mail),
+        guard_transport=before_send if workflow else None,
     )
     body = sent["body"]
     subject = sent["subject"]
@@ -399,6 +415,8 @@ def _reply(
         in_reply_to=mail.id,
         raw=sent,
     )
+    if workflow:
+        db.reply_effect(session_id, mail.id, category, version, result={"mail_id": sent["id"]})
     return True
 
 

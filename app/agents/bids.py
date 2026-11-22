@@ -468,7 +468,12 @@ def request(
             billing.append(nb)
         for billed in billing:
             subject, body = (
-                _subject(session_id, rfq, origin, c.kind, billed),
+                _subject(session_id, rfq, origin, c.kind, billed)
+                + (
+                    f" [RV-{state['request_version']}]"
+                    if (state := db.reply_workflow(session_id)) and state["request_version"] > 1
+                    else ""
+                ),
                 _body(rfq, origin, c.kind, billed),
             )
             try:
@@ -501,7 +506,8 @@ def _resume(session_id: int, req: _Request) -> set[str]:
     """After a restart: re-register carriers we already asked for this session (from the db)
     and replay the replies they already sent. Returns their emails (empty on a fresh RFQ)."""
     s = db.get_session(session_id) or {}
-    mails = s.get("mails") or []
+    floor = db.reply_revision_floor(session_id)
+    mails = [m for m in s.get("mails", []) if m["id"] > floor]
     asked: set[str] = set()
     for m in mails:
         if m["direction"] == "out" and m["category"] == "bid_request":
@@ -514,7 +520,8 @@ def _resume(session_id: int, req: _Request) -> set[str]:
         if m["direction"] == "in" and m["category"] == "carrier_bid":
             on_bid_mail(
                 Mail(int(m["id"]), session_id, str(m["sender"] or ""), "", str(m["subject"] or ""),
-                     str(m["body"] or ""), str(m["received_at"] or "")),
+                     str(m["body"] or ""), str(m["received_at"] or ""),
+                     references=[m["in_reply_to"]] if m.get("in_reply_to") else []),
                 session_id,
             )  # fmt: skip
     return asked
@@ -581,6 +588,8 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
     carrier = carrier_by_email(address(mail.sender))
     if sid is None or carrier is None:
         log.warning("bid mail %s: no session or unknown carrier, ignored", mail.id)
+        return
+    if not _current_bid(mail, sid):
         return
     sid = _slot_of_reply(mail, sid)  # below, sid is the bid slot; db/events use owner(sid)
     body = mail.body or ""
@@ -672,6 +681,8 @@ def _evaluate(
     spoken: list[tuple[str, str]],
 ) -> None:
     """Refusal or offer from the mail text plus everything read from its attachments."""
+    if not _current_bid(mail, sid):
+        return
     refusal = served_lanes.parse_refusal(
         "\n".join([body] + [t for _, t in spoken] + [t for _, t in files])
     )
@@ -751,6 +762,8 @@ def _add_offer(
     sources: list[str],
     via: str = "rules",
 ) -> None:
+    if not _current_bid(mail, sid):
+        return
     amount, currency = price
     from app.pricing.fx import eur_rate
 
@@ -773,7 +786,12 @@ def _add_offer(
         float(billed[1]) if (billed := _BILLED.search(mail.subject or "")) else None,
     )
     with _cond:
+        # FX/document reads may have overlapped a request revision.
+        if not _current_bid(mail, sid):
+            return
         req = _open.setdefault(sid, _Request())
+        if any(previous.mail_id == mail.id for previous in req.offers):
+            return
         req.offers.append(offer)
         req.last_answer_at = time.monotonic()
         _cond.notify_all()
@@ -891,3 +909,18 @@ def airline_option(offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float) ->
         fx_source=offer.fx_source,
         fx_valid_until=offer.fx_valid_until,
     )
+
+
+def _current_bid(mail: Mail, sid: int) -> bool:
+    references = list(mail.references)
+    if mail.raw.get("in_reply_to"):
+        references.append(int(mail.raw["in_reply_to"]))
+    accepted = db.reply_accepts_bid(owner(sid), mail.id, mail.subject, references)
+    if not accepted:
+        db.emit(
+            "stale_bid",
+            "Veraltetes oder nicht zuordenbares Gebot ausgeschlossen",
+            sid,
+            mail_id=mail.id,
+        )
+    return accepted

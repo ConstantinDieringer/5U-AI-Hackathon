@@ -696,6 +696,8 @@ def _questions_sent(sid: int, workflow: str = "rfq") -> int:
 
 
 def ask(mail, sid, workflow, en, de):
+    if db.reply_workflow(sid) is not None:
+        return False  # post-offer questions belong to the versioned reply owner
     history = db.customer_mail_history(sid, mail.sender, mail.id)
     db.emit(
         "history_checked",
@@ -839,6 +841,10 @@ def answer_draft(mail, sid, root, draft):
 
 
 def handle_reply(mail, sid, *, resume=False):
+    from app.agents import customer_reply
+
+    if sid is not None and customer_reply.owns(sid):
+        return True
     row = db.validation_get(sid)
     if not row or row["state"] not in (
         "awaiting_clarification",
