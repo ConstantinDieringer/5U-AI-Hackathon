@@ -89,6 +89,9 @@ def build(session_id: int) -> dict[str, Any]:
     request, selection = rfq.checked_selection(mail, session_id, request)
     if selection.issues:
         raise ValueError("Auswahlziel oder Ankunftsfrist muss zuerst geklärt werden")
+    request, quantity_gap = rfq.checked_quantities(mail, session_id, request)
+    if quantity_gap is not None:
+        raise ValueError("Maße oder Einheiten müssen zuerst geklärt werden")
     request, insurance_problems = rfq._insurance_terms(mail, session_id, request)
     if insurance_problems or (request.insurance and request.additional_shipments):
         raise ValueError("Versicherungskonditionen müssen zuerst geklärt werden")

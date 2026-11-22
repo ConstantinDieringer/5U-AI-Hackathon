@@ -516,6 +516,9 @@ def api_health() -> dict[str, Any]:
         "build_revision": settings.build_revision,
         "mailbox_429_last_10min": rate_limit_watch.recent(),
         "email_reviewer_model": settings.llm_review_model,
+        "llm_model": settings.llm_model,
+        "llm_compose_model": settings.llm_compose_model,
+        "llm_vision_model": settings.llm_vision_model,
         "email_review_enabled": settings.email_review_enabled,
         "audio_transcription": {
             "groq_configured": bool(settings.groq_api_key),

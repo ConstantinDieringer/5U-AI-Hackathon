@@ -31,7 +31,13 @@ def test_index_and_lists(client):
     sid = seed()
     health = client.get("/api/health").json()
     assert health["email_style_version"] == "strict-customer-prose-v4"
-    assert health["email_reviewer_model"] == "gpt-5"
+    assert health["email_reviewer_model"] == "gpt-5.6-sol"
+    assert (
+        health["llm_model"]
+        == health["llm_compose_model"]
+        == health["llm_vision_model"]
+        == "gpt-5.6-sol"
+    )
     assert "build_revision" in health
     assert client.get("/").status_code == 200
     rows = client.get("/api/sessions").json()

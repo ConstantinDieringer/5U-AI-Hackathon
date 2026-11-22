@@ -127,7 +127,9 @@ EXTRACT_PROMPT = (
     "origin: IATA code of the departure airport if the customer names one, else null.\n"
     "pickup_zip: postal code of the pickup site if they want trucking/pickup from a site, else null.\n"
     "destination: IATA code of the destination airport (a city -> its main cargo airport).\n"
-    "weight_kg: total gross weight in kg (convert lb/t). volume_cbm: total volume in cbm; if only "
+    "weight_kg: total gross weight in kg (convert lb/t). volume_cbm: total volume in cbm "
+    "(convert cubic feet x 0.028316846592 and litres / 1000). Never copy a non-metric number "
+    "unchanged into a metric field. Keep original units in attachment_text as evidence. If only "
     "dimensions are given, compute pieces x L x W x H in metres (inches x 0.0254).\n"
     "preference is the customer's optimization goal, independent of any deadline. Use 'fastest' "
     "only for an explicit shortest-transit priority, otherwise 'cheapest'. A latest arrival "
@@ -1814,6 +1816,31 @@ class Priced:
     insurance_minor: int = 0
 
 
+def checked_quantities(mail: Mail, sid: int, rfq: Rfq) -> tuple[Rfq, RfqDraft | None]:
+    """Source conversions also guard resumed, rescue, watchdog and emergency pricing."""
+    from app.mail import measurements
+    from app.mail.rfq_validation import validate
+
+    prior = (db.validation_get(sid) or {}).get("draft", {}).get("evidence", {})
+    cached = json.loads(db.kv_get(f"rfq.sources.{sid}", "{}"))
+    texts = prior.get("attachment_texts", cached.get("texts", {}))
+    if not any(measurements.needs_conversion(t) for t in (mail.body, *texts.values())):
+        return rfq, None
+    _, draft = validate(mail, rfq, texts, corrections=prior.get("corrections", {}))
+    fields = {"weight_kg", "volume_cbm", "pieces", "lots"}
+    issues = [i for i in draft.issues if i["field"] in fields]
+    if issues:
+        draft.issues = issues
+        draft.evidence.update(
+            blocking_clarification=True,
+            attachment_texts=texts,
+            corrections=prior.get("corrections", {}),
+        )
+        return rfq, draft
+    updates = {f: draft.facts[f] for f in fields - {"lots"} if f in draft.facts}
+    return Rfq.model_validate({**rfq.model_dump(), **updates}), None
+
+
 def _insurance_terms(mail: Mail, sid: int, rfq: Rfq) -> tuple[Rfq, list[str]]:
     """Recheck evidence even on watchdog, rescue and shadow-mode pricing paths."""
     from app.models import CargoInsurance
@@ -1889,6 +1916,12 @@ def _price(
     slot = sid if slot is None else slot
     primary = slot == sid
     if primary:
+        rfq, quantity_gap = checked_quantities(mail, sid, rfq)
+        if quantity_gap is not None:
+            from app.agents import clarification
+
+            clarification.request(mail, sid, quantity_gap)
+            return None
         rfq, insurance_problems = _insurance_terms(mail, sid, rfq)
         if rfq.insurance is not None and rfq.additional_shipments:
             _ask_insurance(
