@@ -67,10 +67,12 @@ _NO = re.compile(
     r"|不要|不用|别订|不订|取消|いいえ|キャンセル|しません|아니요|취소|لا",
     re.IGNORECASE,
 )
+# "not yet": a hold, never a decline ("Please do not book yet", session 50733)
+_NOT_YET = r"(?!\s+(?:it\s+|this\s+|the\s+shipment\s+)?(?:just\s+)?(?:yet|for\s+now|until|before|right\s+now|at\s+the\s+moment)\b)"
 _DECLINE = re.compile(  # wins over any "yes" word ("we will not proceed")
-    r"too expensive|decline|not (?:go ahead|proceed|book)|no thanks|zu teuer|absagen|"
-    r"nicht buchen|\b(?:will\s+not|won't|would\s+not|wouldn't|cannot|can't|"
-    r"do\s+not|don't)\s+(?:go\s+ahead|proceed|book|accept|approve|reserve)\b|"
+    rf"too expensive|decline|not (?:go ahead|proceed|book){_NOT_YET}|no thanks|zu teuer|absagen|"
+    r"(?<!noch )nicht buchen|\b(?:will\s+not|won't|would\s+not|wouldn't|cannot|can't|"
+    rf"do\s+not|don't)\s+(?:go\s+ahead|proceed|book|accept|approve|reserve)\b{_NOT_YET}|"
     r"trop cher|demasiado caro|muito caro|troppo caro|te duur|za drogo|för dyrt|pahalı|"
     r"слишком дорого|太贵|高すぎ|너무 비싸",
     re.IGNORECASE,
@@ -304,8 +306,8 @@ def is_acceptance(body: str) -> bool | None:
         _PENDING_APPROVAL.search(sentence) and _YES.search(sentence)
         for sentence in re.split(r"[.!?\n]", text)
     )
-    if _PREBOOK_QUESTION.search(text) or pending or _held_yes(text):
-        return None  # mentioning booking in a question/condition is not consent
+    if _PREBOOK_QUESTION.search(text) or pending or _held_yes(text) or _HOLD.search(text):
+        return None  # mentioning booking in a question/condition/hold is not consent
     if config.settings.revision_not_acceptance and _REVISION.search(text):
         return None
     yes, no = bool(_YES.search(text)), bool(_NO.search(text))
@@ -318,6 +320,14 @@ def is_acceptance(body: str) -> bool | None:
     return None
 
 
+# the customer holds the booking for now: "please do not book yet", "noch nicht buchen"
+_HOLD = re.compile(
+    r"\b(?:do\s+not|don't|not|please\s+don't|hold\s+off\s+(?:on\s+)?)\s*(?:go\s+ahead|proceed|"
+    r"book(?:ing)?|reserve|confirm)\b(?:\s+(?:it|this|the\s+shipment))?\s+(?:just\s+)?(?:yet|for\s+now|"
+    r"until|before|right\s+now|at\s+the\s+moment)\b|\bhold\s+off\b|\bnoch\s+nicht\s+buchen\b|"
+    r"\bbitte\s+noch\s+nicht\b",
+    re.IGNORECASE,
+)
 _DEFERRAL = re.compile(
     r"\b(?:get|come)\s+back\s+to\s+you|\blook\s+(?:at|into|over)\s+(?:it|this|the\s+offer)|"
     r"\b(?:review|discuss|check)\w*\s+(?:it\s+|this\s+|the\s+offer\s+)?internally|"
@@ -358,6 +368,10 @@ def classify_reply(body: str) -> str:
         return "no"
     if prebook.parse(text) is not None:
         return "question"
+    if _HOLD.search(text):
+        # "Please do not book yet": a hold, not a decline. With an open question the model
+        # answers it (session 50733 asked for the schedule and got no reply).
+        return "unclear" if "?" in text else "deferral"
     if verdict is False:
         return "no"
     if _PENDING_APPROVAL.search(text) or _DEFERRAL.search(text):
