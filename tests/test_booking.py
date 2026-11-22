@@ -584,3 +584,30 @@ def test_unclear_reply_while_booking_question_is_unsent_does_not_book(monkeypatc
     _booking_question_pending()
     clarification.handle_reply(replace(_accept(), body="Please hold off for now."), 1223)
     assert api.booked == []
+
+
+@pytest.mark.parametrize(
+    "body,kind",
+    [
+        (  # session 50733, mail 50834: schedule question went unanswered as a "decline"
+            (
+                "Hi Moritz,\n\nthanks for following up. Could you please confirm the earliest "
+                "possible departure from FRA and arrival at KUL if we deliver the shipment to FRA "
+                "on 28 November 2026? We are looking for the fastest option. Please do not book "
+                "yet.\n\nBest greetings from Regensburg\nTobias Auer"
+            ),
+            "question",
+        ),
+        ("Please do not book yet, I need to check internally.", "deferral"),
+        ("Bitte noch nicht buchen, wir melden uns.", "deferral"),
+        # counterexamples: a real decline stays a decline and never books
+        ("We will not book, too expensive.", "no"),
+        ("Please don't book.", "no"),
+        ("Bitte nicht buchen.", "no"),
+        ("We do not accept this offer.", "no"),
+    ],
+)
+def test_not_yet_is_a_hold_not_a_decline(body, kind):
+    assert booking.classify_reply(body) == kind
+    assert booking.is_acceptance(body) is not True
+    assert bool(booking._DECLINE.search(booking.own_text(body))) == (kind == "no")
