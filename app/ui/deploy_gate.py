@@ -59,8 +59,19 @@ def gate(now: datetime | None = None) -> dict[str, Any]:
     if next_at <= now:
         next_at += timedelta(seconds=spacing)
     to_next = (next_at - now).total_seconds()
+    # The RFQ due one spacing after the newest may already be in flight but not stored yet
+    # (01:50:51: the gate said "next in 359 s" 0.4 s after RFQ 31793 arrived and the restart
+    # hit its pricing). Within `margin` after that due time the gate stays red.
+    overdue = age - spacing
+    busy = db.deploy_busy()
     if not settled:
         reason = f"neueste RFQ ({int(age)} s alt) noch ohne Antwort"
+    elif 0 <= overdue <= margin:
+        reason = f"nächste RFQ seit {int(overdue)} s fällig, kann jeden Moment kommen"
+    elif busy["pricing"]:
+        reason = f"{busy['pricing']} Session(s) in pricing"
+    elif busy["customer_replies"]:
+        reason = f"{busy['customer_replies']} Kundenantwort(en) in der letzten Minute"
     elif to_next <= margin:
         reason = f"nächste RFQ in {int(to_next)} s"
     else:
@@ -70,7 +81,11 @@ def gate(now: datetime | None = None) -> dict[str, Any]:
             else (f"nächste RFQ in {int(to_next)} s, neueste ohne Antwort abgelaufen")
         )
     return {
-        "safe": settled and to_next > margin,
+        "safe": settled
+        and to_next > margin
+        and not 0 <= overdue <= margin
+        and not busy["pricing"]
+        and not busy["customer_replies"],
         "reason": reason,
         "newest_session_id": newest["id"],
         "newest_at": newest["created_at"],
@@ -79,4 +94,6 @@ def gate(now: datetime | None = None) -> dict[str, Any]:
         "seconds_to_next": int(to_next),
         "interval_s": round(spacing, 1),
         "margin_s": margin,
+        "pricing_sessions": busy["pricing"],
+        "recent_customer_replies": busy["customer_replies"],
     }

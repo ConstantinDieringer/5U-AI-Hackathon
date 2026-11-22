@@ -20,7 +20,7 @@ from pathlib import Path
 
 from app import db, hackloop
 from app.config import settings
-from app.mail import address_changes, guard, parse, rate_limit_watch, router, screening, store
+from app.mail import address_changes, guard, parse, router, screening, store
 from app.models import Category, Mail
 
 log = logging.getLogger(__name__)
@@ -229,6 +229,12 @@ def release(mail_id: int) -> dict[str, object]:
 def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
     """Hand a new mail to its agent. RFQs run in their own thread so polling goes on (bid
     replies for a waiting RFQ arrive through this same loop)."""
+    if (
+        category == Category.CUSTOMER
+        and session_id is not None
+        and (db.get_session(session_id) or {}).get("kind") == "tracking"
+    ):
+        category = Category.TRACKING  # reference-only replies to a tracking question stay tracking
     if category == Category.TRACKING and session_id is not None:
         from app.agents import customer_reply
 
@@ -349,7 +355,7 @@ def run(stop: threading.Event | None = None) -> None:
                 # and a doubling backoff slept through rounds 47 and 48.
                 backoff = 0
                 delay = max(delay, getattr(exc, "retry_after", RATE_LIMIT_RETRY_S))
-                rate_limit_watch.record()
+                # counted per rejected request in hackloop._request (rate_limit_watch)
             else:
                 backoff = min(300, max(30, backoff * 2))
                 delay = max(delay, backoff, getattr(exc, "retry_after", 0))

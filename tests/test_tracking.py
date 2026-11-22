@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from app import db
+from app import db, hackloop
 from app.agents import tracking
 from app.mail.style import SIGNATURE
 from app.models import Mail
@@ -96,7 +96,7 @@ def two_bookings():
 @pytest.mark.core
 def test_answer_from_crm(two_bookings, monkeypatch) -> None:
     api = Api()
-    monkeypatch.setattr(tracking.hackloop, "send", api.send)
+    monkeypatch.setattr(hackloop, "send", api.send)
     monkeypatch.setattr(tracking, "_today", lambda: date(2026, 11, 21))
     _tracking_session(3000, "Shipment status", "Where is BK-6Z1GMPG3?")
     q = Mail(3000, 3000, TRACK, TEAM, "Shipment status", "Where is BK-6Z1GMPG3?", "")
@@ -120,6 +120,107 @@ def test_answer_from_crm(two_bookings, monkeypatch) -> None:
 @pytest.mark.core
 def test_unknown_asks_for_reference(two_bookings, monkeypatch) -> None:
     api = Api()
-    monkeypatch.setattr(tracking.hackloop, "send", api.send)
+    monkeypatch.setattr(hackloop, "send", api.send)
     tracking.handle(Mail(3001, 3001, TRACK, TEAM, "Status", "Where is my cargo?", ""), 3001)
     assert "booking reference" in api.sent[-1]["body"]
+
+
+def test_dropped_tracking_request_is_recovered_once(two_bookings, monkeypatch):
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    stamp = (datetime.now(UTC) - timedelta(seconds=20)).isoformat()
+    db.ingest_mail(
+        mail_id=3300,
+        sender=TRACK,
+        recipient=TEAM,
+        subject="Status",
+        body="Where is BK-6Z1GMPG3?",
+        category="tracking",
+        received_at=stamp,
+    )
+    tracking.recover_pending()
+    tracking.recover_pending()
+    assert len(api.sent) == 1 and api.sent[0]["in_reply_to"] == 3300
+    assert "BK-6Z1GMPG3" in api.sent[0]["body"]
+    assert db.get_session(3300)["status"] == "answered"
+
+
+def test_rate_limited_tracking_reply_retries_without_losing_request(two_bookings, monkeypatch):
+    api = Api()
+    failures = []
+
+    def send(**kwargs):
+        if not failures:
+            failures.append(True)
+            raise hackloop.HackloopError("POST", "/v1/mailbox/messages", 429, "rate limited")
+        return api.send(**kwargs)
+
+    monkeypatch.setattr(hackloop, "send", send)
+    stamp = (datetime.now(UTC) - timedelta(seconds=20)).isoformat()
+    db.ingest_mail(
+        mail_id=3301,
+        sender=TRACK,
+        recipient=TEAM,
+        subject="Status",
+        body="Where is BK-6Z1GMPG3?",
+        category="tracking",
+        received_at=stamp,
+    )
+    tracking.recover_pending()
+    assert api.sent == []
+    tracking.recover_pending()
+    tracking.recover_pending()
+    assert len(api.sent) == 1
+
+
+def test_reference_only_followup_stays_in_tracking(two_bookings, monkeypatch):
+    from app.mail import poller
+    from app.models import Category
+
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    _tracking_session(3302, "Status", "Where is my cargo?")
+    root = Mail(3302, 3302, TRACK, TEAM, "Status", "Where is my cargo?", "")
+    tracking.handle(root, 3302)
+    db.ingest_mail(
+        mail_id=3303,
+        sender=TRACK,
+        recipient=TEAM,
+        subject="Re: Status",
+        body="BK-6Z1GMPG3",
+        category="customer",
+        references=[3302],
+        received_at=datetime.now(UTC).isoformat(),
+    )
+    followup = Mail(3303, 3302, TRACK, TEAM, "Re: Status", "BK-6Z1GMPG3", "")
+
+    class InlineThread:
+        def __init__(self, target, **kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(poller.threading, "Thread", InlineThread)
+    poller.dispatch(followup, Category.CUSTOMER, 3302)
+    assert len(api.sent) == 2 and api.sent[-1]["in_reply_to"] == 3303
+    assert "confirmed by Fjordline Air Cargo" in api.sent[-1]["body"]
+
+
+def test_answering_customer_tracking_preserves_booking_status(two_bookings, monkeypatch):
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    before = db.get_session(1223)["status"]
+    mail = Mail(
+        3304,
+        1223,
+        "weidner-spielwaren@hackloop.mail",
+        TEAM,
+        "Tracking",
+        "Where is BK-6Z1GMPG3?",
+        "",
+    )
+    tracking.handle(mail, 1223)
+    assert db.get_session(1223)["status"] == before
+    tracking.handle(mail, 1223)
+    assert len(api.sent) == 1

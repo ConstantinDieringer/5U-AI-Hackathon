@@ -10,7 +10,7 @@ Only major capabilities or behavior changes belong here. Combine related work, n
 * Customer replies support versioned offers and explicit approval of revised terms. Execution remains rollout controlled, with shadow evaluation as the default.
 * Multilingual requests, attachments and replies use checked translations while preserving shipment facts and consent evidence.
 * Arrival constraints and cargo insurance are validated before all quote paths so incomplete or unsuitable offers are held for clarification.
-* Tracking invitations are enforced on customer sends, with a guarded recovery send when a notice is missing.
+* Each settled booking gets a separate tracking mail. Unanswered tracking requests recover durably, reference-only replies inherit the conversation language, and uncertain tracking delivery allows one final bounded send.
 
 ## 21 November 2026
 

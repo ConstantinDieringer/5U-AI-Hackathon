@@ -175,6 +175,21 @@ def _prepare(mail: Mail, sid: int | None, default: str = "und") -> Mail:
     ):
         return mail  # acknowledgement alone carries no reliable new language evidence
     if not re.search(r"[^\W\d_]", _VALUES.sub("", current.text + "\n" + current.subject)):
+        if default != "und":
+            # A booking reference can look like a word to language detection (e.g. Zulu).
+            # Preserve the established language all the way to the outgoing boundary.
+            db.kv_set(_language_key(mail.id, mail.body), default)
+            return replace(
+                mail,
+                raw={
+                    **mail.raw,
+                    _META: {
+                        "language": default,
+                        "original_body": mail.body,
+                        "original_subject": mail.subject,
+                    },
+                },
+            )
         return mail  # numbers/references alone need no translation
     if language.base(lang) in {"en", "de"}:
         return mail

@@ -10,7 +10,7 @@ The system handles one air freight mailbox from request through quote, booking a
 * Missing or conflicting information is checked against the same shipment's conversation and CRM first. Remaining gaps get a persisted question in the customer's thread. Partial answers resume work without duplicate questions.
 * Booking requires current, explicit consent to the applicable offer. Questions, changes and conditions must be resolved first. Versioned reply execution is rollout controlled through `app/config.py`; its default is shadow evaluation.
 * Customer emails are friendly, personal and split into short paragraphs. Use € and written month names. No colons, semicolons, underscores, dash punctuation or parentheses, except preserved references, filenames and contacts. Never expose internal field names or invent history or discounts. Sign off with `Your austrian Power Team`.
-* Every RFQ customer email explains tracking by replying to the thread. A recovery worker repairs a missing invitation once. Deterministic send validation remains active while the optional LLM style reviewer is disabled by default.
+* Every settled booking gets a separate tracking mail; quote invitations do not replace it. A worker recovers missed booking mails and unanswered tracking inputs. The user permits one final tracking send after uncertainty; durable receipts prevent further repeats. Deterministic validation remains active; the LLM style reviewer stays disabled.
 * Preserve message deduplication, send claims, pause/manual controls, deadlines and ambiguous-send protection. Only one production consumer may process the mailbox. Never start a second live instance locally.
 
 ## Where to work

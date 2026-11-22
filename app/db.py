@@ -857,7 +857,7 @@ def tracking_notice_candidates() -> list[int]:
         for r in _rows(
             conn().execute(
                 "SELECT s.id FROM sessions s WHERE s.kind='rfq' AND s.paused=0 AND s.mode='auto'"
-                " AND s.status IN ('quoted','booked','confirmed')"
+                " AND (s.status IN ('quoted','booked','confirmed') OR EXISTS(SELECT 1 FROM bookings b WHERE b.session_id=s.id AND b.status IN ('booked','confirmed')))"
                 " AND (EXISTS(SELECT 1 FROM quotes q WHERE q.session_id=s.id)"
                 " OR EXISTS(SELECT 1 FROM bookings b WHERE b.session_id=s.id)) ORDER BY s.id DESC"
             )
@@ -865,24 +865,71 @@ def tracking_notice_candidates() -> list[int]:
     ]
 
 
-def claim_tracking_notice(session_id: int) -> bool:
+def claim_tracking_mail(key: str, grace_s: float) -> tuple[str, bool] | None:
+    """One initial tracking send and, by user policy, one final send after uncertainty.
+
+    Uses kv rather than a new table. A crashed reservation ages into uncertainty. A known
+    receipt always wins. The final reservation is never recycled after another ambiguity.
+    """
+    import time
+
+    stamp = time.time()
     with tx() as c:
-        return (
+        row = _one(c.execute("SELECT value FROM kv WHERE key=?", (key,)))
+        chosen, final = key, False
+        if row:
+            if row["value"] not in ("reserved", "unknown"):
+                return None
+            previous = _one(c.execute("SELECT value FROM kv WHERE key=?", (key + ".at",)))
+            if previous is None:
+                c.execute(
+                    "INSERT OR IGNORE INTO kv(key,value) VALUES (?,?)", (key + ".at", str(stamp))
+                )
+                return None
+            if stamp - float(previous["value"]) < grace_s:
+                return None
+            chosen, final = key + ".final", True
+        if (
             c.execute(
-                "INSERT OR IGNORE INTO kv(key,value) VALUES (?, 'reserved')",
-                (f"tracking.notice.recovery.{session_id}",),
+                "INSERT OR IGNORE INTO kv(key,value) VALUES (?, 'reserved')", (chosen,)
             ).rowcount
-            == 1
-        )
+            != 1
+        ):
+            return None
+        c.execute("INSERT OR REPLACE INTO kv(key,value) VALUES (?,?)", (chosen + ".at", str(stamp)))
+        return chosen, final
 
 
-def release_tracking_notice(session_id: int) -> None:
-    """Only a known pre-transport refusal may release this claim for another attempt."""
+def tracking_mail_result(
+    key: str, attempt: str, mail_id: int | None = None, *, uncertain: bool = False
+) -> None:
     with tx() as c:
-        c.execute(
-            "DELETE FROM kv WHERE key=? AND value='reserved'",
-            (f"tracking.notice.recovery.{session_id}",),
+        if mail_id is not None:
+            for target in {key, attempt}:
+                c.execute(
+                    "INSERT OR REPLACE INTO kv(key,value) VALUES (?,?)", (target, f"sent:{mail_id}")
+                )
+        elif uncertain:
+            c.execute("UPDATE kv SET value='unknown' WHERE key=? AND value='reserved'", (attempt,))
+        else:
+            c.execute("DELETE FROM kv WHERE key=? AND value='reserved'", (attempt,))
+
+
+def tracking_unanswered(since: str, before: str, limit: int = 30) -> list[dict[str, Any]]:
+    """Recent unanswered tracking inputs, including customer replies in booked threads."""
+    return _rows(
+        conn().execute(
+            "SELECT m.* FROM mails m JOIN sessions s ON s.id=m.session_id "
+            "WHERE m.direction='in' AND m.category IN ('tracking','customer') "
+            "AND m.received_at>=? AND m.received_at<=? AND s.paused=0 AND s.mode='auto' "
+            "AND (s.kind='tracking' OR m.category='tracking' OR EXISTS(SELECT 1 FROM bookings b WHERE b.session_id=s.id AND b.status IN ('booked','confirmed') AND (b.customer_state IS NULL OR b.customer_state IN ('confirmed_sent','price_accepted')))) "
+            "AND NOT EXISTS(SELECT 1 FROM mails sent WHERE sent.direction='out' AND sent.in_reply_to=m.id) "
+            "AND NOT EXISTS(SELECT 1 FROM mail_screening q WHERE q.mail_id IN (m.id,s.id) AND q.blocked=1 AND q.released_at IS NULL) "
+            "AND NOT EXISTS(SELECT 1 FROM kv k WHERE k.key='tracking.reply.' || m.id AND k.value LIKE 'sent:%') "
+            "ORDER BY m.id DESC LIMIT ?",
+            (since, before, limit),
         )
+    )
 
 
 def clarification_waiting() -> list[dict[str, Any]]:
@@ -2662,6 +2709,24 @@ def recent_rfqs(limit: int = 12) -> list[dict[str, Any]]:
             (limit,),
         )
     )
+
+
+def deploy_busy(window_s: int = 60) -> dict[str, int]:
+    """Work a restart would cut off: sessions being priced, and customer replies of the last
+    `window_s` seconds (an acceptance turns into a booking call right after it arrives)."""
+    since = (datetime.now(UTC) - timedelta(seconds=window_s)).isoformat(timespec="seconds")
+    c = conn()
+    # a session left in 'pricing' by a crash must not hold the gate red forever
+    stale = (datetime.now(UTC) - timedelta(seconds=400)).isoformat(timespec="seconds")
+    pricing = c.execute(
+        "SELECT COUNT(*) FROM sessions WHERE status = 'pricing' AND updated_at >= ?", (stale,)
+    ).fetchone()[0]
+    replies = c.execute(
+        "SELECT COUNT(*) FROM mails WHERE direction = 'in' AND category = 'customer'"
+        " AND received_at >= ?",
+        (since,),
+    ).fetchone()[0]
+    return {"pricing": int(pricing), "customer_replies": int(replies)}
 
 
 def expire_overdue() -> list[int]:
