@@ -307,6 +307,54 @@ def test_confirmation_never_replaces_a_known_booking_reference() -> None:
     assert b["booking_reference"] == "BK-6Z1GMPG3" and b["status"] == "confirmed"
 
 
+@pytest.mark.parametrize(
+    ("subject", "line"),
+    [
+        ("Your booking", "We have confirmed booking {bk} on our side."),
+        ("Update", "your booking {bk} is confirmed."),
+        ("Buchung", "Ihre Buchung {bk} ist bestätigt."),
+        ("Réservation", "Votre réservation {bk} est confirmée."),
+        ("Confirmation {bk}", "Thanks for booking with us."),
+    ],
+)
+def test_airline_confirmation_in_new_wording_confirms_the_booking(subject, line) -> None:
+    """5U can reword the airline's confirmation. Missed, the row stays 'booked' without the
+    airline's BK reference and tracking answers with AP-… and "confirmation pending"."""
+    from app.agents import booking
+
+    _booked(6882, "kessler-feinmechanik@hackloop.mail", "STR", "EZE", None, confirmed=False)
+    bk = "BK-1TIIVV6M"
+    body = f"Hello,\n\n{line.format(bk=bk)}\n\nBooking reference: {bk}\nYour reference: AP-6882\n"
+    mail = Mail(
+        7174, 7174, "meridian-freightways@hackloop.mail", TEAM, subject.format(bk=bk), body, ""
+    )
+    assert booking.on_airline_mail(mail)
+    b = db.get_session(6882)["bookings"][0]
+    assert b["status"] == "confirmed" and b["booking_reference"] == bk
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Booking {bk} is not yet confirmed, we are checking space.",
+        "Booking {bk} is pending confirmation.",
+        "Your booking {bk} has been cancelled.",
+        "Die Buchung {bk} ist noch nicht bestätigt.",
+        "We could not confirm booking {bk}.",
+        "Booking reference: {bk}",
+    ],
+)
+def test_airline_mail_without_a_confirmation_leaves_the_booking_open(line) -> None:
+    """Counterexample: a pending, refused or cancelled booking never reads as confirmed."""
+    from app.agents import booking
+
+    _booked(6882, "kessler-feinmechanik@hackloop.mail", "STR", "EZE", None, confirmed=False)
+    body = f"Hello,\n\n{line.format(bk='BK-1TIIVV6M')}\n\nYour reference: AP-6882\n"
+    mail = Mail(7174, 7174, "meridian-freightways@hackloop.mail", TEAM, "Your booking", body, "")
+    assert not booking.on_airline_mail(mail)
+    assert db.get_session(6882)["bookings"][0]["status"] == "booked"
+
+
 def test_startup_backfill_repairs_email_booking_without_reference() -> None:
     """Live shipments booked by email before the fix get their BK reference on restart."""
     _booked(6882, "kessler-feinmechanik@hackloop.mail", "STR", "EZE", None, confirmed=False)
