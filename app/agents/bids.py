@@ -503,6 +503,15 @@ def request(
     `slot` (see slot_for) keeps a further shipment of the same mail apart from the first."""
     slot = session_id if slot is None else slot
     sent = 0
+    if origin.strip().upper() == rfq.destination.strip().upper():
+        # round 2530: four airlines were asked for YYZ-YYZ and all declined the lane
+        db.emit(
+            "bid_request_blocked",
+            f"Keine Gebotsanfrage: Abflughafen {origin} = Zielflughafen",
+            session_id,
+            level="error",
+        )
+        return 0
     if slot == session_id:
         already_sent = db.bid_request_recipients(session_id)
     else:
