@@ -138,6 +138,7 @@ class Settings:
     usd_eur_rate: str
     usd_eur_valid_until: str
     use_breakpoints: bool
+    portal_429_email_fallback: bool
     served_lanes_ttl_s: float
     rfq_validation_mode: str
     webhook_secret: str
@@ -293,6 +294,7 @@ settings = Settings(
     usd_eur_rate=_env("USD_EUR_RATE"),
     usd_eur_valid_until=_env("USD_EUR_VALID_UNTIL"),
     use_breakpoints=_flag("USE_BREAKPOINTS", True),
+    portal_429_email_fallback=_flag("PORTAL_429_EMAIL_FALLBACK", True),
     served_lanes_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))),
     rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "enforce"),
     webhook_secret=_env("MAILBOX_WEBHOOK_SECRET"),
