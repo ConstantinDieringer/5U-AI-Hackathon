@@ -455,3 +455,161 @@ def test_backfill_booking_from_airline_confirmation():
     assert rec["airline"] == "Ultraviolet Air Freight" and rec["price_minor"] == 32436
     assert rec["request"] == {"origin": "FRA", "destination": "DOH"}
     assert db.backfill_bookings_from_confirmations() == 0
+
+
+def test_loop_query_indexes_exist_and_are_used():
+    c = db.conn()
+    names = {r["name"] for r in c.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    assert {"ix_mails_category", "ix_mails_reply", "ix_sessions_created"} <= names
+
+    def plan(sql: str, *args: object) -> str:
+        return " | ".join(r["detail"] for r in c.execute("EXPLAIN QUERY PLAN " + sql, args))
+
+    seen: list[str] = []
+    c.set_trace_callback(seen.append)
+    db.rescue_candidates(db.now())
+    db.session_by_created_at(db.now())
+    c.set_trace_callback(None)
+    rescue, by_created = (plan(sql) for sql in seen)
+    assert "SCAN root" not in rescue and "ix_mails_category" in rescue
+    assert "ix_mails_reply" in rescue
+    assert "ix_sessions_created" in by_created
+
+
+def test_indexes_are_added_to_an_existing_database(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "old.db")
+    old_schema = "\n".join(
+        line
+        for line in db.SCHEMA.splitlines()
+        if not any(
+            n in line for n in ("ix_mails_category", "ix_mails_reply", "ix_sessions_created")
+        )
+    )
+    with sqlite3.connect(path) as connection:
+        connection.executescript(old_schema)
+    db.init_db(path)
+    names = {
+        r["name"] for r in db.conn().execute("SELECT name FROM sqlite_master WHERE type='index'")
+    }
+    assert {"ix_mails_category", "ix_mails_reply", "ix_sessions_created"} <= names
+
+
+def _statements(fn):
+    """Run fn and return (result, SQL statements this thread's connection executed)."""
+    seen: list[str] = []
+    c = db.conn()
+    c.set_trace_callback(seen.append)
+    try:
+        return fn(), seen
+    finally:
+        c.set_trace_callback(None)
+
+
+def test_delivery_claim_on_empty_queue_opens_no_write_transaction():
+    row, seen = _statements(lambda: db.delivery_claim(1000.0))
+    assert row is None
+    assert not any(s.startswith("BEGIN") for s in seen)
+    assert db.conn().total_changes == 0
+
+    assert db.delivery_enqueue(7, {"id": 7}, "webhook")
+    db.delivery_state(7, "pending", retry_at=2000.0)  # backoff: not due yet
+    row, seen = _statements(lambda: db.delivery_claim(1000.0))
+    assert row is None and not any(s.startswith("BEGIN") for s in seen)
+
+
+def test_delivery_claim_returns_the_same_row_as_before_and_only_once():
+    assert db.delivery_enqueue(8, {"id": 8}, "poll")
+    assert db.delivery_enqueue(7, {"id": 7}, "webhook")
+    row = db.delivery_claim(1000.0)
+    assert row is not None
+    assert (row["mail_id"], row["status"], row["attempts"]) == (7, "pending", 1)
+    stored = db.delivery_get(7)
+    assert stored is not None
+    assert (stored["status"], stored["attempts"]) == ("processing", 1)
+    second = db.delivery_claim(1000.0)
+    assert second is not None and second["mail_id"] == 8
+    assert db.delivery_claim(1000.0) is None
+
+
+def test_delivery_claim_is_atomic_under_race():
+    assert db.delivery_enqueue(7, {"id": 7}, "webhook")
+    barrier = threading.Barrier(8)
+    claimed: list[dict | None] = []
+
+    def worker():
+        barrier.wait()
+        claimed.append(db.delivery_claim(1000.0))
+        db.close_thread_connection()
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len([r for r in claimed if r]) == 1
+    stored = db.delivery_get(7)
+    assert stored is not None and stored["attempts"] == 1
+
+
+def test_expire_overdue_with_nothing_due_opens_no_write_transaction():
+    rfq()  # open session, deadline still ahead
+    ids, seen = _statements(db.expire_overdue)
+    assert ids == []
+    assert not any(s.startswith("BEGIN") for s in seen)
+
+
+def test_expire_overdue_still_expires_a_waiting_question_of_a_closed_session():
+    old = (datetime.now(UTC) - timedelta(minutes=10)).isoformat(timespec="seconds")
+    sid = rfq(received_at=old)
+    db.set_status(sid, "error")  # not new/pricing: only the validation row is due
+    db.validation_save(sid, "awaiting_clarification", {}, {})
+    assert db.expire_overdue() == []
+    validation = db.validation_get(sid)
+    assert validation is not None and validation["state"] == "expired"
+    ids, seen = _statements(db.expire_overdue)
+    assert ids == [] and not any(s.startswith("BEGIN") for s in seen)
+
+
+def test_init_db_without_path_runs_once_per_database(tmp_path, monkeypatch):
+    runs: list[str] = []
+    remap = db.remap_unassigned
+    monkeypatch.setattr(db, "remap_unassigned", lambda: runs.append(db._db_path) or remap())
+
+    _, seen = _statements(db.init_db)  # the fixture already initialised this path
+    assert runs == [] and seen == []
+
+    first = str(tmp_path / "test.db")
+    db.init_db(first)  # an explicit path always initialises in full (import, tests)
+    assert runs == [first]
+
+    other = str(tmp_path / "other.db")
+    db.init_db(other)
+    db.init_db()
+    assert runs == [first, other]
+    assert rfq() == 100  # the new file has the schema and is the active database
+
+    db.close_thread_connection()
+    for suffix in ("", "-wal", "-shm"):
+        (tmp_path / f"other.db{suffix}").unlink(missing_ok=True)
+    db.init_db()  # the file is gone: initialise again rather than trust the flag
+    assert runs == [first, other, other]
+    assert db.get_session(100) is None
+
+
+def test_session_ids_match_list_sessions_rows_and_order():
+    past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat(timespec="seconds")
+    for i in range(1, 13):
+        sid = rfq(i, received_at=past if i % 4 == 0 else None)
+        db.set_status(sid, ("new", "pricing", "quoted")[i % 3])
+        if i % 5 == 0:
+            db.set_paused(sid, True)
+        if i == 7:
+            db.validation_save(sid, "awaiting_clarification", {}, {})
+    for status in ("quoted", "new", "pricing", "booked"):
+        assert db.session_ids(status) == [r["id"] for r in db.list_sessions(status=status)]
+        assert db.session_ids(status, limit=2) == [
+            r["id"] for r in db.list_sessions(status=status, limit=2)
+        ]
+    assert len(db.session_ids("quoted")) == 4
