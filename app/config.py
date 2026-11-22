@@ -365,9 +365,10 @@ settings = Settings(
     airline_confirm_wait_s=max(0.0, float(_env("AIRLINE_CONFIRM_WAIT_S", "180"))),
     # customer silent after our quote -> nudge in the thread (app/agents/followup.py)
     followup_enabled=_flag("FOLLOWUP_ENABLED", True),
-    # fixed 5 s: every nudge waits exactly 5 s after the last mail, never shorter or longer
-    followup_after_s=5.0,
-    followup_max=max(0, int(_env("FOLLOWUP_MAX", "2"))),  # 5 s apart: more reads as spam
+    # a nudge waits this long after the last mail (min 5 s). 5 s sent three mails in 10 s
+    # (session 48334, 22.11.) before any human could answer; FOLLOWUP_AFTER_S=5 restores it
+    followup_after_s=max(5.0, float(_env("FOLLOWUP_AFTER_S", "60"))),
+    followup_max=max(0, int(_env("FOLLOWUP_MAX", "2"))),  # more reads as spam
     followup_window_s=float(_env("FOLLOWUP_WINDOW_S", "900")),  # rate_id validity
     followup_check_every_s=max(1.0, float(_env("FOLLOWUP_CHECK_EVERY_S", "1"))),
     tracking_notice_check_every_s=max(5.0, float(_env("TRACKING_NOTICE_CHECK_EVERY_S", "30"))),
