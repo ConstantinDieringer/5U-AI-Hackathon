@@ -5,6 +5,7 @@ Money is integer cents (`*_minor`, context/code-standards.md: never floats); wei
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
@@ -38,17 +39,13 @@ def _to_iata(v: object) -> str | None:
 @dataclass
 class Mail:
     id: int
-    thread_root: (
-        int  # = references[0] if present, else id (session mapping: db.ingest_mail)
-    )
+    thread_root: int  # = references[0] if present, else id (session mapping: db.ingest_mail)
     sender: str
     to: str
     subject: str
     body: str
     received_at: str  # ISO 8601 UTC
-    attachments: list[dict] = field(
-        default_factory=list
-    )  # {id, filename, content_type, size}
+    attachments: list[dict] = field(default_factory=list)  # {id, filename, content_type, size}
     references: list[int] = field(default_factory=list)
     raw: dict = field(default_factory=dict)
 
@@ -64,6 +61,45 @@ class Category(str, Enum):
     PHISHING = "phishing"  # quarantined by the phishing gate: stored, never answered
 
 
+class CargoInsurance(BaseModel):
+    """Agreed insurance inputs as decimal strings, safe to persist as JSON.
+
+    Missing terms remain explicit so clarification can fill them without guessing.
+    """
+
+    goods_value: str | None = None
+    currency: str | None = None
+    coverage_pct: str | None = None
+    premium_pct: str | None = None
+    minimum_premium: str | None = None
+    minimum_required: bool = False
+
+    @field_validator("goods_value", "coverage_pct", "premium_pct", "minimum_premium", mode="before")
+    @classmethod
+    def _decimal(cls, value: object) -> str | None:
+        from decimal import Decimal, InvalidOperation
+
+        if value is None:
+            return None
+        try:
+            number = Decimal(str(value))
+        except InvalidOperation as exc:
+            raise ValueError("invalid insurance number") from exc
+        if not number.is_finite() or number < 0:
+            raise ValueError("insurance numbers must be finite and nonnegative")
+        return format(number, "f")
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", value):
+            raise ValueError("insurance currency must be an ISO code")
+        return value
+
+
 class Rfq(BaseModel):
     """What the LLM extracts from a customer RFQ. Pricing reads only these fields.
 
@@ -76,9 +112,7 @@ class Rfq(BaseModel):
     # door-to-port without a ZIP: area from pickup_zones.csv found by code (body, signature or
     # the customer's earlier requests). Never filled by the LLM.
     pickup_city: str | None = None
-    pickup_assumed: bool = (
-        False  # pickup site inferred by code: the quote asks to confirm it
-    )
+    pickup_assumed: bool = False  # pickup site inferred by code: the quote asks to confirm it
     destination: str  # IATA
     weight_kg: float = Field(gt=0, le=100_000)  # total gross weight
     volume_cbm: float = Field(default=0.0, ge=0, le=1_000)  # total volume
@@ -90,6 +124,7 @@ class Rfq(BaseModel):
     customer_questions: list[str] = Field(default_factory=list, max_length=5)
     service_constraints: list[str] = Field(default_factory=list, max_length=10)
     excluded_airlines: list[str] = Field(default_factory=list)
+    insurance: CargoInsurance | None = None
     # further shipments of the same mail (board reason one_of_two): raw extraction items,
     # checked and turned into sibling requests by app.agents.multi_shipment
     additional_shipments: list[dict] = Field(default_factory=list, max_length=4)
@@ -180,12 +215,8 @@ class RateOption:
     rate_id: str | None = None  # portal only
     valid_until: str | None = None  # ISO 8601 UTC
     chargeable_kg: float = 0.0
-    billed_kg: float = (
-        0.0  # > chargeable_kg when billing at a higher weight break is cheaper
-    )
-    fx_eur_per_unit: str | None = (
-        None  # rate used for total_eur_minor when currency != EUR
-    )
+    billed_kg: float = 0.0  # > chargeable_kg when billing at a higher weight break is cheaper
+    fx_eur_per_unit: str | None = None  # rate used for total_eur_minor when currency != EUR
     fx_source: str | None = None
     fx_valid_until: str | None = None
     observed_at: str | None = None

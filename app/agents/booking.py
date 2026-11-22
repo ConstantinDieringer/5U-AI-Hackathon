@@ -146,7 +146,13 @@ _CARGO_FIELDS = (
         ),
         0.0,
     ),
-    ("volume_cbm", "Volumen", "cbm", re.compile(_NUMBER + r"\s*(?:cbm|m3|m³)", re.IGNORECASE), 0.01),
+    (
+        "volume_cbm",
+        "Volumen",
+        "cbm",
+        re.compile(_NUMBER + r"\s*(?:cbm|m3|m³)", re.IGNORECASE),
+        0.01,
+    ),
 )
 
 
@@ -701,7 +707,7 @@ def _quoted_air(quote: dict[str, Any]) -> tuple[int, str] | None:
     trucking is part of it (then unknown, and a change cannot be measured)."""
     if quote.get("air_total_minor") is not None and quote.get("air_currency"):
         return int(quote["air_total_minor"]), str(quote["air_currency"]).upper()
-    if _has_trucking(quote):
+    if _has_trucking(quote) or quote.get("insurance_minor", 0):
         return None
     return int(quote["total_minor"]), str(quote["currency"]).upper()
 
@@ -783,7 +789,7 @@ def _alternative(quote: dict[str, Any], below_minor: int) -> dict[str, Any] | No
         air = a.get("total_eur_minor")
         if not a.get("airline") or a["airline"] == quote["airline"] or air is None:
             continue
-        total = int(air) + truck_minor
+        total = int(air) + truck_minor + int(quote.get("insurance_minor", 0))
         if total < below_minor and (best is None or total < best["total_minor"]):
             best = {"airline": a["airline"], "total_minor": total, "days": a.get("transit_days")}
     return best

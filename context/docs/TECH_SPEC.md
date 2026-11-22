@@ -163,13 +163,27 @@ class Rfq(BaseModel):         # Pydantic (LLM-Output); die Preisrechnung liest n
     customer_name: str | None
     customer_questions: list[str] = []     # jede explizite Kundenfrage, max. 5
     service_constraints: list[str] = []    # weitere Service-/Terminbedingungen, max. 10
+    insurance: CargoInsurance | None = None  # aus aktuellen Mail-/Dokumentbelegen
 ```
+
+`CargoInsurance` speichert Warenwert, Währung, Deckung und Prämiensatz als Dezimalstrings
+(`goods_value`, `currency`, `coverage_pct`, `premium_pct`), optional `minimum_premium` und
+`minimum_required`. Keine Standardkonditionen. Prämie = Warenwert × Deckung/100 × Satz/100,
+mindestens die vereinbarte Mindestprämie. Explizite FX-Konvertierung nach EUR; Addition
+nach Transportpreisanpassungen. Fehlende/widersprüchliche Konditionen sperren jedes
+automatische All-in-Angebot, auch Rescue/Watchdog/Shadow. Mehrere Sendungen mit gemeinsamem
+Versicherungswert benötigen eine Klärung der Zuordnung statt einer Vervielfachung der Prämie.
 
 Umgesetzt in `app/models.py` (21.11., 15:30).
 
 **Einheiten:** Gewicht in **kg** (float), Volumen in **cbm** (float), Geld als **ganzzahlige Cent** (`*_minor`) bzw. `Decimal`, nie float; gerundet an einer Stelle, Zeiten in **UTC ISO 8601**, Flughäfen als **IATA-Code in Großbuchstaben**, Währungscodes ISO 4217.
 
 ## 7. Datenbank (SQLite, `app/db.py`)
+
+`quotes.insurance_minor INTEGER NOT NULL DEFAULT 0` friert die Versicherungsprämie in
+EUR-Cent ein; additive Migration lässt Altangebote unverändert. Gesamtpreise enthalten
+diese Komponente; Airline-Buchungen verwenden nur den eingefrorenen Luftfrachtpreis.
+Günstigere Alternativen bei Preisänderungen behalten die Versicherungsprämie bei.
 
 `quotes.air_total_minor` und `quotes.air_currency` speichern den gewählten Luftfrachtpreis
 in Originalwährung getrennt vom EUR-Kundengesamtpreis (inklusive Truck/Preisanpassung).

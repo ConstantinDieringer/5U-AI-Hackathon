@@ -426,6 +426,37 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
     data["pickup_city"] = None
     data["pickup_assumed"] = False
     combined = "\n".join(sources.values())
+    from app.models import CargoInsurance
+    from app.pricing import insurance
+
+    if "insurance" in corrections:
+        policy = (
+            CargoInsurance.model_validate(corrections["insurance"])
+            if corrections["insurance"]
+            else None
+        )
+        insurance_issues = insurance.missing(policy) if policy else []
+    else:
+        policy, insurance_issues = insurance.read(sources.values())
+    data["insurance"] = policy.model_dump() if policy else None
+    if insurance_issues:
+        issues.append(
+            {
+                "field": "insurance",
+                "code": "unpriced_service",
+                "detail": ", ".join(insurance_issues),
+            }
+        )
+    if policy is not None:
+        evidence["insurance"] = policy.model_dump()
+        if data.get("additional_shipments"):
+            issues.append(
+                {
+                    "field": "insurance_allocation",
+                    "code": "unpriced_service",
+                    "detail": "Confirm insurance terms and goods value per shipment",
+                }
+            )
     pickup = bool(_PICKUP.search(active)) and not no_pickup(active)
     if corrections.get("no_pickup"):  # the answer to our ZIP question says they self-deliver
         pickup = False

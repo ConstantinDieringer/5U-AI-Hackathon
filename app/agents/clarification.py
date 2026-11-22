@@ -97,6 +97,8 @@ def text_for(draft, lang):
         "attachments": "a readable, corrected packing specification",
         "dangerous_goods": "the applicable dangerous goods declaration and safety data sheet, the UN number and class, and clarification of any conflicting declarations",
         "shipment": "the missing or corrected shipment details",
+        "insurance": "the goods value and currency, insured coverage percentage and agreed insurance premium rate",
+        "insurance_allocation": "the goods value, currency, coverage percentage and premium rate for each shipment separately",
     }
     de = {
         "pickup_zip": "die Postleitzahl der Abholadresse",
@@ -109,6 +111,8 @@ def text_for(draft, lang):
         "attachments": "eine lesbare, korrigierte Packliste",
         "dangerous_goods": "die zutreffende Gefahrguterklärung und das Sicherheitsdatenblatt, UN-Nummer und Klasse und eine Klärung widersprüchlicher Angaben",
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
+        "insurance": "den Warenwert mit Währung, die Deckung in Prozent und den vereinbarten Prämiensatz der Transportversicherung",
+        "insurance_allocation": "den Warenwert mit Währung, die Deckung und den Prämiensatz für jede Sendung einzeln",
     }
     labels = de if lang == "de" else en
     if "dangerous_goods" in fields:
@@ -712,6 +716,19 @@ def answer_draft(mail, sid, root, draft):
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
     known = known_weights(draft, sid, mail) if settings.thousands_evidence else ()
+    if "insurance" in asked:
+        from app.models import CargoInsurance
+        from app.pricing import insurance
+
+        previous = (
+            CargoInsurance.model_validate(draft.facts["insurance"])
+            if draft.facts.get("insurance")
+            else None
+        )
+        policy, problems = insurance.read([own], previous, requested=True)
+        # Preserve partial answers too; the next question only follows new customer evidence.
+        if not any(p.startswith("conflicting") for p in problems):
+            corrections["insurance"] = policy.model_dump() if policy else None
     corrections.update(
         {k: float(v) for k, v in numeric_facts(own, known=known).items() if k in asked}
     )

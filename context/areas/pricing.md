@@ -12,12 +12,14 @@ Binding detail: TECH_SPEC §6 (data models), portal API in `context/docs/5u-api.
 | `app/agents/tariff.py` | durable tariff queue and worker |
 | `app/pricing/portal_sync.py`, `lanes.py`, `served_lanes.py` | portal lanes/brackets, lane index, airline "We fly" lists |
 | `app/pricing/fx.py`, `audit.py` | explicit EUR/USD conversion, board evidence audit |
+| `app/pricing/insurance.py` | evidenced cargo-insurance terms, Decimal premium, EUR conversion |
 | `app/agents/bids.py` | carrier/trucker bid requests, parsing, waits |
 | `app/agents/carrier_prefs.py` | per-customer exclusions/preferences |
 
 ## Rules
 
 - **Pricing is deterministic code, never the LLM.** Decimal amounts and integer cents; currency travels with every amount. Customer output stays EUR.
+- **Insurance:** current mail/document terms only, no defaults. Goods value × coverage × premium rate, with any agreed minimum, is added after transport adjustments. Missing/conflicting terms block quotes even in shadow/rescue/watchdog paths. The premium is persisted separately from air cost; a shared value across multiple shipments requires allocation clarification.
 - Tracked `data/tariffs.json` and `data/portal_lanes.json` are seed data; runtime tariffs and portal snapshots live in `settings.runtime_dir` on the persistent volume.
 - **Tariffs:** one durable SQLite queue and worker; text/table parsed locally, images/scans transcribed through `llm.complete` with no pricing decisions. Sender and values validated before atomic publication and cache reload.
 - **Weight breaks:** billing at the next break is often cheaper and the board's best price uses it. Portal next-break check is active; `BID_NEXT_BREAK` asks email airlines for their next break too.
