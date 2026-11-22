@@ -1703,7 +1703,11 @@ def record_booking(
             "INSERT INTO bookings(session_id, team_reference, booking_reference, rate_id, airline,"
             " price_minor, currency, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(team_reference) DO UPDATE SET booking_reference = excluded.booking_reference,"
-            " rate_id = excluded.rate_id, status = excluded.status, updated_at = excluded.updated_at",
+            " rate_id = excluded.rate_id, status = excluded.status, updated_at = excluded.updated_at,"
+            # a retry after a failed attempt books at its own price: never keep the stale one
+            " airline = COALESCE(excluded.airline, bookings.airline),"
+            " price_minor = COALESCE(excluded.price_minor, bookings.price_minor),"
+            " currency = COALESCE(excluded.currency, bookings.currency)",
             (
                 session_id,
                 ref,

@@ -60,6 +60,13 @@ DOUBT = re.compile(
     r"\bwait\w*\b|\bleider\b|\bwarten\b|\bverschieb\w*|\bzurückstellen\b|\babwarten\b",
     re.IGNORECASE,
 )
+# The part of DOUBT that negates or postpones the yes; without the model it must not book.
+HARD_DOUBT = re.compile(
+    r"n't\b|\bnot\b|\bnever\b|\bno\b|\bnein\b|\bnicht\b|\bkein\w*|\bnon\b|\bpas\b|"
+    r"\bjamais\b|\bnada\b|\bnessun\w*|\bhold\s+off\b|\bon\s+hold\b|\bpostpone\w*|"
+    r"\bafter\s+all\b|\bwait\w*\b|\bwarten\b|\bverschieb\w*|\bzurückstellen\b|\babwarten\b",
+    re.IGNORECASE,
+)
 
 
 class _Answer(BaseModel):

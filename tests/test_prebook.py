@@ -76,7 +76,19 @@ class Api:
                 "currency": "EUR"}  # fmt: skip
 
     def get_rate(self, origin, destination, airline, weight_kg, volume_cbm=0.0, **_kw):
-        return {"rate_id": "R-freshfreshfresh", "total": "4800.00", "currency": "EUR"}
+        return {
+            "rate_id": "R-freshfreshfresh",
+            "airline": FAST["airline"],
+            "airline_code": airline,
+            "origin": origin,
+            "destination": destination,
+            "weight_kg": str(weight_kg),
+            "chargeable_weight_kg": str(weight_kg),
+            "total": "4800.00",
+            "currency": "EUR",
+            "transit_days": 3,
+            "valid_until": "2099-01-01T00:00:00+00:00",
+        }
 
 
 @pytest.fixture
