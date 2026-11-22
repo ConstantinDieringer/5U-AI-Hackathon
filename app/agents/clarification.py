@@ -801,6 +801,10 @@ def answer_draft(mail, sid, root, draft):
         # Direct answers work independently of optional recovery/one-question modes.
         found = free_text_answer(own, {"origin"}, draft.facts.get("destination"))
         corrections.update(found)
+    if "pickup_zip" in asked and not {"pickup_zip", "pickup_city"} & corrections.keys():
+        # A direct answer to our pickup question counts without CLARIFY_ONCE: "the pickup
+        # location: Cologne, Germany" is priced by zone (session 56803 expired asking again).
+        corrections.update(free_text_answer(own, {"pickup_zip"}, draft.facts.get("destination")))
     if "origin" in asked and "origin" not in corrections and settings.self_delivery_recovery:
         # "we'll drop it off at CGN ourselves", "quote it from CGN to DFW" (round 28)
         stated = explicit_delivery_origin(mail, draft.facts.get("destination"))
