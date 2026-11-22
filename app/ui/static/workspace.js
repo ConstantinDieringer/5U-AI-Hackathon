@@ -3,6 +3,7 @@
 
 function renderBreadcrumbs() {
   const node = $("#breadcrumbs"); if (!node) return;
+  node.hidden = S.page !== "session";
   const crumbs = [el("button", {class:"linklike", onclick:() => show("overview")}, "Dashboard")];
   const separator = () => el("span", {"aria-hidden":"true"}, "/");
   if (S.page === "session") {

@@ -339,6 +339,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <header class="topbar">
     <div><h1 id="page-title">Übersicht</h1><div class="sub" id="page-sub">Wie läuft der Forwarder gerade?</div></div>
     <div class="right">
+      <div id="view-controls"></div>
       <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Kunde, Betreff oder ID" autocomplete="off"></label>
       <button class="btn mobile-only" id="mobile-messages" title="Einstellungen"><svg class="icon"><use href="#i-settings"/></svg>Einstellungen</button>
       <button class="btn mobile-only nav" data-page="requests">Anfragen</button>
@@ -363,6 +364,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 
 <script src="/static/workspace.js"></script>
 <script src="/static/dashboard.js"></script>
+<script src="/static/controls.js"></script>
 <script>
 "use strict";
 // ---------- helpers: text only via textContent (mail bodies are untrusted) ----------
@@ -421,7 +423,9 @@ setInterval(() => document.querySelectorAll("[data-deadline]").forEach((n) => { 
 // ---------- navigation ----------
 function show(page, updateHistory = true) {
   if (!PAGES[page] || page === "session" && S.selected == null) page = "overview";
+  if(S.page !== page){closeSelect();window.scrollTo(0,0);}
   S.page = page;
+  if(page !== "overview")$("#view-controls").replaceChildren();
   $("#settings-toggle").setAttribute("aria-expanded", String(page === "errors"));
   renderBreadcrumbs();
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + page));
@@ -726,7 +730,7 @@ async function loadDraft() {
     const d = await post(`/api/sessions/${sid}/draft`); if (S.selected !== sid) return;
     info = $("#draft-info");
     const customerMail = replyMails(S.detail).find((mail) => isCustomerMail(mail, S.detail));
-    if (customerMail) $("#reply-mail").value = String(customerMail.id);
+    if (customerMail) { $("#reply-mail").value = String(customerMail.id); syncSelect($("#reply-mail")); }
     DRAFT = d; $("#reply-text").value = d.body; $("#reply-text").style.minHeight = "300px";
     const opts = d.options.slice(0, 4).map((o) => `${o.airline.split(" ")[0]} ${o.transit_days} T ${euro(o.eur_minor)}`).join(" · ");
     info.replaceChildren(el("b", {}, `Entwurf: ${money(d.total_minor)} · ${d.choice.airline} · ${d.preference === "fastest" ? "schnellste" : "günstigste"}`),
@@ -755,7 +759,7 @@ async function sendReply() {
 
 // ---------- CRM ----------
 // ---------- CRM ----------
-async function loadCrm() { S.crm = await api("/api/crm").catch(() => S.crm); renderCrm(); }
+async function loadCrm() { if(isSelectOpen())return; S.crm = await api("/api/crm").catch(() => S.crm); renderCrm(); }
 async function openCustomer(c) {
   $("#drawer-title").textContent = c.customer.replace("@hackloop.mail", "");
   const sessions = await api("/api/customers/" + encodeURIComponent(c.customer) + "/sessions").catch(() => []);
@@ -782,6 +786,7 @@ function refreshSoon() {
   }, 500);
 }
 function onEvent(e) {
+  if(["extracted","quoted","mail_in"].includes(e.kind))S.airportOptions=null;
   if (S.seen.has(e.id)) return; S.seen.add(e.id); S.lastId = Math.max(S.lastId, e.id);
   if (S.detail && e.session_id === S.selected) {
     const tl = $("#timeline"); if (tl) { tl.append(eventItem(e)); $("#timeline-count").textContent = tl.children.length + " Ereignisse"; }
@@ -801,7 +806,7 @@ function connect() { const es = new EventSource("/api/stream?since=" + S.lastId)
 
 // ---------- keyboard & boot ----------
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") closeDrawer(); if (e.target.matches("input, textarea, select") || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "Escape") closeDrawer(); if (e.target.matches("input, textarea, select, [role=combobox], [role=option]") || e.target.closest(".select-popover") || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "p" && S.detail && S.page === "session") act(S.detail.paused ? "resume" : "pause")();
   if (e.key === "/") { e.preventDefault(); $("#global-q").focus(); }
 });
