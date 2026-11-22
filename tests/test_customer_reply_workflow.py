@@ -350,3 +350,66 @@ def test_silent_customer_still_gets_a_fourth_follow_up(api, monkeypatch):
     for n in range(3, followup.settings.followup_max):
         nudge(n)
     assert followup.due(db.get_session(SID)) is None
+
+
+# ------------------------------------------- changed cargo in shadow mode (round 172)
+
+ROUND_172 = "Sorry for the change. The shipment details have changed according to the final packing list: 13 pieces, 611 kg gross weight, 5.71 cbm.\n\nEverything else stays the same. Could you please update your offer accordingly?"
+
+
+def shadow(monkeypatch):
+    monkeypatch.setattr(
+        customer_reply,
+        "settings",
+        dataclasses.replace(customer_reply.settings, reply_workflow_mode="shadow"),
+    )
+
+
+def legacy(mail):
+    """The poller in shadow mode: shadow evaluation, then the legacy reply path."""
+    if not customer_reply.enqueue(mail, mail.thread_root):
+        booking.handle_reply(mail, mail.thread_root)
+    while customer_reply.process_once():
+        pass
+
+
+@pytest.mark.core
+def test_changed_cargo_in_shadow_mode_gets_a_revised_offer_and_books_it(monkeypatch, api):
+    """Round 172: the customer changed the cargo after our quote and asked for an update; the
+    legacy path took the thread to manual and nobody answered within the round."""
+    shadow(monkeypatch)
+    quoted()
+    stub_pricing(monkeypatch)
+    legacy(incoming(ROUND_172))
+    session = db.get_session(SID)
+    assert not db.is_manual(SID)
+    assert session["request"]["pieces"] == 13 and session["request"]["weight_kg"] == 611
+    assert "replaces our previous offer" in api.sent[-1]["body"]
+    offer = active(session)
+    assert offer["rate_id"] == "R-TWO" and offer["mail_id"] == api.sent[-1]["id"]
+    yes = incoming(
+        "Please go ahead and book it.",
+        mid=api.counter[0] + 1,
+        parent=offer["mail_id"],
+        refs=[SID, offer["mail_id"]],
+    )
+    api.counter[0] = yes.id
+    legacy(yes)
+    assert api.bookings == [("R-TWO", f"AP-{SID}")]
+
+
+def test_restated_cargo_in_shadow_mode_stays_on_the_legacy_path(monkeypatch, api):
+    """Counterexample: figures that match the quote are no change; the thread is not promoted."""
+    shadow(monkeypatch)
+    quoted()
+    restated = incoming(
+        "Just to confirm, it is 9 pieces, 422 kg and 3.94 cbm. When could it depart?"
+    )
+    legacy(restated)
+    assert not customer_reply.enforced(SID)
+    assert db.kv_get(customer_reply._promoted_key(SID)) is None
+    assert not [a for a in api.sent if "replaces our previous offer" in a["body"]]
+    stale = incoming("Please book it.", mid=25090)
+    db.reply_enqueue(SID, dataclasses.asdict(stale), shadow=False)  # left from enforce mode
+    assert not customer_reply.process_once()
+    assert api.bookings == []

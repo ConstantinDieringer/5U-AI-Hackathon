@@ -811,6 +811,11 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
         return
     changes = cargo_revision(mail.body, s.get("request"))
     if not s.get("workflow") and (changes or db.kv_get(_revised_key(sid)) is not None):
+        from app.agents import customer_reply
+
+        # round 172: the versioned workflow reprices the change; a person only without it
+        if changes and db.kv_get(_revised_key(sid)) is None and customer_reply.promote(mail, sid):
+            return
         _hand_over_revision(mail, sid, changes)
         return
     verdict = _mail_acceptance(mail, consent_evidence, sid)
@@ -1332,7 +1337,7 @@ def catch_up() -> None:
         )
         from app.agents import customer_reply, rescue
 
-        if customer_reply.enabled():
+        if customer_reply.enforced(int(s["id"])):
             continue
         threading.Thread(
             target=rescue.take_over if rescue.is_owner(int(s["id"])) else handle_reply,

@@ -28,15 +28,49 @@ def enabled() -> bool:
     return settings.reply_workflow_mode == "enforce"
 
 
+PROMOTED_PREFIX = "reply.enforced."
+
+
+def _promoted_key(sid: int) -> str:
+    return f"{PROMOTED_PREFIX}{sid}"
+
+
+def enforced(sid: int) -> bool:
+    """The workflow acts for this thread: everywhere in enforce mode, and in shadow mode for
+    a thread the legacy path promoted because it cannot answer it (see `promote`)."""
+    if enabled():
+        return True
+    return settings.reply_workflow_mode == "shadow" and db.kv_get(_promoted_key(sid)) is not None
+
+
 def enqueue(mail: Mail, sid: int) -> bool:
     if settings.reply_workflow_mode == "off":
         return False
-    db.reply_enqueue(sid, dataclasses.asdict(mail), shadow=not enabled())
-    return enabled()
+    acting = enforced(sid)
+    db.reply_enqueue(sid, dataclasses.asdict(mail), shadow=not acting)
+    return acting
 
 
 def owns(sid: int) -> bool:
-    return enabled() and db.reply_workflow(sid) is not None
+    return enforced(sid) and db.reply_workflow(sid) is not None
+
+
+def promote(mail: Mail, sid: int) -> bool:
+    """Round 172: in shadow mode the legacy path handed a changed shipment ("now 3 pieces,
+    1328 kg, 6.25 cbm, please update your offer") to a person and nobody answered. The
+    versioned workflow reprices it, locks the old offer and books only the replacement, so
+    this thread is enforced from this mail on. False = not possible here (mode off/enforce)."""
+    if settings.reply_workflow_mode != "shadow":
+        return False
+    if db.kv_claim(_promoted_key(sid)):
+        db.emit(
+            "reply_promoted",
+            "Sendung nach Angebot geändert: Antwort-Workflow übernimmt diesen Thread",
+            sid,
+            mail_id=mail.id,
+        )
+    db.reply_enqueue(sid, dataclasses.asdict(mail), shadow=False)
+    return True
 
 
 def guard(sid: int, mail: Mail, version: int) -> None:
@@ -557,7 +591,11 @@ def process_once(owner: str | None = None) -> bool:
     from app.agents import booking
 
     owner = owner or uuid.uuid4().hex
-    row = db.reply_claim(owner, time.time(), kind="reply" if enabled() else "shadow")
+    row = (
+        db.reply_claim(owner, time.time(), kind="reply")
+        if enabled()
+        else db.reply_claim(owner, time.time(), promoted_prefix=PROMOTED_PREFIX)
+    )
     if row is None:
         return False
     heartbeat_stop = threading.Event()
