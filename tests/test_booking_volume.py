@@ -67,3 +67,32 @@ def test_booking_time_and_agreed_customer_value_define_24h_chart(tmp_path):
     ]
     assert len(data["events"]) == 2
     assert db.business_metrics(1)["requests"] == 0
+
+
+def test_bookings_without_customer_amount_report_airline_cost_separately(tmp_path):
+    """A booking backfilled from the board has an airline price but no quote or customer total."""
+    db.init_db(str(tmp_path / "airline.db"))
+    sid = db.ingest_mail(
+        mail_id=1,
+        sender="customer@example.com",
+        recipient="team@example.com",
+        subject="Freight",
+        body="Quote",
+        category="rfq",
+    )
+    db.record_booking(
+        sid,
+        booking_reference="BK-1",
+        rate_id=None,
+        airline="Airline",
+        price_minor=369_600,
+        currency="EUR",
+        status="confirmed",
+    )
+    volume = db.booking_volume_24h()
+    assert volume["events"] == [] and volume["amounts"] == []
+    assert volume["airline_amounts"] == [{"currency": "EUR", "minor": 369_600}]
+    metrics = db.business_metrics(1)
+    assert metrics["amounts"]["booked"] == []
+    assert metrics["amounts"]["booked_airline"] == [{"currency": "EUR", "minor": 369_600}]
+    assert metrics["unknown_booked_value"] == 1

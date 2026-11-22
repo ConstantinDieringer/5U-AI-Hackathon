@@ -25,6 +25,7 @@ from app import db
 from app.config import settings
 from app.mail import webhook
 from app.mail.router import address
+from app.ui import airport_events, rates, support_chat
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
@@ -92,8 +93,10 @@ async def basic_auth(request: Request, call_next):  # type: ignore[no-untyped-de
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
-        "img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; connect-src 'self'"
+        "img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; "
+        # The dashboard map loads its Positron style, tiles, glyphs and sprites here.
+        "connect-src 'self' https://tiles.openfreemap.org"
     )
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -127,6 +130,34 @@ def api_business_metrics(days: int = 0) -> dict[str, Any]:
 @app.get("/api/booking-volume")
 def api_booking_volume() -> dict[str, Any]:
     return db.booking_volume_24h()
+
+
+@app.get("/api/rates")
+def api_rates() -> dict[str, Any]:
+    return rates.catalogue()
+
+
+@app.post("/api/support/chat")
+def api_support_chat(body: support_chat.ChatIn) -> dict[str, str]:
+    try:
+        return {"reply": support_chat.answer(body)}
+    except support_chat.SupportUnavailable as e:
+        raise HTTPException(429, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except Exception as e:  # gateway or network failure: the raw provider error stays in the log
+        log.warning("support chat failed: %s", type(e).__name__)
+        raise HTTPException(
+            502, "The assistant is not reachable right now. Please try again."
+        ) from e
+
+
+@app.get("/api/airport-events")
+def api_airport_events(airports: str = Query("", max_length=1200)) -> dict[str, Any]:
+    codes = [c.strip().upper() for c in airports.split(",") if c.strip()]
+    if len(codes) > 300:
+        raise HTTPException(422, "at most 300 airports")
+    return airport_events.events_for(codes)
 
 
 @app.get("/api/overview")
@@ -377,7 +408,7 @@ def _manual_quote_pdf(
     except Exception as e:  # noqa: BLE001 - a PDF fault must never block the human's send
         db.emit(
             "quote_pdf_failed",
-            f"Angebots-PDF nicht erstellt, Antwort geht ohne Anhang raus: {type(e).__name__}",
+            f"Quote PDF not created, reply goes out without attachment: {type(e).__name__}",
             session_id,
             level="error",
         )
