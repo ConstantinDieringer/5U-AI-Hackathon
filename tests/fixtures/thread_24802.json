@@ -1,0 +1,106 @@
+{
+  "thread_id": 24802,
+  "source": "Read-only stored customer messages from the live incident. Original parents are preserved. Outbound behavior is asserted against the corrected workflow, not replayed as new bot sends.",
+  "messages": [
+    {
+      "id": 24802,
+      "body": "Hi there,\n\nHope your week\u2019s going well! Could you send me an all-in price in EUR for the cheapest air freight option to DFW (Dallas, US), including collection from our site in 22554 (Hamburg North), Germany? We\u2019d need you to arrange the truck from our site to the airport.\n\nThe textile samples will be ready for pickup on 2026-11-26. There are 9 pieces, with a gross weight of 422 kg and a total volume of 3.94 cbm.\n\nThanks for taking a look!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+      "in_reply_to": null,
+      "references": [
+        24802,
+        null
+      ],
+      "direction": "in"
+    },
+    {
+      "id": 25055,
+      "body": "Hi there,\n\nHope your day\u2019s going well! Sorry for the change\u2014the final packing list has come in, and the shipment details have changed to:\n\n13 pieces, 611 kg gross weight, 5.71 cbm\n\nEverything else stays the same. Could you update your offer with these figures, please?\n\nThanks for your help!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+      "in_reply_to": 25034,
+      "references": [
+        24802,
+        25034
+      ],
+      "direction": "in"
+    },
+    {
+      "id": 25070,
+      "body": "Hi Moritz,\n\nThanks for checking! Please hold off on booking for now. Could you confirm whether the offer includes truck pickup from our site in 22554 on 26 November 2026, with air freight through to DFW?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+      "in_reply_to": 25059,
+      "references": [
+        24802,
+        25034,
+        25055,
+        25059
+      ],
+      "direction": "in"
+    },
+    {
+      "id": 25098,
+      "body": "Hi Moritz,\n\nThanks for checking! Before we book, could you confirm whether the offer includes pickup from our site in 22554 and trucking to HAM? The samples will be ready for pickup on 26 November 2026.\n\nHope your week\u2019s going well!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+      "in_reply_to": 25081,
+      "references": [
+        24802,
+        25034,
+        25055,
+        25059,
+        25070,
+        25081
+      ],
+      "direction": "in"
+    },
+    {
+      "id": 25148,
+      "body": "Hi Moritz,\n\nThanks for following up! If this is your most economical option, please go ahead and book it. The shipment will be ready for pickup on 26 November 2026.\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+      "in_reply_to": 25144,
+      "references": [
+        24802,
+        25034,
+        25055,
+        25059,
+        25070,
+        25081,
+        25098,
+        25144
+      ],
+      "direction": "in"
+    },
+    {
+      "id": 25181,
+      "body": "Hi Moritz,\n\nThanks for following up! Before I give you the go-ahead, could you confirm that the offer includes truck pickup from our site in 22554 on 26 November 2026 and air freight to DFW?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+      "in_reply_to": 25173,
+      "references": [
+        24802,
+        25034,
+        25055,
+        25059,
+        25070,
+        25081,
+        25098,
+        25144,
+        25148,
+        25173
+      ],
+      "direction": "in"
+    },
+    {
+      "id": 25205,
+      "body": "Hi Moritz,\n\nThanks for the nudge! Could you resend the quote for the most economical option, including pickup from our site in 22554 and air freight to DFW? I\u2019ll take a look before we book.\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+      "in_reply_to": 25201,
+      "references": [
+        24802,
+        25034,
+        25055,
+        25059,
+        25070,
+        25081,
+        25098,
+        25144,
+        25148,
+        25173,
+        25181,
+        25201
+      ],
+      "direction": "in"
+    }
+  ]
+}

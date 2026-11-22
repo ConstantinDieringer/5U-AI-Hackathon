@@ -188,6 +188,8 @@ def session_context(sid: int) -> str | None:
         ),
         f"- LLM-Kosten: {(s.get('llm_cost_micro_usd') or 0) / 1e6:.4f} USD",
     ]
+    if s.get("workflow"):
+        out += ["", "## Bearbeitungsstand", *_fence(_json(s["workflow"]), "json")]
     if s.get("request"):
         out += ["", "## Erkannte Anfrage", "```json", _json(s["request"]), "```"]
     v = s.get("validation")
