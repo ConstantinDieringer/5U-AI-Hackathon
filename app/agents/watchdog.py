@@ -43,7 +43,7 @@ from app.pricing.pricing import resolve_origin
 log = logging.getLogger(__name__)
 
 CHECK_EVERY_S = 5.0
-BLOCKING_ISSUES = {"dangerous_goods"}  # a rule that rejects the quote outright
+BLOCKING_ISSUES = {"dangerous_goods", "insurance", "insurance_allocation"}
 MIN_LEFT_S = 25.0  # less time than this to the 360 s expiry: too late to price and send
 
 
