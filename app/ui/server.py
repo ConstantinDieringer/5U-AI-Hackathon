@@ -317,10 +317,11 @@ def _manual_quote_pdf(
     QUOTE_PDF_ON_REQUEST: only when a customer mail in the session asked for a PDF."""
     from app.config import settings
     from app.mail import quote_pdf
+    from app.mail.pdf_request import session_asks_for_pdf
 
     if not settings.quote_pdf:
         return None
-    if settings.quote_pdf_on_request and not _customer_asked_for_pdf(s):
+    if settings.quote_pdf_on_request and not session_asks_for_pdf(s):
         return None
     try:
         doc = quote_pdf.manual_doc(
@@ -339,19 +340,6 @@ def _manual_quote_pdf(
             level="error",
         )
         return None
-
-
-def _customer_asked_for_pdf(s: dict[str, Any]) -> bool:
-    from app.mail.pdf_request import asks_for_pdf
-
-    customer = address(s.get("customer") or "")
-    return any(
-        m.get("direction") == "in"
-        and customer
-        and address(m.get("sender") or "") == customer
-        and asks_for_pdf(m.get("body") or "", m.get("subject") or "")
-        for m in s.get("mails") or []
-    )
 
 
 @app.post("/api/sessions/{session_id}/reply")

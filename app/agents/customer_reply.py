@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 
 from app import db, hackloop
 from app.config import settings
-from app.mail import multilingual
+from app.mail import multilingual, pdf_request
 from app.mail.reply_intent import ReplyDecision, interpret, validate_evidence
 from app.mail.router import address
 from app.mail.style import SIGNATURE, amount, written_date
@@ -46,7 +46,15 @@ def guard(sid: int, mail: Mail, version: int) -> None:
         )
 
 
-def _notice(mail: Mail, sid: int, en: str, de: str, *, category: str = "workflow_answer") -> None:
+def _notice(
+    mail: Mail,
+    sid: int,
+    en: str,
+    de: str,
+    *,
+    category: str = "workflow_answer",
+    attachments: list[dict[str, str]] | None = None,
+) -> None:
     state = db.reply_workflow(sid)
     assert state is not None
     version = state["request_version"]
@@ -73,6 +81,7 @@ def _notice(mail: Mail, sid: int, en: str, de: str, *, category: str = "workflow
         review=False,
         language_code=lang,
         guard_transport=before_send,
+        attachments=attachments,
     )
     db.record_outgoing(
         mail_id=int(sent["id"]),
@@ -251,6 +260,78 @@ def _revise(mail: Mail, sid: int, session: dict, decision: ReplyDecision) -> Non
         )
 
 
+def _offer_pdf(sid: int, session: dict, quote: dict) -> list[dict[str, str]] | None:
+    """QUOTE_PDF for an offer already sent: the stored quote rendered by code, no LLM call.
+    A failure never blocks the copy: it goes out without the PDF and the session gets an error."""
+    from app.mail import quote_pdf
+
+    try:
+        doc = quote_pdf.manual_doc(
+            sid,
+            {**(session.get("request") or {}), **(quote.get("request_snapshot") or {})},
+            quote,
+            int(quote["total_minor"]),
+            str(quote.get("currency") or "EUR"),
+        )
+        pdf = quote_pdf.attachment(doc)
+    except Exception as e:  # a PDF fault must never block the customer's copy
+        log.exception("session %s: offer copy PDF failed", sid)
+        db.emit(
+            "quote_pdf_failed",
+            f"Angebots-PDF nicht erstellt, Kopie geht ohne Anhang raus: {type(e).__name__}",
+            sid,
+            level="error",
+        )
+        return None
+    db.emit("quote_pdf", f"Angebot als PDF angehängt: {pdf['filename']}", sid)
+    return [pdf]
+
+
+def _offer_copy(mail: Mail, sid: int, session: dict, *, pdf: bool) -> bool:
+    """The current offer again, as a PDF attachment too when the customer asked for one."""
+    quote = active(session)
+    if not quote:
+        return False
+    request = quote.get("request_snapshot") or {}
+    if not request:
+        return False
+    total = amount(quote["total_minor"], quote["currency"])
+    en = (
+        f"Here is the current offer for your {request.get('pieces') or ''} pieces, "
+        f"{request['weight_kg']:g} kg and {request.get('volume_cbm', 0):g} cbm. "
+        f"Air freight is from {quote['origin']} to {quote['destination']} with {quote['airline']}. "
+        f"The total is {total}."
+    )
+    de = (
+        f"Hier ist das aktuelle Angebot für deine {request.get('pieces') or ''} Packstücke mit "
+        f"{request['weight_kg']:g} kg und {request.get('volume_cbm', 0):g} cbm. "
+        f"Die Luftfracht geht von {quote['origin']} nach {quote['destination']} mit {quote['airline']}. "
+        f"Der Gesamtpreis beträgt {total}."
+    )
+    if request.get("pickup_zip") and (quote.get("pricing_snapshot") or {}).get("trucking"):
+        en += (
+            f" Pickup from {request['pickup_zip']} and trucking to {quote['origin']} are included."
+        )
+        de += f" Die Abholung in {request['pickup_zip']} und der Transport zum Flughafen {quote['origin']} sind enthalten."
+    if request.get("ready_date"):
+        ready = datetime.fromisoformat(request["ready_date"]).date()
+        en += f" Your cargo is ready on {written_date(ready, 'en')}."
+        de += f" Deine Ware ist am {written_date(ready, 'de')} bereit."
+    attachments = _offer_pdf(sid, session, quote) if pdf and settings.quote_pdf else None
+    if attachments:
+        en += " You will find it attached as a PDF."
+        de += " Du findest es auch als PDF im Anhang."
+    _notice(
+        mail,
+        sid,
+        en,
+        de,
+        category="workflow_offer_pdf" if pdf else "workflow_offer_copy",
+        attachments=attachments,
+    )
+    return True
+
+
 def _answer(
     mail: Mail, sid: int, session: dict, questions: list[str], *, invite: bool = True
 ) -> bool:
@@ -259,34 +340,7 @@ def _answer(
     query = "\n".join(questions)
     lang = multilingual.mail_language(mail)
     if re.search(r"resend|send.{0,20}again|erneut|nochmals", query, re.IGNORECASE):
-        quote = active(session)
-        if not quote:
-            return False
-        request = quote.get("request_snapshot") or {}
-        if not request:
-            return False
-        total = amount(quote["total_minor"], quote["currency"])
-        en = (
-            f"Here is the current offer for your {request.get('pieces') or ''} pieces, "
-            f"{request['weight_kg']:g} kg and {request.get('volume_cbm', 0):g} cbm. "
-            f"Air freight is from {quote['origin']} to {quote['destination']} with {quote['airline']}. "
-            f"The total is {total}."
-        )
-        de = (
-            f"Hier ist das aktuelle Angebot für deine {request.get('pieces') or ''} Packstücke mit "
-            f"{request['weight_kg']:g} kg und {request.get('volume_cbm', 0):g} cbm. "
-            f"Die Luftfracht geht von {quote['origin']} nach {quote['destination']} mit {quote['airline']}. "
-            f"Der Gesamtpreis beträgt {total}."
-        )
-        if request.get("pickup_zip") and (quote.get("pricing_snapshot") or {}).get("trucking"):
-            en += f" Pickup from {request['pickup_zip']} and trucking to {quote['origin']} are included."
-            de += f" Die Abholung in {request['pickup_zip']} und der Transport zum Flughafen {quote['origin']} sind enthalten."
-        if request.get("ready_date"):
-            ready = datetime.fromisoformat(request["ready_date"]).date()
-            en += f" Your cargo is ready on {written_date(ready, 'en')}."
-            de += f" Deine Ware ist am {written_date(ready, 'de')} bereit."
-        _notice(mail, sid, en, de, category="workflow_offer_copy")
-        return True
+        return _offer_copy(mail, sid, session, pdf=pdf_request.session_asks_for_pdf(session))
     answer = prebook.answer(
         query, prebook.facts_for(session), lang, (session.get("request") or {}).get("customer_name")
     )
@@ -421,13 +475,22 @@ def process(mail: Mail, sid: int, *, shadow: bool = False) -> None:
     if quote is None:
         _review(mail, sid, ["Der aktuelle Angebotsstand muss geprüft werden"])
         return
-    if decision.questions and not _answer(
-        mail, sid, session, decision.questions, invite=decision.consent == "none"
-    ):
-        _review(mail, sid, decision.questions)
+    questions = decision.questions
+    # "send it as a PDF": the offer copy with the PDF answers it, never a review
+    wants_pdf = decision.consent != "decline" and (
+        pdf_request.asks_for_pdf(original.body, original.subject)
+        or pdf_request.asks_for_pdf(mail.body, mail.subject)
+    )
+    if wants_pdf:
+        questions = [q for q in questions if not pdf_request.asks_for_pdf(q)]
+        if not _offer_copy(mail, sid, session, pdf=True):
+            _review(mail, sid, ["Angebot als PDF angefragt, aktueller Angebotsstand fehlt"])
+            return
+    if questions and not _answer(mail, sid, session, questions, invite=decision.consent == "none"):
+        _review(mail, sid, questions)
         return
     if decision.consent in ("approve", "conditional"):
-        if state.get("open_items") and not decision.questions:
+        if state.get("open_items") and not questions:
             _review(mail, sid, state["open_items"], notify=False)
             return
         if not _target_offer(original, session):
@@ -482,7 +545,7 @@ def process(mail: Mail, sid: int, *, shadow: bool = False) -> None:
         db.reply_phase(sid, "closed")
     elif decision.consent == "defer":
         db.reply_phase(sid, "deferred")
-    elif decision.questions:
+    elif questions or wants_pdf:
         db.reply_phase(sid, "awaiting_customer")
     else:
         _review(

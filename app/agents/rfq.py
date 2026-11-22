@@ -2285,7 +2285,10 @@ def _price_and_quote(
             else "Thanks for the updated details. This offer replaces our previous offer."
         )
         body = introduction + "\n\n" + body
-    asked = pdf_request.asks_for_pdf(mail.body, mail.subject)
+    # the ask may sit in a clarification answer, not in the mail this quote replies to
+    asked = pdf_request.asks_for_pdf(mail.body, mail.subject) or pdf_request.session_asks_for_pdf(
+        db.get_session(sid) or {}
+    )
     attachments = _quote_pdf(sid, rfq, choice, total, truck, asked=asked)
     try:
         sent = hackloop.send_customer(
