@@ -98,20 +98,33 @@ def _drop(sid: int) -> None:
             _working[sid] -= 1
 
 
+_held_here = threading.local()  # session ids this thread holds via working(), innermost last
+
+
 @contextmanager
 def working(sid: int) -> Iterator[None]:
     """Mark a session as being priced by a worker of this process. A restart empties the
     registry, so a session left behind by a killed worker is never mistaken for a live one."""
+    held: list[int] = _held_here.__dict__.setdefault("sids", [])
     _hold(sid)
+    held.append(sid)
     try:
         yield
     finally:
+        held.remove(sid)
         _drop(sid)
 
 
 def is_working(sid: int) -> bool:
     with _working_lock:
         return sid in _working
+
+
+def other_worker_active(sid: int) -> bool:
+    """A worker other than the calling thread is pricing or sending for this session."""
+    mine = _held_here.__dict__.get("sids", []).count(sid)
+    with _working_lock:
+        return _working.get(sid, 0) > mine
 
 
 EXTRACT_PROMPT = (

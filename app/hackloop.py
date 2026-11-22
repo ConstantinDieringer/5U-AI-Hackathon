@@ -230,9 +230,12 @@ def send(
 
         try:  # last line of the phishing gate, for every sender
             blocked = db.reply_blocked(in_reply_to)
-        except Exception:
-            log.exception("quarantine check failed for mail %s: sending", in_reply_to)
-            blocked = False
+        except Exception as exc:
+            # fail closed: an unverifiable quarantine state must never let a reply out
+            log.exception("quarantine check failed for mail %s: not sending", in_reply_to)
+            raise QuarantinedReply(
+                f"quarantine check for mail {in_reply_to} failed; reply held"
+            ) from exc
         if blocked:
             raise QuarantinedReply(f"mail {in_reply_to} is quarantined as phishing")
         payload["in_reply_to"] = in_reply_to
@@ -359,9 +362,11 @@ def send_customer(
     if before_transport is not None:
         try:
             before_transport()
-        except Exception:
-            # bookkeeping only: a fault here must never stop the quote from going out
-            log.exception("before_transport hook failed: sending anyway")
+        except Exception as exc:
+            # The hook records "this mail may be out". Without that record a restart would
+            # free the quote claim and allow a second quote, so a failed hook stops the send.
+            log.exception("before_transport hook failed: not sending")
+            raise CustomerSendBlocked("Transport marker could not be recorded") from exc
     options: dict[str, Any] = {}
     if in_reply_to is not None:
         options["in_reply_to"] = in_reply_to
