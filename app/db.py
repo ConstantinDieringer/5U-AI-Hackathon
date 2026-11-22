@@ -1529,6 +1529,13 @@ def backfill_bookings_from_confirmations() -> int:
         if not _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (sid,))):
             continue
         if _one(c.execute("SELECT 1 FROM bookings WHERE session_id = ?", (sid,))):
+            # booked by email before the BK reference was kept: fill it in
+            with tx() as w:
+                w.execute(
+                    "UPDATE bookings SET booking_reference = ?, updated_at = ?"
+                    " WHERE session_id = ? AND booking_reference IS NULL AND status != 'failed'",
+                    (found["bk"].group(1).upper(), now(), sid),
+                )
             continue
         price = found["price"]
         from app.pricing.amounts import parse_decimal
@@ -2328,8 +2335,13 @@ def record_booking(
         return int(r["id"]) if r else 0
 
 
-def update_booking_status(reference: str, status: str) -> int | None:
-    """reference = team_reference or booking_reference (e.g. from 'Booking BK-… confirmed')."""
+def update_booking_status(
+    reference: str, status: str, booking_reference: str | None = None
+) -> int | None:
+    """reference = team_reference or booking_reference (e.g. from 'Booking BK-… confirmed').
+
+    `booking_reference`: the airline's BK reference for a booking made by email, which has
+    none until the airline confirms. Stored once; an existing reference is never replaced."""
     with tx() as c:
         r = _one(
             c.execute(
@@ -2340,9 +2352,9 @@ def update_booking_status(reference: str, status: str) -> int | None:
         if not r:
             return None
         c.execute(
-            "UPDATE bookings SET status = ?, updated_at = ? WHERE team_reference = ?"
-            " OR booking_reference = ?",
-            (status, now(), reference, reference),
+            "UPDATE bookings SET status = ?, booking_reference = COALESCE(booking_reference, ?),"
+            " updated_at = ? WHERE team_reference = ? OR booking_reference = ?",
+            (status, booking_reference, now(), reference, reference),
         )
         if status == "confirmed":
             c.execute(

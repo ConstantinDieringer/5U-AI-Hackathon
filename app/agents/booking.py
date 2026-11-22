@@ -1176,7 +1176,11 @@ def on_airline_mail(mail: Mail) -> bool:
     if sid is None:  # booked by email: no BK ref stored yet; match our AP- tag
         tag = re.search(r"\bAP-(\d+)\b", f"{mail.subject}\n{mail.body}")
         if tag:
-            sid = db.update_booking_status(f"AP-{tag.group(1)}", "confirmed")
+            # keep the airline's BK reference: customer confirmation and tracking answers
+            # must name it, not our AP tag (rounds 27/29/45/46/51/52 scored half tracking)
+            sid = db.update_booking_status(
+                f"AP-{tag.group(1)}", "confirmed", booking_reference=m.group(1).upper()
+            )
     log.info("airline confirmation %s -> session %s", m.group(1), sid)
     if sid is not None:
         from app.agents.bids import parse_price
