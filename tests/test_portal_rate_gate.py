@@ -106,7 +106,17 @@ def test_booking_refetch_survives_one_failing_weight(monkeypatch) -> None:
     def fresh(key, *, stale_rate_id, deadline):
         if key[3] == 100.0:
             raise hackloop.HackloopError("GET", "/v1/portal/rates", 429, "budget")
-        return {"rate_id": "nb", "total": "9"}
+        return {
+            "rate_id": "nb",
+            "airline": "X",
+            "origin": "FRA",
+            "destination": "JFK",
+            "chargeable_weight_kg": str(key[3]),
+            "total": "9",
+            "currency": "EUR",
+            "transit_days": 2,
+            "valid_until": "2099-01-01T00:00:00+00:00",
+        }
 
     monkeypatch.setattr(portal_sync, "fresh_rate", fresh)
     quote = {"origin": "FRA", "destination": "JFK", "airline": "X", "rate_id": "old"}

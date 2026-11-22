@@ -37,11 +37,12 @@ from app.mail.style import SIGNATURE, amount, booked_joke, has_template_artifact
 from app.mail.subjects import shipment_subject
 from app.models import Mail
 from app.pricing.pricing import to_minor
-from app.pricing.reference import airline_email
+from app.pricing.reference import airline_email, carrier_by_email
 
 log = logging.getLogger(__name__)
 
 FRESH_RATE_BUDGET_S = 30.0  # re-reading an expired rate before booking never takes longer
+RATE_REFETCH_AFTER_S = 15 * 60  # a quoted rate older than this is read again before booking
 
 _YES = re.compile(
     r"\b(book|book it|go ahead|proceed|accept|accepted|works for us|"
@@ -115,6 +116,33 @@ _PREBOOK_QUESTION = re.compile(
     r"|\b(?:buchen|bestätigen|freigeben)\b[^.!?\n]{0,80}\b(?:wenn|falls)\b",
     re.IGNORECASE,
 )
+
+# "Sounds good, but our CFO has to sign first": a yes followed by a contrast is not yet
+# consent; the checked model call or a human decides.
+_CONTRAST = re.compile(
+    r"\b(?:but|however|though|although|except|aber|jedoch|allerdings|nur\s+noch|mais|"
+    r"cependant|pero|sin\s+embargo|però|tuttavia|maar|men)\b",
+    re.IGNORECASE,
+)
+
+# "Could you book it for us?" is a booking request phrased as a question.
+_REQUEST = re.compile(
+    r"^(?:please\s+)?(?:can|could|would|will)\s+you\b|^(?:kannst|könnt|können|könnten|"
+    r"würden|würdest)\s+(?:du|ihr|sie)\b|^pourriez|^pouvez|^podr[ií]a|^puede|^potrebbe|^può",
+    re.IGNORECASE,
+)
+
+
+def _yes_outside_questions(text: str) -> bool:
+    """A yes word in a statement, or in a question that asks us to book."""
+    for sentence in re.split(r"(?<=[.!?？\n])", text):
+        sentence = sentence.strip()
+        if not _YES.search(sentence):
+            continue
+        if not sentence.endswith(("?", "？")) or _REQUEST.search(sentence):
+            return True
+    return False
+
 
 _PENDING_APPROVAL = re.compile(
     r"\b(?:check|checking|prüfen|prüfe|klären|kläre)\b[^.!?\n]{0,60}"
@@ -202,6 +230,10 @@ def is_acceptance(body: str) -> bool | None:
     if config.settings.revision_not_acceptance and _REVISION.search(text):
         return None
     yes, no = bool(_YES.search(text)), bool(_NO.search(text))
+    if yes and not _yes_outside_questions(text):
+        return None  # "Approved by purchasing?" asks; "Could you book it?" still requests
+    if yes and (m := _YES.search(text)) and _CONTRAST.search(text, m.end()):
+        return None
     if yes and not no:
         return True
     if no and not yes:
@@ -215,8 +247,8 @@ _DEFERRAL = re.compile(
     r"\bmelde\w*\s+(?:mich|uns)|\bkomm\w*\s+(?:darauf\s+)?zurück|\bschau\w*\s+(?:es|uns\s+das)\s+an",
     re.IGNORECASE,
 )
-# After a pre-booking answer: "book the faster one instead" must never book the quoted one
-# (REVISION_NOT_ACCEPTANCE is off in production). Stricter only: it can stop a booking.
+# After a pre-booking answer: "book the faster one instead" must never book the quoted one,
+# also when REVISION_NOT_ACCEPTANCE is switched off. Stricter only: it can stop a booking.
 _OTHER_OPTION = re.compile(
     r"\binstead\b|\bstattdessen\b|\balternativ\w*|\bother\s+(?:airline|carrier|option|one)|"
     r"\b(?:faster|quicker|cheaper|slower)\s+(?:one|option|connection|flight|airline)|"
@@ -277,7 +309,7 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
     code = _airline_code(quote["origin"], quote["destination"], quote["airline"])
     if code is None:
         return None
-    from app.pricing.portal_sync import fresh_rate, next_break
+    from app.pricing.portal_sync import fresh_rate, next_break, parse_rate
     from app.pricing.pricing import chargeable_kg
 
     weight = float(request["weight_kg"])
@@ -290,20 +322,56 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
             continue
         key = (quote["origin"], quote["destination"], code, w, volume)
         try:
-            raw = fresh_rate(key, stale_rate_id=str(quote["rate_id"]), deadline=deadline)
-        except hackloop.HackloopError as e:
+            option = parse_rate(
+                fresh_rate(key, stale_rate_id=str(quote["rate_id"]), deadline=deadline)
+            )
+        except (hackloop.HackloopError, ValueError) as e:
             log.warning("fresh rate %s at %s kg failed: %s", code, w, e)
             continue
-        if best is None or Decimal(str(raw["total"])) < Decimal(str(best["total"])):
-            best = raw
-    return str(best["rate_id"]) if best else None
+        if option.airline not in (quote["airline"], code) or not option.rate_id:
+            log.warning("fresh rate %s returned airline %s: ignored", code, option.airline)
+            continue
+        if best is None or option.total_eur_minor < best.total_eur_minor:
+            best = option
+    return best.rate_id if best else None
+
+
+def _rate_is_stale(quote: dict[str, Any], now: datetime | None = None) -> bool:
+    """Code standard: a rate ID older than 15 minutes (or past its validity) is re-fetched
+    before booking."""
+    now = now or datetime.now(UTC)
+    for field, limit in (("valid_until", 0.0), ("sent_at", float(RATE_REFETCH_AFTER_S))):
+        raw = quote.get(field)
+        if not raw:
+            continue
+        try:
+            stamp = datetime.fromisoformat(str(raw))
+        except ValueError:
+            return True  # an unreadable stamp is never trusted as fresh
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=UTC)
+        if (now - stamp).total_seconds() > limit:
+            return True
+    return False
 
 
 def _book_portal(sid: int, quote: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
-    """Book the quoted rate; on expired/unknown fetch a fresh one once. Raises HackloopError."""
+    """Book the quoted rate, re-read first when it is stale; on expired/unknown fetch a fresh
+    one once. A changed price comes back in the booking response and is put to the customer
+    (_differs). Raises HackloopError."""
     ref = db.team_reference(sid)
+    rate_id = str(quote["rate_id"])
+    if _rate_is_stale(quote):
+        fresh = _fresh_rate_id(quote, request)
+        db.emit(
+            db.Ev.STATUS,
+            f"Rate {rate_id} älter als 15 Minuten: "
+            + (f"neu gelesen ({fresh})" if fresh else "neu lesen fehlgeschlagen, buche gespeicherte"),
+            sid,
+        )
+        rate_id = fresh or rate_id
     try:
-        return hackloop.book(quote["rate_id"], ref)
+        return hackloop.book(rate_id, ref)
     except hackloop.HackloopError as e:
         if e.status not in (404, 410):
             raise
@@ -507,8 +575,10 @@ def _consent(body: str, evidence: str | None, sid: int) -> bool | None:
     if label == "book":
         return True
     if verdict is True:
-        # the rules' yes stands unless the model actively objects (an outage changes nothing)
-        return True if label == "unclear" else None
+        # "unclear" is also the answer on timeouts, budget and gateway errors. A soft doubt
+        # word ("unfortunately a bit late") keeps the rules' yes; a negation or a hold
+        # ("please hold off, we will book next week") asks the customer instead.
+        return None if consent_check.HARD_DOUBT.search(text) else True
     return False if label == "decline" else None
 
 
@@ -996,16 +1066,37 @@ def on_airline_mail(mail: Mail) -> bool:
     m = _CONFIRMED.search(f"{mail.subject}\n{mail.body}")
     if not m:
         return False
-    sid = db.update_booking_status(m.group(1), "confirmed")
-    if sid is None:  # booked by email: no BK ref stored yet; match our AP- tag
+    reference = m.group(1)
+    booking = db.find_booking(reference)
+    if booking is None:  # booked by email: no BK ref stored yet; match our AP- tag
         tag = re.search(r"\bAP-(\d+)\b", f"{mail.subject}\n{mail.body}")
-        if tag:
-            sid = db.update_booking_status(f"AP-{tag.group(1)}", "confirmed")
+        reference = f"AP-{tag.group(1)}" if tag else reference
+        booking = db.find_booking(reference) if tag else None
+    sender = carrier_by_email(address(mail.sender))
+    if booking is not None and (
+        sender is None or sender.kind != "airline" or sender.name != booking.get("airline")
+    ):
+        db.emit(
+            db.Ev.WARN,
+            f"Buchungsbestätigung {m.group(1)} von {address(mail.sender)}: nicht die gebuchte "
+            "Airline, ignoriert",
+            int(booking["session_id"]),
+            level="warn",
+        )
+        return True
+    sid = db.update_booking_status(reference, "confirmed") if booking is not None else None
     log.info("airline confirmation %s -> session %s", m.group(1), sid)
     if sid is not None:
         from app.agents.bids import parse_price
 
         found = parse_price(mail.body)
+        if found is None:
+            db.emit(
+                db.Ev.WARN,
+                "Airline-Bestätigung ohne eindeutigen Gesamtpreis: Preis nicht übernommen",
+                sid,
+                level="warn",
+            )
         if found and found[1]:
             db.set_airline_price(sid, to_minor(found[0]), found[1])
             # awaiting: the waiter picks it up; already confirmed: tell the customer now

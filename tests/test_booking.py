@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -153,7 +154,20 @@ class Api:
         }
 
     def get_rate(self, origin, destination, airline, weight_kg, volume_cbm=0.0, **_kw):
-        return {"rate_id": "R-freshfreshfresh"}
+        # a full portal rate response: fresh rates are validated like quoted ones
+        return {
+            "rate_id": "R-freshfreshfresh",
+            "airline": "Fjordline Air Cargo",
+            "airline_code": airline,
+            "origin": origin,
+            "destination": destination,
+            "weight_kg": str(weight_kg),
+            "chargeable_weight_kg": str(weight_kg),
+            "total": "4800.00",
+            "currency": "EUR",
+            "transit_days": 3,
+            "valid_until": "2099-01-01T00:00:00+00:00",
+        }
 
 
 def _quoted_session(sid: int = 1223) -> None:
@@ -402,7 +416,7 @@ def _round49(monkeypatch, wait_s: float = 0, booked_price: str = "3699.20") -> A
         13096,
         total_minor=412850,
         currency="EUR",
-        airline="Xenon Cargo",
+        airline="Xenon Cargo Airlines",
         origin="MUC",
         destination="ORD",
         transit_days=3,
@@ -412,7 +426,7 @@ def _round49(monkeypatch, wait_s: float = 0, booked_price: str = "3699.20") -> A
         air_total_minor=369920,
         air_currency="EUR",
         alternatives=[
-            {"airline": "Xenon Cargo", "total_eur_minor": 369920, "transit_days": 3},
+            {"airline": "Xenon Cargo Airlines", "total_eur_minor": 369920, "transit_days": 3},
             {"airline": "Nova Air", "total_eur_minor": 371000, "transit_days": 4},
             {"airline": "Solace", "total_eur_minor": 450000, "transit_days": 2},
             {"trucker": "Ruhrpott", "total_eur": "429.30"},
@@ -441,7 +455,7 @@ def _airline_confirms(price: str) -> None:
     m = Mail(
         13436,
         13436,
-        "xenon-cargo@hackloop.mail",
+        "xenon-cargo-airlines@hackloop.mail",
         TEAM,
         "Booking BK-WQW57T0G confirmed",
         f"Booking BK-WQW57T0G confirmed.\nPrice: {price} EUR\n",
@@ -611,3 +625,123 @@ def test_changed_cargo_hands_over_and_a_later_yes_books_nothing(monkeypatch):
 
     booking.handle_reply(replace(_accept(mid=1430), body=YES_24714), 1223)
     assert api.booked == [] and db.get_session(1223)["bookings"] == []
+
+
+# ---------------------------------------------------------------- booking safety (P3)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Sounds good, but our CFO has to sign first.",
+        "Approved by purchasing? We will let you know.",
+        "Passt, aber wir müssen noch intern freigeben.",
+    ],
+)
+def test_yes_with_a_condition_or_open_question_is_not_consent(body):
+    assert booking.is_acceptance(body) is None
+
+
+def test_model_outage_never_books_a_held_yes(monkeypatch):
+    from app.agents import consent_check
+
+    monkeypatch.setattr(consent_check, "classify", lambda text, sid: "unclear")
+    body = "Please hold off for now, we will book next week."
+    assert booking.is_acceptance(body) is True  # the rules alone would book
+    assert booking._consent(body, None, 1223) is None
+
+
+def _age_quote(sid: int, minutes: int) -> None:
+    from datetime import timedelta
+
+    old = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
+    db.conn().execute("UPDATE quotes SET sent_at = ? WHERE session_id = ?", (old, sid))
+    db.conn().commit()
+
+
+@pytest.fixture
+def no_rate_cache(monkeypatch):
+    from app.pricing import portal_sync
+
+    monkeypatch.setattr(portal_sync, "_cache", {})
+
+
+def test_rate_older_than_15_minutes_is_refetched_before_booking(monkeypatch, no_rate_cache):
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    monkeypatch.setattr(booking.hackloop, "get_rate", api.get_rate)
+    monkeypatch.setattr(booking, "_airline_code", lambda o, d, a: "FJ")
+    _quoted_session()
+    _age_quote(1223, 16)
+    booking.handle_reply(_accept(), 1223)
+    assert api.booked == [("R-freshfreshfresh", "AP-1223")]  # no attempt on the old rate
+
+
+def test_fresh_quote_books_its_own_rate_without_refetch(monkeypatch):
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    monkeypatch.setattr(
+        booking.hackloop, "get_rate", lambda *a, **k: pytest.fail("fresh quote re-read")
+    )
+    _quoted_session()
+    booking.handle_reply(_accept(), 1223)
+    assert api.booked == [("R-xLidjNtljIRSGuVR", "AP-1223")]
+
+
+def test_fresh_rate_of_another_airline_is_never_booked(monkeypatch, no_rate_cache):
+    api = Api()
+
+    def other_airline(*args, **kwargs):
+        return {**api.get_rate(*args, **kwargs), "airline": "Solace Air Cargo"}
+
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    monkeypatch.setattr(booking.hackloop, "get_rate", other_airline)
+    monkeypatch.setattr(booking, "_airline_code", lambda o, d, a: "FJ")
+    _quoted_session()
+    _age_quote(1223, 16)
+    booking.handle_reply(_accept(), 1223)
+    assert api.booked == [("R-xLidjNtljIRSGuVR", "AP-1223")]  # stored rate, not Solace's
+
+
+def _confirmation_from(sender: str, body: str) -> bool:
+    return booking.on_airline_mail(
+        Mail(13436, 13436, sender, TEAM, "Booking BK-WQW57T0G confirmed", body, "")
+    )
+
+
+def test_confirmation_from_another_carrier_changes_nothing(monkeypatch):
+    api = _round49(monkeypatch)
+    booking.handle_reply(_yes(13403), 13096)
+    sent = len(api.sent)
+    assert _confirmation_from(
+        "solace-air-cargo@hackloop.mail", "Booking BK-WQW57T0G confirmed.\nPrice: 9999.00 EUR\n"
+    )
+    b = db.get_session(13096)["bookings"][0]
+    assert b["status"] == "booked" and b.get("airline_price_minor") is None
+    assert len(api.sent) == sent
+
+
+def test_confirmation_takes_the_total_not_the_insured_value(monkeypatch):
+    _round49(monkeypatch)
+    booking.handle_reply(_yes(13403), 13096)
+    _confirmation_from(
+        "xenon-cargo-airlines@hackloop.mail",
+        "Booking BK-WQW57T0G confirmed. Rate 2.56 EUR/kg, total 3,699.20 EUR, "
+        "cargo value 30,000 EUR insured.",
+    )
+    for thread in threading.enumerate():  # same price: the late-change check ends at once
+        if thread.name == "late-13096":
+            thread.join(5)
+    assert db.get_session(13096)["bookings"][0]["airline_price_minor"] == 369920
+
+
+def test_booking_retry_keeps_the_new_price():
+    _quoted_session()
+    common = {"booking_reference": None, "rate_id": "R-1", "airline": "Fjordline Air Cargo"}
+    db.record_booking(1223, price_minor=100000, currency="EUR", status="failed", **common)
+    db.record_booking(1223, price_minor=120000, currency="USD", **common)
+    b = db.get_session(1223)["bookings"][0]
+    assert (b["price_minor"], b["currency"], b["status"]) == (120000, "USD", "booked")

@@ -349,7 +349,8 @@ def test_usd_request_is_answered_in_eur_today(tmp_path, monkeypatch) -> None:
 
 REVISIONS = [
     ("Thanks! Could you also quote 800 kg instead of 640 kg?", False),
-    ("Sounds good, but can you please quote the fastest option instead?", True),
+    # a yes followed by "but" is no consent, even with REVISION_NOT_ACCEPTANCE off
+    ("Sounds good, but can you please quote the fastest option instead?", False),
     ("Ok, please go ahead with the 800 kg version instead.", False),  # changed cargo: a person
     ("Bitte buchen Sie, aber mit 800 kg statt 640 kg.", False),
 ]

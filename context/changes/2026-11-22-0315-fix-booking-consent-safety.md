@@ -1,0 +1,2 @@
+Booking safety: a quoted rate older than 15 min or past valid_until is re-read before booking (validated, same airline); a yes with "but" or only inside a question is not consent; a consent-model "unclear" (also outages) no longer books a yes next to a negation or hold; only the booked airline's confirmation sets status/price; booking retries keep the new price. No flags.
+Not verified: live. Open question: PREBOOK_ANSWER=false still lets rescue answer offer questions via prebook.reply.
