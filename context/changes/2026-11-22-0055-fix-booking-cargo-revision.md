@@ -1,0 +1,1 @@
+Booking: a customer reply that changes weight, pieces or volume against the quoted request (round 86: 753 kg quoted, 1317 kg written, old rate booked on a later yes) now books nothing, sends no generic question and hands the session to a person (`manual` + `needs_human`). Reply replay: no changes.

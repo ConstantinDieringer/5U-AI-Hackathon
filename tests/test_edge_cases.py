@@ -350,9 +350,10 @@ def test_usd_request_is_answered_in_eur_today(tmp_path, monkeypatch) -> None:
 REVISIONS = [
     ("Thanks! Could you also quote 800 kg instead of 640 kg?", False),
     ("Sounds good, but can you please quote the fastest option instead?", True),
-    ("Ok, please go ahead with the 800 kg version instead.", True),
-    ("Bitte buchen Sie, aber mit 800 kg statt 640 kg.", True),
+    ("Ok, please go ahead with the 800 kg version instead.", False),  # changed cargo: a person
+    ("Bitte buchen Sie, aber mit 800 kg statt 640 kg.", False),
 ]
+CARGO_CHANGED = {text for text, _ in REVISIONS if " kg" in text}
 
 
 def _quoted_thread(w: World) -> None:
@@ -404,7 +405,10 @@ def test_revision_with_revision_not_acceptance(tmp_path, monkeypatch, text, _boo
     out = _revise(w, text)
     assert len(db.get_session(6001)["quotes"]) == 1
     assert not any(m["to"] == LAGOON for m in out) and not db.get_session(6001)["bookings"]
-    assert [m["to"] for m in out] == [CUSTOMER]  # one question back, no quote
+    if text in CARGO_CHANGED:  # the quoted rate no longer fits: a person answers, no mail
+        assert out == [] and db.get_session(6001)["mode"] == "manual"
+    else:
+        assert [m["to"] for m in out] == [CUSTOMER]  # one question back, no quote
 
 
 # ---------------------------------------------------------------- 7. exclusions
