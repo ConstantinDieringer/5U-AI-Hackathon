@@ -16,7 +16,7 @@ Implement the requested customer behaviour. Start at its owner, exercise the nor
 
 Follow the matching area in context/areas/ for its business rules. Use `context/code-standards.md` for details, the matching TECH_SPEC section for schema or dependency changes, and Git/PRs for history. Update the owner document when its contract changes.
 
-5U calls go through app/hackloop.py, model calls through app/llm.py, SQL through app/db.py and environment settings through app/config.py. Validate external data. Keep money in minor units or Decimal with currency; use real rates. Keep consent current and explicit. Preserve send claims, pause/manual state, deadlines and retry semantics. Customer copy follows `app/mail/customer_voice.md`. Use the existing human Portal-Check for web challenges.
+5U calls go through app/hackloop.py, model calls through app/llm.py, SQL through app/db.py and environment settings through app/config.py. Validate external data. Keep money in minor units or Decimal with currency; use real rates. Keep consent current and explicit. Preserve send claims, pause/manual state, deadlines and retry semantics. Customer copy follows `app/mail/customer_voice.md`.
 
 Run one test while editing, then `python -m pytest -q -m core`. Run the PR selection with `python -m tools.ship_check origin/main` (include staged and unstaged changes locally). Set TEAM_API_KEY=test-only for local tests. CI runs the full suite for shared contracts and on main.
 
