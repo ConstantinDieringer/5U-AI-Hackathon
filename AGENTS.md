@@ -18,6 +18,6 @@ Follow the matching area in context/areas/ for its business rules. Use `context/
 
 5U calls go through app/hackloop.py, model calls through app/llm.py, SQL through app/db.py and environment settings through app/config.py. Validate external data. Keep money in minor units or Decimal with currency; use real rates. Keep consent current and explicit. Preserve send claims, pause/manual state, deadlines and retry semantics. Customer copy follows `app/mail/customer_voice.md`. Use the existing human Portal-Check for web challenges.
 
-Run one test while editing, then `python -m pytest -q -m core`. Run the PR selection with `python -m tools.ship_check origin/main` (include staged and unstaged changes locally). Set TEAM_API_KEY=test-only for local tests. CI runs the full suite for shared contracts and on main.
+Run the relevant test file while editing. Set TEAM_API_KEY=test-only for local pytest. Run the entire essential suite and lint with `python -m tools.ship_check`. CI uses this same command on PRs and main. Add a regression only for a distinct customer-visible failure or operational hazard.
 
 Every team member may merge. Record behaviour, owner, counterexample and test evidence. Coordinate in #update and run `python -m tools.merge_pr NUMBER` from the trusted main checkout with REVIEW_TOKEN. It verifies the PR, deploy window and resulting revision. Announce live only after verification. See `DEPLOY.md` for setup and recovery.

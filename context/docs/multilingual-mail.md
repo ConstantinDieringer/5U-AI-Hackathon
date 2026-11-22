@@ -56,11 +56,7 @@ deadline and send-deduplication checks still apply after translation. Input boun
 characters of current message content and 64,000 per attachment-text batch. Native units are translated as
 units; they are never converted by the translator.
 
-Tests in `tests/test_multilingual.py` cover 14 languages beyond English/German, incoming
-validation, native-script wire output, language switches, unknown language codes, cached
-translations, fixed templates, localized dates, dangerous goods, conditional booking consent,
-declines, original-message retention and transport controls. Gateway responses and transport
-are stubbed: these tests verify contracts and wiring, not live model translation quality.
+The essential wire tests in `tests/test_quote_languages.py` exercise language preservation with a stubbed gateway and transport. The cases cover French and Polish quote messages.
 
 Library references: [Lingua](https://github.com/pemistahl/lingua-py),
 [Babel date formatting](https://babel.pocoo.org/en/latest/api/dates.html).

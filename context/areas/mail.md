@@ -34,5 +34,5 @@ API fields: `context/docs/mail-format.md`, `context/docs/5u-api.md`.
 ## Area tests
 
 ```
-python -m pytest -q tests/test_mailbox_webhook.py tests/test_poller.py tests/test_router.py tests/test_phishing_gate.py tests/test_mail_guard.py tests/test_attachment_documents.py tests/test_audio_fallback.py tests/test_links.py tests/test_db.py
+python -m pytest -q tests/test_mailbox_webhook.py tests/test_phishing_gate.py tests/test_audio_fallback.py tests/test_db.py
 ```

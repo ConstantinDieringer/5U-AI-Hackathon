@@ -21,7 +21,7 @@ Open decisions and current state, maintained by the context owner. Look up chang
 2. TECH_SPEC §8 says `RFQ_VALIDATION_MODE=shadow` is the default; code and areas say `enforce`. Which is binding?
 3. Board shows `booking: 0.0` on every booked round; the published rules list no booking points. What earns them?
 4. Does the scorer want the price-change question before or after booking? (We book on yes, then ask before confirming.)
-5. Preferred airline vs. the customer's cheapest/fastest, and USD requests quoted in EUR: rules not confirmed (`tests/test_edge_cases.py`).
+5. Preferred airline vs. the customer's cheapest/fastest, and USD requests quoted in EUR: rules not confirmed.
 6. Send has no `references` field; threading presumably by `in_reply_to` only.
 7. Production cause of rounds 60 and 63 not provable without their threads/logs.
 
