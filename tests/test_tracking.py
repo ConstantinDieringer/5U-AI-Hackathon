@@ -106,9 +106,9 @@ def test_answer_from_crm(two_bookings, monkeypatch) -> None:
     body = a["body"]
     assert "BK-6Z1GMPG3" in body and "confirmed by Fjordline Air Cargo" in body
     assert "STR to EZE" in body and "1228 kg" in body and "4.408,52 €" in body
-    # door pickup in 70173, ready 25 Nov: still at the shipper, trucked, departs a day later
+    # door pickup in 70173, ready 25 Nov: still at the shipper, trucked the same day (round 179)
     assert "still at your site in postal area 70173" in body and "25 November 2026" in body
-    assert "depart STR on 26 November 2026 and arrive in EZE on 30 November 2026" in body
+    assert "depart STR on 25 November 2026 and arrive in EZE on 29 November 2026" in body
     assert "- " not in body and body.startswith("Hello,")  # prose, neutral greeting
     assert body.rstrip().endswith(SIGNATURE)
     assert db.get_session(3000)["status"] == "answered"
