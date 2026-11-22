@@ -52,7 +52,7 @@ from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
 from app.pricing import insurance, served_lanes
 from app.pricing.lanes import airlines_for
-from app.pricing.portal_sync import portal_result
+from app.pricing.portal_sync import portal_airlines, portal_result
 from app.pricing.pricing import (
     earliest_schedule,
     most_balanced,
@@ -64,6 +64,7 @@ from app.pricing.pricing import today as pricing_today
 from app.pricing.reference import (
     Carrier,
     carrier_by_email,
+    carrier_by_name,
     find_area,
     pickup_zones,
     truckers_for_zone,
@@ -1243,6 +1244,23 @@ def _portal_bid_carriers(rfq: Rfq, origin: str) -> dict[str, Carrier]:
     return result
 
 
+def _fallback_carriers(
+    rfq: Rfq, origin: str, codes: list[str], reserved: dict[str, Carrier]
+) -> list[Carrier]:
+    """Carriers for the portal airlines that answered 503. The portal just listed them on this
+    lane, so a stale "we do not serve" list or a missed reservation never drops one; only the
+    customer's own exclusion does."""
+    by_code = {a["code"]: a["name"] for a in portal_airlines(origin, rfq.destination)}
+    result: list[Carrier] = []
+    for code in dict.fromkeys(codes):
+        carrier = reserved.get(code)
+        if carrier is None and code in by_code:
+            carrier = carrier_by_name(by_code[code])
+        if carrier is not None and carrier.name.lower() not in rfq.excluded_airlines:
+            result.append(carrier)
+    return result
+
+
 def _limit_airline_requests(
     sid: int, candidates: list[Carrier], reserved: int = 0
 ) -> list[Carrier]:
@@ -2080,21 +2098,23 @@ def _price(
         t0 + TOO_OLD_S - 30 - time.time(),
     )
     portal = portal_result(rfq, deadline=time.monotonic() + max(0.0, budget))
-    fallback_codes = set(portal.email_fallbacks)
-    fallback = [carrier for code, carrier in portal_carriers.items() if code in fallback_codes]
+    fallback = _fallback_carriers(rfq, origin, portal.email_fallbacks, portal_carriers)
     email_airlines = limit(fallback + email_airlines)
+    # The 503 fallback is the lane's only live price (round 121): it is asked even past the
+    # airline cap, never dropped as before (portal_fallback_blocked).
+    over_cap = [c for c in fallback if c.email not in {e.email for e in email_airlines}]
+    email_airlines = over_cap + email_airlines
+    if over_cap:
+        db.emit(
+            "portal_fallback_over_cap",
+            "Portal-Ersatzanfrage über das Airline-Limit hinaus gesendet",
+            sid,
+            level="warn",
+            carriers=[c.email for c in over_cap],
+        )
     if email_airlines and not forced:
         ask(email_airlines)
     selected_emails = {carrier.email for carrier in email_airlines}
-    blocked = [carrier.email for carrier in fallback if carrier.email not in selected_emails]
-    if blocked:
-        db.emit(
-            "portal_fallback_blocked",
-            "Portal-Ersatzanfragen durch bereits verbrauchtes Airline-Limit begrenzt",
-            sid,
-            level="warn",
-            carriers=blocked,
-        )
     if portal.errors:
         db.emit(
             "portal_warning",
