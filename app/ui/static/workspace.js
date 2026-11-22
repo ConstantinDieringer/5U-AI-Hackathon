@@ -13,7 +13,7 @@ function metricCards(data) {
     ["Buchungsquote", pct(data.booked, data.requests), "Gebuchte Aufträge je Anfrage"],
     ["Kunden", data.customers, "Unterschiedliche anfragende Kunden"],
     ["Ø Antwortzeit", secs(data.avg_response_s), "Bis zum ersten Angebot"],
-    ["Angebot in unter 2 Minuten", pct(data.answered_within_120s, data.answered), "Anteil der beantworteten Anfragen"],
+    ["Angebot innerhalb von 2 Minuten", pct(data.answered_within_120s, data.answered), "Anteil der beantworteten Anfragen"],
     ["Gebuchtes Frachtgewicht", data.booked_weight_kg == null ? "Noch unbekannt" : data.booked_weight_kg.toLocaleString("de-DE") + " kg", "Gewicht für " + data.weight_known_bookings + " Buchungen erfasst"],
     ["Offene Preisfreigaben", data.awaiting_price, "Nicht im gebuchten Auftragswert enthalten"],
   ];
@@ -75,13 +75,14 @@ const CRM_COLUMNS = {
   customers:[["customer","Kunde"],["requests","Anfragen"],["quoted","Angebote"],["won","Gebucht"],["lost","Verloren"],["open","Offen"],["last_contact","Letzter Kontakt"]],
   quotes:[["sent_at","Datum"],["customer","Kunde"],["route","Strecke"],["airline","Airline"],["total_minor","Angebotswert"],["outcome","Ergebnis"]],
   bookings:[["booking_reference","Referenz"],["customer","Kunde"],["airline","Airline"],["price_minor","Airlinekosten"],["status","Status"],["created_at","Datum"]],
-  pricing:[["created_at","Datum"],["customer","Kunde"],["route","Strecke"],["quote_minor","Angebotswert"],["options","Verglichene Optionen"],["verdict","Ergebnis"]],
+  pricing:[["created_at","Datum"],["customer","Kunde"],["route","Strecke"],["airline","Airline"],["quote_minor","Angebotswert"],["options","Verglichene Optionen"],["verdict","Ergebnis"]],
 };
 const CRM_STATUS = {won:"Gebucht",lost:"Verloren",open:"Offen",booked:"Gebucht",confirmed:"Bestätigt",failed:"Fehlgeschlagen",active:"Aktive Kunden",new:"Ohne Buchung",accepted:"Akzeptiert",pending:"Noch nicht bewertet"};
 function crmValue(row, key) {
   if (key === "route") return [row.origin,row.destination].filter(Boolean).join(" → ");
   if (key === "options") return row.options?.length || 0;
   if (key === "booking_reference") return row.booking_reference || row.team_reference || "";
+  if (key === "airline") return row.airline || row.selected?.airline || "";
   return row[key] ?? "";
 }
 function crmRows() {
@@ -90,8 +91,9 @@ function crmRows() {
   const rows = (S.crm?.[tab] || []).filter(row => {
     const date = row.sent_at || row.last_contact || row.created_at;
     const status = tab === "customers" ? row.open > 0 ? "active" : row.won > 0 ? "won" : "new" : row.outcome || row.status || row.verdict || "pending";
-    return (!q || [row.customer,row.subject,row.airline,row.booking_reference,row.team_reference,row.origin,row.destination].some(v => String(v || "").toLocaleLowerCase("de").includes(q))) &&
-      (!since || new Date(date).getTime() >= since) && (!S.crmStatus || S.crmStatus === status);
+    const statusMatches = !S.crmStatus || (tab === "customers" ? S.crmStatus === "active" ? row.open > 0 : S.crmStatus === "won" ? row.won > 0 : row.won === 0 : S.crmStatus === status);
+    return (!q || [row.customer,row.subject,row.airline,row.selected?.airline,row.booking_reference,row.team_reference,row.origin,row.destination].some(v => String(v || "").toLocaleLowerCase("de").includes(q))) &&
+      (!since || new Date(date).getTime() >= since) && statusMatches;
   });
   const key = S.crmSort || (tab === "customers" ? "last_contact" : tab === "quotes" ? "sent_at" : "created_at");
   const direction = S.crmAsc ? 1 : -1;
@@ -109,7 +111,7 @@ function crmSelect(label, values, current, change) {
 function renderCrm() {
   if (!S.crm) return;
   const tabs = el("div", {class:"seg", role:"tablist", "aria-label":"CRM Daten"}, ...[["customers","Kunden"],["quotes","Angebote"],["bookings","Buchungen"],["pricing","Preisvergleich"]].map(([key,label]) =>
-    el("button", {role:"tab", "aria-selected":S.crmTab === key, class:S.crmTab === key ? "active" : "", onclick:() => {S.crmTab=key; S.crmStatus=""; S.crmSort=""; S.crmPage=0; renderCrm();}}, label)));
+    el("button", {role:"tab", "aria-selected":S.crmTab === key, class:S.crmTab === key ? "active" : "", onclick:() => {S.crmTab=key; S.crmStatus=""; S.crmSort=""; S.crmAsc=false; S.crmPage=0; renderCrm();}}, label)));
   const statuses = S.crmTab === "customers" ? ["active","won","new"] : S.crmTab === "quotes" ? ["open","won","lost"] : S.crmTab === "bookings" ? ["booked","confirmed","failed"] : ["accepted","pending"];
   const filters = el("div", {class:"crm-filters"},
     el("label", {class:"search"}, icon("search"), el("input", {"aria-label":"CRM durchsuchen", placeholder:"Kunde, Strecke oder Referenz", value:S.crmQ || "", oninput:e => {S.crmQ=e.target.value; S.crmPage=0; renderCrmTable();}})),

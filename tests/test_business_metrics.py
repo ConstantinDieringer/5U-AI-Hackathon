@@ -103,7 +103,17 @@ def test_revised_offer_is_not_an_open_valid_price_and_response_time_is_real():
     sid, _ = request(77)
     db.set_status(sid, "quoted")
     db.reply_enroll(sid, 77)
-    db.reply_revise(sid, 77, {"weight_kg": 200}, {})
+    db.ingest_mail(
+        mail_id=78,
+        sender="customer77@example.com",
+        recipient="team@example.com",
+        subject="Re FRA to DEL",
+        body="Actually 200 kg",
+        category="rfq",
+        references=(77,),
+        in_reply_to=77,
+    )
+    db.reply_revise(sid, 78, {"weight_kg": 200}, {})
     created = datetime.now(UTC) - timedelta(seconds=90)
     with db.tx() as c:
         c.execute(
