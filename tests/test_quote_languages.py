@@ -48,10 +48,21 @@ def result(body):
 
 
 @pytest.mark.parametrize(
-    "lang,month", [("fr", "novembre"), ("es", "noviembre"), ("it", "novembre")]
+    "lang,month",
+    [
+        ("fr", "novembre"),
+        ("es", "noviembre"),
+        ("it", "novembre"),
+        ("nl", "november"),
+        ("pl", "listopada"),
+        ("tr", "Kasım"),
+    ],
 )
 def test_fallback_and_actual_customer_wire_preserve_language(lang, month, monkeypatch):
-    def unavailable(*args, **kwargs):
+    calls = []
+
+    def unavailable(purpose, *args, **kwargs):
+        calls.append(purpose)
         raise RuntimeError("gateway unavailable")
 
     monkeypatch.setattr(rfq.llm, "complete", unavailable)
@@ -94,10 +105,11 @@ def test_fallback_and_actual_customer_wire_preserve_language(lang, month, monkey
 
     assert NOTICES[(lang, False)] in sent[0]["body"]
     assert NOTICES[("en", False)] not in sent[0]["body"]
+    assert "translate_customer_email" not in calls  # verified copy: no translation at send
 
 
 @pytest.mark.usefixtures("compose_repair_on")
-@pytest.mark.parametrize("lang", ["fr", "es", "it"])
+@pytest.mark.parametrize("lang", ["fr", "es", "it", "nl", "pl", "tr"])
 def test_composer_and_repair_receive_full_language_code(lang, monkeypatch):
     calls = []
     expected = rfq.quote_text(request(lang), option(), 202000, None, 1)
