@@ -1535,14 +1535,20 @@ def backfill_bookings_from_confirmations() -> int:
             )
         )
         if existing:
-            # Earlier backfills stamped the restart time; restore the confirmation's time.
-            if (
-                existing["rate_id"] is None
-                and existing["quote_id"] is None
-                and m["received_at"]
-                and existing["created_at"] > m["received_at"]
-            ):
-                with tx() as w:
+            with tx() as w:
+                # booked by email before the BK reference was kept: fill it in
+                w.execute(
+                    "UPDATE bookings SET booking_reference = ?, updated_at = ?"
+                    " WHERE session_id = ? AND booking_reference IS NULL AND status != 'failed'",
+                    (found["bk"].group(1).upper(), now(), sid),
+                )
+                # Earlier backfills stamped the restart time; restore the confirmation's time.
+                if (
+                    existing["rate_id"] is None
+                    and existing["quote_id"] is None
+                    and m["received_at"]
+                    and existing["created_at"] > m["received_at"]
+                ):
                     w.execute(
                         "UPDATE bookings SET created_at = ? WHERE session_id = ? AND rate_id IS NULL",
                         (m["received_at"], sid),
@@ -2350,8 +2356,13 @@ def record_booking(
         return int(r["id"]) if r else 0
 
 
-def update_booking_status(reference: str, status: str) -> int | None:
-    """reference = team_reference or booking_reference (e.g. from 'Booking BK-… confirmed')."""
+def update_booking_status(
+    reference: str, status: str, booking_reference: str | None = None
+) -> int | None:
+    """reference = team_reference or booking_reference (e.g. from 'Booking BK-… confirmed').
+
+    `booking_reference`: the airline's BK reference for a booking made by email, which has
+    none until the airline confirms. Stored once; an existing reference is never replaced."""
     with tx() as c:
         r = _one(
             c.execute(
@@ -2362,9 +2373,9 @@ def update_booking_status(reference: str, status: str) -> int | None:
         if not r:
             return None
         c.execute(
-            "UPDATE bookings SET status = ?, updated_at = ? WHERE team_reference = ?"
-            " OR booking_reference = ?",
-            (status, now(), reference, reference),
+            "UPDATE bookings SET status = ?, booking_reference = COALESCE(booking_reference, ?),"
+            " updated_at = ? WHERE team_reference = ? OR booking_reference = ?",
+            (status, booking_reference, now(), reference, reference),
         )
         if status == "confirmed":
             c.execute(
@@ -2424,7 +2435,8 @@ def tracking_records() -> list[dict[str, Any]]:
     rows = _rows(
         conn().execute(
             "SELECT b.session_id, b.team_reference, b.booking_reference, b.rate_id, b.airline,"
-            " b.price_minor, b.currency, b.status, b.created_at AS booked_at, b.updated_at,"
+            " b.price_minor, b.currency, b.customer_total_minor, q.total_minor AS quote_total_minor,"
+            " q.currency AS quote_currency, b.status, b.created_at AS booked_at, b.updated_at,"
             " s.customer, s.subject, CASE WHEN b.quote_id IS NOT NULL THEN COALESCE(q.request_snapshot_json,s.request_json) ELSE s.request_json END AS request_json,"
             " q.origin, q.destination, q.transit_days"
             " FROM bookings b JOIN sessions s ON s.id = b.session_id"
@@ -2435,6 +2447,13 @@ def tracking_records() -> list[dict[str, Any]]:
     )
     for r in rows:
         r["request"] = json.loads(r.pop("request_json")) if r.get("request_json") else {}
+        # The customer's all-in price, never the portal's bare air rate (which can be USD and
+        # leaves out trucking): the customer-confirmed total, else the quoted total.
+        customer_total = r.pop("customer_total_minor")
+        quote_total, quote_currency = r.pop("quote_total_minor"), r.pop("quote_currency")
+        if quote_currency and (customer_total is not None or quote_total is not None):
+            r["price_minor"] = customer_total if customer_total is not None else quote_total
+            r["currency"] = quote_currency
     return rows
 
 

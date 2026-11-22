@@ -69,8 +69,8 @@ OPENING_SCHEMA: dict[str, Any] = {
     },
 }
 
-# the German template addresses the customer formally, the other native ones informally
-_ADDRESS = {"de": "formal Sie", "fr": "informal tu", "es": "informal tú", "it": "informal tu"}
+# German follows the thread's form (app/mail/address_form.py), the other native ones informally
+_ADDRESS = {"fr": "informal tu", "es": "informal tú", "it": "informal tu"}
 _STRUCTURE = re.compile(r"[:;_()\[\]{}<>*#•…–—]|\s-\s|^\s*-")
 _CURRENCY = re.compile(
     r"[€$£¥₹₩₺₪円元]|\b(?:eur|euros?|usd|dollars?|chf|gbp|jpy|yen|cny|yuan|rmb)\b",
@@ -179,7 +179,13 @@ def personalize(
         "customer_questions": customer_questions,
         "facts": facts,
     }
-    if lang in _ADDRESS:
+    if lang == "de":
+        from app.mail import address_form
+
+        # the thread's form (customer_voice: du by default, Sie when the customer writes Sie)
+        form = address_form.form(session_id)
+        request["address_form"] = "informal du" if form == "du" else "formal Sie"
+    elif lang in _ADDRESS:
         request["address_form"] = _ADDRESS[lang]
     raw = llm.complete(
         PURPOSE,

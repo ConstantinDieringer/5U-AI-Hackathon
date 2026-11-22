@@ -363,11 +363,102 @@ _UNITS = {
 }  # fmt: skip
 _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70,
          "eighty": 80, "ninety": 90}  # fmt: skip
-_NUMBER_WORD = re.compile(
-    rf"\b(?:(?P<tens>{'|'.join(_TENS)})(?:[- ](?P<unit>{'|'.join(_UNITS)}))?"
-    rf"|(?P<only>{'|'.join(sorted(_UNITS, key=len, reverse=True))}))\b",
+_SCALES = {"hundred": 100, "thousand": 1000}
+_EN_WORD = "|".join(sorted([*_UNITS, *_TENS, *_SCALES], key=len, reverse=True))
+# A run of English number words: "one hundred and twenty", "two thousand three hundred
+# forty-five", "a hundred". "and" only continues a run after hundred or thousand.
+_EN_RUN = re.compile(
+    rf"\b(?:an?\s+(?=hundred|thousand))?(?:{_EN_WORD})"
+    rf"(?:(?:[\s-]+|(?<=hundred)\s+and\s+|(?<=thousand)\s+and\s+)(?:{_EN_WORD}))*\b",
     re.IGNORECASE,
 )
+_DE_UNITS = {"ein": 1, "eins": 1, "eine": 1, "zwei": 2, "zwo": 2, "drei": 3, "vier": 4, "fünf": 5,
+             "sechs": 6, "sieben": 7, "acht": 8, "neun": 9}  # fmt: skip
+_DE_TEENS = {"zehn": 10, "elf": 11, "zwölf": 12, "dreizehn": 13, "vierzehn": 14,
+             "fünfzehn": 15, "sechzehn": 16, "siebzehn": 17, "achtzehn": 18,
+             "neunzehn": 19}  # fmt: skip
+_DE_TENS = {"zwanzig": 20, "dreißig": 30, "dreissig": 30, "vierzig": 40, "fünfzig": 50,
+            "sechzig": 60, "siebzig": 70, "achtzig": 80, "neunzig": 90}  # fmt: skip
+_DE_WORD = re.compile(r"\b[a-zäöüß]*(?:hundert|tausend|zig|ßig|ssig|zehn|elf|zwölf)[a-zäöüß]*\b"
+                      r"|\b(?:eins|ein|eine|zwei|zwo|drei|vier|fünf|sechs|sieben|acht|neun)\b",
+                      re.IGNORECASE)  # fmt: skip
+# Scale words left over after normalization mean a number was not understood.
+_UNREAD_NUMBER = re.compile(r"\b(?:hundred|thousand)\b|hundert|tausend", re.IGNORECASE)
+
+
+def _en_value(run: str) -> int | None:
+    total = current = 0
+    for token in re.split(r"[\s-]+", run.lower()):
+        if token in ("a", "an", "and"):
+            continue
+        if token in _UNITS:
+            current += _UNITS[token]
+        elif token in _TENS:
+            current += _TENS[token]
+        elif token == "hundred":
+            current = (current or 1) * 100
+        elif token == "thousand":
+            total += (current or 1) * 1000
+            current = 0
+        else:
+            return None
+    return total + current
+
+
+def _de_below_100(word: str) -> int | None:
+    if word == "":
+        return 0
+    if word in _DE_UNITS:
+        return _DE_UNITS[word]
+    if word in _DE_TEENS:
+        return _DE_TEENS[word]
+    if word in _DE_TENS:
+        return _DE_TENS[word]
+    if "und" in word:  # fünfunddreißig
+        unit, _, tens = word.partition("und")
+        if unit in _DE_UNITS and tens in _DE_TENS:
+            return _DE_UNITS[unit] + _DE_TENS[tens]
+    return None
+
+
+def _de_value(word: str) -> int | None:
+    """One German number word: zweihundertfünfunddreißig, eintausendzweihundert, zwölf."""
+    word = word.lower()
+    total = 0
+    if "tausend" in word:
+        head, _, word = word.partition("tausend")
+        value = _de_below_1000(head) if head else 1
+        if value is None:
+            return None
+        total += value * 1000
+    rest = _de_below_1000(word)
+    return None if rest is None else total + rest
+
+
+def _de_below_1000(word: str) -> int | None:
+    if "hundert" in word:
+        head, _, tail = word.partition("hundert")
+        tail = tail.removeprefix("und")  # hundertundzwanzig
+        hundreds = _DE_UNITS.get(head, 1 if head == "" else None)
+        tail_value = _de_below_100(tail)
+        if hundreds is None or tail_value is None:
+            return None
+        return hundreds * 100 + tail_value
+    return _de_below_100(word)
+
+
+def _words_to_digits(text: str) -> str:
+    def en(m: re.Match) -> str:
+        value = _en_value(m.group(0))
+        return m.group(0) if value is None else str(value)
+
+    def de(m: re.Match) -> str:
+        value = _de_value(m.group(0))
+        return m.group(0) if value is None else str(value)
+
+    return _DE_WORD.sub(de, _EN_RUN.sub(en, text))
+
+
 _SPOKEN_CENTS = re.compile(
     r"(\d{1,3}(?:,\d{3})*|\d+)\s*(?:euros?|EUR)\s*(?:and|und)?\s*(\d{1,2})\s*(?:cents?|ct)\b",
     re.IGNORECASE,
@@ -385,13 +476,7 @@ def normalize_spoken(text: str) -> str:
     """A voice transcript in the form the bid parsers read: number words as digits ("four
     hours" -> "4 hours"), "358 euros and 64 cents" -> "358.64 EUR", "115 euros" -> "115 EUR"."""
 
-    def word(m: re.Match) -> str:
-        if m.group("only"):
-            return str(_UNITS[m.group("only").lower()])
-        unit = _UNITS[m.group("unit").lower()] if m.group("unit") else 0
-        return str(_TENS[m.group("tens").lower()] + unit)
-
-    text = _NUMBER_WORD.sub(word, text)
+    text = _words_to_digits(text)
     text = _SPOKEN_CENTS.sub(lambda m: f"{m.group(1)}.{int(m.group(2)):02d} EUR", text)
     return _SPOKEN_EURO.sub(lambda m: f"{m.group(1)} EUR", text)
 
@@ -403,8 +488,8 @@ def spoken_price(text: str) -> tuple[Decimal, str] | None:
     totals: set[tuple[Decimal, str]] = set()
     others: set[tuple[Decimal, str]] = set()
     for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
-        if _NOT_THE_PRICE.search(sentence):
-            continue
+        if _NOT_THE_PRICE.search(sentence) or _UNREAD_NUMBER.search(sentence):
+            continue  # a number word we could not read must not leave a smaller price
         for m in _AMOUNT.finditer(sentence):
             num = _number(m.group("num1") or m.group("num2") or "")
             cur = (m.group("cur1") or m.group("cur2") or "").upper()
