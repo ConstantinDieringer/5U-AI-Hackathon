@@ -101,6 +101,12 @@ def test_ready_departure_and_validity_dates_are_not_arrival_deadlines():
     assert not issues and data["arrival_deadline"] is None
 
 
+def test_self_delivery_to_export_airport_is_not_a_destination_deadline():
+    text = "We will deliver the shipment to STR by 26 November 2026."
+    data, issues, _ = selection_intent.checked(request().model_dump(), {"body": text})
+    assert not issues and data["arrival_deadline"] is None
+
+
 def test_unproven_or_conflicting_constraints_block_instead_of_disappearing():
     _, issues, _ = selection_intent.checked(
         request(arrival_deadline="2026-12-02").model_dump(), {"body": "Please quote STR to MEL."}

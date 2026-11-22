@@ -77,12 +77,28 @@ def calendar_date(value: str) -> str | None:
         return None
 
 
-def arrival_dates(text: str) -> dict[str, str]:
+def arrival_dates(
+    text: str, origin: str | None = None, destination: str | None = None
+) -> dict[str, str]:
     found = {}
     for match in _DATE.finditer(text):
         prefix = text[max(0, match.start() - 220) : match.start()]
         # Do not associate a ready date in the next paragraph/sentence with an older limit.
         clause = re.split(r"\n\s*\n|[.!?]\s+(?=[A-ZÄÖÜ])", prefix)[-1]
+        if origin:
+            delivered_to_origin = re.search(
+                rf"\b(?:to|at|an|zum)\s+(?:airport\s+)?{re.escape(origin)}\b", clause, re.IGNORECASE
+            )
+            delivered_to_destination = re.search(
+                rf"\b(?:to|at|an|zum)\s+(?:airport\s+)?{re.escape(destination or 'NO_DESTINATION')}\b",
+                clause,
+                re.IGNORECASE,
+            )
+            if delivered_to_origin and (
+                not delivered_to_destination
+                or delivered_to_origin.start() > delivered_to_destination.start()
+            ):
+                continue  # customer delivery to the export airport is not arrival at destination
         if re.search(r"\b(?:not (?:be )?before|nicht vor)\s*(?:dem\s*)?$", clause, re.IGNORECASE):
             continue  # earliest acceptable arrival is not a latest-arrival bound
         arrival_after_date = re.match(
@@ -116,7 +132,9 @@ def checked(
     data = data.copy()
     corrections = corrections or {}
     dates = {
-        value: quote for text in sources.values() for value, quote in arrival_dates(text).items()
+        value: quote
+        for text in sources.values()
+        for value, quote in arrival_dates(text, data.get("origin"), data.get("destination")).items()
     }
     evidence, issues = {}, []
     active = "\n".join(sources.values())
