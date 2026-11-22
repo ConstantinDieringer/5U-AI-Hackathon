@@ -3260,11 +3260,44 @@ def secs_label(s: float | None) -> str:
 _PROBLEM_NUMBER = re.compile(r"\d[\d.,:]*")
 
 
+PROBLEMS_ACK_KEY = "problems.ack"
+# the board watcher's old ERROR log line repeats the board_verdict event of the same round
+_BOARD_LOG_ECHO = "app.ui.watchers: board: round "
+
+
+def _problem_acks() -> dict[str, int]:
+    try:
+        raw = json.loads(kv_get(PROBLEMS_ACK_KEY) or "{}")
+    except ValueError:
+        return {}
+    return (
+        {str(k): int(v) for k, v in raw.items() if isinstance(v, int)}
+        if isinstance(raw, dict)
+        else {}
+    )
+
+
+def ack_problems(acks: dict[str, int]) -> int:
+    """Mark problem groups as handled up to their latest event id; a newer event of the same
+    group shows the group again. Keeps the newest 300 marks."""
+    merged = _problem_acks()
+    for key, event_id in acks.items():
+        if isinstance(key, str) and isinstance(event_id, int) and 0 < len(key) <= 600:
+            merged[key] = max(event_id, merged.get(key, 0))
+    kept = dict(sorted(merged.items(), key=lambda kv: kv[1])[-300:])
+    kv_set(PROBLEMS_ACK_KEY, json.dumps(kept))
+    return len(acks)
+
+
 def problems(hours: float = 3, limit: int = 400) -> dict[str, Any]:
     """Übersicht: every error and warning event of the last `hours`, grouped by kind and
     message with the numbers taken out (same failure, different session = one group).
 
-    Each group: level, kind, latest message, count, first/last time, affected sessions."""
+    Echoes are left out: the board watcher's log line next to its 5U verdict, and an
+    error status change of a session whose own error event names the cause. Groups marked
+    handled stay hidden until a newer event arrives.
+
+    Each group: key, level, kind, latest message, count, first/last time, affected sessions."""
     since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
     rows = _rows(
         conn().execute(
@@ -3274,13 +3307,23 @@ def problems(hours: float = 3, limit: int = 400) -> dict[str, Any]:
             (since, limit),
         )
     )
+    explained = {
+        r["session_id"]
+        for r in rows
+        if r["level"] == "error" and r["session_id"] is not None and r["kind"] != Ev.STATUS
+    }
     groups: dict[tuple[str, str, str], dict[str, Any]] = {}
     for r in rows:  # newest first
         message = r["message"] or ""
+        if r["kind"] == "log_error" and message.startswith(_BOARD_LOG_ECHO):
+            continue
+        if r["kind"] == Ev.STATUS and r["session_id"] in explained:
+            continue
         key = (r["level"], r["kind"], _PROBLEM_NUMBER.sub("#", message))
         g = groups.get(key)
         if g is None:
             g = groups[key] = {
+                "key": "|".join(key),
                 "level": r["level"],
                 "kind": r["kind"],
                 "message": message,
@@ -3299,9 +3342,13 @@ def problems(hours: float = 3, limit: int = 400) -> dict[str, Any]:
             and len(g["sessions"]) < 6
         ):
             g["sessions"].append({"id": sid, "subject": r["subject"], "customer": r["customer"]})
-    ordered = sorted(groups.values(), key=lambda g: (g["level"] != "error", -g["last_event_id"]))
+    acks = _problem_acks()
+    handled = [g for g in groups.values() if acks.get(g["key"], 0) >= g["last_event_id"]]
+    open_groups = [g for g in groups.values() if acks.get(g["key"], 0) < g["last_event_id"]]
+    ordered = sorted(open_groups, key=lambda g: (g["level"] != "error", -g["last_event_id"]))
     return {
         "hours": hours,
+        "handled": len(handled),
         "errors": sum(g["count"] for g in ordered if g["level"] == "error"),
         "warnings": sum(g["count"] for g in ordered if g["level"] == "warn"),
         "truncated": len(rows) >= limit,
@@ -3439,13 +3486,12 @@ def status_overview() -> dict[str, Any]:
         }
     )
 
-    errors = _rows(
-        c.execute(
-            "SELECT message FROM events WHERE level = 'error' AND kind NOT IN ('board_verdict','warn')"
-            " AND created_at >= ? ORDER BY id DESC",
-            (since,),
-        )
-    )
+    # same view as "Fehler & Warnungen": no echoes, nothing a person marked handled
+    errors = [
+        g
+        for g in problems(hours=CHECK_WINDOW.total_seconds() / 3600)["groups"]
+        if g["level"] == "error" and g["kind"] not in ("board_verdict", "warn")
+    ]
     unassigned = _one(
         c.execute(
             "SELECT COUNT(*) AS n FROM mails WHERE session_id IS NULL AND direction = 'in'"
@@ -3458,7 +3504,7 @@ def status_overview() -> dict[str, Any]:
             "key": "errors",
             "name": "Fehler · unzugeordnet",
             "level": _level(not errors and not unassigned, not errors),
-            "value": f"{len(errors)} · {unassigned}",
+            "value": f"{sum(g['count'] for g in errors)} · {unassigned}",
             "hint": (
                 errors[0]["message"][:120]
                 if errors

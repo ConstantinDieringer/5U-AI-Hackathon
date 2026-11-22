@@ -416,14 +416,30 @@ function problemRow(g) {
         fresh ? el("span", { class: "badge-s red" }, "neu") : null,
         el("span", {}, `${hm(g.last_at)} · ${ago(g.last_at)}` + (g.count > 1 ? ` · seit ${hm(g.first_at)}` : "")),
         ...g.sessions.map((x) => el("button", { class: "chip", title: [x.subject, x.customer].filter(Boolean).join(" · "), onclick: () => select(x.id) }, "#" + x.id + (x.customer ? " " + x.customer.replace("@hackloop.mail", "").split("-")[0] : ""))))),
-    el("div", { class: "count" }, g.count + "×", el("small", {}, g.sessions.length ? g.sessions.length + " Sess." : "System")));
+    el("div", { class: "count" }, g.count + "×", el("small", {}, g.sessions.length ? g.sessions.length + " Sess." : "System"),
+      el("button", { class: "chip", title: "Als erledigt ausblenden, bis die Meldung neu auftritt", onclick: () => ackProblems([g]) }, icon("check"), "Erledigt")));
+}
+async function ackProblems(groups) {
+  if (!groups.length) return;
+  try {
+    await post("/api/problems/ack", { acks: Object.fromEntries(groups.map((g) => [g.key, g.last_event_id])) });
+    const done = new Set(groups.map((g) => g.key));
+    PROBLEMS.groups = PROBLEMS.groups.filter((g) => !done.has(g.key));
+    for (const g of groups) PROBLEMS[g.level === "error" ? "errors" : "warnings"] -= g.count;
+    PROBLEMS.handled = (PROBLEMS.handled || 0) + groups.length;
+    renderProblems();
+    toast(groups.length === 1 ? "Als erledigt ausgeblendet." : `${groups.length} Meldungen als erledigt ausgeblendet.`);
+  } catch (e) { toast("Ausblenden fehlgeschlagen: " + e.message); }
 }
 function renderProblems() {
   const box = $("#problems"); if (!box || !PROBLEMS) return;
   const f = S.probFilter || "error", groups = PROBLEMS.groups.filter((g) => f === "all" || g.level === f);
   $("#prob-seg").replaceChildren(...[["error", `Fehler ${PROBLEMS.errors}`], ["warn", `Warnungen ${PROBLEMS.warnings}`], ["all", "Alle"]].map(([k, l]) =>
     el("button", { class: f === k ? "active" : "", onclick: () => { S.probFilter = k; renderProblems(); } }, l)));
-  box.replaceChildren(groups.length ? el("div", { class: "probs" }, ...groups.map(problemRow))
+  const clear = groups.length > 1 ? el("button", { class: "chip", onclick: () => ackProblems(groups) }, icon("check"), `Alle ${groups.length} als erledigt`) : null;
+  const handled = PROBLEMS.handled ? el("small", { class: "muted" }, `${PROBLEMS.handled} erledigt ausgeblendet`) : null;
+  box.replaceChildren(...[clear || handled ? el("div", { class: "meta", style: "justify-content:flex-end;gap:8px;margin-bottom:8px" }, handled, clear) : null].filter(Boolean),
+    groups.length ? el("div", { class: "probs" }, ...groups.map(problemRow))
     : el("div", { class: "empty" }, el("span", { class: "ic", style: "background:var(--green-tint);color:var(--green)" }, icon("check")), f === "error" ? `Keine Fehler in den letzten ${PROBLEMS.hours} h.` : "Nichts in diesem Filter."));
 }
 async function copyText(url, btn) {
