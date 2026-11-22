@@ -364,6 +364,19 @@ def _total_patterns():
     }
 
 
+# cubic metres per stated volume unit; "306.18 cubic feet" read as cbm priced a 1478 kg
+# shipment as 51 t chargeable (round 109, too_high). No unit or cbm/m3 counts as cbm.
+def volume_factor(suffix):
+    """Cubic metres per unit for the words after a volume figure; None for an unknown
+    cubic unit (asked, never guessed)."""
+    factor = measurements.volume_suffix(suffix)
+    if factor is not None:
+        return factor
+    if re.match(r"(?:cubic|cu\b|yd|yards?|gallons?|barrels?|bushels?)", suffix, re.IGNORECASE):
+        return None
+    return Decimal(1)
+
+
 def numeric_facts(text, expect=None, known=()):
     """Totals the text states. `known`: weights already known for this shipment (other mails
     of the thread, attachments) that THOUSANDS_EVIDENCE may use to read "1,674 kg"."""
@@ -397,15 +410,10 @@ def numeric_facts(text, expect=None, known=()):
                 if field == "weight_kg":
                     amount *= measurements.mass_suffix(suffix) or Decimal(1)
                 elif field == "volume_cbm":
-                    factor = measurements.volume_suffix(suffix)
-                    if factor is not None:
-                        amount *= factor
-                    elif re.match(
-                        r"(?:ft|cu\b|cubic\b|litres?|liters?|gallons?|yards?)",
-                        suffix,
-                        re.IGNORECASE,
-                    ):
-                        continue
+                    factor = volume_factor(suffix)
+                    if factor is None:
+                        continue  # a unit we cannot convert: leave it to the question
+                    amount *= factor
                 result[field] = amount
                 break
     if config.settings.unit_evidence:
@@ -675,6 +683,23 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
             }
         elif field != "pieces":
             issues.append({"field": field, "code": "missing", "detail": f"Confirm {field}"})
+    # Round 109 (session 32120): 1478 kg priced as 306.18 cbm (4.8 kg per cbm, 51 t chargeable,
+    # too_high). No freight is lighter than MIN_DENSITY_KG_PER_CBM: such a volume is a unit or
+    # reading error and is confirmed with the customer before any price goes out.
+    weight, volume = data.get("weight_kg"), data.get("volume_cbm")
+    if (
+        weight
+        and volume
+        and "volume_cbm" not in corrections
+        and Decimal(str(weight)) / Decimal(str(volume)) < MIN_DENSITY_KG_PER_CBM
+    ):
+        issues.append(
+            {
+                "field": "volume_cbm",
+                "code": "unproven",
+                "detail": "Volume is implausible for the weight: confirm total volume in cbm",
+            }
+        )
     # UN markers in any source take precedence over a generic non-dangerous statement.
     dangerous = bool(
         re.search(

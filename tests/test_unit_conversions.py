@@ -89,6 +89,7 @@ def test_mass_units_are_converted_before_pricing(text, expected):
         ("1.2 x 0.8 x 1 m", "3.8400"),
         ("48 x 40 x 50 inches", "6.2926"),
         ("4 x 3 x 5 feet", "6.7960"),
+        ("4 x 3 x 5 ft", "6.7960"),
     ],
 )
 def test_dimension_factor_is_cubed_and_piece_count_applied(dimensions, expected):

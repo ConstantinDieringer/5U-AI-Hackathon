@@ -11,12 +11,12 @@ FOOT_TO_M = Decimal("0.3048")
 
 # Long aliases first. The suffix boundary prevents m matching mm, or ft matching ft3.
 _VOLUME_UNITS = (
-    (r"cubic\s*(?:feet|foot)|cu\.?\s*ft\.?|cft|ft(?:\^?3|³)", FOOT_TO_M**3),
+    (r"cubic\s*(?:feet|foot)|cu\.?\s*ft\.?|cbft|cft|ft(?:\^?3|³)?", FOOT_TO_M**3),
     (r"cubic\s*inch(?:es)?|cu\.?\s*in\.?|in(?:\^?3|³)", INCH_TO_M**3),
     (r"cubic\s*(?:centimeters?|centimetres?)|cm(?:\^?3|³)|cc", Decimal("0.000001")),
     (r"cubic\s*(?:millimeters?|millimetres?)|mm(?:\^?3|³)", Decimal("0.000000001")),
     (r"cubic\s*(?:meters?|metres?)|cu\.?\s*m\.?|cbm|m(?:\^?3|³)", Decimal(1)),
-    (r"lit(?:er|re)s?|litres?|l", Decimal("0.001")),
+    (r"lit(?:er|re)s?|litres?|ltrs?|l", Decimal("0.001")),
 )
 VOLUME_UNIT = "(?:" + "|".join(pattern for pattern, _ in _VOLUME_UNITS) + ")(?![a-zA-Z0-9³])"
 NUMBER = r"(?<![\d.,])(?:\d{1,3}(?:[ '’\u00a0\u202f]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)*)"
@@ -62,10 +62,17 @@ def volume_suffix(text: str) -> Decimal | None:
 
 
 def explicit_volumes(text: str) -> list[tuple[Decimal, str]]:
-    """Literal scalar volumes, with their evidence. Per-piece values belong to lot parsing."""
+    """Scalar volumes with evidence; explicit per-piece values use the unique piece count."""
     values = []
     for pattern in (VOLUME_HEADER, VOLUME):
         for match in pattern.finditer(text):
+            before = text[max(0, match.start() - 40) : match.start()]
+            if re.search(r"[x×]\s*$", before):
+                continue  # last side of a dimensional triple, not a scalar volume
+            if match["unit"].lower() == "ft" and not re.search(
+                r"volum(?:e|en)", before, re.IGNORECASE
+            ):
+                continue  # bare feet only mean a volume after an explicit volume label
             amount = quantity(match["number"])
             if amount is None:
                 continue
