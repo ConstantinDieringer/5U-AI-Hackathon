@@ -10,7 +10,7 @@ Rules (no LLM, no reviewer call: zero gateway cost per nudge):
   or a customer reply that only stalls ("I'll get back to you", "not sure yet")
 - a customer question or unclear reply we have not answered is never nudged: it stays with
   booking / prebook / thread rescue until one of our mails answers it
-- that last mail is at least FOLLOWUP_AFTER_S old (default 5 s, capped at 5 s)
+- that last mail is at least 5 s old (fixed, not configurable)
 - at most FOLLOWUP_MAX nudges (default 2), only within FOLLOWUP_WINDOW_S after the quote
   (default 900 s = portal rate_id validity)
 - an explicit customer decline after the quote stops all nudges
