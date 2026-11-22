@@ -51,6 +51,7 @@ const CRM_COLUMNS = {
   bookings:[["booking_reference","Reference"],["customer","Customer"],["airline","Airline"],["price_minor","Airline cost"],["status","Status"],["created_at","Date"]],
   pricing:[["created_at","Date"],["customer","Customer"],["route","Route"],["airline","Airline"],["quote_minor","Quote value"],["options","Options compared"],["verdict","Outcome"]],
 };
+const CRM_TITLES = {customers:["Customers","Every customer with requests, quotes, bookings and last contact."],quotes:["Quotes","First quote per request with its outcome."],bookings:["Bookings","Airline bookings with reference, cost and status."],pricing:["Price comparison","The options compared for each quote and the 5U verdict."]};
 const CRM_STATUS = {won:"Booked",lost:"Lost",open:"Open",booked:"Booked",confirmed:"Confirmed",failed:"Failed",active:"Active customers",new:"No booking",accepted:"Accepted",pending:"Not rated yet"};
 function crmValue(row, key) {
   if (key === "route") return [row.origin,row.destination].filter(Boolean).join(" → ");
@@ -84,18 +85,17 @@ function crmSelect(label, values, current, change) {
 }
 function renderCrm() {
   if (!S.crm) return;
-  const tabs = el("div", {class:"seg", role:"tablist", "aria-label":"CRM data"}, ...[["customers","Customers"],["quotes","Quotes"],["bookings","Bookings"],["pricing","Price comparison"]].map(([key,label]) =>
-    el("button", {role:"tab", "aria-selected":S.crmTab === key, class:S.crmTab === key ? "active" : "", onclick:() => {S.crmTab=key; S.crmStatus=""; S.crmSort=""; S.crmAsc=false; S.crmPage=0; renderCrm();}}, label)));
   const statuses = S.crmTab === "customers" ? ["active","won","new"] : S.crmTab === "quotes" ? ["open","won","lost"] : S.crmTab === "bookings" ? ["booked","confirmed","failed"] : ["accepted","pending"];
   const filters = el("div", {class:"crm-filters"},
+    el("div", {class:"crm-view-narrow"}, crmSelect("View", Object.entries(CRM_TITLES).map(([key,[label]]) => [key,label]), S.crmTab, e => openCrmTab(e.target.value))),
     el("label", {class:"search"}, icon("search"), el("input", {"aria-label":"Search CRM", placeholder:"Customer, route or reference", value:S.crmQ || "", oninput:e => {S.crmQ=e.target.value; S.crmPage=0; renderCrmTable();}})),
     crmSelect("Status", [["","All statuses"],...statuses.map(k => [k,CRM_STATUS[k]])], S.crmStatus || "", e => {S.crmStatus=e.target.value; S.crmPage=0; renderCrmTable();}),
     crmSelect("Period", [[0,"All time"],[1,"Last 24 hours"],[7,"Last 7 days"],[30,"Last 30 days"]], S.crmDays || 0, e => {S.crmDays=Number(e.target.value); S.crmPage=0; renderCrmTable();}),
     el("button", {class:"btn ghost", onclick:() => {S.crmQ=""; S.crmStatus=""; S.crmDays=0; S.crmSort=""; S.crmAsc=false; S.crmPage=0; renderCrm();}}, "Reset filters"),
     el("button", {class:"btn", onclick:e => copyCrmRows(e.currentTarget)}, icon("inbox"), "Copy list"));
   $("#crm").replaceChildren(el("section", {class:"card s12"},
-    el("div", {class:"card-h"}, el("div", {}, el("h3", {}, "Customers and orders"), el("p", {class:"caption"}, "Customer relationships, quotes and bookings in one place. Column headers sort the list."))),
-    tabs, filters, el("div", {id:"crm-table"})));
+    el("div", {class:"card-h"}, el("div", {}, el("h3", {}, CRM_TITLES[S.crmTab][0]), el("p", {class:"caption"}, CRM_TITLES[S.crmTab][1] + " Column headers sort the list."))),
+    filters, el("div", {id:"crm-table"})));
   renderCrmTable();
 }
 async function copyCrmRows(button) {

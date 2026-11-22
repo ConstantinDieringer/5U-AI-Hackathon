@@ -195,3 +195,10 @@ button:disabled { cursor: default; opacity: .4; }
 .airport-marker.alert-red .airport-dot { background: var(--red); box-shadow: 0 0 0 5px var(--red-tint); }
 .airport-marker.alert-orange .airport-dot { background: var(--orange); box-shadow: 0 0 0 5px var(--orange-tint); }
 @media (max-width:1100px) { .map-layout { grid-template-columns: 1fr; } .event-panel { height: auto; max-height: 380px; } }
+.subnav { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px 19px; padding-left: 10px; border-left: 1px solid var(--hairline-strong); }
+.subnav-item { height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: none; color: var(--ink-3); font-size: 13px; font-weight: 500; text-align: left; transition: background var(--fast), color var(--fast); }
+.subnav-item:hover { background: var(--hover); color: var(--ink); }
+.subnav-item.active { color: var(--ink); background: var(--card); box-shadow: var(--shadow-light); }
+/* The sidebar collapses below 1200 px, so the CRM view picker moves into the page. */
+.crm-view-narrow { display: none; }
+@media (max-width:1199px) { .subnav { display: none; } .crm-view-narrow { display: block; } }

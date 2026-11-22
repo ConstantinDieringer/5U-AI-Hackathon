@@ -341,6 +341,12 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></button>
   <button class="nav" data-page="requests"><svg class="icon"><use href="#i-inbox"/></svg><span class="lbl">Requests</span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
+  <div class="subnav" role="group" aria-label="CRM views">
+    <button class="subnav-item" data-crm-tab="customers">Customers</button>
+    <button class="subnav-item" data-crm-tab="quotes">Quotes</button>
+    <button class="subnav-item" data-crm-tab="bookings">Bookings</button>
+    <button class="subnav-item" data-crm-tab="pricing">Price comparison</button>
+  </div>
   <button class="nav" data-page="rates"><svg class="icon"><use href="#i-coin"/></svg><span class="lbl">Rates</span></button>
   <div class="spacer"></div>
   <button class="stop" id="global-pause" title="Stop all outgoing mail"><svg class="icon"><use href="#i-stop"/></svg><span>Stop mail</span></button>
@@ -447,13 +453,20 @@ function show(page, updateHistory = true) {
   renderBreadcrumbs();
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + page));
   document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.page === (page === "session" ? S.returnPage : page)));
+  const crmOpen = (page === "session" ? S.returnPage : page) === "crm";
+  document.querySelectorAll(".subnav-item").forEach(n => { const on = crmOpen && n.dataset.crmTab === S.crmTab; n.classList.toggle("active", on); if (on) n.setAttribute("aria-current", "page"); else n.removeAttribute("aria-current"); });
   document.title = PAGES[page][0] + " · Austrian Power";
   $("#page-"+page).setAttribute("aria-label",PAGES[page][0]);
   if (page === "overview") loadOverview(); if (page === "requests") loadRequests(); if (page === "crm") loadCrm(); if (page === "rates") loadRates(); if (page === "errors") loadErrors();
-  const hash = page === "session" ? "#session=" + S.selected : "#" + page;
+  const hash = page === "session" ? "#session=" + S.selected : page === "crm" ? "#crm/" + S.crmTab : "#" + page;
   if (updateHistory && location.hash !== hash) history.pushState(null, "", hash);
 }
 document.querySelectorAll(".nav").forEach(n => n.addEventListener("click", () => show(n.dataset.page)));
+function openCrmTab(tab, updateHistory = true) {
+  if (S.crmTab !== tab) { S.crmTab = tab; S.crmStatus = ""; S.crmSort = ""; S.crmAsc = false; S.crmPage = 0; }
+  show("crm", updateHistory);
+}
+document.querySelectorAll(".subnav-item").forEach(n => n.addEventListener("click", () => openCrmTab(n.dataset.crmTab)));
 $("#mobile-messages").addEventListener("click", () => show("errors"));
 $("#global-q").addEventListener("keydown", e => { if (e.key === "Enter") { clearTimeout(S.globalSearchTimer); S.q = e.target.value.trim(); S.requestOffset = 0; show("requests"); } });
 $("#global-q").addEventListener("input", e => { const value = e.target.value.trim(); clearTimeout(S.globalSearchTimer); S.globalSearchTimer = setTimeout(() => { S.q = value; S.requestOffset = 0; show("requests"); }, 350); });
@@ -831,7 +844,8 @@ document.addEventListener("keydown", e => {
 setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "requests") loadRequests(); else if (S.page === "session") loadDetail(); }, 20000);
 function routeFromHash() {
   const hash = location.hash, match = hash.match(/^#session=(\d+)$/);
-  if (match) select(Number(match[1]), false); else show(hash === "#requests" ? "requests" : hash === "#crm" ? "crm" : hash === "#rates" ? "rates" : hash === "#errors" ? "errors" : "overview", false);
+  const crm = hash.match(/^#crm(?:\/(customers|quotes|bookings|pricing))?$/);
+  if (match) select(Number(match[1]), false); else if (crm) openCrmTab(crm[1] || S.crmTab, false); else show(hash === "#requests" ? "requests" : hash === "#rates" ? "rates" : hash === "#errors" ? "errors" : "overview", false);
 }
 window.addEventListener("popstate", routeFromHash);
 window.addEventListener("hashchange", routeFromHash);
