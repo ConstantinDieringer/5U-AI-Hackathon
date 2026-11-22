@@ -8,7 +8,7 @@ function syncSelect(native) { SELECTS.get(native)?.(); }
 function enhanceSelect(native) {
   if(native.dataset.enhanced) return;
   native.dataset.enhanced="true";
-  const label=native.getAttribute("aria-label") || native.labels?.[0]?.textContent.trim() || "Auswahl";
+  const label=native.getAttribute("aria-label") || native.labels?.[0]?.textContent.trim() || "Choice";
   const id="choice-"+(++SELECT_SERIAL), shell=el("span",{class:"select-shell"});
   const trigger=el("button",{type:"button",id:id+"-trigger",class:"select-trigger",role:"combobox","aria-label":label,"aria-haspopup":"listbox","aria-expanded":"false","aria-controls":id+"-list"},
     el("span",{class:"select-value"}),el("span",{class:"select-chevron","aria-hidden":"true"}));
@@ -16,23 +16,23 @@ function enhanceSelect(native) {
   const labels=[...(native.labels||[])];native.before(shell);shell.append(native,trigger);
   labels.filter(l=>l.htmlFor===native.id).forEach(l=>l.htmlFor=trigger.id);
   native.classList.add("select-native");native.setAttribute("aria-hidden","true");native.tabIndex=-1;
-  const update=()=>{trigger.querySelector(".select-value").textContent=native.selectedOptions[0]?.textContent || "Bitte wählen";trigger.disabled=native.disabled;};
+  const update=()=>{trigger.querySelector(".select-value").textContent=native.selectedOptions[0]?.textContent || "Please choose";trigger.disabled=native.disabled;};
   SELECTS.set(native,update);native.addEventListener("change",update);update();
   let prefix="",prefixTimer;
   function open(focusList=false) {
     closeSelect();update();
-    const options=[...native.options], searchable=label==="Flughafen" || options.length>8 || native.dataset.searchable==="true";
+    const options=[...native.options], searchable=label==="Airport" || options.length>8 || native.dataset.searchable==="true";
     const list=el("div",{id:id+"-list",class:"select-list",role:"listbox","aria-label":label});
-    const search=searchable?el("input",{class:"select-search",type:"search",placeholder:"Suchen …","aria-label":label+" suchen",autocomplete:"off"}):null;
+    const search=searchable?el("input",{class:"select-search",type:"search",placeholder:"Search …","aria-label":"Search "+label,autocomplete:"off"}):null;
     const popup=el("div",{class:"select-popover"},search,list);document.body.append(popup);
     trigger.setAttribute("aria-expanded","true");let buttons=[];
     const close=focus=>{popup.remove();trigger.setAttribute("aria-expanded","false");if(ACTIVE_SELECT?.trigger===trigger)ACTIVE_SELECT=null;if(focus&&trigger.isConnected)trigger.focus();};
     ACTIVE_SELECT={trigger,close};
     const choose=value=>{native.value=value;update();close(true);native.dispatchEvent(new Event("change",{bubbles:true}));};
     const draw=()=>{
-      const query=(search?.value || "").toLocaleLowerCase("de");
-      buttons=options.filter(o=>o.textContent.toLocaleLowerCase("de").includes(query)).map(o=>el("button",{type:"button",class:"select-option",role:"option","aria-selected":String(o.value===native.value),tabindex:-1,disabled:o.disabled,onclick:()=>choose(o.value)},el("span",{},o.textContent),o.value===native.value?el("span",{"aria-hidden":"true"},"✓"):null));
-      list.replaceChildren(...(buttons.length?buttons:[el("div",{class:"select-empty",role:"status"},"Keine passenden Optionen")]));
+      const query=(search?.value || "").toLocaleLowerCase("en");
+      buttons=options.filter(o=>o.textContent.toLocaleLowerCase("en").includes(query)).map(o=>el("button",{type:"button",class:"select-option",role:"option","aria-selected":String(o.value===native.value),tabindex:-1,disabled:o.disabled,onclick:()=>choose(o.value)},el("span",{},o.textContent),o.value===native.value?el("span",{"aria-hidden":"true"},"✓"):null));
+      list.replaceChildren(...(buttons.length?buttons:[el("div",{class:"select-empty",role:"status"},"No matching options")]));
     };
     draw();search?.addEventListener("input",draw);
     const rect=trigger.getBoundingClientRect(), width=Math.min(Math.max(rect.width,searchable?290:230),innerWidth-24);
@@ -57,8 +57,8 @@ function enhanceSelect(native) {
   trigger.addEventListener("keydown",e=>{
     if(["ArrowDown","ArrowUp"].includes(e.key)){e.preventDefault();open(true);}
     else if(e.key.length===1 && !e.ctrlKey && !e.metaKey && e.key!==" "){
-      e.preventDefault();clearTimeout(prefixTimer);prefix+=e.key.toLocaleLowerCase("de");prefixTimer=setTimeout(()=>prefix="",650);
-      const option=[...native.options].find(o=>!o.disabled&&o.textContent.toLocaleLowerCase("de").startsWith(prefix));
+      e.preventDefault();clearTimeout(prefixTimer);prefix+=e.key.toLocaleLowerCase("en");prefixTimer=setTimeout(()=>prefix="",650);
+      const option=[...native.options].find(o=>!o.disabled&&o.textContent.toLocaleLowerCase("en").startsWith(prefix));
       if(option){native.value=option.value;update();native.dispatchEvent(new Event("change",{bubbles:true}));}
     }
   });
@@ -79,5 +79,5 @@ async function airportOptions() {
   AIRPORT_NAMES ||= api("/static/geo/airports.json").catch(()=>{AIRPORT_NAMES=null;return {};});
   const [data,names]=await Promise.all([api("/api/business-metrics?days=0").catch(()=>null),AIRPORT_NAMES]);
   const codes=new Set((data?.airports||[]).map(p=>p.iata));if(S.requestAirport)codes.add(S.requestAirport);
-  return [["","Alle Flughäfen"],...[...codes].sort().map(code=>[code,[code,names[code]?.city,names[code]?.name].filter(Boolean).join(" · ")])];
+  return [["","All airports"],...[...codes].sort().map(code=>[code,[code,names[code]?.city,names[code]?.name].filter(Boolean).join(" · ")])];
 }

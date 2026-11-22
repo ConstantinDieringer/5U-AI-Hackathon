@@ -1515,7 +1515,8 @@ def backfill_bookings_from_confirmations() -> int:
     c = conn()
     mails = _rows(
         c.execute(
-            "SELECT m.body FROM mails m WHERE m.direction = 'in' AND m.body LIKE '%Booking reference:%'"
+            "SELECT m.body, m.received_at FROM mails m WHERE m.direction = 'in'"
+            " AND m.body LIKE '%Booking reference:%'"
             " AND m.body LIKE '%Your reference: AP-%' AND m.category IS NOT 'phishing'"
         )
     )
@@ -1528,14 +1529,30 @@ def backfill_bookings_from_confirmations() -> int:
         sid = int(found["ap"].group(1))
         if not _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (sid,))):
             continue
-        if _one(c.execute("SELECT 1 FROM bookings WHERE session_id = ?", (sid,))):
-            # booked by email before the BK reference was kept: fill it in
+        existing = _one(
+            c.execute(
+                "SELECT created_at, rate_id, quote_id FROM bookings WHERE session_id = ?", (sid,)
+            )
+        )
+        if existing:
             with tx() as w:
+                # booked by email before the BK reference was kept: fill it in
                 w.execute(
                     "UPDATE bookings SET booking_reference = ?, updated_at = ?"
                     " WHERE session_id = ? AND booking_reference IS NULL AND status != 'failed'",
                     (found["bk"].group(1).upper(), now(), sid),
                 )
+                # Earlier backfills stamped the restart time; restore the confirmation's time.
+                if (
+                    existing["rate_id"] is None
+                    and existing["quote_id"] is None
+                    and m["received_at"]
+                    and existing["created_at"] > m["received_at"]
+                ):
+                    w.execute(
+                        "UPDATE bookings SET created_at = ? WHERE session_id = ? AND rate_id IS NULL",
+                        (m["received_at"], sid),
+                    )
             continue
         price = found["price"]
         from app.pricing.amounts import parse_decimal
@@ -1551,6 +1568,7 @@ def backfill_bookings_from_confirmations() -> int:
             price_minor=minor,
             currency=price.group(2).upper() if price else None,
             status="confirmed",
+            booked_at=m["received_at"],
         )
         lane = found["lane"]
         s = _one(c.execute("SELECT request_json FROM sessions WHERE id = ?", (sid,)))
@@ -2297,8 +2315,11 @@ def record_booking(
     price_minor: int | None,
     currency: str | None,
     status: str = "booked",
+    booked_at: str | None = None,
 ) -> int:
+    """`booked_at` is the real booking time when a booking is recreated later (backfill)."""
     ref = team_reference(session_id)
+    created = booked_at or now()
     with tx() as c:
         c.execute(
             "INSERT INTO bookings(session_id, team_reference, booking_reference, rate_id, airline,"
@@ -2314,7 +2335,7 @@ def record_booking(
                 price_minor,
                 currency,
                 status,
-                now(),
+                created,
                 now(),
             ),
         )
@@ -3251,7 +3272,8 @@ def booking_volume_24h() -> dict[str, Any]:
     rows = _rows(
         conn().execute(
             "SELECT b.created_at AS at,b.status,b.customer_state,"
-            " COALESCE(b.customer_total_minor,q.total_minor) AS minor,q.currency"
+            " COALESCE(b.customer_total_minor,q.total_minor) AS minor,q.currency,"
+            " b.price_minor AS airline_minor,b.currency AS airline_currency"
             " FROM bookings b JOIN sessions s ON s.id=b.session_id"
             " LEFT JOIN quotes q ON q.id=COALESCE(b.quote_id,"
             " (SELECT MIN(id) FROM quotes WHERE session_id=b.session_id))"
@@ -3260,6 +3282,7 @@ def booking_volume_24h() -> dict[str, Any]:
         )
     )
     events, amounts, unknown = [], {}, 0
+    airline_events, airline_amounts = [], {}
     for row in rows:
         if row["status"] not in ("booked", "confirmed") or row["customer_state"] not in (
             None,
@@ -3267,6 +3290,13 @@ def booking_volume_24h() -> dict[str, Any]:
             "price_accepted",
         ):
             continue
+        # Airline cost is reported separately, for bookings that carry no customer amount.
+        if row["airline_minor"] is not None and row["airline_currency"]:
+            code = row["airline_currency"].upper()
+            airline_events.append(
+                {"at": row["at"], "minor": row["airline_minor"], "currency": code}
+            )
+            airline_amounts[code] = airline_amounts.get(code, 0) + row["airline_minor"]
         if row["minor"] is None or not row["currency"]:
             unknown += 1
             continue
@@ -3279,6 +3309,10 @@ def booking_volume_24h() -> dict[str, Any]:
         "events": events,
         "unknown": unknown,
         "amounts": [{"currency": c, "minor": v} for c, v in sorted(amounts.items())],
+        "airline_events": airline_events,
+        "airline_amounts": [
+            {"currency": c, "minor": v} for c, v in sorted(airline_amounts.items())
+        ],
     }
 
 
@@ -3296,6 +3330,7 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
             " q.id AS quote_id,q.total_minor,q.currency,"
             " w.session_id AS workflow_id,w.active_quote_id,w.phase,"
             " b.status AS booking_status,b.customer_state,b.customer_total_minor,b.created_at AS booked_at,"
+            " b.price_minor AS airline_minor,b.currency AS airline_currency,"
             " bq.total_minor AS booked_quote_minor,bq.currency AS booked_currency,"
             " bq.request_snapshot_json AS booked_request_json"
             " FROM sessions s"
@@ -3308,7 +3343,10 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
             (since,),
         )
     )
-    totals: dict[str, dict[str, int]] = {k: {} for k in ("booked", "offered", "pipeline")}
+    # booked_airline: what the airlines charge for settled bookings, never customer value
+    totals: dict[str, dict[str, int]] = {
+        k: {} for k in ("booked", "booked_airline", "offered", "pipeline")
+    }
     counts = {
         "requests": len(rows),
         "quoted": 0,
@@ -3365,6 +3403,7 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
         )
         if settled:
             counts["booked"] += 1
+            add("booked_airline", r["airline_minor"], r["airline_currency"])
             # A legacy unbound booking uses the first quote, never a later revision.
             amount = r["customer_total_minor"]
             if amount is None:
@@ -3655,9 +3694,9 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
         {
             "session_id": row["session_id"],
             "kind": "case_worker",
-            "reason": "Externer Ausgang unklar"
+            "reason": "External outcome unclear"
             if row["status"] == "unknown"
-            else "Fallbearbeitung benötigt Prüfung",
+            else "Case needs review",
             "subject": row["subject"],
             "customer": row["customer"],
             "status": row["status"],
@@ -3676,7 +3715,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
         {
             "session_id": r["session_id"],
             "kind": "reply_workflow",
-            "reason": " · ".join(json.loads(r["open_json"])) or "Kundenanliegen benötigt Prüfung",
+            "reason": " · ".join(json.loads(r["open_json"])) or "Customer request needs review",
             "subject": r["subject"],
             "customer": r["customer"],
             "status": r["phase"],
@@ -3693,7 +3732,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             "session_id": q["session_id"],
             "mail_id": q["mail_id"],
             "kind": "quarantine",
-            "reason": "Phishing-Verdacht: keine Antwort gesendet",
+            "reason": "Suspected phishing: no reply sent",
             "subject": q["subject"],
             "customer": q["sender"],
             "status": "quarantined",
@@ -3715,7 +3754,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
     ]
     for s in list_sessions(attention=True, limit=limit):
         reason = (
-            "Fehler" if s["status"] == "error" else "pausiert" if s["paused"] else "Deadline < 90 s"
+            "Error" if s["status"] == "error" else "Paused" if s["paused"] else "Deadline < 90 s"
         )
         validation = validation_get(s["id"])
         if validation and validation["state"] in (
@@ -3724,9 +3763,9 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             "resolving",
         ):
             reason = (
-                "Rückfrage offen"
+                "Clarification open"
                 if validation["state"] == "awaiting_clarification"
-                else "Eingangsdaten prüfen"
+                else "Check incoming details"
             )
         items.append(
             {
@@ -3797,7 +3836,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             {
                 "session_id": r["id"],
                 "kind": "to_book",
-                "reason": "Kunde hat geantwortet, noch nicht gebucht",
+                "reason": "Customer replied, not booked yet",
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],
@@ -3815,7 +3854,7 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             {
                 "session_id": r["session_id"],
                 "kind": "needs_human",
-                "reason": "Rückfrage ohne brauchbare Antwort: prüfen",
+                "reason": "Clarification without a usable answer, please check",
                 "subject": r["subject"],
                 "customer": r["customer"],
                 "status": r["status"],
@@ -4004,16 +4043,16 @@ def _rfq_rows(c: sqlite3.Connection, since: str | None, limit: int | None) -> li
                 "label": secs_label(response_s),
             }
         elif r["status"] in ("new", "pricing") and deadline and deadline > now_dt:
-            quote = {"state": "run", "label": "läuft"}
+            quote = {"state": "run", "label": "running"}
         else:
-            quote = {"state": "bad", "label": r["last_problem"] or "keine Quote"}
+            quote = {"state": "bad", "label": r["last_problem"] or "no quote"}
         v = b.get("verdict")
         if v == "accepted":
-            five = {"state": "ok", "label": "akzeptiert"}
+            five = {"state": "ok", "label": "accepted"}
         elif v in (None, "open", "pending"):
             five = {
                 "state": "run" if first else "none",
-                "label": "offen" if first else "–",
+                "label": "open" if first else "–",
             }
         else:
             five = {
@@ -4021,17 +4060,17 @@ def _rfq_rows(c: sqlite3.Connection, since: str | None, limit: int | None) -> li
                 "label": v + (f" ({b['reason']})" if b.get("reason") else ""),
             }
         if r["booking_reference"] or b.get("booked"):
-            book = {"state": "ok", "label": r["booking_reference"] or "gebucht"}
+            book = {"state": "ok", "label": r["booking_reference"] or "booked"}
         elif r["declined"]:
-            book = {"state": "none", "label": "Kunde lehnt ab"}
+            book = {"state": "none", "label": "customer declined"}
         elif r["customer_replied"]:
-            book = {"state": "bad", "label": "Antwort, nicht gebucht"}
+            book = {"state": "bad", "label": "replied, not booked"}
         elif v not in (None, "open", "pending", "accepted"):
             book = {"state": "none", "label": "–"}
         elif first and now_dt - first > timedelta(minutes=30):
-            book = {"state": "none", "label": "keine Zusage"}
+            book = {"state": "none", "label": "no acceptance"}
         elif first:
-            book = {"state": "run", "label": "wartet auf Kunde"}
+            book = {"state": "run", "label": "waiting for customer"}
         else:
             book = {"state": "none", "label": "–"}
         lane = " → ".join(x for x in (req.get("origin"), req.get("destination")) if x)
@@ -4187,10 +4226,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "mail",
-            "name": "Mail-Abruf",
+            "name": "Mail polling",
             "level": "bad" if age is None else _level(age <= 8, age <= 15),
-            "value": "keine Mail" if age is None else f"vor {int(age)} min",
-            "hint": "Alle 6 min kommt eine RFQ. Länger still heißt: Poller steht oder Server ist aus.",
+            "value": "no mail" if age is None else f"{int(age)} min ago",
+            "hint": "An RFQ arrives every 6 min. Longer silence means the poller is stuck or the server is down.",
         }
     )
 
@@ -4200,10 +4239,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "quotes",
-            "name": "Anfragen beantwortet",
+            "name": "Requests answered",
             "level": "ok" if not done else _level(missed == 0, missed <= 1),
             "value": f"{len(quoted)} / {len(done)}" if done else "–",
-            "hint": "RFQs der letzten 2 h mit Quote vor Ablauf. Jede verpasste ist verloren.",
+            "hint": "RFQs of the last 2 h quoted before expiry. Every missed one is lost.",
         }
     )
 
@@ -4212,10 +4251,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "speed",
-            "name": "Antwortzeit",
+            "name": "Response time",
             "level": "ok" if avg_resp is None else _level(avg_resp <= 120, avg_resp <= 240),
             "value": secs_label(avg_resp),
-            "hint": "Ø bis zur Quote. ≤ 2 min volle 15 Zeitpunkte, ab 6 min null.",
+            "hint": "Average time to quote. Up to 2 min earns all 15 time points, from 6 min none.",
         }
     )
 
@@ -4224,10 +4263,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "price",
-            "name": "5U akzeptiert",
+            "name": "5U accepted",
             "level": "ok" if not rated else _level(acc == len(rated), acc / len(rated) >= 0.6),
             "value": f"{acc} / {len(rated)}" if rated else "–",
-            "hint": "Urteil vom Leaderboard. too_high = Preis > 5 % über Bestpreis, no answer = nichts gesendet.",
+            "hint": "Leaderboard verdict. too_high = price more than 5 % above best, no answer = nothing sent.",
         }
     )
 
@@ -4236,10 +4275,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "cost",
-            "name": "LLM-Kosten je Quote",
+            "name": "LLM cost per quote",
             "level": "ok" if avg_cost is None else _level(avg_cost <= 2000, avg_cost <= 10000),
             "value": "–" if avg_cost is None else f"${avg_cost / 1e6:.4f}",
-            "hint": "0 $ = 40 Punkte, 0,10 $ = 0. Mindestens ein Gateway-Call pro Quote nötig.",
+            "hint": "$0 = 40 points, $0.10 = 0. At least one gateway call per quote is required.",
         }
     )
 
@@ -4248,10 +4287,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "booking",
-            "name": "Buchungen",
+            "name": "Bookings",
             "level": _level(not pending_book, False),
-            "value": f"{booked} gebucht" + (f", {len(pending_book)} offen" if pending_book else ""),
-            "hint": "Kunde hat zugesagt → Buchung per Rate-ID. Offen = Zusage ohne Buchung.",
+            "value": f"{booked} booked" + (f", {len(pending_book)} open" if pending_book else ""),
+            "hint": "Customer accepted, booking by rate ID. Open = accepted without booking.",
         }
     )
 
@@ -4269,15 +4308,15 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "tracking",
-            "name": "Tracking-Antworten",
+            "name": "Tracking answers",
             "level": "ok"
             if not trk
             else _level(unanswered == 0 and not_found == 0, unanswered == 0),
             "value": f"{len(trk) - unanswered} / {len(trk)}"
-            + (f", {not_found} ohne Treffer" if not_found else "")
+            + (f", {not_found} without match" if not_found else "")
             if trk
             else "–",
-            "hint": "Antwort aus unserem CRM. Ohne Treffer = keine passende Buchung gefunden, Rückfrage gesendet.",
+            "hint": "Answered from our CRM. Without match = no matching booking found, clarification sent.",
         }
     )
 
@@ -4295,10 +4334,10 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "bids",
-            "name": "Carrier-Gebote gelesen",
+            "name": "Carrier bids read",
             "level": "ok" if not (got + bad_bids) else _level(bad_bids == 0, got >= bad_bids),
             "value": f"{got} / {got + bad_bids}" if got + bad_bids else "–",
-            "hint": "Gebote mit erkanntem Preis. Nicht gelesen sind oft Absagen „lane not served“.",
+            "hint": "Bids with a recognised price. Unread ones are often “lane not served” declines.",
         }
     )
 
@@ -4318,13 +4357,13 @@ def status_overview() -> dict[str, Any]:
     checks.append(
         {
             "key": "errors",
-            "name": "Fehler · unzugeordnet",
+            "name": "Errors · unassigned",
             "level": _level(not errors and not unassigned, not errors),
             "value": f"{sum(g['count'] for g in errors)} · {unassigned}",
             "hint": (
                 errors[0]["message"][:120]
                 if errors
-                else "Programmfehler im Log und Mails, die keiner Session zugeordnet werden konnten."
+                else "Program errors in the log and mails that could not be assigned to a session."
             ),
         }
     )
@@ -4366,7 +4405,7 @@ def status_overview() -> dict[str, Any]:
                 todo.append(
                     {
                         **_todo(r),
-                        "reason": "pausiert / übernommen – antworte selbst",
+                        "reason": "paused or taken over, reply yourself",
                         "tone": "orange",
                     }
                 )
@@ -4376,7 +4415,7 @@ def status_overview() -> dict[str, Any]:
                 todo.append(
                     {
                         **_todo(r),
-                        "reason": f"noch {int(max(left, 0))} s, keine Quote",
+                        "reason": f"{int(max(left, 0))} s left, no quote",
                         "tone": "red",
                     }
                 )
@@ -4384,7 +4423,7 @@ def status_overview() -> dict[str, Any]:
             todo.append(
                 {
                     **_todo(r),
-                    "reason": "Kunde hat geantwortet, nicht gebucht",
+                    "reason": "Customer replied, not booked",
                     "tone": "blue",
                 }
             )

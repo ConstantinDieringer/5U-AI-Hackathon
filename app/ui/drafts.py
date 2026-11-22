@@ -77,10 +77,10 @@ def build(session_id: int) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - a broken stored request is re-extracted
         request = None
     if request is None:
-        warnings.append("Anfrage war nicht gespeichert: neu ausgelesen (1 LLM-Call)")
+        warnings.append("Request was not stored: extracted again (1 LLM call)")
         request = rfq.extract_rfq(mail, session_id)
         if request is None:
-            raise ValueError("Anfrage nicht lesbar: bitte Preis von Hand eintragen")
+            raise ValueError("Request not readable: please enter the price by hand")
     # same as the agent: the language of the mail itself, not the LLM's guess from names
     request = request.model_copy(
         update={"language": rfq.conversation_language(mail, session_id, request.language)}
@@ -88,17 +88,17 @@ def build(session_id: int) -> dict[str, Any]:
     request = rfq.locate_origin(rfq.locate_pickup(request, mail, session_id), mail, session_id)
     request, selection = rfq.checked_selection(mail, session_id, request)
     if selection.issues:
-        raise ValueError("Auswahlziel oder Ankunftsfrist muss zuerst geklärt werden")
+        raise ValueError("Selection goal or arrival deadline must be clarified first")
     request, quantity_gap = rfq.checked_quantities(mail, session_id, request)
     if quantity_gap is not None:
-        raise ValueError("Maße oder Einheiten müssen zuerst geklärt werden")
+        raise ValueError("Dimensions or units must be clarified first")
     request, insurance_problems = rfq._insurance_terms(mail, session_id, request)
     if insurance_problems or (request.insurance and request.additional_shipments):
-        raise ValueError("Versicherungskonditionen müssen zuerst geklärt werden")
+        raise ValueError("Insurance terms must be clarified first")
     premium_minor = 0
     if request.insurance is not None:
         if not rfq.settings.cargo_insurance:
-            raise ValueError("Versicherungsberechnung ist deaktiviert")
+            raise ValueError("Insurance calculation is disabled")
         premium_minor = insurance.premium(request.insurance).eur_minor
     origin = resolve_origin(request)
     if origin is None:
@@ -109,9 +109,9 @@ def build(session_id: int) -> dict[str, Any]:
         portal = portal_result(request, deadline=time.monotonic() + PORTAL_BUDGET_S)
         air += portal.options
         if portal.errors:
-            warnings.append("Portal teilweise nicht erreichbar")
+            warnings.append("Portal partly unreachable")
     except Exception as e:  # noqa: BLE001 - sheets and bids still give a draft
-        warnings.append(f"Portal nicht erreichbar ({type(e).__name__})")
+        warnings.append(f"Portal unreachable ({type(e).__name__})")
     from app.agents import carrier_prefs
     from app.mail.router import address
 
@@ -133,11 +133,11 @@ def build(session_id: int) -> dict[str, Any]:
         warnings.append("Vom Kunden ausgeschlossen: " + ", ".join(sorted(banned)))
     if choice is None:
         if request.arrival_deadline:
-            raise ValueError("Keine verfügbare Verbindung erfüllt die gewünschte Ankunftsfrist")
-        raise ValueError(f"kein Preis für {origin} → {request.destination} gefunden")
+            raise ValueError("No available connection meets the requested arrival deadline")
+        raise ValueError(f"no price found for {origin} → {request.destination}")
     truck = rfq.best_truck(offers) if request.door_to_port else None
     if request.door_to_port and truck is None:
-        warnings.append("Kein Trucker-Gebot: Preis enthält keine Abholung, bitte ergänzen")
+        warnings.append("No trucker bid: price excludes pickup, please add it")
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0) + premium_minor
     if not selection.has_tariff_or_portal:
         warnings.append("Kein Tarifblatt-/Portalpreis, nur Carrier-Gebote")

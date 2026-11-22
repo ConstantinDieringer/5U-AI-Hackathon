@@ -43,7 +43,7 @@ def gate(now: datetime | None = None) -> dict[str, Any]:
     if not rows:
         return {
             "safe": True,
-            "reason": "noch keine RFQ empfangen",
+            "reason": "no RFQ received yet",
             "margin_s": margin,
             "interval_s": settings.rfq_interval_s,
         }
@@ -67,18 +67,18 @@ def gate(now: datetime | None = None) -> dict[str, Any]:
     if not settled:
         reason = f"neueste RFQ ({int(age)} s alt) noch ohne Antwort"
     elif 0 <= overdue <= margin:
-        reason = f"nächste RFQ seit {int(overdue)} s fällig, kann jeden Moment kommen"
+        reason = f"next RFQ overdue by {int(overdue)} s, may arrive any moment"
     elif busy["pricing"]:
         reason = f"{busy['pricing']} Session(s) in pricing"
     elif busy["customer_replies"]:
-        reason = f"{busy['customer_replies']} Kundenantwort(en) in der letzten Minute"
+        reason = f"{busy['customer_replies']} customer replies in the last minute"
     elif to_next <= margin:
-        reason = f"nächste RFQ in {int(to_next)} s"
+        reason = f"next RFQ in {int(to_next)} s"
     else:
         reason = (
-            f"nächste RFQ in {int(to_next)} s, neueste beantwortet"
+            f"next RFQ in {int(to_next)} s, latest answered"
             if answered
-            else (f"nächste RFQ in {int(to_next)} s, neueste ohne Antwort abgelaufen")
+            else (f"next RFQ in {int(to_next)} s, latest expired without answer")
         )
     return {
         "safe": settled
