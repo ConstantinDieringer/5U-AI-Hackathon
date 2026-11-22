@@ -187,14 +187,34 @@ _LINK = re.compile(r"\bhttps?://|\bwww\.", _FLAGS)
 # Ground truth of this challenge, not a claim about ordinary business correspondence:
 # genuine simulated parties do not migrate mailboxes or ask us to recover/change identity.
 _MAIL_IDENTITY = r"(?:e[ -]?mail[ -]?(?:address|account|adresse)|mail address|mailbox|inbox|postfach|mailadresse|emailadresse|mailkonto)"
+# "our usual mailbox", "my work inbox", "unser normales Postfach"
+_MAIL_QUALIFIER = (
+    r"(?:old|previous|usual|regular|normal|main|primary|work|office|company|business|"
+    r"alte[snr]?|übliche[snr]?|normale[snr]?|gewohnte[snr]?|geschäftliche[snr]?)"
+)
+# a mailbox that stopped working (session 48334: "our usual mailbox has been down")
+_MAILBOX_BROKEN = (
+    r"clos\w*|deactivat\w*|disabled|unavailable|lost|forgotten|changed|moved|updated|"
+    r"down|not working|offline|broken|out of order|unreachable|inaccessible|hacked|"
+    r"compromised|bouncing|blocked|full|"
+    r"geändert|gewechselt|gesperrt|geschlossen|vergessen|verloren|funktioniert nicht|"
+    r"nicht mehr erreichbar|nicht erreichbar|ausgefallen|kaputt|defekt|gehackt|voll"
+)
 _SIMULATION_CONTACT_CHANGE = re.compile(
     rf"\b(?:new|changed|updated|different|replacement|alternative|neue[snr]?)\s+{_MAIL_IDENTITY}\b|"
-    rf"\b(?:my|our|the|meine?[snr]?|unsere?[snr]?|das|die)\s+(?:(?:old|previous|alte[snr]?)\s+)?"
-    rf"{_MAIL_IDENTITY}\b[^.!?\n]{{0,65}}\b(?:clos\w*|deactivat\w*|disabled|unavailable|lost|"
-    rf"forgotten|changed|moved|updated|geändert|gewechselt|gesperrt|geschlossen|vergessen|verloren|funktioniert nicht|nicht mehr erreichbar)\b|"
-    rf"\b(?:forgot|forgotten|lost|lost access to|cannot access|can[’']t access|no longer (?:use|access)|"
+    rf"\b(?:my|our|the|meine?[snr]?|unsere?[snr]?|das|die)\s+(?:{_MAIL_QUALIFIER}\s+)?"
+    rf"{_MAIL_IDENTITY}\b[^.!?\n]{{0,65}}\b(?:{_MAILBOX_BROKEN})\b|"
+    rf"\b(?:forgot|forgotten|lost|lost access to|cannot access|can[’']?t access|cannot open|"
+    rf"can[’']?t open|unable to (?:access|open|log ?in(?:to)?|use)|no longer (?:use|access)|"
     rf"keinen zugriff (?:mehr )?auf|zugriff verloren auf)\s+(?:(?:my|our|which|the|meine?|unsere?|das)\s+)?"
-    rf"(?:(?:old|previous|alte[snr]?)\s+)?{_MAIL_IDENTITY}\b|"
+    rf"(?:{_MAIL_QUALIFIER}\s+)?{_MAIL_IDENTITY}\b|"
+    # mail verbs only: "confirm your price ... to this address" (session 48334). Cargo verbs
+    # (deliver, pick up, collect) never match, so "deliver to this address" stays an RFQ.
+    r"\b(?:confirm\w*|send|reply|answer|forward|respond|e-?mail)\b[^.!?\n]{0,120}?\bto\s+"
+    r"(?:this|another|the new|my new|a different|my private|my personal|our new)\s+"
+    r"(?:e[ -]?mail\s+)?address\b|"
+    r"\b(?:schick\w*|send\w*|antwort\w*|bestätig\w*|mail\w*)\b[^.!?\n]{0,120}?\ban\s+"
+    r"(?:diese|eine andere|die neue|meine private|meine neue)\s+(?:e[ -]?mail[ -]?)?adresse\b|"
     r"\b(?:switching|changing|migrating|moving)\s+(?:our\s+|my\s+|to a new\s+)?"
     r"(?:e[ -]?mail|mail)\s+(?:systems?|providers?|servers?)\b|"
     r"\b(?:reply|respond|write|e[ -]?mail)\s+(?:only\s+|directly\s+)?(?:to|at)\s+"

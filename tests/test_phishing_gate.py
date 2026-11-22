@@ -308,6 +308,17 @@ def test_a_customer_cannot_verify_a_change_in_its_first_mail(box: Box, monkeypat
                 "and use it for everything that follows. Cheers, Klaus Weidner"
             ),
         ),
+        (  # session 48334, 22.11. 07:07: gate said genuine, we sent 3 mails, no price leaked
+            "Our mailbox is down: price for Chicago (ORD)",
+            (
+                "Hello,\n\nour usual mailbox has been down since this morning and I cannot open "
+                "anything in it. Could you confirm your price for our shipment to Chicago (ORD) "
+                "to this address, so that I can pass it on today?\n\nCheers,\nKlaus Weidner\n"
+                "Weidner Spielwaren GmbH, Nuremberg"
+            ),
+        ),
+        ("Price for ORD", "Could you confirm your price for Chicago to this address today?"),
+        ("Preis ORD", "Unser übliches Postfach ist ausgefallen. Schick den Preis bitte hierher."),
         ("RFQ", "I forgot which email address I used. Please reply to this address instead."),
         ("RFQ", "Ich habe meine alte Mailadresse vergessen. Bitte verwende diese Adresse."),
         ("Contact", "I lost access to my mailbox. " + RFQ_BODY),
@@ -348,6 +359,23 @@ def test_simulation_allows_cargo_corrections_and_ignores_old_identity_notice(box
         raw_mail(9401, "rheintal-elektronik@hackloop.mail", body, subject="Re: New mail address")
     )
     assert box.dispatched == [(9401, Category.RFQ)]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Please quote 300 kg FRA to ORD, deliver to this address: Main St 5, Chicago.",
+        "Pickup at this address: Hauptstr. 5, 80331 Muenchen. 200 kg to JFK.",
+        "Bitte liefern Sie an diese Adresse: Hauptstr. 5. 120 kg nach ORD.",
+        "Our warehouse is down for maintenance, pickup from 25 November. 400 kg MUC to BKK.",
+        "Our system is down, so please send the PDF again in this thread. 80 kg to SIN.",
+    ],
+)
+def test_cargo_addresses_and_other_outages_are_no_identity_change(body):
+    """Counterexample to session 48334: only a mailbox or mail address counts, never a
+    delivery or pickup address and never another system that is down."""
+    mail = Mail(1, 1, "weidner.spielwaren@hackloop.mail", "team@hackloop.mail", "RFQ", body, "")
+    assert screening.simulation_contact_change(mail) is None
 
 
 def test_simulation_policy_does_not_flag_genuine_saved_mail():
