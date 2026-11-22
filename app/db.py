@@ -971,6 +971,60 @@ def _session_by_subject(c: sqlite3.Connection, subject: str, body: str) -> int |
     return None
 
 
+_OUR_LANE = re.compile(r"\b([A-Z]{3}) to ([A-Z]{3})\b|\bto ([A-Z]{3}) airport\b")
+_OUR_WEIGHT = re.compile(r",\s*(\d+(?:\.\d+)?) kg /")
+_STATED_KG = re.compile(r"(\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?)\s*(?:kgs?|kilos?)\b(?!\s*/)")
+
+
+def _kg_figure(raw: str) -> float:
+    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", raw):
+        return float(re.sub(r"[.,]", "", raw))
+    return float(raw.replace(",", "."))
+
+
+def bid_request_for_reply(
+    sender: str, subject: str, body: str, c: sqlite3.Connection | None = None
+) -> tuple[int, int] | None:
+    """Fallback for a carrier reply with no headers, no [AP-n] tag and a changed subject
+    (rate desks answer unthreaded): (session, our bid request mail) when exactly one recent
+    request to this carrier fits. The weight the reply names decides between two open
+    requests on the same lane ("for the 1,250 kg shipment"); without a weight the lane must
+    be unique. Two candidates that still fit are never guessed: the reply stays unassigned."""
+    addr = parseaddr(sender or "")[1].strip().lower()
+    if not addr:
+        return None
+    since = (datetime.now(UTC) - SUBJECT_MATCH_WINDOW).isoformat(timespec="seconds")
+    rows = _rows(
+        (c or conn()).execute(
+            "SELECT id, session_id, subject FROM mails WHERE direction = 'out'"
+            " AND category = 'bid_request' AND session_id IS NOT NULL"
+            " AND lower(recipient) = ? AND received_at >= ? ORDER BY id DESC",
+            (addr, since),
+        )
+    )
+    text = f"{subject or ''}\n{body or ''}"
+    stated = {_kg_figure(m[1]) for m in _STATED_KG.finditer(text)}
+    upper = set(re.findall(r"\b[A-Z]{3}\b", text))
+    fits: dict[int, int] = {}
+    for r in rows:
+        ours = r["subject"] or ""
+        lane = _OUR_LANE.search(ours)
+        codes = {x for x in (lane.groups() if lane else ()) if x}
+        if upper & codes != codes:
+            continue  # the reply names no or another lane
+        weight = _OUR_WEIGHT.search(ours)
+        billed = re.search(r"billed at (\d+(?:\.\d+)?) kg", ours)
+        ours_kg = {float(m[1]) for m in (weight, billed) if m}
+        if stated and not any(abs(k - w) <= 0.5 for k in stated for w in ours_kg):
+            continue
+        fits.setdefault(int(r["session_id"]), int(r["id"]))
+    if len(fits) != 1:
+        if len(fits) > 1:
+            log.warning("unthreaded bid from %s fits sessions %s: left unassigned", addr, fits)
+        return None
+    return next(iter(fits.items()))
+
+
 REPLY_SESSION_STATUSES = ("new", "pricing", "quoted", "accepted", "booked", "confirmed")
 ORPHAN_REPLY = "orphan_reply"  # customer reply whose thread we do not know: a person decides
 
@@ -1012,6 +1066,62 @@ def session_for_headerless_reply(sender: str, subject: str) -> int | None:
         ):
             return int(r["id"])
     return None
+
+
+_BOOK_INTENT = re.compile(
+    r"\b(?:please\s+(?:book|proceed)|go\s+ahead|book\s+(?:it|the\s+shipment|this)|"
+    r"we\s+(?:accept|approve)|approved|confirm(?:ed)?\s+the\s+(?:booking|offer|quote)|"
+    r"(?:fest\s+)?(?:ein)?buchen|bucht|buchung(?:sfreigabe)?|freigegeben|freigabe|beauftragen|"
+    r"r[ée]server|reservar|prenotare|confermiamo)\b",
+    re.IGNORECASE,
+)
+ACCEPTANCE_MATCH_WINDOW = timedelta(hours=12)
+_QUOTE_REQUEST = re.compile(
+    r"\b(?:please quote|quote (?:us|me)|request for quot|rfq|price for|best (?:price|rate)|"
+    r"bitte um (?:ein |ihr |euer )?(?:angebot|preis)|angebot (?:f[üu]r|anfragen)|preisanfrage|"
+    r"anfrage (?:luftfracht|export))",
+    re.IGNORECASE,
+)
+_ROUTE_PAIR = re.compile(r"\b([A-Z]{3})\s*(?:-+>?|–|→|/|\bto\b|\bnach\b)\s*([A-Z]{3})\b")
+
+
+def session_for_unthreaded_acceptance(sender: str, subject: str, body: str) -> int | None:
+    """A booking approval sent as a brand-new mail ("Buchungsfreigabe MUC - ICN (480 kg)",
+    no Re:, no headers) to the one quoted, unbooked session of the same sender. Any route
+    or weight the mail names must match that quote; several fitting sessions or none:
+    None, and the mail stays a new request."""
+    text = f"{subject or ''}\n{body or ''}"
+    addr = parseaddr(sender or "")[1].strip().lower()
+    if not addr or not _BOOK_INTENT.search(text) or _QUOTE_REQUEST.search(text):
+        return None
+    since = (datetime.now(UTC) - ACCEPTANCE_MATCH_WINDOW).isoformat(timespec="seconds")
+    stated_kg = {_kg_figure(m[1]) for m in _STATED_KG.finditer(text)}
+    pairs = set(_ROUTE_PAIR.findall(text))
+    fits = []
+    for r in _rows(
+        conn().execute(
+            "SELECT s.id, s.customer, s.request_json, q.origin, q.destination FROM sessions s"
+            " JOIN quotes q ON q.session_id = s.id WHERE s.kind = 'rfq' AND s.status = 'quoted'"
+            " AND q.sent_at >= ? AND NOT EXISTS (SELECT 1 FROM bookings b"
+            " WHERE b.session_id = s.id) ORDER BY s.id DESC",
+            (since,),
+        )
+    ):
+        if parseaddr(r["customer"] or "")[1].strip().lower() != addr:
+            continue
+        lane = (r["origin"], r["destination"])
+        if pairs and lane not in pairs:
+            continue  # the mail names another route
+        try:
+            request = json.loads(r["request_json"] or "{}")
+        except ValueError:
+            request = {}
+        kg = request.get("weight_kg")
+        if stated_kg and kg and not all(abs(k - float(kg)) <= 0.5 for k in stated_kg):
+            continue
+        if int(r["id"]) not in fits:
+            fits.append(int(r["id"]))
+    return fits[0] if len(fits) == 1 else None
 
 
 _AP_TAG = re.compile(r"\bAP-(\d+)\b")
@@ -1178,6 +1288,9 @@ def ingest_mail(
             session_id = _session_by_subject(c, subject, body)
         if session_id is None and (category not in SESSION_CATEGORIES or category == "customer"):
             session_id = _session_by_reference(c, subject, body)
+        if session_id is None and category == "carrier_bid" and not refs and in_reply_to is None:
+            match = bid_request_for_reply(sender, subject, body, c)
+            session_id = match[0] if match else None
         orphan = session_id is None and category == "customer"
         created = False
         if session_id is None and category in SESSION_CATEGORIES and not orphan:

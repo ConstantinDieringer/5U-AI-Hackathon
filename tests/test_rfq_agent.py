@@ -171,3 +171,20 @@ def test_incomplete_door_quote_is_not_sent(stub, monkeypatch) -> None:
     rfq.handle_rfq(mail, 265)
     assert all(message["to"] != CUSTOMER for message in stub.sent)
     assert db.get_session(265)["status"] == "error"
+
+
+def test_damaged_lithium_rfq_is_refused_not_quoted(stub) -> None:
+    """Forbidden cargo (IATA DGR SP A154): a reasoned refusal, no price, no DG question."""
+    body = (
+        "Hello,\n\nwe need fastest air freight from 40474 Düsseldorf to Dubai DXB.\n"
+        "Cargo: 2 boxes, 60x40x40 cm, 45 kg total.\nContent: Defective / swollen "
+        "Lithium-Ion battery packs (UN3480) returned for lab failure analysis.\n\nSara"
+    )
+    mail = dataclasses.replace(_rfq_mail(), body=body, subject="Urgent Air Export DUS -> DXB")
+    rfq.handle_rfq(mail, 265)
+
+    [reply] = stub.sent
+    assert reply["to"] == CUSTOMER and reply["in_reply_to"] == 265
+    assert "A154" in reply["body"] and "€" not in reply["body"]
+    s = db.get_session(265)
+    assert s["status"] == "lost" and not s["quotes"]

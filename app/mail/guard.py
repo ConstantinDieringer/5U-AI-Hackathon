@@ -54,7 +54,13 @@ _AUTO_BODY = re.compile(
     r"\bi am (?:currently )?out of (?:the )?office\b|"
     r"\bi(?:'m| am) (?:currently )?(?:away|on (?:vacation|holiday|leave))\b|"
     r"\bdiese nachricht wurde automatisch\b|\bich bin (?:derzeit |zurzeit )?nicht im b[üu]ro\b|"
-    r"\bdelivery to the following recipients? failed\b|\bmessage could not be delivered\b",
+    r"\bdelivery to the following recipients? failed\b|\bmessage could not be delivered\b|"
+    # ticket systems: "Your request has been logged under Ticket #99412"
+    r"\b(?:has|have) been (?:logged|registered|created|opened) (?:under|as|with) "
+    r"(?:ticket|case|reference)\b|\b(?:ticket|case) #?\d+ (?:has been|was) (?:created|opened)\b|"
+    r"\bplease do not reply to this (?:automated |automatic |auto-generated )?(?:message|e-?mail)\b|"
+    r"\bwurde unter (?:der )?(?:ticket|vorgangs)(?:nummer)?\b|"
+    r"\bbitte antworten sie nicht auf diese (?:automatische )?(?:nachricht|e-?mail)\b",
     _FLAGS,
 )
 _AUTO_SENDER = re.compile(
