@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Offline math CAPTCHA fixture</title>
+<body>
+<form id="math-captcha" method="post" action="/portal/ui">
+  <h1>Math CAPTCHA</h1>
+  <canvas width="280" height="72" aria-label="Arithmetic challenge"></canvas>
+  <label for="captcha-answer">Answer</label>
+  <input id="captcha-answer" name="answer" required>
+  <button type="submit">Verify</button>
+</form>
+<script>
+const canvas = document.querySelector('canvas');
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 280, 72);
+ctx.fillStyle = 'black'; ctx.font = 'bold 36px sans-serif';
+ctx.fillText('17 + 8 = ?', 20, 48);
+</script>
+</body></html>
