@@ -397,6 +397,14 @@ def recover_history(mail, sid, draft):
 
 
 def request(mail, sid, draft):
+    if db.case_owns(sid):
+        db.emit(
+            "case_gap",
+            "Fachprüfung meldet offene Angaben an Fallbearbeiter",
+            sid,
+            issues=draft.issues,
+        )
+        return
     if draft.evidence.get("workflow", "rfq") == "rfq" and not draft.evidence.get(
         "selection_blocked"
     ):
@@ -912,6 +920,8 @@ def catch_up():
     from app.agents import rescue
 
     for saved in db.clarification_unhandled_replies():
+        if db.case_owns(saved["session_id"]):
+            continue
         if rescue.is_owner(saved["session_id"]):
             rescue.take_over(_stored_mail(saved), saved["session_id"])
         else:
@@ -985,6 +995,8 @@ def tick(rescue) -> None:
             handle_reply(_stored_mail(saved), saved["session_id"])
     for item in db.validation_pending():
         sid = item["session_id"]
+        if db.case_owns(sid):
+            continue
         if db.is_paused(sid) or db.is_manual(sid):
             continue
         row = db.validation_get(sid)
@@ -1006,6 +1018,8 @@ def fallback_due(now=None):
     started = []
     for row in db.clarification_waiting():
         sid = int(row["session_id"])
+        if db.case_owns(sid):
+            continue
         workflow = json.loads(row["draft_json"]).get("evidence", {}).get("workflow", "rfq")
         age = (now - datetime.fromisoformat(row["created_at"])).total_seconds()
         if (

@@ -4,11 +4,11 @@ Only major capabilities or behavior changes belong here. Combine related work, n
 
 ## 22 November 2026
 
+* Opt-in exploratory case worker plans from sourced tasks, investigates attachments and speech, compares real offers with unit-aware expressions, creates checked multipage PDFs and verifies coverage before delivery. Durable receipts protect restarts and concurrent customer changes.
 * The dashboard opens directly on recent requests. Request details focus on readable emails, with information, flow and API costs above them. Logs expand on demand; errors collect quietly in a persistent message buffer.
-* GPT-5.6 Sol handles text and vision, with source-unit and currency checks. Exact conversions prevent cubic feet being priced as cubic metres. Recovery interprets unfamiliar requests, repairs evidenced facts and retries rejected plans with tool feedback.
 * Fixed simulation identities: mailbox changes, lost mail access and communication rerouting claims are quarantined before workflow actions, including from known senders. Automatic contact changes and historical redirects are disabled by default.
 * Customer replies support versioned offers and explicit approval of revised terms. Execution remains rollout controlled, with shadow evaluation as the default.
-* Multilingual requests, attachments and replies use checked translations while preserving shipment facts and consent evidence.
+* Multilingual text and vision retain checked units, currencies and consent evidence; exact conversions prevent cubic feet being priced as cubic metres.
 * Arrival constraints and cargo insurance are validated before all quote paths so incomplete or unsuitable offers are held for clarification.
 * Each settled booking gets a separate tracking mail. Unanswered tracking requests recover durably, reference-only replies inherit the conversation language, and uncertain tracking delivery allows one final bounded send.
 

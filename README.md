@@ -59,6 +59,19 @@ python -m tools.ship_check     # the essential test suite + ruff, same command a
 
 Tests never call 5U or a model: the mailbox, portal and gateway are blocked in `tests/conftest.py`.
 
+## Exploratory case worker
+
+Opt in with `CASE_WORKER_ENABLED=true`. The model discovers sourced tasks, investigates
+documents and speech, prepares independent shipments, uses existing real-price tools,
+evaluates unit-aware selection expressions and verifies coverage before delivery. PDFs
+are generated and checked as actual files. The dashboard shows tasks and tool results.
+
+`CASE_WORKER_WORKERS`, `CASE_WORKER_MAX_STEPS` and `CASE_WORKER_MAX_CALLS` bound concurrency
+and work per input. State and receipts survive restarts. Unknown services require evidence
+or review; the model cannot invent prices. Booking retains existing consent checks;
+combined-offer booking requires review. Keep the default disabled until gateway access,
+real-model quality, cost and timing have been evaluated for rollout.
+
 ## More
 
 - Project context and essential contracts: [CONTEXT.md](CONTEXT.md)

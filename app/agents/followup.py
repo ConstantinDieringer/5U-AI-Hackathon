@@ -125,6 +125,8 @@ def due(s: dict[str, Any], now: datetime | None = None) -> tuple[str, int] | Non
     kind "offer": quoted, customer silent or stalling. kind "question": our clarification
     question before the quote is unanswered (until the RFQ deadline)."""
     now = now or datetime.now(UTC)
+    if s.get("case_worker"):
+        return None
     workflow = s.get("workflow")
     if workflow and (
         workflow["phase"] != "awaiting_customer"

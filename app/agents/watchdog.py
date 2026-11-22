@@ -55,7 +55,9 @@ def due(now: datetime | None = None) -> list[dict]:
     out = []
     for row in db.watchdog_candidates(oldest, newest):
         sid = int(row["session_id"])
-        if row["paused"] or db.is_global_paused():
+        if db.case_owns(sid):
+            action = "case_worker"
+        elif row["paused"] or db.is_global_paused():
             action = "paused"
         elif row["mode"] == "manual":
             action = "manual"
@@ -204,6 +206,8 @@ def force_quote(sid: int, reason: str = "watchdog") -> str:
 
 
 def _force(sid: int, reason: str) -> str:
+    if db.case_owns(sid):
+        return "case_worker"
     stored = db.root_mail(sid)
     if stored is not None and stored.get("category") == "phishing":
         return "phishing"  # never a reply to a blocked mail
