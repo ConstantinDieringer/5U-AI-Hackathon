@@ -88,6 +88,7 @@ class Settings:
     thread_rescue_after_s: float
     thread_rescue_max_age_s: float
     thread_rescue_max_parallel: int
+    thread_rescue_max_questions: int
     thread_rescue_max_mails: int
     thread_rescue_body_chars: int
     case_worker_enabled: bool
@@ -215,6 +216,9 @@ settings = Settings(
     # woke ~40 hours-old threads at once, sent mails into them and hit gateway 429s)
     thread_rescue_max_age_s=max(60.0, float(_env("THREAD_RESCUE_MAX_AGE_S", "600"))),
     thread_rescue_max_parallel=max(1, int(_env("THREAD_RESCUE_MAX_PARALLEL", "2"))),
+    # questions to one customer before the first quote; then a human takes over (session
+    # 38891 asked for the Augsburg ZIP eleven times until the deadline passed)
+    thread_rescue_max_questions=max(1, int(_env("THREAD_RESCUE_MAX_QUESTIONS", "3"))),
     # Keep enough conversation to solve unfamiliar requests and accumulated corrections.
     thread_rescue_max_mails=max(2, int(_env("THREAD_RESCUE_MAX_MAILS", "24"))),
     thread_rescue_body_chars=max(500, int(_env("THREAD_RESCUE_BODY_CHARS", "8000"))),
