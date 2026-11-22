@@ -16,8 +16,8 @@ The system handles one air freight mailbox from request through quote, booking a
 
 ## Where to work
 
-Business workflows live in `app/agents/`, mail handling in `app/mail/`, pricing in `app/pricing/` and the dashboard in `app/ui/`. External calls use `app/hackloop.py`, model calls `app/llm.py`, SQL `app/db.py` and settings `app/config.py`. Validate external evidence and keep secrets out of code and logs.
+Business workflows live in `app/agents/`, mail handling in `app/mail/`, pricing in `app/pricing/` and the dashboard in `app/ui/`. Dashboard order values use agreed customer totals, separate currencies and one offer per request. Settings contain messages; business KPIs follow requests. External calls use `app/hackloop.py`, model calls `app/llm.py`, SQL `app/db.py` and settings `app/config.py`. Validate external evidence and keep secrets out of code and logs.
 
-Read detailed references only for the task at hand. Use [DEPLOY.md](DEPLOY.md) for production, [customer voice](app/mail/customer_voice.md) for wording and [technical references](context/docs/TECH_SPEC.md) for background. Current code and configuration define implemented behavior. Git and PRs retain detailed history.
+Read references only as needed. [DEPLOY.md](DEPLOY.md) covers production, [customer voice](app/mail/customer_voice.md) wording and [technical references](context/docs/TECH_SPEC.md) background. Code and configuration define behavior; Git retains history.
 
-Update this file only when a major capability, architecture decision or essential contract changes. Keep it under 500 words. Record only significant changes in [CHANGELOG.md](CHANGELOG.md), never create separate context summaries or change fragments.
+Update only for major capabilities, architecture or essential contracts. Maximum 500 words. [CHANGELOG.md](CHANGELOG.md) tracks significant changes; never create additional summaries or change fragments.
