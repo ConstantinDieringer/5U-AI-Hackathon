@@ -264,3 +264,54 @@ def test_question_naming_another_customer_never_gets_their_shipment():
     assert tracking.find(leak, records) is None
     own = "Where is our 1228 kg shipment STR to EZE? Customer: Weidner Spielwaren"
     assert tracking.find(own, records)["booking_reference"] == "BK-6Z1GMPG3"
+
+
+def _airline_confirmation(mid: int, bk: str, ap: str) -> Mail:
+    body = (
+        f"Hello,\n\nyour booking {bk} is confirmed.\n\nBooking reference: {bk}\n"
+        f"Your reference: {ap}\nAirline: Meridian Freightways (MD)\nLane: STR-EZE\n"
+        "Price: 4408.52 EUR\nStatus: booked and ready to ship\n"
+    )
+    sender = "meridian-freightways@hackloop.mail"
+    return Mail(mid, mid, sender, TEAM, f"Booking {bk} confirmed", body, "")
+
+
+@pytest.mark.core
+def test_email_booking_answers_with_the_airlines_booking_reference(monkeypatch) -> None:
+    """Rounds 27/29/45/46/51/52 scored 5 of 10: booked by email (portal 503), the row had no
+    BK reference, so the confirmation set it confirmed by our AP tag and tracking answered
+    with AP-6882 instead of the airline's BK-1TIIVV6M."""
+    from app.agents import booking
+
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    monkeypatch.setattr(tracking, "_today", lambda: date(2026, 11, 21))
+    _booked(6882, "kessler-feinmechanik@hackloop.mail", "STR", "EZE", None, confirmed=False)
+    assert booking.on_airline_mail(_airline_confirmation(7174, "BK-1TIIVV6M", "AP-6882"))
+    text = "Kessler Feinmechanik GmbH, STR to EZE, 1228 kg, ready on 2026-11-25? Where is it now?"
+    _tracking_session(7421, "Status of our shipment STR to EZE, 1228 kg", text)
+    tracking.handle(Mail(7421, 7421, TRACK, TEAM, "Status of our shipment", text, ""), 7421)
+    body = api.sent[-1]["body"]
+    assert "BK-1TIIVV6M" in body and "AP-6882" not in body
+    assert "confirmed by Fjordline Air Cargo" in body
+
+
+def test_confirmation_never_replaces_a_known_booking_reference() -> None:
+    """Counterexample: a portal booking keeps its BK reference; a confirmation for our AP tag
+    naming another BK (wrong or repeated airline mail) does not rename the shipment."""
+    from app.agents import booking
+
+    _booked(1223, "weidner-spielwaren@hackloop.mail", "STR", "EZE", "BK-6Z1GMPG3", False)
+    booking.on_airline_mail(_airline_confirmation(7175, "BK-OTHER999", "AP-1223"))
+    b = db.get_session(1223)["bookings"][0]
+    assert b["booking_reference"] == "BK-6Z1GMPG3" and b["status"] == "confirmed"
+
+
+def test_startup_backfill_repairs_email_booking_without_reference() -> None:
+    """Live shipments booked by email before the fix get their BK reference on restart."""
+    _booked(6882, "kessler-feinmechanik@hackloop.mail", "STR", "EZE", None, confirmed=False)
+    conf = _airline_confirmation(7174, "BK-1TIIVV6M", "AP-6882")
+    db.ingest_mail(mail_id=conf.id, sender=conf.sender, recipient=TEAM, subject=conf.subject,
+                   body=conf.body, category="carrier", received_at=datetime.now(UTC).isoformat())  # fmt: skip
+    db.backfill_bookings_from_confirmations()
+    assert db.get_session(6882)["bookings"][0]["booking_reference"] == "BK-1TIIVV6M"
