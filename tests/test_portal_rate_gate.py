@@ -16,7 +16,7 @@ from app.pricing import portal_sync
 @pytest.fixture(autouse=True)
 def gate(monkeypatch):
     monkeypatch.setattr(hackloop, "_rate_used", 0)
-    monkeypatch.setattr(hackloop, "_rate_window_start", 0)
+    monkeypatch.setattr(hackloop, "_rate_window_start", float("-inf"))
     monkeypatch.setattr(hackloop, "_rate_blocked_until", 0)
     monkeypatch.setattr(hackloop, "_rate_cap", 10)
     monkeypatch.setattr(portal_sync, "_cache", {})

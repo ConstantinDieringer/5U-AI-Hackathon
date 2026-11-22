@@ -29,7 +29,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(portal_sync, "_seen_dataset_version", None)
     monkeypatch.setattr(portal_sync, "refresh_if_stale", lambda *a: None)
     monkeypatch.setattr(hackloop, "_rate_used", 0)
-    monkeypatch.setattr(hackloop, "_rate_window_start", 0)
+    monkeypatch.setattr(hackloop, "_rate_window_start", float("-inf"))
     monkeypatch.setattr(hackloop, "_rate_blocked_until", 0)
     monkeypatch.setattr(hackloop, "_rate_cap", 10)
     pricing.reload_lanes()

@@ -87,7 +87,7 @@ def integer(value: object) -> int:
 def _date(value: str) -> str:
     for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
         try:
-            return datetime.strptime(value.strip()[:10], fmt).date().isoformat()  # noqa: DTZ007 - date only
+            return datetime.strptime(value.strip()[:10], fmt).date().isoformat()
         except ValueError:
             continue
     raise ValueError(f"Unrecognized tariff date: {value}")

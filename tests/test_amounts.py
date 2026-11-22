@@ -41,16 +41,20 @@ def test_parse_decimal_reads_both_separator_conventions(raw, expected):
     [
         # trap: a waiting-time rate per day is larger than the all-in price
         (
-            "Our all-in price is 1,240 EUR. Waiting time is charged at 1,500 EUR per day "
-            "if required.",
+            (
+                "Our all-in price is 1,240 EUR. Waiting time is charged at 1,500 EUR per day "
+                "if required."
+            ),
             ("1240.00", "EUR"),
         ),
         # trap: an optional extra is larger than the total
         ("Total 980 EUR, optional insurance extra 1,200 EUR", ("980.00", "EUR")),
         # trap: airline confirmation naming the per-kg rate and the insured cargo value
         (
-            "Booking BK-1 confirmed. Rate 2.85 EUR/kg, total 2,450.00 EUR, "
-            "cargo value 30,000 EUR insured.",
+            (
+                "Booking BK-1 confirmed. Rate 2.85 EUR/kg, total 2,450.00 EUR, "
+                "cargo value 30,000 EUR insured."
+            ),
             ("2450.00", "EUR"),
         ),
         ("Price: 800 EUR + fuel 200 EUR = 1,000 EUR all-in", ("1000.00", "EUR")),
@@ -118,7 +122,7 @@ def test_model_total_reads_decimal_comma():
 
 def test_same_day_offer_is_never_zero_transit_days():
     carrier = next(c for c in carriers() if c.kind == "airline")
-    offer = bids.Offer(carrier, Decimal("500"), 0.5, 1)
+    offer = bids.Offer(carrier, Decimal(500), 0.5, 1)
     rfq = Rfq(origin="MUC", destination="ORD", weight_kg=100, volume_cbm=0.5)
     assert bids.airline_option(offer, rfq, "MUC", 100.0).transit_days == 1
 
