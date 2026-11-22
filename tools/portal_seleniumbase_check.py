@@ -15,6 +15,8 @@ import time
 from importlib.metadata import version
 from pathlib import Path
 
+from tools import portal_math_captcha
+
 PORTAL_URL = "https://start-hack.5u.ai/portal/ui"
 
 
@@ -24,7 +26,8 @@ def snapshot(browser, output: Path, number: int) -> dict:
         marker in title.lower()
         for marker in ("just a moment", "nur einen moment", "checking your browser")
     )
-    form = browser.is_element_visible("#team_key")
+    math_status = portal_math_captcha.discover(browser)["status"]
+    form = math_status == "not_found" and browser.is_element_visible("#team_key")
     screenshot = output / f"seleniumbase-{number:02d}.png"
     browser.save_screenshot(str(screenshot))
     result = {
@@ -33,6 +36,7 @@ def snapshot(browser, output: Path, number: int) -> dict:
         "title": title,
         "challenge_visible": challenge,
         "portal_form_found": form,
+        "math_captcha_status": math_status,
         "x_display_configured": bool(os.environ.get("DISPLAY")),
         "headless": browser.driver.config.headless,
         "portal_rates_verified": False,
@@ -50,11 +54,14 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--browser-path", type=Path, default=Path("/usr/bin/chromium"))
     parser.add_argument("--attempts", type=int, default=1)
+    parser.add_argument("--math-attempts", type=int, default=2)
     args = parser.parse_args()
     if sys.platform != "linux":
         parser.error("This experiment requires Linux with Xvfb")
     if not 0 <= args.attempts <= 2:
         parser.error("--attempts must be between 0 and 2")
+    if not 0 <= args.math_attempts <= 2:
+        parser.error("--math-attempts must be between 0 and 2")
     if not args.browser_path.is_file():
         parser.error("--browser-path must name an installed Chromium browser")
     from seleniumbase import config as sb_config
@@ -84,6 +91,14 @@ def main() -> None:
                 browser.solve_captcha()
                 time.sleep(30)
                 result = snapshot(browser, output, attempt + 1)
+            math_result = portal_math_captcha.solve(browser, output, args.math_attempts)
+            (output / "math-captcha-result.json").write_text(
+                json.dumps(math_result, indent=2), encoding="utf-8"
+            )
+            print(json.dumps({"math_captcha": math_result}), flush=True)
+            result = snapshot(browser, output, args.attempts + 2)
+            if not result["portal_form_found"]:
+                raise SystemExit("Portal is not ready; see CAPTCHA diagnostics")
         finally:
             try:
                 if browser is not None:

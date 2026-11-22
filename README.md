@@ -88,6 +88,26 @@ personal Chrome profile. It records the browser's actual display/headless mode,
 portal-form availability and screenshots. It never claims rates were verified
 merely because a CAPTCHA was clicked or the portal form became visible.
 
+After Cloudflare, the browser checks for a dedicated arithmetic CAPTCHA form.
+It reads plain arithmetic text or crops an image/canvas and runs local Tesseract
+OCR on three image variants. OCR readings must agree on the same expression;
+calculation permits only bounded arithmetic, without executing page text. The
+browser submits at most two answers in the same session (`--math-attempts 0`
+disables submission). Unknown forms, conflicting readings, changed images and
+unrecognized operators stop the check with a nonzero exit status. Diagnostics
+include cropped challenge images and `math-captcha-result.json`, without team
+keys or cookies. The image includes the OCR engine and English data; no hosted
+solver, account or trial is needed. Recognition of the real optional CAPTCHA
+still needs validation once the organizer enables it again. This remains a
+standalone browser check, separate from the production rate API client.
+
+Exercise the full browser/OCR/submit flow against a loopback-only synthetic
+CAPTCHA, including mild distortion, text, disabled and unsupported forms:
+
+```bash
+docker run --rm --shm-size=256m -v /absolute/path/to/results:/results --entrypoint python3 5u-portal-browser -m tools.portal_math_smoke_check --output-dir /results
+```
+
 ```bash
 python -m tools.ship_check     # the essential test suite + ruff, same command as CI
 ```

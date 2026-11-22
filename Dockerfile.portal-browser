@@ -1,8 +1,9 @@
 # Standalone Linux/Xvfb experiment. Does not start the forwarder or accept team keys.
 FROM alpine:3.24
-RUN apk add --no-cache python3 py3-pip python3-tkinter py3-pillow chromium xvfb xauth font-dejavu ca-certificates
+RUN apk add --no-cache python3 py3-pip python3-tkinter py3-pillow chromium xvfb xauth font-dejavu ca-certificates tesseract-ocr tesseract-ocr-data-eng
 WORKDIR /probe
 COPY requirements-seleniumbase.txt .
 RUN python3 -m pip install --no-cache-dir --break-system-packages -r requirements-seleniumbase.txt
-COPY tools/portal_seleniumbase_check.py ./portal_seleniumbase_check.py
-ENTRYPOINT ["python3", "-u", "portal_seleniumbase_check.py", "--output-dir", "/results"]
+COPY tools/portal_seleniumbase_check.py tools/portal_math_captcha.py tools/portal_math_smoke_check.py ./tools/
+COPY tests/fixtures/portal_math_captcha.html ./tests/fixtures/
+ENTRYPOINT ["python3", "-u", "-m", "tools.portal_seleniumbase_check", "--output-dir", "/results"]

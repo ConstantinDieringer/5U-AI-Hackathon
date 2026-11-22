@@ -1,0 +1,10 @@
+**
+!Dockerfile.portal-browser
+!requirements-seleniumbase.txt
+!tools/
+!tools/portal_seleniumbase_check.py
+!tools/portal_math_captcha.py
+!tools/portal_math_smoke_check.py
+!tests/
+!tests/fixtures/
+!tests/fixtures/portal_math_captcha.html
