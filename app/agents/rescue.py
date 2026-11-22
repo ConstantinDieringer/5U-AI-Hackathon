@@ -67,7 +67,8 @@ For every correction and released hold cite an exact passage from the customer e
 Release obsolete unreadable-attachment holds when later written customer details replace what was
 needed from the attachment. Do not demand a packing list to replace an audio message. Individual
 dimensions are unnecessary if total volume is explicit. An airport can follow a supported pickup
-ZIP through the pricing tool. Resolve conflicts from explicit later answers instead of repeating
+ZIP through the pricing tool. A pickup city in a supported zone is enough to price; the quote
+confirms the exact address, so never ask for a ZIP once the customer named the city. Resolve conflicts from explicit later answers instead of repeating
 answered questions. Release only the listed field/code pair and explain why it is obsolete.
 Use continue or retry_pricing when real pricing can proceed. Use ask_customer only for a specific
 remaining gap, with one concise question in both languages. Never repeat an answered question.
@@ -564,6 +565,17 @@ def recover_request(
     return request, draft
 
 
+def _questions_asked(session: dict) -> int:
+    """Clarification mails already sent to the customer in this thread."""
+    return sum(
+        1
+        for m in session["mails"]
+        if m["direction"] == "out"
+        and m["category"] == "clarification"
+        and address(m["recipient"]) == address(session["customer"])
+    )
+
+
 def _rules_decide(session: dict, mail: Mail) -> bool:
     """A clear yes to the open offer: the booking tool settles it by its own rules, without
     a plan. Questions, conditions and anything after the booking stay with the model."""
@@ -616,6 +628,37 @@ def take_over(mail: Mail, sid: int) -> bool:
         if not _eligible(sid, mail):
             return True
         db.rescue_answer_seen(sid, mail.id)
+        if plan.action == "ask_customer" and not session["quotes"] and mail.id != root.id:
+            # The customer answered our question. If the plan's own cited corrections already
+            # make a complete, supported request, price it instead of asking again: session
+            # 38891 named "Augsburg" eleven times while the plan kept asking for the ZIP that
+            # pricing does not need (a pickup city is priced by zone, the quote confirms it).
+            request, checked = _apply(mail, sid, root, draft.model_copy(deep=True), plan, evidence)
+            if request:
+                db.emit(
+                    "thread_rescue_question_skipped",
+                    "Antwort reicht zum Bepreisen, keine weitere Rückfrage",
+                    sid,
+                    question=plan.question_en,
+                )
+                plan = plan.model_copy(update={"action": "retry_pricing"})
+        if (
+            plan.action == "ask_customer"
+            and not session["quotes"]
+            and _questions_asked(session) >= settings.thread_rescue_max_questions
+        ):
+            # Hard stop for a question loop: the customer keeps answering the same way, so
+            # another automatic question cannot help. A human takes the thread.
+            db.save_rescue_run(sid, key, "done")
+            db.emit(
+                "thread_rescue_blocked",
+                f"Schon {settings.thread_rescue_max_questions} Rückfragen ohne Quote, "
+                "keine weitere automatische Rückfrage. Bitte manuell übernehmen.",
+                sid,
+                level="error",
+                question=plan.question_en,
+            )
+            return True
         if plan.action in ("continue", "retry_pricing") and not session["quotes"]:
             request, checked = _apply(mail, sid, root, draft, plan, evidence)
             if request:
