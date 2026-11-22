@@ -296,3 +296,124 @@ def test_round_39_dg_in_attachment_asks_for_documents_then_quotes(world: World) 
     assert len(mails) == 2 and mails[1]["id"] == quote["mail_id"]
     assert db.get_session(10132)["request"]["weight_kg"] == 378.0
     assert w.network_blocked == 0
+
+
+# ---------------------------------------------------------------- session 56420 (Lindqvist)
+
+SESSION_56420_CUSTOMER = "lindqvist-medtech@hackloop.mail"
+SESSION_56420 = (
+    "Hi,\n\nCould you quote the cheapest air freight option from FRA to JFK, all-in in EUR? "
+    "We'll deliver the shipment to FRA ourselves. It'll be ready on 2026-11-28.\n\nIt's 4 "
+    "pieces of touch-up paint for machine housings, general cargo (non-dangerous), with a "
+    "gross weight of 1618 kg and a volume of 4.45 cbm. The packing list is attached.\n\nSara"
+)
+SESSION_56420_FACTS = {
+    "origin": "FRA",
+    "pickup_zip": None,
+    "destination": "JFK",
+    "weight_kg": 1618.0,
+    "volume_cbm": 4.45,
+    "pieces": 4,
+    "preference": "cheapest",
+    "ready_date": "2026-11-28",
+    "language": "en",
+    "customer_name": "Sara",
+}
+SESSION_56420_PROMISE = (
+    "Thank you for asking. We'll send you the dangerous goods documents (shipper's "
+    "declaration and safety data sheet) shortly.\n\nSara"
+)
+
+
+@pytest.mark.core
+def test_session_56420_dg_promise_on_rescue_path_quotes_without_a_model(
+    tmp_path, monkeypatch
+) -> None:
+    """The packing list's table header "Gross weight (kg)" read the first row's 4 pieces as
+    the weight (false conflict), and the rescue's model plan turned the customer's DG
+    document promise into "wait" until the deadline. The promise lifts the hold (round 41):
+    the shared answer rules price it, no model call."""
+    from app.agents import rescue
+
+    w = build_world(tmp_path, monkeypatch, clarify_once=True)
+    w._ids = 56_460  # replies after the RFQ, as in production
+    w.extraction = SESSION_56420_FACTS
+    w.packing_spec(
+        [
+            ("Packing List",),
+            ("Pieces", "Width (cm)", "Height (cm)", "Length (cm)", "Gross weight (kg)"),
+            (4, 80, 116, 120, 1618),
+            ("Total pieces:", 4),
+            ("Total gross weight (kg):", 1618),
+            ("Total volume (cbm):", 4.45),
+            ("Dangerous goods:", "UN1263, Class 3, Paint"),
+        ]
+    )
+    root = w.rfq(56420, SESSION_56420_CUSTOMER, "Air freight quote FRA to JFK", SESSION_56420,
+                 attachments=1)  # fmt: skip
+    assert _quote(56420) is None
+    issues = {i["field"] for i in db.validation_get(56420)["draft"]["issues"]}
+    assert "weight_kg" not in issues and "dangerous_goods" in issues
+
+    mid = w.next_id()
+    now = datetime.now(UTC).isoformat()
+    db.ingest_mail(mail_id=mid, sender=root.sender, recipient=TEAM,
+                   subject=f"Re: {root.subject}", body=SESSION_56420_PROMISE,
+                   category="customer", received_at=now, references=[root.id])  # fmt: skip
+    reply = Mail(mid, root.id, root.sender, TEAM, f"Re: {root.subject}",
+                 SESSION_56420_PROMISE, now, references=[root.id])  # fmt: skip
+    assert rescue.take_over(reply, root.id)
+    assert _quote(56420) is not None
+    assert w.network_blocked == 0
+
+
+def test_table_header_weight_is_not_a_total() -> None:
+    from decimal import Decimal
+
+    from app.mail.rfq_validation import numeric_facts
+
+    text = (
+        "Pieces | Width (cm) | Height (cm) | Length (cm) | Gross weight (kg)\n"
+        "4 | 80 | 116 | 120 | 1618\nTotal pieces: | 4\nTotal gross weight (kg): | 1618\n"
+    )
+    assert numeric_facts(text)["weight_kg"] == Decimal(1618)
+    assert numeric_facts("Gross weight:\n1674 kg")["weight_kg"] == Decimal(1674)
+
+
+@pytest.mark.core
+def test_session_56420_reply_during_takeover_is_answered_after_handback(
+    tmp_path, monkeypatch
+) -> None:
+    """Mail 56535 arrived while a person held the thread and stayed unanswered after the
+    handback: any manual reply hid the whole session from the rescue sweep. A manual reply
+    covers only the input it answered; a decline notice still ends the thread."""
+    from app.agents import rescue
+
+    w = build_world(tmp_path, monkeypatch)
+    w._ids = 56_460
+    w.extraction = SESSION_56420_FACTS
+    w.packing_spec([("Total gross weight (kg):", 1618), ("Total volume (cbm):", 4.45),
+                    ("Dangerous goods:", "UN1263, Class 3, Paint")])  # fmt: skip
+    root = w.rfq(56420, SESSION_56420_CUSTOMER, "Air freight quote FRA to JFK", SESSION_56420,
+                 attachments=1)  # fmt: skip
+    db.takeover(56420)
+    db.record_outgoing(mail_id=w.next_id(), recipient=root.sender, subject="Air freight",
+                       body="Please send the documents.", category="manual_reply",
+                       session_id=56420, in_reply_to=root.id)  # fmt: skip
+    mid = w.next_id()
+    db.ingest_mail(mail_id=mid, sender=root.sender, recipient=TEAM,
+                   subject=f"Re: {root.subject}", body=SESSION_56420_PROMISE,
+                   category="customer", received_at=datetime.now(UTC).isoformat(),
+                   references=[root.id])  # fmt: skip
+    future = "2999-01-01T00:00:00+00:00"
+
+    assert not db.rescue_candidates(future)  # still manual: the person owns it
+    db.handback(56420)
+    assert [c["id"] for c in db.rescue_candidates(future)] == [mid]
+    assert rescue.resume(56420, background=False)
+    assert _quote(56420) is not None
+
+    db.record_outgoing(mail_id=w.next_id(), recipient=root.sender, subject="Air freight",
+                       body="We cannot carry this.", category="notice", session_id=56420,
+                       in_reply_to=mid)  # fmt: skip
+    assert not db.rescue_candidates(future)

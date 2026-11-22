@@ -347,6 +347,12 @@ def api_takeover(session_id: int) -> dict[str, bool]:
 def api_handback(session_id: int) -> dict[str, bool]:
     _require(session_id)
     db.handback(session_id)
+    from app.agents import rescue
+
+    try:
+        rescue.resume(session_id)
+    except Exception:
+        log.exception("resume after handback failed")
     return {"ok": True}
 
 

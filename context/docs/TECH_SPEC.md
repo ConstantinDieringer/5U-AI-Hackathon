@@ -296,7 +296,7 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
   Bestätigung der Packliste ist weder Dokumenteneingang noch Transportfreigabe. Die Zusage,
   DGD/SDS zu senden, gibt die Angebotssperre frei (Runde 41 nach bloßer Zusage akzeptiert;
   6fdc811 wartete auf Anhänge, 26b5b9b nahm das zurück): nie auf Anhänge warten.
-- Schalter, alle Standard `false` (= heutiges Verhalten): `TOTALS_SAME_LINE` – ein
+- Schalter, Standard `false` außer `TOTALS_SAME_LINE` (seit Session 56420 an): `TOTALS_SAME_LINE` – ein
   Summen-Label erreicht seine Zahl über einen Zeilenumbruch nur nach of/is oder `:`/`|`
   (Tabellenkopf „Gross weight (kg)“ ist keine Summe). `THOUSANDS_EVIDENCE` – „1,674 kg“ ist
   1674 kg, wenn eine bekannte Zahl derselben Sendung das belegt, sonst bei Unplausibilität

@@ -2501,7 +2501,10 @@ def rescue_run(sid: int, key: str) -> dict[str, Any] | None:
 def rescue_candidates(before: str, after: str | None = None) -> list[dict[str, Any]]:
     """Latest unanswered customer input or unquoted RFQ, after the supervisor grace time.
 
-    `after`: ignore input received before it (old threads are not a live workflow)."""
+    `after`: ignore input received before it (old threads are not a live workflow).
+    A decline notice ends the thread. A manual reply only covers the input it answered: a
+    customer mail that arrives during a takeover is picked up after the handback (session
+    56420: the reply to the manual mail stayed unanswered past the deadline)."""
     return _rows(
         conn().execute(
             "SELECT m.*,s.id AS session_id FROM sessions s JOIN mails m ON m.id=("
@@ -2513,7 +2516,8 @@ def rescue_candidates(before: str, after: str | None = None) -> list[dict[str, A
             "OR (NOT EXISTS(SELECT 1 FROM mails o WHERE o.session_id=s.id AND o.direction='out' "
             "AND o.in_reply_to=m.id) AND m.id<>s.id)) "
             "AND NOT EXISTS(SELECT 1 FROM mails o WHERE o.session_id=s.id AND o.direction='out' "
-            "AND o.category IN ('manual_reply','notice')) ORDER BY m.received_at LIMIT 100",
+            "AND (o.category='notice' OR (o.category='manual_reply' AND o.id>m.id))) "
+            "ORDER BY m.received_at LIMIT 100",
             (before, after or ""),
         )
     )

@@ -648,9 +648,21 @@ def take_over(mail: Mail, sid: int) -> bool:
         db.emit("thread_rescue_rules", "Antwort per Regel entschieden, kein Modell", sid)
         return True
     if not session["quotes"] and mail.id != root.id:
-        _, checked = clarification.answer_draft(mail, sid, root, draft)
+        answered, checked = clarification.answer_draft(mail, sid, root, draft)
         checked.evidence = {**draft.evidence, **checked.evidence}
         draft = checked
+        if answered is not None and db.kv_claim(f"rescue.answered.{sid}.{mail.id}"):
+            # The shared answer rules already complete the request (session 56420: "we'll
+            # send the shipper's declaration and safety data sheet" lifts the DG hold, round
+            # 41). Price it; a model plan must not turn that into "wait" past the deadline.
+            db.rescue_answer_seen(sid, mail.id)
+            db.set_request(sid, answered.model_dump())
+            db.validation_save(
+                sid, "ready", checked.model_dump(mode="json"), dataclasses.asdict(root)
+            )
+            db.emit("thread_rescue_rules", "Antwort klärt alle offenen Punkte, kein Modell", sid)
+            rfq.handle_rfq(root, sid)
+            return True
     plan, key, evidence = _decision(mail, sid, root, draft, "owner")
     if plan is None:
         return True
@@ -793,6 +805,33 @@ def _run_owned(mail: Mail, sid: int) -> None:
     finally:
         with _running_lock:
             _running.discard(sid)
+
+
+def resume(sid: int, *, background: bool = True) -> bool:
+    """After a handback: answer the customer's latest unanswered mail now, without the grace
+    time. Live dispatch skipped it while the thread was manual (session 56420)."""
+    from app.agents import clarification, rfq
+
+    now = datetime.now(UTC)
+    after = (now - timedelta(seconds=settings.thread_rescue_max_age_s)).isoformat()
+    for candidate in db.rescue_candidates(now.isoformat(), after):
+        if candidate["session_id"] != sid:
+            continue
+        mail = clarification._stored_mail(candidate)
+        if not _eligible(sid, mail) or rfq.is_working(sid):
+            return False
+        if not background:
+            take_over(mail, sid)
+            return True
+        with _running_lock:
+            if sid in _running:
+                return False
+            _running.add(sid)
+        threading.Thread(
+            target=_run_owned, args=(mail, sid), daemon=True, name=f"thread-rescue-{sid}"
+        ).start()
+        return True
+    return False
 
 
 def check_once(*, background: bool = True) -> list[int]:
