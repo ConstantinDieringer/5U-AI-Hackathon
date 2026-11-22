@@ -70,3 +70,35 @@ def test_no_secrets_in_repo():
             if SECRET.search(line):
                 hits.append(f"{path.relative_to(ROOT)}:{n}")
     assert not hits, "possible secret committed: " + ", ".join(hits[:10])
+
+
+def test_every_mailbox_429_counts_even_when_the_retry_succeeds(monkeypatch, tmp_path):
+    """Log 01:47 to 02:00 UTC: 40 mailbox 429s, each hidden by a successful retry, so the
+    second-reader alarm (3 in 10 min) never fired."""
+    import httpx
+
+    from app import hackloop
+    from app.mail import rate_limit_watch
+
+    answers = iter([429, 200, 429, 200, 429, 200])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = next(answers)
+        return httpx.Response(status, headers={"Retry-After": "0"}, json={"messages": []})
+
+    monkeypatch.setattr(
+        hackloop,
+        "_client",
+        httpx.Client(base_url="https://x.invalid", transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(hackloop.time, "sleep", lambda s: None)
+    db.init_db(str(tmp_path / "rate.db"))
+    monkeypatch.setattr(rate_limit_watch, "_hits", type(rate_limit_watch._hits)())
+    monkeypatch.setattr(rate_limit_watch, "_last_alert", None)
+    for _ in range(3):
+        hackloop._request("GET", "/v1/mailbox/messages")
+    assert rate_limit_watch.recent() == 3
+    alerts = db.conn().execute(
+        "SELECT COUNT(*) FROM events WHERE kind = ?", (rate_limit_watch.EVENT_KIND,)
+    ).fetchone()[0]
+    assert alerts == 1  # the second-reader alarm fires

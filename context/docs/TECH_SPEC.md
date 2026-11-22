@@ -1,4 +1,7 @@
-# TECH_SPEC – Single Source of Truth (Team Austrian Power)
+# TECH_SPEC – Technical reference (Team Austrian Power)
+
+> Background reference from the build phase. Where it differs, [CONTEXT.md](../../CONTEXT.md)
+> and the current code win (see AGENTS.md).
 
 **Verbindlich für alle drei Teammitglieder und für jede Claude-/KI-Session, die Code für dieses Repo schreibt.**
 Wer davon abweichen will, ändert zuerst diese Datei (kurz im Team ansagen), dann den Code.

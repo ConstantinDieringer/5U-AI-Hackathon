@@ -97,6 +97,12 @@ def _request(
                     raise HackloopError(method, path, resp.status_code, resp.text)
                 return resp
             last, err = resp, f"status {resp.status_code}"
+            if resp.status_code == 429 and path == "/v1/mailbox/messages" and method == "GET":
+                # every rejected poll counts: a second reader shows as one 429 per ~10 s
+                # that the retry hides, never as exhausted retries (log 01:47 to 02:00 UTC)
+                from app.mail import rate_limit_watch
+
+                rate_limit_watch.record()
         if attempt < MAX_RETRIES:
             wait = _retry_wait(last)
             if (
