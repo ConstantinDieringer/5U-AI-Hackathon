@@ -179,31 +179,41 @@ def _revise(mail: Mail, sid: int, session: dict, decision: ReplyDecision) -> Non
         request = Rfq.model_validate(updated)
         # Inherit agreed insurance only when this correction says nothing about it.
         from app.pricing import insurance
-        current_sources = [mail.body, *session.get("reply_sources",{}).values()]
-        inherited_policy = {} if any(insurance.requested(text) or insurance.declined(text) for text in current_sources) else {"insurance":updated.get("insurance")}
+
+        current_sources = [mail.body, *session.get("reply_sources", {}).values()]
+        inherited_policy = (
+            {}
+            if any(
+                insurance.requested(text) or insurance.declined(text) for text in current_sources
+            )
+            else {"insurance": updated.get("insurance")}
+        )
         checked, draft = validate(
             mail,
             request,
-            session.get("reply_sources",{}),
+            session.get("reply_sources", {}),
             [],
-            {**inherited_policy, **{
-                key: value
-                for key, value in updated.items()
-                if key
-                in (
-                    "origin",
-                    "destination",
-                    "pickup_zip",
-                    "pickup_city",
-                    "ready_date",
-                    "arrival_deadline",
-                    "preference",
-                    "pieces",
-                    "weight_kg",
-                    "volume_cbm",
-                )
-                and value is not None
-            }},
+            {
+                **inherited_policy,
+                **{
+                    key: value
+                    for key, value in updated.items()
+                    if key
+                    in (
+                        "origin",
+                        "destination",
+                        "pickup_zip",
+                        "pickup_city",
+                        "ready_date",
+                        "arrival_deadline",
+                        "preference",
+                        "pieces",
+                        "weight_kg",
+                        "volume_cbm",
+                    )
+                    and value is not None
+                },
+            },
         )
         if checked is None or draft.issues:
             _review(
