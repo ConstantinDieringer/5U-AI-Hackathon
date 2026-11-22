@@ -254,3 +254,60 @@ def test_new_quote_request_that_mentions_booking_stays_a_request():
     _quoted(5)
     body = "Please quote MUC - ICN 480 kg, we would book quickly."
     assert db.session_for_unthreaded_acceptance(MEIER, "New RFQ MUC - ICN", body) is None
+
+
+# ------------------------------------------------------------- requested currency (round 3)
+
+
+def test_price_also_in_the_currency_the_customer_asked_for(monkeypatch):
+    import dataclasses
+
+    from app.agents import rfq
+    from app.mail.style import SIGNATURE
+    from app.models import Mail
+    from app.pricing import fx
+
+    monkeypatch.setattr(
+        fx,
+        "settings",
+        dataclasses.replace(
+            fx.settings, fx_eur_rates="USD=0.92", fx_valid_until="2026-12-31T00:00:00+00:00"
+        ),
+    )
+    body = (
+        "Hi, please quote FRA-MIA, 410 kg. Our accounting can only process USD quotes, "
+        "please state the all-in price in USD. Thanks, Mike"
+    )
+    mail = Mail(1, 1, "mike@x.example", TEAM, "Quote FRA MIA", body, "")
+    quote = f"Hi Mike,\n\nthe all-in price is 1.230 €.\n\n{SIGNATURE}\n"
+    out = rfq.with_requested_currency(quote, mail, 123000, "en", 1)
+    assert "1.336,96 USD" in out and out.index("USD") < out.index(SIGNATURE)
+
+    assert rfq.requested_currency("cargo value in USD 10,000 for insurance") is None
+    assert rfq.requested_currency("please quote in EUR") is None
+
+
+# ------------------------------------------------------------- dates, weights, height (round 3)
+
+
+def test_ambiguous_slash_date_follows_the_sender():
+    received = "2026-11-22T02:00:00+00:00"
+    us = "Hi team, pickup in 60549 Frankfurt, goods ready 11/12, 3 crates.\n– Jennifer, Atlanta"
+    de = "Hallo, die Ware ist ab 11/12 abholbereit.\nGruß Jan, Hamburg"
+    assert validation.ambiguous_ready_date(us, received) == "2026-11-12"
+    assert validation.ambiguous_ready_date(de, received) == "2026-12-11"
+    assert validation.ambiguous_ready_date("ready 25/11", received) is None  # not ambiguous
+    assert validation.ambiguous_ready_date("1/2 of the cargo is ready", received) is None
+
+
+def test_weight_per_piece_is_multiplied():
+    text = "Bonjour, nous avons 5 palettes de 230 kg, 120x80x120 cm chacune, départ FRA."
+    facts = validation._unit_facts(text, {})
+    assert facts["weight_kg"] == Decimal(1150) and facts["volume_cbm"] == Decimal("5.7600")
+    assert "weight_kg" not in validation._unit_facts("5 palettes, 230 kg au total", {})
+    assert "weight_kg" not in validation._unit_facts("3 crates of 120 kg total", {})
+
+
+def test_piece_taller_than_a_lower_deck_is_found():
+    assert validation.tallest_piece_cm("1 Palette, 120 x 100 x 185 cm, 640 kg") == Decimal(185)
+    assert validation.tallest_piece_cm("2 pallets 120x80x150 cm") <= validation.LOWER_DECK_HEIGHT_CM

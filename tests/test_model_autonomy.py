@@ -204,9 +204,9 @@ def test_luna_uses_supported_reasoning_and_accounts_for_its_price(tmp_path, monk
 
 
 @pytest.mark.core
-def test_sol_policy_supersedes_stale_railway_models_and_can_be_explicitly_reconfigured(monkeypatch):
+def test_luna_policy_supersedes_stale_railway_models_and_can_be_explicitly_reconfigured(monkeypatch):
     monkeypatch.delenv("LLM_TEXT_MODEL", raising=False)
-    monkeypatch.setenv("LLM_MODEL", "gpt-5.6-luna")
+    monkeypatch.setenv("LLM_MODEL", "gpt-5.6-sol")
     monkeypatch.setenv("LLM_RESCUE_MODEL", "gpt-5-mini")
     for role in (
         "LLM_MODEL",
@@ -217,7 +217,7 @@ def test_sol_policy_supersedes_stale_railway_models_and_can_be_explicitly_reconf
         "LLM_REVIEW_MODEL",
         "PHISHING_GATE_MODEL",
     ):
-        assert config._text_model(role) == "gpt-5.6-sol"
+        assert config._text_model(role) == "gpt-5.6-luna"
     monkeypatch.setenv("LLM_TEXT_MODEL", "")
     assert config._text_model("LLM_RESCUE_MODEL") == "gpt-5-mini"
 

@@ -14,7 +14,8 @@ Flow for a customer reply in a quoted session:
    AIRLINE_CONFIRM_WAIT_S. A price off the quoted air price by more than
    PRICE_CHANGE_TOLERANCE_PCT is put to the customer instead (new total, one cheaper
    alternative if we have one). Their yes confirms at the new total; anything else goes to
-   a human. The portal has no cancel call, so nothing is ever rebooked automatically.
+   a human. A customer's cancellation of a booked shipment is cancelled through the portal
+   (DELETE /v1/portal/bookings/{ref}); nothing is ever rebooked automatically.
 Airline mails "Booking <ref> confirmed" set the booking to confirmed (on_airline_mail).
 """
 
@@ -72,6 +73,19 @@ _DECLINE = re.compile(  # wins over any "yes" word ("we will not proceed")
     r"do\s+not|don't)\s+(?:go\s+ahead|proceed|book|accept|approve|reserve)\b|"
     r"trop cher|demasiado caro|muito caro|troppo caro|te duur|za drogo|för dyrt|pahalı|"
     r"слишком дорого|太贵|高すぎ|너무 비싸",
+    re.IGNORECASE,
+)
+# The customer calls off a booked shipment. Questions about cancellation terms are no
+# cancellation ("what is your cancellation fee?", "in case we need to cancel").
+_CANCEL = re.compile(
+    r"\b(?:cancel(?:l?ed)?|storn(?:o|ier\w*)|annul(?:er|ez|ieren)\w*|cancelar|cancele|"
+    r"annullare|annullate|call (?:it )?off|withdraw (?:the|our) (?:booking|order))\b",
+    re.IGNORECASE,
+)
+_CANCEL_TERMS = re.compile(
+    r"cancell?ation (?:fee|polic|terms|charge|cost)|storno(?:gebühr|kosten|bedingung)|"
+    r"\b(?:if|in case|falls|wenn|should) (?:we|you|i)? ?(?:need to |have to |müssen )?"
+    r"(?:cancel|stornier)|\bcan (?:we|i) cancel\b.*\blater\b|\bnot cancel|nicht stornier",
     re.IGNORECASE,
 )
 _CONFIRMED = re.compile(r"\bBooking\s+(BK-[A-Za-z0-9]+)\s+confirmed\b", re.IGNORECASE)
@@ -549,6 +563,73 @@ def _hand_over_revision(mail: Mail, sid: int, changes: list[str]) -> None:
     )
 
 
+def wants_cancellation(body: str) -> bool:
+    """The customer's own words call off the booked shipment."""
+    text = own_text(body)
+    return bool(_CANCEL.search(text)) and not _CANCEL_TERMS.search(text)
+
+
+def _cancel(mail: Mail, sid: int, s: dict[str, Any], b: dict[str, Any]) -> None:
+    """Cancel through the portal (DELETE /v1/portal/bookings/{ref}), then confirm in the
+    thread. Once per session; without a booking reference or on an error a person decides."""
+    ref = b.get("booking_reference")
+    if db.is_paused(sid) or db.is_manual(sid):
+        db.emit("needs_human", f"Storno-Wunsch in pausierter Session (Mail {mail.id})", sid)
+        return
+    if not ref:
+        db.emit(
+            "needs_human",
+            f"Kunde storniert, aber keine Buchungsnummer bekannt: bitte manuell (Mail {mail.id})",
+            sid,
+            level="error",
+        )
+        return
+    if not db.kv_claim(f"booking.cancel.{sid}"):
+        return
+    try:
+        result = hackloop.cancel_booking(str(ref))
+    except hackloop.HackloopError as exc:
+        db.emit(
+            "needs_human",
+            f"Storno von {ref} fehlgeschlagen ({exc.status}): bitte manuell, Kunde wartet",
+            sid,
+            level="error",
+        )
+        return
+    if str(result.get("status", "")).lower() != "cancelled":
+        db.emit("needs_human", f"Storno von {ref}: unerwartete Antwort {result}"[:300], sid,
+                level="error")  # fmt: skip
+        return
+    db.cancel_session_booking(sid, f"{ref} auf Kundenwunsch (Mail {mail.id})")
+    quote = selected_quote(s) or (s.get("quotes") or [{}])[0]
+    lang = language(mail.body, sid)
+    name = (s.get("request") or {}).get("customer_name")
+    if not name or has_template_artifacts(str(name)):
+        name = None
+    route = (
+        f" von {quote.get('origin')} nach {quote.get('destination')}"
+        if lang == "de"
+        else f" from {quote.get('origin')} to {quote.get('destination')}"
+    ) if quote.get("origin") and quote.get("destination") else ""  # fmt: skip
+    if lang == "de":
+        text = (
+            f"{'Hallo ' + name if name else 'Guten Tag'},\n\n"
+            f"erledigt, Ihre Buchung {ref}{route} ist storniert.\n\n"
+            "Wenn Sie die Sendung später doch verschicken möchten, antworten Sie einfach auf "
+            "diese Mail und wir schicken Ihnen ein neues Angebot.\n\n"
+            f"{SIGNATURE}\n"
+        )
+    else:
+        text = (
+            f"{'Hi ' + name if name else 'Hello'},\n\n"
+            f"done, your booking {ref}{route} is cancelled.\n\n"
+            "If you want to ship it later after all, just reply to this email and we will "
+            "send you a fresh offer.\n\n"
+            f"{SIGNATURE}\n"
+        )
+    _confirm_to_customer(sid, mail, text, protected_terms=(str(ref),), category="cancellation")
+
+
 def _guarded(text: str) -> bool:
     """A question, a condition, a pending check or a change request: the rules hold these
     back on purpose, and no second opinion may turn them into a booking."""
@@ -646,7 +727,9 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
         from app.agents import tracking
 
         b = s["bookings"][0]
-        if b.get("customer_state") == PRICE_ASKED:  # open price question: answer it first
+        if wants_cancellation(mail.body):
+            _cancel(mail, sid, s, b)
+        elif b.get("customer_state") == PRICE_ASKED:  # open price question: answer it first
             _on_price_change_answer(mail, sid, s, b, consent_evidence=consent_evidence)
         elif tracking.is_status_question(mail.body):  # "where is it?" in their own thread
             tracking.handle(mail, sid, booked_session=sid)

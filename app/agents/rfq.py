@@ -1400,6 +1400,18 @@ def _handle(mail: Mail, sid: int) -> None:
             sid,
             level="warn",
         )
+    from app.mail.rfq_validation import LOWER_DECK_HEIGHT_CM, tallest_piece_cm
+
+    height = tallest_piece_cm(_clean(mail.body))
+    if height is not None and height > LOWER_DECK_HEIGHT_CM:
+        # passenger lower decks take about 160 cm: such a piece may need a freighter
+        db.emit(
+            "oversize",
+            f"Packstück {height:.0f} cm hoch (> {LOWER_DECK_HEIGHT_CM} cm Lower Deck): "
+            "nur Frachter möglich, Quote bitte prüfen",
+            sid,
+            level="warn",
+        )
     refusal = compliance.check(
         mail.subject or "", _clean(mail.body), *[str(t) for t in cached.get("texts", {}).values()]
     )
@@ -1685,6 +1697,62 @@ def _tell_all_excluded(mail: Mail, sid: int, rfq: Rfq) -> None:
         in_reply_to=mail.id,
         raw=sent,
     )
+
+
+_WANTS_CURRENCY = re.compile(
+    r"\b(?:in|into|als|en|em)\s+(?:US[- ]?)?(?P<cur>USD|US\$|dollars?|dollar|CHF|GBP|"
+    r"pounds?|JPY|yen|CNY|yuan|CAD|AUD|SGD)\b(?!\s*[\d.,]*\d)",  # not "value in USD 10,000"
+    re.IGNORECASE,
+)
+_CURRENCY_WORDS = {"US$": "USD", "DOLLAR": "USD", "DOLLARS": "USD", "POUND": "GBP",
+                   "POUNDS": "GBP", "YEN": "JPY", "YUAN": "CNY"}  # fmt: skip
+
+
+def requested_currency(text: str) -> str | None:
+    """The currency the customer wants the price in ("please state the price in USD")."""
+    m = _WANTS_CURRENCY.search(text)
+    if not m:
+        return None
+    raw = m["cur"].upper()
+    code = _CURRENCY_WORDS.get(raw, raw)
+    return None if code == "EUR" else code
+
+
+def with_requested_currency(body: str, mail: Mail, total_minor: int, lang: str, sid: int) -> str:
+    """The customer asked for another currency: add the total converted at the configured
+    rate (FX_EUR_RATES). The € total stays the booked price. Without a rate nothing is
+    invented; a person is told."""
+    from app.pricing.fx import eur_rate
+    from app.pricing.pricing import money
+
+    code = requested_currency(_clean(mail.body))
+    if code is None:
+        return body
+    try:
+        rate, _source, _until = eur_rate(code)
+    except ValueError:
+        db.emit("needs_human", f"Kunde will den Preis in {code}, kein Kurs konfiguriert", sid,
+                level="warn")  # fmt: skip
+        return body
+    converted = to_minor(money(Decimal(total_minor) / 100 / rate))
+    rate_text = f"{rate:.4f}".rstrip("0").rstrip(".")
+    if (lang or "").lower().startswith("de"):
+        rate_text = rate_text.replace(".", ",")
+        line = (
+            f"Wie gewünscht in {code} sind das {amount(converted, code)} zum heutigen Kurs "
+            f"von {rate_text} € pro {code}. Verbindlich ist der Betrag in €."
+        )
+    else:
+        line = (
+            f"As requested in {code}, that is {amount(converted, code)} at today's rate of "
+            f"{rate_text} € per {code}. The binding amount is the one in €."
+        )
+    db.emit("currency_converted", f"Preis zusätzlich in {code} angegeben", sid,
+            rate=str(rate), converted_minor=converted)  # fmt: skip
+    marker = f"\n\n{SIGNATURE}"
+    if marker in body:
+        return body.replace(marker, f"\n\n{line}{marker}", 1)
+    return f"{body.rstrip()}\n\n{line}\n"
 
 
 def _decline(mail: Mail, sid: int, rfq: Rfq | RfqDraft, refusal: compliance.Refusal) -> None:
@@ -2179,6 +2247,7 @@ def _price_and_quote(
         body = _fallback_with_coverage(rfq, choice, total, truck, sid, None)
     if rfq.pickup_assumed and truck is not None:
         body = with_pickup_note(body, rfq)
+    body = with_requested_currency(body, mail, total, rfq.language, sid)
     from dataclasses import asdict
 
     db.emit(

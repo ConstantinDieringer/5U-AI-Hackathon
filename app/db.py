@@ -2031,6 +2031,22 @@ def update_booking_status(reference: str, status: str) -> int | None:
         return int(r["session_id"])
 
 
+def cancel_session_booking(session_id: int, reason: str) -> None:
+    """The customer cancelled and the portal confirmed: the booking no longer counts (status
+    'failed', customer_state 'cancelled', schema unchanged) and the session is closed."""
+    with tx() as c:
+        c.execute(
+            "UPDATE bookings SET status = 'failed', customer_state = 'cancelled', updated_at = ?"
+            " WHERE session_id = ? AND status IN ('booked','confirmed')",
+            (now(), session_id),
+        )
+        c.execute(
+            "UPDATE sessions SET status = 'lost', updated_at = ? WHERE id = ?",
+            (now(), session_id),
+        )
+        _emit(c, Ev.BOOKED, f"Buchung storniert: {reason}"[:300], session_id)
+
+
 def set_booking_customer_state(
     session_id: int, state: str, customer_total_minor: int | None = None
 ) -> None:

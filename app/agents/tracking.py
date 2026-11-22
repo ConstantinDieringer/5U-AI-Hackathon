@@ -57,6 +57,13 @@ def visible_to(sender: str, record: dict[str, Any]) -> bool:
     return bool(own) and own == address(record.get("customer") or "")
 
 
+_CUSTOMER_LABEL = re.compile(
+    r"\b(?:customer|client|company|kunde|firma|auftraggeber|consignor|shipper)\s*[:=]\s*"
+    r"([^\n,.;]{3,60})",
+    re.IGNORECASE,
+)
+
+
 def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The booking the mail asks about, or None."""
     for m in _BK.finditer(text):
@@ -77,7 +84,24 @@ def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
     routes = {(o, d) for o, d in _ROUTE.findall(text)}
     asked_kg = _weight(text)
     scored: list[tuple[int, dict[str, Any]]] = []
+    # A question that names a customer is about that customer's shipments only: route and
+    # weight of another customer's booking never answer it (no data of other customers).
+    named = {
+        address(r["customer"] or "")
+        for r in records
+        if any(re.search(rf"\b{re.escape(t)}\b", low) for t in _name_tokens(r["customer"] or ""))
+    }
+    label = _CUSTOMER_LABEL.search(text)
+    label_tokens = (
+        {t for t in re.split(r"[^a-z0-9]+", label[1].lower()) if len(t) >= 4 and t not in _STOP}
+        if label
+        else set()
+    )
     for r in records:  # newest first
+        if named and address(r["customer"] or "") not in named:
+            continue
+        if label_tokens and not label_tokens & _name_tokens(r["customer"] or ""):
+            continue  # "Customer: Hofmann Textilwerk" is never Weidner's shipment
         score = 2 * sum(1 for t in _name_tokens(r["customer"] or "") if t in low)
         if (r["origin"], r["destination"]) in routes:
             score += 2

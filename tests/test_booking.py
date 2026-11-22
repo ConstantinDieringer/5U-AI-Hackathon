@@ -269,3 +269,53 @@ def test_yes_next_to_doubt_word_is_held_when_the_model_cannot_answer(monkeypatch
         replace(_accept(), body="Please hold off for now, ok book next week."), 1223
     )
     assert api.booked == []
+
+
+# ---------------------------------------------------------------- cancellation (5U, 22.11.)
+
+
+def _booked(monkeypatch) -> Api:
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    _quoted_session()
+    booking.handle_reply(_accept(), 1223)
+    assert db.get_session(1223)["bookings"][0]["booking_reference"] == "BK-ABCD1234"
+    return api
+
+
+def _reply(mid: int, body: str) -> Mail:
+    now = datetime.now(UTC).isoformat()
+    db.ingest_mail(mail_id=mid, sender=CUSTOMER, recipient=TEAM, subject="Re: Fastest STR-EZE",
+                   body=body, category="customer", received_at=now, in_reply_to=1223,
+                   references=[1223])  # fmt: skip
+    return Mail(mid, 1223, CUSTOMER, TEAM, "Re: Fastest STR-EZE", body, now, references=[1223])
+
+
+def test_customer_cancellation_cancels_through_the_portal(monkeypatch):
+    api = _booked(monkeypatch)
+    cancelled = []
+    monkeypatch.setattr(
+        booking.hackloop,
+        "cancel_booking",
+        lambda ref: (
+            cancelled.append(ref)
+            or {"booking_reference": ref, "team_reference": "AP-1223", "status": "cancelled"}
+        ),
+    )
+    body = "Hi, sorry, our customer pulled the order. Please cancel booking BK-ABCD1234.\n\nKlaus"
+    booking.handle_reply(_reply(1500, body), 1223)
+    booking.handle_reply(_reply(1501, body), 1223)  # a repeat cancels nothing twice
+
+    assert cancelled == ["BK-ABCD1234"]
+    reply = api.sent[-1]
+    assert "BK-ABCD1234" in reply["body"] and "cancelled" in reply["body"]
+    s = db.get_session(1223)
+    assert s["status"] == "lost" and s["bookings"][0]["status"] == "failed"
+
+
+def test_question_about_cancellation_terms_cancels_nothing(monkeypatch):
+    _booked(monkeypatch)
+    monkeypatch.setattr(booking.hackloop, "cancel_booking", lambda ref: pytest.fail("cancelled"))
+    booking.handle_reply(_reply(1500, "Quick question: what is your cancellation fee?"), 1223)
+    assert db.get_session(1223)["bookings"][0]["status"] in ("booked", "confirmed")
