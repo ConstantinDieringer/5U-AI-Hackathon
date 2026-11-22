@@ -736,14 +736,14 @@ def answered_before(session: dict[str, Any]) -> bool:
     return mails_after_quote(session, (CATEGORY,)) > 0
 
 
-def reply(mail: Any, sid: int, session: dict[str, Any], *, count_nudges: bool = True) -> bool:
+def reply(mail: Any, sid: int, session: dict[str, Any]) -> bool:
     """Answer a pre-booking question in the thread. True when the reply is handled here (sent,
     or deliberately not sent: paused, manual, quarantined, mail budget used up); False hands
     it back to today's clarification path. Caller holds the booking lock of the session."""
     import time
 
     from app import db, hackloop
-    from app.agents import booking, followup
+    from app.agents import booking
     from app.config import settings
     from app.mail import multilingual
     from app.mail.router import address
@@ -770,11 +770,10 @@ def reply(mail: Any, sid: int, session: dict[str, Any], *, count_nudges: bool = 
     if db.is_paused(sid) or db.is_manual(sid):
         db.emit("prebook_held", "Vorabfrage: Session pausiert/manuell, keine Antwort", sid)
         return True
-    # count_nudges=False: a direct customer question is answered even after our 5 s nudges
-    # used the budget; only our own earlier answers count then (stops a question loop)
-    used = mails_after_quote(
-        session, (followup.CATEGORY, CATEGORY) if count_nudges else (CATEGORY,)
-    )
+    # only our own earlier answers count: the 5 s nudges go out before most replies and
+    # must never use up the answer to a direct customer question (round 152); the cap
+    # still stops a question loop
+    used = mails_after_quote(session, (CATEGORY,))
     if not session.get("workflow") and used >= settings.followup_max:
         db.emit(
             "prebook_budget",

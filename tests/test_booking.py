@@ -438,3 +438,53 @@ def test_price_match_is_answered_after_both_nudges(monkeypatch):
     booking.handle_reply(replace(_accept(), body=body), 1223)
     assert api.booked == []
     assert [m for m in api.sent if "stays as offered" in m["body"]]
+
+
+def _nudged(monkeypatch, category: str, count: int = 2) -> Api:
+    """Quoted session 1223 with `count` of our mails of `category` after the quote."""
+    from app import config
+    from app.agents import prebook
+
+    api = _model_says_question(monkeypatch)
+    monkeypatch.setattr(prebook, "MIN_GAP_S", 0.0)
+    on = replace(booking.settings, prebook_answer=True)
+    monkeypatch.setattr(booking, "settings", on)
+    monkeypatch.setattr(config, "settings", on)
+    _quoted_with_options(other_days=6)
+    now = datetime.now(UTC).isoformat()
+    for mid in range(1300, 1300 + count):
+        db.record_outgoing(
+            mail_id=mid, recipient=CUSTOMER, subject="Re: Fastest STR-EZE",
+            body="earlier mail", category=category, session_id=1223,
+            sender=TEAM, in_reply_to=1223, references=[1223], sent_at=now,
+        )  # fmt: skip
+    return api
+
+
+def test_question_after_both_nudges_is_answered(monkeypatch):
+    """Round 152: two 5 s nudges used the mail budget and three questions went unanswered."""
+    from app.agents import followup
+
+    api = _nudged(monkeypatch, followup.CATEGORY)
+    body = "Does your price stay as offered, or what is your new all-in total?\n\nKlaus"
+    booking.handle_reply(replace(_accept(), body=body), 1223)
+    assert api.booked == []
+    assert [m for m in api.sent if "stays as offered" in m["body"]]
+    assert not [e for e in db.get_session(1223)["events"] if e["kind"] == "prebook_budget"]
+
+
+def test_third_question_after_two_answers_stays_capped(monkeypatch):
+    """Counterexample: our own answers still cap the thread, so questions never loop."""
+    from app.agents import prebook
+
+    api = _nudged(monkeypatch, prebook.CATEGORY)
+    body = "Does your price stay as offered, or what is your new all-in total?\n\nKlaus"
+    booking.handle_reply(replace(_accept(), body=body), 1223)
+    assert api.sent == [] and api.booked == []
+    assert [e for e in db.get_session(1223)["events"] if e["kind"] == "prebook_budget"]
+
+
+def test_followup_waits_exactly_five_seconds():
+    from app.config import settings
+
+    assert settings.followup_after_s == 5.0

@@ -289,6 +289,7 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
                 return
             if not clarification.handle_reply(mail, session_id):
                 booking.handle_reply(mail, session_id)
+            _log_unanswered(mail, session_id)
 
         threading.Thread(
             target=customer_reply,
@@ -301,6 +302,29 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
         if booking.on_airline_mail(mail):  # "Booking BK-… confirmed" is not a bid
             return
         _bid_pool.submit(_bid, bids.on_bid_mail, mail, session_id)
+
+
+def _log_unanswered(mail: Mail, session_id: int) -> None:
+    """A customer reply that ended without our mail names its reason in the deploy log.
+    Round 152: three questions after the quote went unanswered and the log showed nothing;
+    the reason lived only in the session's events."""
+    try:
+        s = db.get_session(session_id) or {}
+        if any(
+            m["direction"] == "out" and m.get("in_reply_to") == mail.id
+            for m in s.get("mails") or []
+        ):
+            return
+        events = s.get("events") or []
+        recent = [f"{e.get('kind')}: {e.get('message')}"[:160] for e in events[-3:]]
+        log.warning(
+            "session %s: customer reply %s got no mail from us; last events: %s",
+            session_id,
+            mail.id,
+            " | ".join(recent) or "none",
+        )
+    except Exception:  # a diagnostic line never stops the reply flow
+        log.exception("session %s: unanswered check failed", session_id)
 
 
 def _bid(handler, mail: Mail, session_id: int | None) -> None:
