@@ -2024,7 +2024,7 @@ def bookings_with_customer_state(state: str) -> list[dict[str, Any]]:
 
 
 def tracking_records() -> list[dict[str, Any]]:
-    """Every booking with what the tracking agent may tell: customer, subject, the request
+    """Every booking that did not fail, with what the tracking agent may tell: customer, subject, the request
     (JSON) and the first quote (route, transit days). Newest first."""
     rows = _rows(
         conn().execute(
@@ -2034,6 +2034,7 @@ def tracking_records() -> list[dict[str, Any]]:
             " q.origin, q.destination, q.transit_days"
             " FROM bookings b JOIN sessions s ON s.id = b.session_id"
             " LEFT JOIN quotes q ON q.id = COALESCE(b.quote_id,(SELECT MIN(id) FROM quotes WHERE session_id = s.id))"
+            " WHERE b.status != 'failed'"
             " ORDER BY b.created_at DESC"
         )
     )

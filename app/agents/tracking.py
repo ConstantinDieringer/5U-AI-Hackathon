@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from app import db
+from app import config, db
 from app.agents.rfq import schedule
 from app.mail import multilingual
 from app.mail.content import current_message
@@ -45,6 +45,16 @@ def is_status_question(body: str) -> bool:
 def _name_tokens(customer: str) -> set[str]:
     local = address(customer).split("@")[0]
     return {t for t in re.split(r"[^a-z0-9]+", local.lower()) if len(t) >= 4 and t not in _STOP}
+
+
+def visible_to(sender: str, record: dict[str, Any]) -> bool:
+    """5U's tracking agent sees every booking; a customer only bookings of this exact
+    address. Simulation customers share one mail domain, so a domain match would expose
+    other customers' shipments."""
+    own = address(sender or "")
+    if own and own == config.settings.tracking_address:
+        return True
+    return bool(own) and own == address(record.get("customer") or "")
 
 
 def find(text: str, records: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -466,7 +476,9 @@ def handle(mail: Mail, session_id: int | None, booked_session: int | None = None
             and (db.get_session(session_id) or {}).get("kind") == "tracking"
             else None
         )
-        records = db.tracking_records()
+        # 5U's tracking agent may ask about any booking; anyone else only about their own,
+        # so another customer's reference never reveals its route, airline or price.
+        records = [r for r in db.tracking_records() if visible_to(mail.sender, r)]
         if booked_session is not None:
             rec = next((r for r in records if r["session_id"] == booked_session), None)
         else:

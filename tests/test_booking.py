@@ -218,3 +218,54 @@ def test_portal_response_price_change_asks_customer_with_new_total_and_alternati
     assert "(" not in body and " - " not in body and "—" not in body
     b = db.get_session(13096)["bookings"][0]
     assert b["customer_state"] == "price_change_asked" and b["customer_total_minor"] == 449842
+
+
+# ---------------------------------------------------------------- consent that is not current yet
+
+
+@pytest.mark.core
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Sounds good, but our CFO has to sign first.",
+        "Approved by purchasing? We will let you know.",
+        "Go ahead with option 2 if it still arrives before Friday.",
+        "Passt, bitte buchen sobald der Zoll bestätigt.",
+    ],
+)
+def test_conditional_or_pending_yes_never_books(body, monkeypatch):
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    from app.agents import consent_check
+
+    # even a model that says "book" cannot turn a held yes into a booking
+    monkeypatch.setattr(consent_check, "classify", lambda *_a, **_k: "book")
+    _quoted_session()
+    booking.handle_reply(replace(_accept(), body=body), 1223)
+    assert api.booked == []
+    assert booking.is_acceptance(body) is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Yes please book. Let me know if you need anything else.",
+        "Ja, bitte buchen. Meldet euch, falls ihr noch etwas braucht.",
+        "OK book it, it is approved by our CFO.",
+    ],
+)
+def test_plain_yes_with_polite_extras_still_accepts(body):
+    assert booking.is_acceptance(body) is True
+
+
+def test_yes_next_to_doubt_word_is_held_when_the_model_cannot_answer(monkeypatch):
+    # conftest's consent_check answers "unclear", as it does on timeout or gateway error
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    _quoted_session()
+    booking.handle_reply(
+        replace(_accept(), body="Please hold off for now, ok book next week."), 1223
+    )
+    assert api.booked == []
