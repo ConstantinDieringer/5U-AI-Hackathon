@@ -137,6 +137,8 @@ class Settings:
     runtime_dir: Path
     usd_eur_rate: str
     usd_eur_valid_until: str
+    fx_eur_rates: str
+    fx_valid_until: str
     use_breakpoints: bool
     portal_429_email_fallback: bool
     served_lanes_ttl_s: float
@@ -295,6 +297,10 @@ settings = Settings(
     ),
     usd_eur_rate=_env("USD_EUR_RATE"),
     usd_eur_valid_until=_env("USD_EUR_VALID_UNTIL"),
+    # EUR per unit for every foreign currency we accept, e.g. "USD=0.92,JPY=0.0061,GBP=1.17"
+    # (app/pricing/fx.py); one shared expiry. Missing = that currency is not converted.
+    fx_eur_rates=_env("FX_EUR_RATES"),
+    fx_valid_until=_env("FX_VALID_UNTIL"),
     use_breakpoints=_flag("USE_BREAKPOINTS", True),
     portal_429_email_fallback=_flag("PORTAL_429_EMAIL_FALLBACK", True),
     served_lanes_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))),
