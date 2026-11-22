@@ -284,6 +284,14 @@ _OTHER_OPTION = re.compile(
 )
 
 
+def _asks_price(body: str) -> bool:
+    """A price-match or "does the price stay?" question, answered even with PREBOOK_ANSWER off."""
+    from app.agents import prebook
+
+    asked = prebook.parse(own_text(body))
+    return asked is not None and "price" in asked.topics
+
+
 def classify_reply(body: str) -> str:
     """yes | no | question | deferral | unclear, by rules (no LLM). Only "yes" books, exactly
     as is_acceptance decides. "question": every question sentence names a topic of the quoted
@@ -741,6 +749,19 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
         _hand_over_revision(mail, sid, changes)
         return
     verdict = _mail_acceptance(mail, consent_evidence, sid)
+    if verdict is None and multilingual.consent_allowed(mail) is not False:
+        from app.agents import prebook
+
+        # "Is this the fastest option? If so, please go ahead": the stored quote proves it
+        if prebook.proven_go_ahead(own_text(mail.body), prebook.facts_for(s)):
+            verdict = True
+            db.emit(
+                db.Ev.STATUS,
+                "Zusage unter einer Bedingung, die das Angebot belegt (schnellste/günstigste "
+                "Option): buche",
+                sid,
+                mail_id=mail.id,
+            )
     if settings.prebook_answer:
         from app.agents import prebook
 
@@ -755,6 +776,14 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
                 )
         elif classify_reply(mail.body) == "question" and prebook.reply(mail, sid, s):
             return  # answered (or deliberately held); booking still waits for a clear yes
+    elif verdict is None and _asks_price(mail.body):
+        from app.agents import prebook
+
+        # round 144: "can you match their rate?" needs our answer, not "shall we book?"
+        if classify_reply(mail.body) == "question" and prebook.reply(
+            mail, sid, s, count_nudges=False
+        ):
+            return
     if verdict is not True:
         if verdict is None:
             from app.agents import clarification

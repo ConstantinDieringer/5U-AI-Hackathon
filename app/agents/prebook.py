@@ -40,6 +40,7 @@ Topic = Literal[
     "pickup",
     "validity",
     "includes",
+    "price",
     "cutoff",
     "routing",
 ]
@@ -88,6 +89,20 @@ _TOPICS: tuple[tuple[Topic, re.Pattern[str]], ...] = (
             r"\b(?:valid\w*|expir\w*|hold\s+(?:the|this)\s+(?:price|rate|offer)|"
             r"how\s+long\s+(?:is|will|does)\s+(?:the|this)\s+(?:price|rate|offer|quote)|"
             r"gültig\w*|bis\s+wann\s+gilt|gilt\s+(?:das|der|dieser|dieses)\s+(?:angebot|preis))\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        # round 144: "Could you match their rate?" then "does your price stay as offered, or
+        # what is your new all-in total?" got our generic "shall we book?" twice and was lost
+        "price",
+        re.compile(
+            r"\bmatch\w*\s+(?:their|the|this|that|his|her|a|its)?\s*(?:rate|price|offer|quote)|"
+            r"\b(?:price|rate|offer|total)\s+(?:stays?|remains?)\b|\bstays?\s+as\s+offered|"
+            r"\bnew\s+(?:all\s*-?\s*in\s+)?(?:total|price|rate)|"
+            r"\b(?:better|lower|reduced?)\s+(?:price|rate|total)|\bdiscount\w*|"
+            r"\brabatt\w*|\bnachlass\w*|\bpreis\s+(?:halten|senken|anpassen|bleibt)|"
+            r"\bpreisnachlass\w*",
             re.IGNORECASE,
         ),
     ),
@@ -167,6 +182,9 @@ def _sentence_topics(sentence: str) -> list[tuple[int, Topic]]:
         if matches:
             hits[topic] = matches
             found.append((matches[0].start(), topic))
+    # "what is your new all-in total?" asks about the price, not what the price covers
+    if "price" in hits:
+        found = [(pos, t) for pos, t in found if t != "includes"]
     # "how long is it valid?" asks about the validity, not the transit time
     if "validity" in hits and all(_HOW_LONG.match(m.group(0)) for m in hits.get("transit", [])):
         found = [(pos, t) for pos, t in found if t != "transit"]
@@ -454,6 +472,50 @@ def _compare(f: Facts, topic: Topic, lang: str) -> tuple[str | None, str]:
     ), "answered"
 
 
+# Round 147: "Could you please confirm that this is the fastest option from STR to MEL? If
+# so, please go ahead with the booking." A yes on a condition the stored quote proves.
+_IF_SO = re.compile(
+    r"\b(?:if\s+(?:so|yes|that\s+is\s+(?:so|the\s+case|correct|right)|"
+    r"that's\s+(?:so|the\s+case|correct|right)|this\s+is\s+(?:so|the\s+case|correct)|"
+    r"it\s+is|confirmed)|(?:wenn|falls)\s+(?:ja|das\s+(?:so\s+ist|stimmt|zutrifft)))\b"
+    r"[^.?!\n]{0,60}?\b(?:go\s+ahead|proceed|book\w*|buchen|bucht|buchung)",
+    re.IGNORECASE,
+)
+# anything that holds the booking back keeps today's path ("please wait until I confirm")
+_HELD = re.compile(
+    r"\bwait\w*|\buntil\b|\bbefore\s+(?:we|i)\b|\bnot\b|n't\b|\bno\b|\bhold\b|"
+    r"\bwarten\b|\bbevor\b|\bnicht\b|\bnoch\s+nicht\b|\bkein\w*",
+    re.IGNORECASE,
+)
+_PROVABLE: frozenset[Topic] = frozenset({"fastest", "cheapest"})
+
+
+def _holds(f: Facts, topic: Topic) -> bool:
+    """The quoted option is the fastest (cheapest) of every stored air option."""
+    if f.chosen is None or not f.options:
+        return False
+    if topic == "fastest":
+        return f.chosen.transit_days <= min(o.transit_days for o in f.options)
+    return f.chosen.total_eur_minor <= min(o.total_eur_minor for o in f.options)
+
+
+def proven_go_ahead(text: str, facts: Facts | None) -> bool:
+    """True when the customer's own words book on a condition the stored quote proves: every
+    question before "if so, please go ahead" asks only whether this is the fastest or the
+    cheapest option of the quoted shipment, and the stored alternatives say it is. Anything
+    else (another topic, another airport, a further question, a hold word, a condition we
+    cannot prove) is no consent here."""
+    m = _IF_SO.search(text)
+    if facts is None or m is None or _HELD.search(text):
+        return False
+    asked = parse(text[: m.start()])
+    if asked is None or not asked.topics or set(asked.topics) - _PROVABLE:
+        return False
+    if parse(text[m.end() :]) is not None or _fits(asked, facts):
+        return False
+    return all(_holds(facts, t) for t in asked.topics)
+
+
 def _clock(stamp: datetime, lang: str) -> str:
     """'18:04 UTC on 21 November 2026'; the final renderer writes the clock as prose."""
     utc = stamp.astimezone(UTC)
@@ -575,6 +637,17 @@ def _sentence(f: Facts, topic: Topic, lang: str, now: datetime) -> tuple[str | N
             else "."
         )
         return text, "answered"
+    if topic == "price":
+        total = amount(f.total_minor, f.currency)
+        if de:
+            return (
+                f"Unser Gesamtpreis von {total} bleibt wie angeboten. Günstiger können wir "
+                "diese Sendung leider nicht anbieten."
+            ), "answered"
+        return (
+            f"Our all-in total of {total} stays as offered. We cannot go below it for this "
+            "shipment."
+        ), "answered"
     if topic == "cutoff":
         if de:
             return (
@@ -663,7 +736,7 @@ def answered_before(session: dict[str, Any]) -> bool:
     return mails_after_quote(session, (CATEGORY,)) > 0
 
 
-def reply(mail: Any, sid: int, session: dict[str, Any]) -> bool:
+def reply(mail: Any, sid: int, session: dict[str, Any], *, count_nudges: bool = True) -> bool:
     """Answer a pre-booking question in the thread. True when the reply is handled here (sent,
     or deliberately not sent: paused, manual, quarantined, mail budget used up); False hands
     it back to today's clarification path. Caller holds the booking lock of the session."""
@@ -697,7 +770,11 @@ def reply(mail: Any, sid: int, session: dict[str, Any]) -> bool:
     if db.is_paused(sid) or db.is_manual(sid):
         db.emit("prebook_held", "Vorabfrage: Session pausiert/manuell, keine Antwort", sid)
         return True
-    used = mails_after_quote(session, (followup.CATEGORY, CATEGORY))
+    # count_nudges=False: a direct customer question is answered even after our 5 s nudges
+    # used the budget; only our own earlier answers count then (stops a question loop)
+    used = mails_after_quote(
+        session, (followup.CATEGORY, CATEGORY) if count_nudges else (CATEGORY,)
+    )
     if not session.get("workflow") and used >= settings.followup_max:
         db.emit(
             "prebook_budget",
