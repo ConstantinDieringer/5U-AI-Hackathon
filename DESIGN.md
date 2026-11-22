@@ -11,8 +11,8 @@ does a session need me, how are we scoring?* Calm and airy by default; color onl
 carries meaning (status, data, the one hero KPI).
 
 Principles
-1. **Attention first.** Anything that needs a human (error, paused, deadline < 2 min, board
-   rejection, acceptance not booked) is visible on every screen.
+1. **Quiet monitoring.** Errors and warnings collect in the message buffer with a passive
+   navigation badge. No automatic pop-ups or disappearing error notices interrupt the user.
 2. **Generous whitespace.** Fewer, larger cards; one idea per card.
 3. **Color with purpose.** Neutral base; system colors only for status, charts, active pills and
    the single featured hero card.
@@ -97,14 +97,18 @@ must shrink to the available card width; score labels and verdict badges wrap wi
 Screens
 | Screen | Question | Grid |
 |---|---|---|
-| Übersicht (default) | Läuft alles, welche Fehler gibt es, was muss ein Mensch tun? | Status-Leiste (span 12): Ampel + Urteil, ein Pill je Pipeline-Teil (Tooltip: Wert und Hinweis), Ø Punkte, Button „Lagebild kopieren“; das Urteil „N neue Fehler“ führt zur Seite Fehler & Warnungen · Zu tun (span 12), Quarantäne zuerst · Letzte Anfragen (span 12) mit Step-Chips. Kein Punkte-Card, keine Charts. Session-Detail: Button „Kontext kopieren“ (ganze Session als Markdown für ein AI-Modell). |
-| Fehler & Warnungen | Was ist schiefgelaufen? | Eigene Seite „Fehler“ in der Sidebar unter CRM, Badge = Fehler der letzten 15 min · eine Card (span 12): Error- und Warn-Events inkl. ERROR-Logzeilen (`log_error`), gleiche Meldung = eine Zeile mit Anzahl, Zeit, Session-Chips; Filter Fehler/Warnungen/Alle; Zeitraum 3 h/12 h/24 h; neue Fehler rot hinterlegt; „Erledigt“ je Zeile und „Alle als erledigt“. |
-| Live | What needs me now? | session list card (span 4) + session detail (span 8) |
+| Übersicht (default) | Welche Anfragen sind zuletzt eingegangen? | Kompakte Status-Leiste, direkt darunter letzte Anfragen mit Step-Chips. Keine Zu-tun-Section. Suche findet auch ältere Anfragen. |
+| Meldungspuffer | Welche Fehler und Warnungen sind angefallen? | Bestehende gruppierte Servermeldungen mit 3/12/24-h-Filter, standardmäßig beide Stufen. Browserfehler bleiben lokal bis zur Bestätigung erhalten. Nur Badge, keine Pop-ups. Quarantäne und Freigabe bleiben hier erreichbar. |
+| Anfrage (nur über Klick oder Direktlink) | Wie ist der Stand und was steht im Mailverlauf? | Keine eigene Live-Navigation und keine Sessionliste oder Sessionfilter links. Volle Detailbreite mit Zurück-Link, oben allgemeine Infos, Flow und API-Kosten. Darunter große, offen lesbare E-Mails. Agent-Protokoll und einzelne Logdetails sind standardmäßig eingeklappt. Explizit geöffnete Details und Antwortentwürfe bleiben bei Live-Updates erhalten. |
 | CRM | Who did we quote, win, lose? | 4 KPIs · table card with segmented tabs · customer drawer |
 
 ## 4. Components
 
-RFQ detail includes an API-cost card: total USD estimate, input/output totals, and expandable calls by purpose/model with token counts, per-million rates and cost components. Cached input and reasoning are labelled as subsets; missing usage/prices and legacy records are explicit.
+RFQ detail places general information, flow and API costs above the conversation. API-cost
+totals are visible; call and token details expand on demand. Mail bodies use the body font
+at 15 px with generous line height, preserve whitespace and render only as text. Native
+details/summary controls support keyboard use. Background refreshes never open logs or
+replace an unsent reply. Request links retain direct URLs and browser back navigation.
 
 | Component | Spec |
 |---|---|
