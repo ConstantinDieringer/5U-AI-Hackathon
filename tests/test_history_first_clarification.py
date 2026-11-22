@@ -223,3 +223,107 @@ def test_implausible_volume_is_confirmed_before_pricing():
     root = mail(2, "Air freight MUC to YYZ, 1478 kg gross, 3.06 cbm")
     _, draft = validate(root, RfqDraft(facts=plausible))
     assert not [i for i in draft.issues if i["field"] == "volume_cbm"]
+
+
+AUER_ROOT = (
+    "I would like a quote for an air freight shipment to BKK (Bangkok, TH). The goods must be"
+    " picked up from our warehouse and trucked to the departure airport by you. The cargo will"
+    " be ready for pickup on 2026-12-04. The shipment consists of 12 pieces of machine parts."
+    " Total gross weight 1885 kg, volume 11.96 cbm. We want the cheapest option.\n\n"
+    "Best greetings from Regensburg\nTobias Auer"
+)
+AUER_REPLY = (
+    "Hello Moritz,\n\nSorry I left out the pickup location. The goods are to be collected in"
+    " Augsburg, Germany.\n\nBest greetings from Regensburg\nTobias Auer"
+)
+
+
+def _auer_thread(questions):
+    """Root RFQ, `questions` clarifications sent, each answered with the same city."""
+    root = mail(1, AUER_ROOT)
+    _, draft = validate(root, RfqDraft(facts={"weight_kg": 1885.0, "volume_cbm": 11.96}))
+    db.validation_save(1, "awaiting_clarification", draft.model_dump(mode="json"), {})
+    reply_to = 1
+    for n in range(questions):
+        out_id, in_id = 100 + 2 * n, 101 + 2 * n
+        db.record_outgoing(
+            mail_id=out_id,
+            recipient=OWNER,
+            subject="Re: RFQ",
+            body="Could you please send the pickup ZIP code?",
+            category="clarification",
+            session_id=1,
+            in_reply_to=reply_to,
+            references=[1],
+        )
+        if n < questions - 1:
+            mail(in_id, AUER_REPLY, sid=1)
+        reply_to = in_id
+    return root, mail(reply_to, AUER_REPLY, sid=1), draft
+
+
+def _ask_plan(pickup_evidence):
+    from app.agents import rescue
+
+    return rescue.Plan.model_validate(
+        {
+            "action": "ask_customer",
+            "reason": "pricing still requires the pickup ZIP",
+            "corrections": [
+                {"field": "destination", "value": "BKK", "evidence": "BKK (Bangkok, TH)"},
+                {"field": "pickup_city", "value": "Augsburg", "evidence": pickup_evidence},
+                {"field": "preference", "value": "cheapest", "evidence": "the cheapest option"},
+            ],
+            "releases": [],
+            "question_en": "Could you please send the pickup ZIP code in Augsburg?",
+            "question_de": "Kannst du uns bitte die PLZ in Augsburg schicken?",
+        }
+    )
+
+
+def _run_take_over(monkeypatch, root, reply, plan):
+    from app.agents import rescue
+    from app.mail import multilingual
+
+    evidence = rescue._normal(AUER_ROOT + "\n" + AUER_REPLY)
+    monkeypatch.setattr(multilingual, "prepare", lambda m, *a, **k: m)
+    monkeypatch.setattr(rescue, "_decision", lambda *a: (plan, "key", evidence))
+    asked, priced = [], []
+    monkeypatch.setattr(clarification, "request", lambda *a: asked.append(a))
+    monkeypatch.setattr(rfq, "handle_rfq", lambda *a: priced.append(a))
+    assert rescue.take_over(reply, 1)
+    return asked, priced
+
+
+@pytest.mark.core
+def test_answered_pickup_city_is_priced_instead_of_asking_for_the_zip_again(monkeypatch):
+    """Session 38891: the customer named Augsburg after our first question and then ten
+    more times; each plan cited Augsburg and BKK yet asked for the ZIP until the deadline.
+    A complete cited answer is priced by zone, the quote confirms the exact address."""
+    root, reply, _ = _auer_thread(questions=1)
+    plan = _ask_plan("The goods are to be collected in Augsburg, Germany.")
+    asked, priced = _run_take_over(monkeypatch, root, reply, plan)
+    assert not asked and len(priced) == 1
+    request = db.get_session(1)["request"]
+    assert request["pickup_city"] == "Augsburg" and request["pickup_assumed"] is True
+    assert request["destination"] == "BKK"
+
+
+@pytest.mark.core
+def test_uncited_pickup_city_still_asks(monkeypatch):
+    """Counterexample: a city the customer never wrote is no answer, so we ask."""
+    root, reply, _ = _auer_thread(questions=1)
+    plan = _ask_plan("We collect from Augsburg")  # not in the customer's words
+    asked, priced = _run_take_over(monkeypatch, root, reply, plan)
+    assert len(asked) == 1 and not priced
+
+
+@pytest.mark.core
+def test_question_loop_stops_after_the_limit(monkeypatch):
+    """Even an unresolvable gap gets at most THREAD_RESCUE_MAX_QUESTIONS automatic questions."""
+    root, reply, _ = _auer_thread(questions=3)
+    plan = _ask_plan("We collect from Augsburg")
+    asked, priced = _run_take_over(monkeypatch, root, reply, plan)
+    assert not asked and not priced
+    events = db.get_session(1)["events"]
+    assert any(e["kind"] == "thread_rescue_blocked" and e["level"] == "error" for e in events)
