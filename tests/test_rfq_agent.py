@@ -208,6 +208,54 @@ def test_sheet_price_without_portal_fallback_does_not_wait_for_airlines(
     assert all(not (k and "airline" in k) for k in _fra_pek_waits(monkeypatch, []))
 
 
+def _fra_pek_asked(monkeypatch, stub, fallback: list[str]) -> set[str]:
+    """FRA-PEK with the airline cap used up and Lumen missing from the reservation map (stale
+    "do not serve" list); returns every carrier address a bid request went to."""
+    extracted = {
+        "origin": "FRA",
+        "pickup_zip": None,
+        "destination": "PEK",
+        "weight_kg": 700,
+        "volume_cbm": 6.58,
+        "pieces": 9,
+        "preference": "fastest",
+        "ready_date": "2026-11-27",
+        "language": "en",
+        "customer_name": "Anna",
+    }
+    monkeypatch.setattr(rfq.llm, "complete", lambda *a, **k: json.dumps(extracted))
+    monkeypatch.setattr(rfq, "settings", dataclasses.replace(rfq.settings, max_bid_carriers=1))
+    vega = bids.Carrier("Vega Skyfreight", "airline", "vega-skyfreight@hackloop.mail", ())
+    monkeypatch.setattr(rfq, "_bid_carriers", lambda *args: ([], [vega]))
+    monkeypatch.setattr(rfq, "_portal_bid_carriers", lambda *args: {})
+    monkeypatch.setattr(
+        rfq, "portal_airlines", lambda o, d: [{"code": "LM", "name": "Lumen Air Cargo"}]
+    )
+    monkeypatch.setattr(
+        rfq, "portal_result", lambda r, **kw: PortalResult(email_fallbacks=list(fallback))
+    )
+    orion = RateOption("Orion Cargo Air", "FRA", "PEK", 4, 269221, "EUR", 269221, "sheet")
+    monkeypatch.setattr(rfq, "_sheets", lambda *args: [orion])
+    monkeypatch.setattr(bids, "wait", lambda *args, **kwargs: [])
+    mail = dataclasses.replace(_rfq_mail(36099), subject="Air freight quote request: FRA to PEK")
+    rfq.handle_rfq(mail, 36099)
+    return {m["to"] for m in stub.sent if m["to"] != CUSTOMER}
+
+
+def test_portal_503_airline_is_asked_past_cap_and_stale_lane_list(stub, monkeypatch) -> None:
+    """The 503 fallback is the lane's live price: neither a used-up airline cap nor a missed
+    reservation may drop it (formerly portal_fallback_blocked, silently unanswerable)."""
+    asked = _fra_pek_asked(monkeypatch, stub, ["LM"])
+    assert "lumen-air-cargo@hackloop.mail" in asked
+    assert "vega-skyfreight@hackloop.mail" in asked
+
+
+def test_portal_airline_is_not_emailed_without_503(stub, monkeypatch) -> None:
+    """Counterexample: the portal priced the lane, so nobody is emailed past the cap."""
+    asked = _fra_pek_asked(monkeypatch, stub, [])
+    assert "lumen-air-cargo@hackloop.mail" not in asked
+
+
 def test_incomplete_door_quote_is_not_sent(stub, monkeypatch) -> None:
     trucker = bids.Carrier("T", "trucker", "t@hackloop.mail", ("51",))
     monkeypatch.setattr(rfq, "_bid_carriers", lambda *args: ([trucker], []))
