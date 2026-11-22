@@ -1,0 +1,2 @@
+Setup change since round 89: (1) two shipments to different destinations in one mail are each quoted with their own all-in total in the same reply (`MULTI_SHIPMENT_QUOTE`, on; `app/mail/shipments.py`); only the first is stored and bookable. (2) Requested cargo insurance is added to the all-in total as value x coverage x rate (`CARGO_INSURANCE`, on; `app/pricing/insurance.py`).
+Not verified: live. Second shipment uses sheets and portal only, no airline bids.

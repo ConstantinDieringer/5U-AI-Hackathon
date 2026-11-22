@@ -28,7 +28,7 @@ from pydantic import ValidationError
 from app import db, hackloop, llm
 from app.agents import bids, carrier_prefs, quote_opening
 from app.config import settings
-from app.mail import language, lots, multilingual, parse, pdf_request
+from app.mail import language, lots, multilingual, parse, pdf_request, shipments
 from app.mail.content import current_message
 from app.mail.conversation import quote_conversation
 from app.mail.quote_locales import COPY as QUOTE_LOCALES
@@ -48,7 +48,7 @@ from app.mail.style import (
 from app.mail.subjects import shipment_subject
 from app.mail.voice import customer_voice
 from app.models import Mail, RateOption, Rfq, RfqDraft
-from app.pricing import served_lanes
+from app.pricing import insurance, served_lanes, truck_estimate
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import portal_result
 from app.pricing.pricing import (
@@ -796,6 +796,50 @@ def _fallback_with_coverage(
     return quote_text(rfq, option, total_eur_minor, truck, variant, today)
 
 
+def _before_signature(body: str, note: str) -> str:
+    i = body.rfind(SIGNATURE)
+    if i < 0:
+        return f"{body.rstrip()}\n\n{note}\n"
+    return f"{body[:i].rstrip()}\n\n{note}\n\n{body[i:]}"
+
+
+_ORDINAL = {"en": ("second", "third", "fourth"), "de": ("zweite", "dritte", "vierte")}
+
+
+def with_extra_shipments(body: str, rfq: Rfq, extras: list[tuple[RateOption, int, bool]]) -> str:
+    """Further shipments of the same mail (rounds 89/90): one paragraph each with its own
+    all-in total, in the same reply. Code writes it from the priced option, no LLM."""
+    german = language.base(rfq.language) == "de"
+    for n, (option, total, pickup) in enumerate(extras[:3]):
+        price = _amount(total, "de" if german else "en")
+        if german:
+            note = (
+                f"Für Ihre {_ORDINAL['de'][n]} Sendung bieten wir Luftfracht von {option.origin}"
+                f" nach {option.destination} mit {option.airline} zum separaten"
+                f" All-in-Gesamtpreis von {price} an. Die Laufzeit beträgt"
+                f" {option.transit_days:g} Tage ab Abflug"
+                + (", die Abholung an Ihrem Standort ist enthalten." if pickup else ".")
+            )
+        else:
+            note = (
+                f"For your {_ORDINAL['en'][n]} shipment we can offer air freight from"
+                f" {option.origin} to {option.destination} with {option.airline} for a separate"
+                f" all-in total of {price}. The transit time is {option.transit_days:g} days"
+                " from departure" + (" and pickup from your site is included." if pickup else ".")
+            )
+        body = _before_signature(body, note)
+    return body
+
+
+def with_insurance_note(body: str, rfq: Rfq) -> str:
+    """The premium is inside the one all-in total; the mail says so without a second amount."""
+    if language.base(rfq.language) == "de":
+        note = "Im Gesamtpreis ist die gewünschte Transportversicherung enthalten."
+    else:
+        note = "The total includes the cargo insurance you asked for."
+    return _before_signature(body, note)
+
+
 def with_pickup_note(body: str, rfq: Rfq) -> str:
     """The mail named no pickup site, so the price rests on an assumed one: say which and ask
     for the exact address in the same (first and only) quote. No extra mail, no LLM."""
@@ -1278,6 +1322,20 @@ def _handle(mail: Mail, sid: int) -> None:
         return
     db.set_status(sid, "pricing")
     mail = multilingual.prepare(mail, sid)
+    # several shipments in one mail: the flow runs on the first, the others are priced from
+    # its checked request and quoted in the same reply (rounds 89/90, one_of_two)
+    extras: list[shipments.Shipment] = []
+    parts = shipments.split(mail.body) if settings.multi_shipment_quote else []
+    if len(parts) >= 2:
+        import dataclasses
+
+        mail = dataclasses.replace(mail, body=parts[0].body)
+        extras = parts[1:]
+        db.emit(
+            "multi_shipment",
+            f"{len(parts)} Sendungen in einer Mail: {', '.join(p.destination for p in parts)}",
+            sid,
+        )
 
     start = time.monotonic()
     rfq = _stored_request(sid) or extract_rfq(mail, sid)  # stored = resumed after a restart
@@ -1395,7 +1453,10 @@ def _handle(mail: Mail, sid: int) -> None:
             ),
         )
         return
-    _price_and_quote(mail, sid, rfq, origin, t0, mode)
+    if extras:
+        _price_and_quote(mail, sid, rfq, origin, t0, mode, False, extras)
+    else:
+        _price_and_quote(mail, sid, rfq, origin, t0, mode)
 
 
 def _sheets(rfq: Rfq) -> list[RateOption]:
@@ -1651,8 +1712,40 @@ def _estimated_truck(rfq: Rfq, sid: int) -> bids.Offer | None:
     return bids.Offer(carrier, est.total_eur, None, 0, est.total_eur, "EUR", "1", "estimate")
 
 
+def _extra_air(
+    rfq: Rfq, part: shipments.Shipment, banned: set[str], deadline: float
+) -> RateOption | None:
+    """Best air option for a further shipment of the same mail: same origin, pickup, date and
+    preference, its own destination and cargo. Sheets and portal only (no bid mail)."""
+    other = rfq.model_copy(
+        update={
+            "destination": part.destination,
+            "weight_kg": part.weight_kg,
+            "volume_cbm": part.volume_cbm,
+            "pieces": part.pieces,
+        }
+    )
+    options = _sheets(other) + portal_result(other, deadline=deadline).options
+    return best_air([o for o in options if o.airline.lower() not in banned], [], rfq.preference)
+
+
+def _extra_truck_minor(rfq: Rfq, truck: bids.Offer, weight_kg: float, sid: int) -> int:
+    """Pickup for a further shipment from the same site: this mail's real trucker bid scaled
+    to the other weight (app/pricing/truck_estimate.py); far-off weights keep the bid."""
+    basis = truck_estimate.PastBid(truck.carrier.email, truck.total_eur, rfq.weight_kg, sid)
+    est = truck_estimate.estimate([basis], weight_kg)
+    return to_minor(est.total_eur if est else truck.total_eur)
+
+
 def _price_and_quote(
-    mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str, forced: bool = False
+    mail: Mail,
+    sid: int,
+    rfq: Rfq,
+    origin: str,
+    t0: float,
+    mode: str,
+    forced: bool = False,
+    extras: list[shipments.Shipment] | None = None,
 ) -> None:
     """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send.
     `forced` (RFQ watchdog): one more pricing pass from sheets, portal and the bids already
@@ -1722,6 +1815,10 @@ def _price_and_quote(
         )
     air = [o for o in _sheets(rfq) + portal.options if o.airline.lower() not in banned]
     db.emit("priced", f"{len(air)} Preise aus Tarifblatt und Portal", sid)
+    extra_air: list[tuple[shipments.Shipment, RateOption | None]] = []
+    for part in extras or []:
+        left = max(5.0, pricing_deadline - time.time())
+        extra_air.append((part, _extra_air(rfq, part, banned, time.monotonic() + left)))
 
     if not forced:
         bids.wait(sid, pricing_deadline - time.time())
@@ -1805,6 +1902,45 @@ def _price_and_quote(
             sid,
         )
 
+    cover = None
+    if settings.cargo_insurance and not extras:
+        asked_text = _clean(mail.body)
+        cover = insurance.read(asked_text)
+        if cover is not None:
+            total += cover.premium_minor
+            db.emit(
+                "insurance_added",
+                f"Versicherung im Gesamtpreis: {amount(cover.premium_minor)}"
+                f" ({cover.coverage_pct:g} % von {amount(cover.value_minor)},"
+                f" Satz {cover.rate_pct:g} %)",
+                sid,
+            )
+        elif insurance.asked(asked_text) and not re.search(
+            r"\bno\s+insurance\b|\bwithout\s+insurance\b|\bkeine\s+versicherung\b",
+            asked_text,
+            re.IGNORECASE,
+        ):
+            db.emit(
+                "insurance_unreadable",
+                "Versicherung gewünscht, Warenwert oder Prämiensatz nicht lesbar: nicht im Preis",
+                sid,
+                level="error",
+            )
+    extra_quotes: list[tuple[RateOption, int, bool]] = []
+    for part, option in extra_air:
+        if option is None or (rfq.door_to_port and truck is None):
+            db.emit(
+                "extra_shipment_unpriced",
+                f"Weitere Sendung nach {part.destination} ohne Preis: nicht im Angebot",
+                sid,
+                level="error",
+            )
+            continue
+        extra_total = option.total_eur_minor
+        if rfq.door_to_port and truck is not None:
+            extra_total += _extra_truck_minor(rfq, truck, part.weight_kg, sid)
+        extra_quotes.append((option, extra_total, rfq.door_to_port and truck is not None))
+
     template = forced and t0 + RFQ_LIFETIME_S - time.time() < FORCED_FULL_COMPOSE_S
     if template:
         # little time left: the checked deterministic copy, no composer and no style review
@@ -1814,6 +1950,10 @@ def _price_and_quote(
         body = compose_quote_text(rfq, choice, total, truck, sid)
     if rfq.pickup_assumed and truck is not None:
         body = with_pickup_note(body, rfq)
+    if cover is not None:
+        body = with_insurance_note(body, rfq)
+    if extra_quotes:
+        body = with_extra_shipments(body, rfq, extra_quotes)
     from dataclasses import asdict
 
     db.emit(
@@ -1838,7 +1978,8 @@ def _price_and_quote(
         )
         return
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
-    subject = shipment_subject(choice.origin, choice.destination, rfq.language, subject)
+    if not extra_quotes:  # one route in the subject would misname a two-shipment reply
+        subject = shipment_subject(choice.origin, choice.destination, rfq.language, subject)
     asked = pdf_request.asks_for_pdf(mail.body, mail.subject)
     attachments = _quote_pdf(sid, rfq, choice, total, truck, asked=asked)
     try:
@@ -1892,6 +2033,16 @@ def _price_and_quote(
         + ([{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}] if truck else []),
         mail_id=int(sent["id"]),
     )
+    for option, extra_total, pickup in extra_quotes:
+        db.emit(
+            "extra_shipment_quoted",
+            f"Weitere Sendung {option.origin} nach {option.destination}:"
+            f" {amount(extra_total)} ({option.airline})",
+            sid,
+            total_minor=extra_total,
+            pickup_included=pickup,
+            selected=asdict(option),
+        )
     log.info(
         "session %s: quoted %s EUR (%s) after %.0f s",
         sid,
