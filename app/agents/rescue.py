@@ -467,10 +467,15 @@ def _apply(
         return None, checked
     try:
         request = Rfq.model_validate(checked.facts)
-    except ValueError:
+    except ValueError as exc:
+        # Keep the reason: a blocked plan without one cannot be acted on (session 30351).
+        checked.issues.append({"field": "shipment", "code": "invalid", "detail": str(exc)[:300]})
         return None, checked
     # A release cannot make required pricing fields or supported pickup zones optional.
     if not request.origin and not request.pickup_zone:
+        checked.issues.append(
+            {"field": "origin", "code": "missing", "detail": "No origin airport or pickup zone"}
+        )
         return None, checked
     checked.evidence["thread_rescue_approval"] = {
         "root_id": root.id,
@@ -591,11 +596,17 @@ def take_over(mail: Mail, sid: int) -> bool:
                 )
                 rfq.handle_rfq(root, sid)
             else:
+                # Name what stays open and alert #sos: the deadline keeps running, and only a
+                # person can quote now (session 30351 expired silently on this branch).
+                open_fields = sorted({str(i.get("field")) for i in checked.issues}) or ["unbekannt"]
                 db.emit(
                     "thread_rescue_blocked",
-                    "Rettungsplan lässt erforderliche Angaben offen",
+                    "Rettungsplan lässt erforderliche Angaben offen: " + ", ".join(open_fields),
                     sid,
                     level="warn",
+                    issues=checked.issues,
+                    corrections=sorted(checked.evidence.get("corrections", {})),
+                    needs_human=True,
                 )
         elif (
             plan.action == "ask_customer" and plan.question_en.strip() and plan.question_de.strip()

@@ -76,3 +76,77 @@ def test_partial_answers_accumulate_and_repeat_only_for_new_mail(sent, monkeypat
     request = db.get_session(1)["request"]
     assert request["weight_kg"] == 100 and request["volume_cbm"] == 2
     assert db.get_session(1)["first_reply_at"] is None
+
+
+ANNA_ROOT = (
+    "Could you please quote the same shipment as in my earlier request? The cargo and pickup"
+    " details are unchanged. The new destination is LAX, ready for pickup on 2026-11-29."
+    " Please send me an all-in price in EUR for the cheapest option."
+)
+ANNA_REPLY = (
+    "The departure airport is Stuttgart (STR), and the destination for this shipment is LAX."
+    " The shipment consists of 6 pieces, with a total gross weight of 1,841 kg and a total"
+    " volume of 4.63 cbm. We will deliver the shipment to STR ourselves, so no pickup is required."
+)
+
+
+def _rescue_plan(corrections):
+    from app.agents import rescue
+
+    return rescue.Plan.model_validate(
+        {
+            "action": "retry_pricing",
+            "reason": "customer answered",
+            "corrections": [{"field": f, "value": v, "evidence": e} for f, v, e in corrections],
+            "releases": [],
+            "question_en": "",
+            "question_de": "",
+        }
+    )
+
+
+@pytest.mark.core
+def test_rescue_plan_names_open_fields_and_alerts_a_human():
+    """Session 30351: a blocked rescue plan expired silently. It must say what stays open
+    and reach #sos while the deadline still runs; a complete answer still builds the RFQ."""
+    from app.agents import rescue
+    from app.ui import alerts
+
+    root = mail(1, ANNA_ROOT)
+    reply = mail(3, ANNA_REPLY, sid=1)
+    facts = {"destination": "LAX", "preference": "cheapest", "ready_date": "2026-11-29"}
+    _, draft = validate(root, RfqDraft(facts=facts))
+    evidence = rescue._normal(ANNA_ROOT + "\n" + ANNA_REPLY)
+    full = [
+        ("origin", "STR", "The departure airport is Stuttgart (STR)"),
+        ("weight_kg", "1841", "with a total gross weight of 1,841 kg"),
+        ("volume_cbm", "4.63", "a total volume of 4.63 cbm"),
+        ("pieces", "6", "The shipment consists of 6 pieces"),
+        ("no_pickup", "true", "so no pickup is required"),
+    ]
+    request, _ = rescue._apply(
+        reply, 1, root, draft.model_copy(deep=True), _rescue_plan(full), evidence
+    )
+    assert request and request.origin == "STR" and request.weight_kg == 1841
+
+    # counterexample: the origin quote is not in the customer's words, so it stays open
+    partial = [("origin", "STR", "we ship from Stuttgart")] + full[1:]
+    request, checked = rescue._apply(
+        reply, 1, root, draft.model_copy(deep=True), _rescue_plan(partial), evidence
+    )
+    assert request is None
+    assert "origin" in {i["field"] for i in checked.issues}
+
+    event = {
+        "kind": "thread_rescue_blocked",
+        "level": "warn",
+        "message": "Rettungsplan lässt erforderliche Angaben offen: origin",
+    }
+    kind, headline = alerts.classify(event)
+    assert kind == "rescue_blocked" and "origin" in headline
+    other = {
+        "kind": "thread_rescue_blocked",
+        "level": "warn",
+        "message": "Rettungsplan passt nicht zur Geschäftsphase; keine Aktion ausgeführt",
+    }
+    assert alerts.classify(other) is None
