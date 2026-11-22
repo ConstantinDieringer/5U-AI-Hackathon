@@ -10,9 +10,12 @@ def main() -> None:
         settings.llm_retry_model,
         settings.llm_rescue_model,
         settings.llm_compose_model,
+        settings.llm_vision_model,
     }
     if settings.email_review_enabled:
         required.add(settings.llm_review_model)
+    if settings.phishing_gate_llm_mode != "off":
+        required.add(settings.phishing_gate_model)
     try:
         available = llm.available_models(timeout_s=10)
     except Exception as exc:  # noqa: BLE001 - sanitize provider errors before terminal output

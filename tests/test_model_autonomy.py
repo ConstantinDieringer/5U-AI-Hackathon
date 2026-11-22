@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import db, llm
+from app import config, db, llm
 from app.agents import bids, clarification, rescue, rfq
 from app.models import Mail, RateOption, Rfq, RfqDraft
 from app.pricing.portal_sync import PortalResult
@@ -201,3 +201,50 @@ def test_luna_uses_supported_reasoning_and_accounts_for_its_price(tmp_path, monk
     assert captured[0]["reasoning_effort"] == "medium"
     assert captured[0]["max_completion_tokens"] >= 4096
     assert llm.cost_micro_usd("gpt-5.6-luna", 1_000_000, 1_000_000) == 1_400_000
+
+
+@pytest.mark.core
+def test_sol_policy_supersedes_stale_railway_models_and_can_be_explicitly_reconfigured(monkeypatch):
+    monkeypatch.delenv("LLM_TEXT_MODEL", raising=False)
+    monkeypatch.setenv("LLM_MODEL", "gpt-5.6-luna")
+    monkeypatch.setenv("LLM_RESCUE_MODEL", "gpt-5-mini")
+    for role in (
+        "LLM_MODEL",
+        "LLM_RETRY_MODEL",
+        "LLM_RESCUE_MODEL",
+        "LLM_COMPOSE_MODEL",
+        "LLM_VISION_MODEL",
+        "LLM_REVIEW_MODEL",
+        "PHISHING_GATE_MODEL",
+    ):
+        assert config._text_model(role) == "gpt-5.6-sol"
+    monkeypatch.setenv("LLM_TEXT_MODEL", "")
+    assert config._text_model("LLM_RESCUE_MODEL") == "gpt-5-mini"
+
+
+@pytest.mark.core
+@pytest.mark.parametrize(
+    "purpose", ["extract_rfq", "thread_rescue", "compose_quote", "read_bid", "incoming_translation"]
+)
+def test_sol_calls_check_measurements_and_currency(tmp_path, monkeypatch, purpose):
+    db.init_db(str(tmp_path / "sol.db"))
+    captured = []
+    response = SimpleNamespace(
+        model="gpt-5.6-sol",
+        usage=None,
+        choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))],
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kwargs: captured.append(kwargs) or response)
+        )
+    )
+    monkeypatch.setattr(llm, "_client", client)
+    llm.complete(purpose, [{"role": "user", "content": "source"}], None, model_name="gpt-5.6-sol")
+    [call] = captured
+    assert call["model"] == "gpt-5.6-sol"
+    assert call["reasoning_effort"] == ("high" if purpose == "thread_rescue" else "medium")
+    assert "cubic feet" in call["messages"][0]["content"]
+    assert "ISO currencies" in call["messages"][0]["content"]
+    assert call["messages"][-1]["content"] == "source"
+    assert llm.cost_micro_usd("gpt-5.6-sol", 1_000_000, 1_000_000) == 24_000_000
