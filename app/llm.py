@@ -21,7 +21,7 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gpt-5.6-sol"
+DEFAULT_MODEL = "gpt-5.6-luna"
 MEASUREMENT_CHECK = """Check source numbers together with their units and currencies before
 extracting or correcting shipment facts. Distinguish lb from kg, cubic feet from cubic metres,
 and dimensions per piece from shipment totals. 1 lb = 0.45359237 kg, 1 cubic foot =

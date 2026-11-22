@@ -23,8 +23,8 @@ def _text_model(role: str) -> str:
     An explicitly empty LLM_TEXT_MODEL restores legacy per-role configuration.
     Audio recognition has its own compatible models and does not use this policy.
     """
-    unified = os.getenv("LLM_TEXT_MODEL", "gpt-5.6-sol").strip()
-    return unified or _env(role, _env("LLM_MODEL", "gpt-5.6-sol"))
+    unified = os.getenv("LLM_TEXT_MODEL", "gpt-5.6-luna").strip()
+    return unified or _env(role, _env("LLM_MODEL", "gpt-5.6-luna"))
 
 
 _ON = frozenset({"1", "true", "yes", "on"})
