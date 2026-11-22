@@ -123,6 +123,65 @@ _PENDING_APPROVAL = re.compile(
 )
 
 
+# Changed cargo after the quote (round 86, session 24377: 753 kg quoted, the customer wrote
+# "now 5 pieces, 1317 kg", later "yes, book" and the 753 kg rate was booked). Numbers in the
+# customer's own words that differ from the quoted request mean the offer no longer fits.
+_NUMBER = r"(\d{1,3}(?:[.,]\d{3})+(?![.,]?\d)|\d+(?:[.,]\d+)?)"
+_CARGO_FIELDS = (
+    (
+        "weight_kg",
+        "Gewicht",
+        "kg",
+        re.compile(_NUMBER + r"\s*(?:kgs?|kilos?|kilograms?)\b", re.IGNORECASE),
+        0.5,
+    ),
+    (
+        "pieces",
+        "Stückzahl",
+        "Stück",
+        re.compile(
+            _NUMBER + r"\s*(?:pieces|pcs|packages|pkgs|cartons|crates|pallets|colli|boxes"
+            r"|stück|stk|paletten|kartons|kisten|packstücke)\b",
+            re.IGNORECASE,
+        ),
+        0.0,
+    ),
+    ("volume_cbm", "Volumen", "cbm", re.compile(_NUMBER + r"\s*(?:cbm|m3|m³)", re.IGNORECASE), 0.01),
+)
+
+
+def _parse_number(raw: str) -> Decimal | None:
+    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", raw):  # 1.317 / 1,317 = thousands
+        raw = re.sub(r"[.,]", "", raw)
+    try:
+        return Decimal(raw.replace(",", "."))
+    except ArithmeticError:
+        return None
+
+
+def cargo_revision(body: str, request: dict[str, Any] | None) -> list[str]:
+    """What the customer's own words change against the quoted request, e.g.
+    ["Gewicht 753 → 1317 kg"]. Empty when nothing differs or nothing is stated."""
+    text = own_text(body)
+    changes: list[str] = []
+    for field, label, unit, pattern, tolerance in _CARGO_FIELDS:
+        quoted = (request or {}).get(field)
+        if quoted is None:
+            continue
+        values = [v for v in (_parse_number(m.group(1)) for m in pattern.finditer(text)) if v]
+        if not values:
+            continue
+        old = Decimal(str(quoted))
+        new = [v for v in values if abs(v - old) > Decimal(str(tolerance))]
+        if new:  # "800 kg instead of 640 kg" names the old figure too
+            changes.append(f"{label} {old.normalize():f} → {new[0].normalize():f} {unit}")
+    return changes
+
+
+def _revised_key(sid: int) -> str:
+    return f"booking.revised.{sid}"
+
+
 def is_acceptance(body: str) -> bool | None:
     """True = accepts, False = declines, None = unclear (left to a human)."""
     text = own_text(body).replace("’", "'").replace("‘", "'")
@@ -383,6 +442,26 @@ def handle_reply(
         )
 
 
+def _hand_over_revision(mail: Mail, sid: int, changes: list[str]) -> None:
+    """The cargo changed after our quote: the quoted rate no longer fits and a second quote
+    never counts. Never book the old offer (not even on a later "yes"), ask no generic
+    question; a person takes over and decides what to tell the customer."""
+    first = db.kv_get(_revised_key(sid)) is None
+    if first:
+        db.kv_set(_revised_key(sid), str(mail.id))
+        db.takeover(sid, "Agent (Sendungsdaten geändert)")
+    what = ", ".join(changes) if changes else "früher in diesem Thread"
+    db.emit(
+        "needs_human",
+        f"Kunde hat die Sendung geändert ({what}): altes Angebot wird nicht gebucht, "
+        f"bitte Kunden selbst antworten (Mail {mail.id})"[:300],
+        sid,
+        level="error" if first else "warn",
+        mail_id=mail.id,
+        changes=changes,
+    )
+
+
 def _guarded(text: str) -> bool:
     """A question, a condition, a pending check or a change request: the rules hold these
     back on purpose, and no second opinion may turn them into a booking."""
@@ -481,6 +560,10 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
             tracking.handle(mail, sid, booked_session=sid)
         else:
             log.info("session %s already booked, reply %s ignored", sid, mail.id)
+        return
+    changes = cargo_revision(mail.body, s.get("request"))
+    if changes or db.kv_get(_revised_key(sid)) is not None:
+        _hand_over_revision(mail, sid, changes)
         return
     verdict = _mail_acceptance(mail, consent_evidence, sid)
     if settings.prebook_answer:

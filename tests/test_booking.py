@@ -562,3 +562,52 @@ def test_german_price_change_mail(monkeypatch) -> None:
 )
 def test_acceptance_in_other_languages(text: str, verdict: bool | None) -> None:
     assert booking.is_acceptance(text) is verdict
+
+
+REVISION_24648 = (
+    "Hi there,\n\nSorry for the change, the final packing list came in, and the shipment details "
+    "have changed to:\n\n5 pieces, 1317 kg gross weight, 8.18 cbm\n\nEverything else stays the "
+    "same. Could you please update your offer?\n\nKlaus"
+)
+YES_24714 = (
+    "Hi Moritz,\n\nYes, please go ahead and book the fastest option to SGN, with pickup from our "
+    "site in 64344 on 24 November.\n\nKlaus"
+)
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (REVISION_24648, ["Gewicht 1228 → 1317 kg", "Volumen 5.37 → 8.18 cbm"]),
+        ("Neu sind es 1.317 kg.", ["Gewicht 1228 → 1317 kg"]),
+        ("now 1,317 kgs", ["Gewicht 1228 → 1317 kg"]),
+        ("Yes, 1228 kg and 5.37 cbm as quoted, please book.", []),  # same figures
+        (YES_24714, []),  # no cargo figures at all
+        ("Thanks!\n\n> 5 pieces, 1317 kg", []),  # quoted history is not the customer's change
+    ],
+)
+def test_cargo_revision_compares_own_words_with_the_quoted_request(body, expected):
+    request = {"weight_kg": 1228, "volume_cbm": 5.37}
+    assert booking.cargo_revision(body, request) == expected
+
+
+def test_changed_cargo_hands_over_and_a_later_yes_books_nothing(monkeypatch):
+    """Round 86 / session 24377: the 753 kg rate was booked for 1317 kg."""
+    from app.agents import clarification
+
+    api = Api()
+    monkeypatch.setattr(booking.hackloop, "send", api.send)
+    monkeypatch.setattr(booking.hackloop, "book", api.book)
+    questions = []
+    monkeypatch.setattr(clarification, "ask", lambda *args: questions.append(args))
+    _quoted_session()
+
+    booking.handle_reply(replace(_accept(mid=1429), body=REVISION_24648), 1223)
+    s = db.get_session(1223)
+    assert s["mode"] == "manual" and s["bookings"] == []
+    assert questions == [] and api.sent == []  # no generic "book or clarify?" question
+    human = [e for e in db.events_after(0) if e["kind"] == "needs_human"]
+    assert human and "1317 kg" in human[0]["message"] and human[0]["level"] == "error"
+
+    booking.handle_reply(replace(_accept(mid=1430), body=YES_24714), 1223)
+    assert api.booked == [] and db.get_session(1223)["bookings"] == []

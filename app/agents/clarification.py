@@ -468,8 +468,10 @@ def request(mail, sid, draft):
                 sid,
                 level="warn",
             )
+        # No send follows, for every workflow. Left at "pending", the 1 s worker called this
+        # again every second (session 24377: 422 events in two minutes, until rescue).
+        db.clarification_sent(sid, "capped")
         if settings.clarify_cap_resolve and workflow == "rfq":
-            db.clarification_sent(sid, "capped")  # no send follows; not an unknown outcome
             resolve_at_cap(mail, sid, draft)
         return
     if not db.clarification_claim(sid):
@@ -931,23 +933,29 @@ def run(stop):
 
     while not stop.wait(1):
         try:
-            for saved in db.clarification_unhandled_replies():
-                if rescue.is_owner(saved["session_id"]):
-                    rescue.take_over(_stored_mail(saved), saved["session_id"])
-                else:
-                    handle_reply(_stored_mail(saved), saved["session_id"])
-            for item in db.validation_pending():
-                row = db.validation_get(item["session_id"])
-                if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
-                    request(
-                        Mail(**row["root"]),
-                        item["session_id"],
-                        RfqDraft.model_validate(row["draft"]),
-                    )
-            if settings.clarify_once:
-                fallback_due()
+            tick(rescue)
         except Exception:
             logging.getLogger(__name__).exception("Clarification worker failed")
+
+
+def tick(rescue) -> None:
+    """One pass of the worker. A paused or taken-over session keeps its pending question
+    untouched until it is released (calling request() for it re-emitted
+    `validation_blocked` every second)."""
+    for saved in db.clarification_unhandled_replies():
+        if rescue.is_owner(saved["session_id"]):
+            rescue.take_over(_stored_mail(saved), saved["session_id"])
+        else:
+            handle_reply(_stored_mail(saved), saved["session_id"])
+    for item in db.validation_pending():
+        sid = item["session_id"]
+        if db.is_paused(sid) or db.is_manual(sid):
+            continue
+        row = db.validation_get(sid)
+        if row["state"] == "awaiting_clarification" and row["send_state"] == "pending":
+            request(Mail(**row["root"]), sid, RfqDraft.model_validate(row["draft"]))
+    if settings.clarify_once:
+        fallback_due()
 
 
 def fallback_due(now=None):

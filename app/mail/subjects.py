@@ -19,4 +19,10 @@ def shipment_subject(
         return f"Carga aérea {route[0]} a {route[1]}"
     if language == "it":
         return f"Trasporto aereo {route[0]} a {route[1]}"
+    if language == "nl":
+        return f"Luchtvracht {route[0]} naar {route[1]}"
+    if language == "pl":
+        return f"Fracht lotniczy {route[0]} do {route[1]}"
+    if language == "tr":
+        return f"Hava kargo {route[0]} çıkışlı {route[1]} varışlı"
     return f"Air freight {route[0]} to {route[1]}"

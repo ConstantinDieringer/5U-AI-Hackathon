@@ -33,7 +33,7 @@ including fixed templates and deterministic fallbacks. The common customer writi
 also governs these translations. Calendar dates use Babel locale formats; prices keep the
 existing EUR and number presentation. Names, references, dates and the team signature remain
 protected. `review=False` skips the style reviewer, but does not skip required translation.
-Existing verified French, Spanish and Italian quote templates are retained; already native
+Existing verified French, Spanish, Italian, Dutch, Polish and Turkish quote templates are retained; already native
 output needs no additional translation call. The mandatory tracking invitation uses its native
 template or a cached checked translation, which the final gate and recovery worker recognize.
 The reviewer itself and its enable setting are unchanged. Human-authored manual replies use
