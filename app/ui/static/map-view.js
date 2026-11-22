@@ -117,7 +117,7 @@ async function updateNetworkMap() {
       locale:{"NavigationControl.ZoomIn":"Zoom in","NavigationControl.ZoomOut":"Zoom out","NavigationControl.ResetBearing":"Reset north"}});
     map.addControl(new lib.NavigationControl({showCompass:false}),"top-right");
     map.on("style.load",()=>{
-      const color=getComputedStyle(document.documentElement).getPropertyValue("--blue").trim()||"#007AFF";
+      const color=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#007AFF";
       map.addSource("requested-routes",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
       map.addLayer({id:"route-glow",type:"line",source:"requested-routes",paint:{"line-color":color,"line-width":7,"line-opacity":.09}});
       map.addLayer({id:"flight-connections",type:"line",source:"requested-routes",layout:{"line-cap":"round","line-join":"round"},paint:{"line-color":color,"line-width":["interpolate",["linear"],["get","requests"],1,1.4,30,3],"line-opacity":.6}});

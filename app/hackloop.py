@@ -21,6 +21,7 @@ MAX_RETRIES = 2
 RETRY_PAUSE_S = 1.0
 MAX_RETRY_AFTER_S = 10.0
 MAX_RATE_WAIT_S = 60.0  # a portal read never sleeps longer than this; it fails instead
+MAILBOX_POLL_RETRY_S = 6.0  # a 429 poll without Retry-After: just over one poll per 5 s
 MAX_ATTACHMENT_BYTES = 20_000_000
 
 _client = httpx.Client(
@@ -103,16 +104,19 @@ def _request(
                 from app.mail import rate_limit_watch
 
                 rate_limit_watch.record()
+        bare_poll_429 = (
+            path == "/v1/mailbox/messages"
+            and method == "GET"
+            and last is not None
+            and last.status_code == 429
+            and "Retry-After" not in last.headers
+        )
         if attempt < MAX_RETRIES:
             wait = _retry_wait(last)
-            if (
-                path == "/v1/mailbox/messages"
-                and method == "GET"
-                and last is not None
-                and last.status_code == 429
-                and "Retry-After" not in last.headers
-            ):
-                wait = 30.0
+            if bare_poll_429:
+                # just past the free slot: 30 s here (twice, plus 30 s in the poller) left
+                # the mailbox unread for ~90 s per rejected poll while another reader polled
+                wait = MAILBOX_POLL_RETRY_S
             if path == "/v1/portal/rates" and wait > MAX_RATE_WAIT_S:
                 # Retry-After stays honored by the rate gate; this call just does not sit it out
                 raise HackloopError(method, path, 429, f"Retry-After {wait:.0f} s too long")
@@ -126,9 +130,10 @@ def _request(
             log.warning("%s %s failed (%s), retry in %.1fs", method, path, err, wait)
             time.sleep(wait)
     failure = HackloopError(method, path, last.status_code if last is not None else None, err)
-    failure.retry_after = (
-        _retry_wait(last) if last is not None and "Retry-After" in last.headers else 30.0
-    )
+    if last is not None and "Retry-After" in last.headers:
+        failure.retry_after = _retry_wait(last)
+    else:
+        failure.retry_after = MAILBOX_POLL_RETRY_S if bare_poll_429 else 30.0
     raise failure
 
 
