@@ -47,6 +47,7 @@ The jury judges UX and design, and the pitch will show the UI, so the UI is a sc
 - Notfall-Quote (`POST /api/sessions/{id}/draft`, `app/ui/drafts.py`) computes a quote from stored data and hands back to the agent after sending.
 - Übersicht v0.3: status strip, "Fehler & Warnungen" (`GET /api/problems`, ERROR logs as `log_error` events via `app/ui/log_events.py`), "Lagebild/Kontext kopieren" (`/api/context`, `/api/sessions/{id}/context`).
 - **Manual fallback export:** `app/ui/ai_context.py` builds one markdown briefing per session (thread, attachment text, state, events, diagnostics, recent log lines from the in-memory `app/ui/logbuffer.py` ring) for pasting into an outside chat model; `context.zip` adds original attachment files. Read only: no download, send or gateway call.
+- **Portal-Check** (`app/ui/portal_check.py`, `PORTAL_UI_CHECK`): a person picks a lane airline, solves the portal page sum shown as an image, we submit once and show the rate as text plus a `portal_check_rate` event. Not fed into automatic pricing.
 - Deploy light in the top bar (`/api/deploy-gate`); attention list `GET /api/attention`.
 - Mail content is rendered only via `textContent`; JSON fields are snake_case.
 
