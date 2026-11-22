@@ -236,10 +236,15 @@ AUER_REPLY = (
     "Hello Moritz,\n\nSorry I left out the pickup location. The goods are to be collected in"
     " Augsburg, Germany.\n\nBest greetings from Regensburg\nTobias Auer"
 )
+# Names no pickup place: the gap stays open whatever a plan claims.
+AUER_VAGUE_REPLY = (
+    "Hello Moritz,\n\nSorry I left out the pickup location. Our warehouse team will confirm"
+    " it.\n\nBest greetings from Regensburg\nTobias Auer"
+)
 
 
-def _auer_thread(questions):
-    """Root RFQ, `questions` clarifications sent, each answered with the same city."""
+def _auer_thread(questions, reply=AUER_REPLY):
+    """Root RFQ, `questions` clarifications sent, each answered with the same `reply`."""
     root = mail(1, AUER_ROOT)
     _, draft = validate(root, RfqDraft(facts={"weight_kg": 1885.0, "volume_cbm": 11.96}))
     db.validation_save(1, "awaiting_clarification", draft.model_dump(mode="json"), {})
@@ -257,9 +262,9 @@ def _auer_thread(questions):
             references=[1],
         )
         if n < questions - 1:
-            mail(in_id, AUER_REPLY, sid=1)
+            mail(in_id, reply, sid=1)
         reply_to = in_id
-    return root, mail(reply_to, AUER_REPLY, sid=1), draft
+    return root, mail(reply_to, reply, sid=1), draft
 
 
 def _ask_plan(pickup_evidence):
@@ -312,7 +317,7 @@ def test_answered_pickup_city_is_priced_instead_of_asking_for_the_zip_again(monk
 @pytest.mark.core
 def test_uncited_pickup_city_still_asks(monkeypatch):
     """Counterexample: a city the customer never wrote is no answer, so we ask."""
-    root, reply, _ = _auer_thread(questions=1)
+    root, reply, _ = _auer_thread(questions=1, reply=AUER_VAGUE_REPLY)
     plan = _ask_plan("We collect from Augsburg")  # not in the customer's words
     asked, priced = _run_take_over(monkeypatch, root, reply, plan)
     assert len(asked) == 1 and not priced
@@ -321,9 +326,51 @@ def test_uncited_pickup_city_still_asks(monkeypatch):
 @pytest.mark.core
 def test_question_loop_stops_after_the_limit(monkeypatch):
     """Even an unresolvable gap gets at most THREAD_RESCUE_MAX_QUESTIONS automatic questions."""
-    root, reply, _ = _auer_thread(questions=3)
+    root, reply, _ = _auer_thread(questions=3, reply=AUER_VAGUE_REPLY)
     plan = _ask_plan("We collect from Augsburg")
     asked, priced = _run_take_over(monkeypatch, root, reply, plan)
     assert not asked and not priced
     events = db.get_session(1)["events"]
     assert any(e["kind"] == "thread_rescue_blocked" and e["level"] == "error" for e in events)
+
+
+NORDLICHT_ROOT = (
+    "Hi,\n\nPlease quote the fastest air freight option to LIM, including truck pickup from our"
+    " warehouse to the airport. The automotive sensors will be ready for pickup on 2026-11-30:"
+    " 2 pieces, 633 kg gross, 2.73 cbm.\n\nMira Petersen\nNordlicht Audio"
+)
+
+
+def _pickup_answer(monkeypatch, body):
+    monkeypatch.setattr(
+        clarification,
+        "settings",
+        dataclasses.replace(clarification.settings, clarify_once=False),
+    )
+    root = mail(1, NORDLICHT_ROOT)
+    facts = {"destination": "LIM", "weight_kg": 633.0, "volume_cbm": 2.73, "pieces": 2}
+    _, draft = validate(root, RfqDraft(facts=facts))
+    assert [i["field"] for i in draft.issues] == ["pickup_zip"]
+    return clarification.answer_draft(mail(2, body, sid=1), 1, root, draft)
+
+
+@pytest.mark.core
+def test_pickup_city_answers_the_zip_question_without_clarify_once(monkeypatch):
+    """Session 56803: "Sorry I left out the pickup location: Cologne, Germany." left the ZIP
+    gap open (the area reading ran only with CLARIFY_ONCE) and the round expired unquoted."""
+    request, checked = _pickup_answer(
+        monkeypatch,
+        "Sorry I left out the pickup location: Cologne, Germany.\n\nMira Petersen\nNordlicht Audio",
+    )
+    assert not checked.issues
+    assert request.pickup_city == "Cologne" and request.pickup_assumed is True
+
+
+@pytest.mark.core
+def test_answer_without_a_pickup_place_still_asks(monkeypatch):
+    """Counterexample: an answer that names no pickup place leaves the question open."""
+    request, checked = _pickup_answer(
+        monkeypatch, "I will check with our warehouse team and come back to you.\n\nMira Petersen"
+    )
+    assert not (request and (request.pickup_city or request.pickup_zip))
+    assert [i["field"] for i in checked.issues] == ["pickup_zip"]
