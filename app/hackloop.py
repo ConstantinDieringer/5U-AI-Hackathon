@@ -509,6 +509,13 @@ def book(rate_id: str, team_reference: str) -> dict[str, Any]:
     )
 
 
+def cancel_booking(booking_reference: str) -> dict[str, Any]:
+    """Cancel one of our bookings (portal or airline email). 200 = cancelled, also on a repeat
+    call (idempotent, so retries are safe); 404 = unknown or another team's. Not counted
+    against the rate-read limit. Its rate_id can never be booked again."""
+    return _json_obj(_request("DELETE", f"/v1/portal/bookings/{booking_reference}"))
+
+
 # ---------------------------------------------------------------- board
 
 
