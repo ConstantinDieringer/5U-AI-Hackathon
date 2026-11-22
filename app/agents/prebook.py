@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 from app.mail.style import SIGNATURE, amount, written_date
 from app.models import Rfq
+from app.quotes import active
 
 CATEGORY = "prebook_answer"
 
@@ -311,8 +312,10 @@ def facts_for(session: dict[str, Any]) -> Facts | None:
     quotes = session.get("quotes") or []
     if not quotes:
         return None
-    quote = quotes[0]
-    request = session.get("request") or {}
+    quote = active(session)
+    if quote is None:
+        return None
+    request = quote.get("request_snapshot") or session.get("request") or {}
     if not quote.get("airline") or quote.get("transit_days") is None:
         return None
     rfq = Rfq.model_construct(
@@ -621,11 +624,11 @@ def answer(
     if lang == "de":
         hello = f"Hallo {name}," if name else "Guten Tag,"
         opener = "danke für Ihre Rückfrage vor der Buchung."
-        go = "Wenn alles passt, antworten Sie einfach mit bitte buchen und ich buche sofort."
+        go = "Wenn alles passt, sag mir einfach Bescheid und ich kümmere mich um die Buchung."
     else:
         hello = f"Hi {name}," if name else "Hello,"
         opener = "thanks for checking before you book."
-        go = "If everything fits, just reply with go ahead and I will book it right away."
+        go = "If everything fits, let me know and I will arrange the booking."
     body = "\n\n".join([hello, opener, *paragraphs, go, SIGNATURE]) + "\n"
     return Answer(body, "answered", asked.topics)
 
@@ -644,8 +647,7 @@ def mails_after_quote(session: dict[str, Any], categories: tuple[str, ...]) -> i
     """Our mails to the customer after the first quote in the given categories."""
     from app.mail.router import address
 
-    quotes = session.get("quotes") or []
-    quote_mail = int((quotes[0].get("mail_id") if quotes else 0) or 0)
+    quote_mail = int((active(session) or {}).get("mail_id") or 0)
     customer = address(str(session.get("customer") or ""))
     return sum(
         1
@@ -674,6 +676,8 @@ def reply(mail: Any, sid: int, session: dict[str, Any]) -> bool:
     from app.mail.router import address
     from app.mail.signature import first_name
 
+    if db.reply_workflow(sid) is not None:
+        return True  # the central owner uses answer(), never this legacy sender
     request = session.get("request") or {}
     lang = multilingual.mail_language(mail, request.get("language") or "en")
     name = request.get("customer_name") or first_name(mail.body)
@@ -694,7 +698,7 @@ def reply(mail: Any, sid: int, session: dict[str, Any]) -> bool:
         db.emit("prebook_held", "Vorabfrage: Session pausiert/manuell, keine Antwort", sid)
         return True
     used = mails_after_quote(session, (followup.CATEGORY, CATEGORY))
-    if used >= settings.followup_max:
+    if not session.get("workflow") and used >= settings.followup_max:
         db.emit(
             "prebook_budget",
             f"Vorabfrage nicht beantwortet: {used} Mails nach dem Angebot, Limit erreicht",

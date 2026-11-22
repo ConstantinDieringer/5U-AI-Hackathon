@@ -264,6 +264,7 @@ def send_customer(
     deadline_at: float | None = None,
     review: bool = True,
     before_transport: Callable[[], None] | None = None,
+    guard_transport: Callable[[], None] | None = None,
     language_code: str | None = None,
     tracking_booked: bool | None = None,
     attachments: list[dict[str, str]] | None = None,
@@ -353,6 +354,8 @@ def send_customer(
     validate_customer_text(subject)
     # The shared multilingual boundary already localized and validated this wire text.
     allowed()
+    if guard_transport is not None:
+        guard_transport()  # business guards fail closed, unlike legacy audit callbacks
     if before_transport is not None:
         try:
             before_transport()

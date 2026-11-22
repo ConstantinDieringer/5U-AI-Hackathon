@@ -31,6 +31,7 @@ from app.config import settings
 from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.mail.subjects import shipment_subject
+from app.quotes import active
 
 log = logging.getLogger(__name__)
 
@@ -40,30 +41,21 @@ CATEGORY_QUESTION = "followup_question"
 _EN = (
     (
         "just checking in on the offer I sent over. Shall I go ahead and book it for you?\n\n"
-        "A short yes is enough and I will take care of the rest."
+        "Let me know if you would like me to arrange the booking."
     ),
     (
-        "a quick follow up on our offer. If it works for you, just reply with a yes and I will "
-        "book it right away.\n\nIf anything needs changing, tell me what and I will look into it."
+        "a quick follow up on our offer. If it works for you, let me know and I will "
+        "arrange the booking.\n\nIf anything needs changing, tell me what and I will look into it."
     ),
     (
         "one last nudge on the offer. Rates can move quickly, so if you would like to go "
-        "ahead, a quick yes is all I need."
+        "ahead, let me know and I will arrange the booking."
     ),
 )
 _DE = (
-    (
-        "ich wollte kurz nachfragen, ob das Angebot für Sie passt. Soll ich die Sendung für Sie "
-        "buchen?\n\nEin kurzes Ja genügt, um den Rest kümmere ich mich."
-    ),
-    (
-        "kurze Nachfrage zu unserem Angebot. Wenn es für Sie passt, antworten Sie einfach mit "
-        "Ja und ich buche sofort.\n\nFalls etwas angepasst werden soll, sagen Sie mir einfach was."
-    ),
-    (
-        "ein letzter kurzer Hinweis zu unserem Angebot. Raten können sich schnell ändern. Wenn "
-        "Sie buchen möchten, reicht mir ein kurzes Ja."
-    ),
+    "ich wollte kurz nachfragen, ob das Angebot für dich passt. Soll ich die Buchung für dich übernehmen?",
+    "kurze Nachfrage zu unserem Angebot. Wenn es für dich passt, sag mir einfach Bescheid und ich kümmere mich um die Buchung. Falls noch eine Frage offen ist, helfe ich dir gerne weiter.",
+    "ein letzter kurzer Hinweis zu unserem Angebot. Raten können sich schnell ändern. Wenn du buchen möchtest, sag mir einfach Bescheid.",
 )
 
 
@@ -133,6 +125,13 @@ def due(s: dict[str, Any], now: datetime | None = None) -> tuple[str, int] | Non
     kind "offer": quoted, customer silent or stalling. kind "question": our clarification
     question before the quote is unanswered (until the RFQ deadline)."""
     now = now or datetime.now(UTC)
+    workflow = s.get("workflow")
+    if workflow and (
+        workflow["phase"] != "awaiting_customer"
+        or workflow["open_items"]
+        or db.reply_has_pending(s["id"])
+    ):
+        return None
     if s.get("bookings"):
         return None
     if s.get("status") == "quoted" and s.get("quotes"):
@@ -146,7 +145,9 @@ def _due_offer(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
     from app.agents import booking
     from app.mail import multilingual
 
-    quote = s["quotes"][0]
+    quote = active(s)
+    if quote is None:
+        return None
     if _age_s(quote["sent_at"], now) > settings.followup_window_s:
         return None
     conv = _conversation(s)
@@ -169,7 +170,7 @@ def _due_offer(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
     answers = sum(
         1 for m in conv if m["direction"] == "out" and m.get("category") == prebook.CATEGORY
     )
-    if sent + answers >= settings.followup_max:
+    if sent + (0 if s.get("workflow") else answers) >= settings.followup_max:
         return None
     last = conv[-1]
     if last["direction"] == "in":
@@ -237,7 +238,7 @@ def _send(sid: int) -> None:
         subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
         quotes = s.get("quotes") or []
         if quotes:
-            quote = quotes[0]
+            quote = active(s) or quotes[0]
             subject = shipment_subject(quote.get("origin"), quote.get("destination"), lang, subject)
         sent = hackloop.send_customer(
             to, subject, body, in_reply_to=reply_to, session_id=sid, review=False

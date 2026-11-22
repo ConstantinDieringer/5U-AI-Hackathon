@@ -2059,7 +2059,15 @@ def _price(
 
 
 def _price_and_quote(
-    mail: Mail, sid: int, rfq: Rfq, origin: str, t0: float, mode: str, forced: bool = False
+    mail: Mail,
+    sid: int,
+    rfq: Rfq,
+    origin: str,
+    t0: float,
+    mode: str,
+    forced: bool = False,
+    *,
+    revision: int | None = None,
 ) -> None:
     """Steps 2 to 5 for a checked request: bids, prices, choice, compose and send."""
     try:
@@ -2100,7 +2108,11 @@ def _price_and_quote(
     if time.time() >= t0 + RFQ_LIFETIME_S:
         db.set_status(sid, "expired", "Quote deadline exceeded")
         return
-    if not db.claim_quote_send(sid):
+    if revision is not None:
+        effect = db.reply_effect(sid, mail.id, "quote_revision", revision)
+        if effect["status"] != "pending" or not db.reply_current(sid, mail.id, revision):
+            return
+    if revision is None and not db.claim_quote_send(sid):
         db.emit(
             "not_sent",
             "Nicht gesendet: pausiert, übernommen oder schon beantwortet",
@@ -2110,6 +2122,13 @@ def _price_and_quote(
         return
     subject = mail.subject if mail.subject.lower().startswith("re:") else f"Re: {mail.subject}"
     subject = shipment_subject(choice.origin, choice.destination, rfq.language, subject)
+    if revision is not None:
+        introduction = (
+            "Danke dir für die aktualisierten Angaben. Dieses Angebot ersetzt unser bisheriges Angebot."
+            if rfq.language == "de"
+            else "Thanks for the updated details. This offer replaces our previous offer."
+        )
+        body = introduction + "\n\n" + body
     asked = pdf_request.asks_for_pdf(mail.body, mail.subject)
     attachments = _quote_pdf(sid, rfq, choice, total, truck, asked=asked)
     try:
@@ -2130,6 +2149,9 @@ def _price_and_quote(
             review=not template,
             # from here the quote may be out: the watchdog never frees this claim again
             before_transport=lambda: db.kv_set(f"quote.transport.{sid}", db.now()),
+            guard_transport=(lambda: db.reply_quote_guard(sid, mail.id, revision))
+            if revision is not None
+            else None,
             attachments=attachments,
         )
     except hackloop.CustomerSendBlocked:
@@ -2151,12 +2173,16 @@ def _price_and_quote(
         in_reply_to=mail.id,
         raw=sent,
     )
-    db.record_quote(
+    quote_id = db.record_quote(
         sid,
         total_minor=total,
         currency="EUR",
         air_total_minor=choice.total_minor,
         air_currency=choice.currency,
+        request_version=revision,
+        supersedes_id=((db.get_session(sid) or {}).get("quotes") or [{}])[-1].get("id")
+        if revision is not None
+        else None,
         insurance_minor=priced.insurance_minor,
         airline=choice.airline,
         origin=choice.origin,
@@ -2169,6 +2195,14 @@ def _price_and_quote(
         + ([{"trucker": truck.carrier.name, "total_eur": str(truck.total_eur)}] if truck else []),
         mail_id=int(sent["id"]),
     )
+    if revision is not None:
+        db.reply_effect(
+            sid,
+            mail.id,
+            "quote_revision",
+            revision,
+            result={"mail_id": sent["id"], "quote_id": quote_id},
+        )
     log.info(
         "session %s: quoted %s EUR (%s) after %.0f s",
         sid,

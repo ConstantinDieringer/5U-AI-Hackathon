@@ -530,7 +530,8 @@ async function loadDetail() { if (S.selected == null) return;
   try { S.detail = await api("/api/sessions/" + S.selected); } catch { S.detail = null; $("#detail").replaceChildren(el("div", { class: "card" }, emptyState("alert", "Session nicht gefunden."))); return; }
   renderDetail(); }
 const act = (path, confirmText) => async () => { if (confirmText && !confirm(confirmText)) return; try { await post(`/api/sessions/${S.selected}/${path}`); } catch (e) { alert("Fehler: " + e.message); } await Promise.all([loadDetail(), loadSessions()]); };
-function laneOf(s) { const r = s.request || {}, q = (s.quotes || [])[0] || {}; const o = r.origin || q.origin, d = r.destination || q.destination, parts = [];
+function currentQuote(s) { if (s.bookings && s.bookings.length && s.bookings[0].quote_id) return (s.quotes || []).find(q => q.id === s.bookings[0].quote_id); return s.workflow ? (s.quotes || []).find(q => q.id === s.workflow.active_quote_id) : (s.quotes || [])[0]; }
+function laneOf(s) { const r = s.request || {}, q = currentQuote(s) || {}; const o = r.origin || q.origin, d = r.destination || q.destination, parts = [];
   if (o || d) parts.push(`${o || "?"} → ${d || "?"}`); if (r.weight_kg) parts.push(r.weight_kg + " kg"); if (r.preference || r.mode) parts.push(r.preference || r.mode); return parts.join(" · "); }
 function costCard(s) {
   const u = s.llm_usage || { calls: [], call_count: 0, total_micro_usd: 0, input_tokens: 0, output_tokens: 0 };
@@ -568,6 +569,10 @@ function replyMails(session) {
 }
 function renderDetail() {
   const s = S.detail, notices = [];
+  if (s.workflow) {
+    const w = s.workflow, labels = {interpreting:"Kundenantwort wird geprüft",repricing:"Geänderte Anfrage wird kalkuliert",answering:"Kundenfragen werden beantwortet",awaiting_customer:"Warte auf Kundenfreigabe",awaiting_price_approval:"Warte auf Freigabe des geänderten Preises",booking:"Buchung läuft",booked:"Gebucht",needs_review:"Prüfung erforderlich",closed:"Abgelehnt",deferred:"Vom Kunden zurückgestellt"};
+    notices.push(el("div",{class:"notice"},el("strong",{},labels[w.phase] || "Prüfung läuft"),el("div",{},"Anfragestand " + w.request_version + (w.active_quote_id ? " · Aktives Angebot " + w.active_quote_id : " · Kein aktuelles Angebot")),...w.open_items.map(item => el("div",{},item))));
+  }
   if (s.validation) {
     const v = s.validation, d = v.draft || {};
     const states = {awaiting_clarification: "Warte auf ergänzende Angaben", resolving: "Antwort wird geprüft", ready: "Angaben geklärt", manual_review: "Manuelle Prüfung erforderlich", expired: "Ursprüngliche Anfragefrist abgelaufen"};
@@ -610,7 +615,7 @@ function renderDetail() {
 function eventItem(e, fresh) { const li = el("li", { class: (e.level || "") + (fresh ? " fresh" : "") }, el("span", { class: "time" }, time(e.created_at)), el("span", { class: "msg" }, e.message || e.kind),
   el("span", { class: "x" }, [e.duration_ms != null ? e.duration_ms + " ms" : "", e.cost_micro_usd != null ? usd(e.cost_micro_usd) : ""].filter(Boolean).join(" · ")));
   if (e.payload) li.append(el("details", {}, el("summary", {}, "Details"), el("pre", {}, JSON.stringify(e.payload, null, 2)))); return li; }
-function whyCard(s) { const q = (s.quotes || [])[0], c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Warum diese Quote")));
+function whyCard(s) { const q = currentQuote(s), c = el("div", { class: "card" }, el("div", { class: "card-h" }, el("h3", {}, "Warum diese Quote")));
   if (!q) { c.append(emptyState("clock", OPEN.includes(s.status) ? "Noch keine Quote. Der Agent bepreist gerade." : "Keine Quote in dieser Session.")); return c; }
   const pref = s.request && (s.request.preference || s.request.mode);
   c.append(el("div", { class: "why-total" }, el("b", {}, money(q.total_minor, q.currency)), el("span", { class: "muted" }, [q.airline, q.transit_days != null ? q.transit_days + " Tage" : null, "Quelle " + q.source, pref ? "gewünscht: " + pref : null].filter(Boolean).join(" · "))));

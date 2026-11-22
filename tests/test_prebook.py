@@ -225,7 +225,8 @@ def test_round_54_answer_states_fastest_arrival_pickup_and_asks_go_ahead():
     assert "pickup from 22842" in body and "28 November 2026" in body
     assert "about 24 hours" in body  # the trucker's lead time from the pricing audit
     assert "arriving in DEL on 2 December 2026" in body  # departs 29 November + 3 days
-    assert "reply with go ahead" in body
+    assert "let me know and I will arrange the booking" in body
+    assert "reply with" not in body
     assert _amounts(body) == []  # no amount at all: nobody asked about the price
     # the customer's order: fastest, then pickup, then arrival
     assert body.index("fastest") < body.index("22842") < body.index("2 December")
@@ -237,7 +238,8 @@ def test_round_54_german_answer():
     assert "Ja, das ist die schnellste Verbindung" in body and "3 Tagen Laufzeit" in body
     assert "Abholung in 22842" in body and "28. November 2026" in body
     assert "Ankunft in DEL am 2. Dezember 2026" in body
-    assert "bitte buchen" in body and _amounts(body) == []
+    assert "sag mir einfach Bescheid" in body and _amounts(body) == []
+    assert "antworten Sie einfach mit" not in body
 
 
 def test_truthful_no_when_a_faster_option_was_stored_and_cheapest_was_asked():
