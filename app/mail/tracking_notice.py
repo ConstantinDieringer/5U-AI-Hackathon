@@ -118,7 +118,7 @@ def customer_context(session: dict[str, Any] | None, recipient: str) -> bool | N
         return None
     return any(
         b.get("status") in ("booked", "confirmed")
-        and b.get("customer_state") in (None, "confirmed_sent")
+        and b.get("customer_state") in (None, "confirmed_sent", "price_accepted")
         for b in session.get("bookings", [])
     )
 

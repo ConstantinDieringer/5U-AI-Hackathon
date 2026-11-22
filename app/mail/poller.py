@@ -229,6 +229,12 @@ def release(mail_id: int) -> dict[str, object]:
 def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
     """Hand a new mail to its agent. RFQs run in their own thread so polling goes on (bid
     replies for a waiting RFQ arrive through this same loop)."""
+    if (
+        category == Category.CUSTOMER
+        and session_id is not None
+        and (db.get_session(session_id) or {}).get("kind") == "tracking"
+    ):
+        category = Category.TRACKING  # reference-only replies to a tracking question stay tracking
     if category == Category.TRACKING and session_id is not None:
         from app.agents import customer_reply
 
