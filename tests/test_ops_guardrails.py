@@ -102,3 +102,52 @@ def test_every_mailbox_429_counts_even_when_the_retry_succeeds(monkeypatch, tmp_
         "SELECT COUNT(*) FROM events WHERE kind = ?", (rate_limit_watch.EVENT_KIND,)
     ).fetchone()[0]
     assert alerts == 1  # the second-reader alarm fires
+
+
+def test_rejected_poll_without_retry_after_retries_within_seconds(monkeypatch, tmp_path):
+    """Live 22.11 07:06 UTC: 21 mailbox 429s in 10 min, every poll rejected. Without a
+    Retry-After header each rejected poll slept 30 s twice and the poller another 30 s, so
+    the mailbox went ~90 s unread per attempt. Retries now sit just past the 5 s slot."""
+    import httpx
+
+    from app import hackloop
+    from app.mail import poller, rate_limit_watch
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"error": "rate limited"})
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        hackloop,
+        "_client",
+        httpx.Client(base_url="https://x.invalid", transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(hackloop.time, "sleep", sleeps.append)
+    db.init_db(str(tmp_path / "rate.db"))
+    monkeypatch.setattr(rate_limit_watch, "_hits", type(rate_limit_watch._hits)())
+    monkeypatch.setattr(rate_limit_watch, "_last_alert", None)
+    try:
+        hackloop.poll(0)
+    except hackloop.HackloopError as exc:
+        failure = exc
+    assert failure.status == 429
+    assert sleeps and max(sleeps) < 10
+    assert failure.retry_after < 10
+    assert poller.RATE_LIMIT_RETRY_S < 10
+    # counterexample: an explicit Retry-After from 5U is still honoured as given
+    monkeypatch.setattr(
+        hackloop,
+        "_client",
+        httpx.Client(
+            base_url="https://x.invalid",
+            transport=httpx.MockTransport(
+                lambda r: httpx.Response(429, headers={"Retry-After": "20"}, json={})
+            ),
+        ),
+    )
+    sleeps.clear()
+    try:
+        hackloop.poll(0)
+    except hackloop.HackloopError as exc:
+        failure = exc
+    assert sleeps == [20.0, 20.0] and failure.retry_after == 20.0

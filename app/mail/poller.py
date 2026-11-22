@@ -320,7 +320,7 @@ def _bid(handler, mail: Mail, session_id: int | None) -> None:
         db.case_wake_mail(mail.id)
 
 
-RATE_LIMIT_RETRY_S = 6.0  # just over the mailbox limit of one poll per 5 s
+RATE_LIMIT_RETRY_S = hackloop.MAILBOX_POLL_RETRY_S  # just over one poll per 5 s
 
 
 def poll_once(since_id: int) -> tuple[int, int]:
