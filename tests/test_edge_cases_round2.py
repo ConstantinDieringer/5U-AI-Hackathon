@@ -211,6 +211,45 @@ def test_sanctioned_transit_is_refused_but_led_is_not_a_place():
     assert compliance.check("3 pallets of LED lamps to JFK") is None
 
 
+def test_sea_freight_is_declined_with_an_air_offer():
+    """Session 53348: port to port DEHAM to AEJEA, FCL 1 x 40ft. No airport question and no
+    rescue loop: one polite answer that we only fly, in the customer's language."""
+    from app.mail import compliance
+
+    body = (
+        "Could you send me an all-in price in EUR for a port-to-port sea freight shipment from "
+        "Hamburg (DEHAM) to Jebel Ali (AEJEA)? It's an FCL shipment in 1 x 40ft container, with "
+        "6 pieces, a gross weight of 9617 kg and a total volume of 43.5 cbm."
+    )
+    assert compliance.sea_freight("Sea freight quote: Hamburg to Jebel Ali", body)
+    assert compliance.sea_freight("Angebot", "Seefracht FCL 1 x 40 Fuß ab Hamburg nach Jebel Ali")
+    refusal = compliance.Refusal(False, (), sea_freight=True)
+    en = compliance.decline_text(refusal, "Klaus", "en", "Your austrian Power Team")
+    de = compliance.decline_text(refusal, "Klaus", "de", "Your austrian Power Team")
+    assert "air freight" in en and "reply to this email" in en
+    assert "Luftfracht" in de and "Seefracht" in de
+    for text in (en, de):
+        assert not any(ch in text for ch in ":;()") and "—" not in text and " – " not in text
+
+
+@pytest.mark.parametrize(
+    "subject,body",
+    [
+        ("RFQ", "Air freight FRA to JFK, 300 kg. We usually ship by sea but this one is urgent."),
+        ("Anfrage", "Seefracht ist zu langsam, bitte Luftfracht MUC nach PVG, 200 kg."),
+        (
+            "RFQ",
+            "2 pallets, 400 kg, 1.2 cbm, pressure vessels, from 80331 to the port of Singapore.",
+        ),
+        ("RFQ", "3 crates, 120 kg, container parts, FRA to DXB, fastest option."),
+    ],
+)
+def test_air_requests_mentioning_sea_or_ports_are_still_quoted(subject, body):
+    from app.mail import compliance
+
+    assert compliance.sea_freight(subject, body) is None
+
+
 # ------------------------------------------------------------- ticket auto-reply (case 8)
 
 

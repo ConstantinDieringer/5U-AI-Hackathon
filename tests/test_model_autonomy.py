@@ -182,6 +182,29 @@ def test_rejected_plan_gets_tool_feedback_for_a_fresh_decision(flow, monkeypatch
     assert len(contexts) == 2
 
 
+def test_same_blocked_plan_stops_the_model_after_two_tries(flow, monkeypatch):
+    """Session 53348: a plan the tool kept rejecting ran twelve times in three minutes
+    (a new failure event, a new key, another call). After two blocked plans for one
+    customer mail the model stops and a person is asked; a new customer mail starts again."""
+    mail, request, _ = flow
+    db.set_request(mail.id, request.model_dump())
+    calls = []
+
+    def complete(purpose, messages, sid, **kwargs):
+        calls.append(purpose)
+        plan = decision("Treat 2 December 2026 as the last acceptable landing day.")
+        plan.corrections = []  # always leaves the date unproven
+        return plan.model_dump_json()
+
+    monkeypatch.setattr(llm, "complete", complete)
+    for _ in range(5):
+        rescue.take_over(mail, mail.id)
+    events = db.get_session(mail.id)["events"]
+    assert len(calls) == 2 and not db.get_session(mail.id)["quotes"]
+    assert any(e["kind"] == "thread_rescue_blocked" and e["level"] == "error" for e in events)
+    assert not rescue._eligible(mail.id, mail)
+
+
 @pytest.mark.core
 def test_luna_uses_supported_reasoning_and_accounts_for_its_price(tmp_path, monkeypatch):
     db.init_db(str(tmp_path / "model.db"))
@@ -204,7 +227,9 @@ def test_luna_uses_supported_reasoning_and_accounts_for_its_price(tmp_path, monk
 
 
 @pytest.mark.core
-def test_luna_policy_supersedes_stale_railway_models_and_can_be_explicitly_reconfigured(monkeypatch):
+def test_luna_policy_supersedes_stale_railway_models_and_can_be_explicitly_reconfigured(
+    monkeypatch,
+):
     monkeypatch.delenv("LLM_TEXT_MODEL", raising=False)
     monkeypatch.setenv("LLM_MODEL", "gpt-5.6-sol")
     monkeypatch.setenv("LLM_RESCUE_MODEL", "gpt-5-mini")
