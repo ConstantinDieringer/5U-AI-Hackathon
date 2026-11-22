@@ -124,6 +124,11 @@ def api_business_metrics(days: int = 0) -> dict[str, Any]:
     return db.business_metrics(days)
 
 
+@app.get("/api/booking-volume")
+def api_booking_volume() -> dict[str, Any]:
+    return db.booking_volume_24h()
+
+
 @app.get("/api/overview")
 def api_overview(hours: int = 6) -> dict[str, Any]:
     return db.overview(hours=max(0, min(hours, 24 * 7)))
