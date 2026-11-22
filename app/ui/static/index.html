@@ -82,8 +82,10 @@ button { font: inherit; color: inherit; cursor: pointer; letter-spacing: inherit
 .card-h { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .card-h h3 { margin: 0; font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.02em; }
 .card-h .aside { margin-left: auto; }
-#overview .card-h > div { min-width: 0; flex: 1; }
-#overview .card-h .aside { flex-shrink: 0; }
+#overview .card-h > div, #errors .card-h > div { min-width: 0; flex: 1; }
+#overview .card-h .aside, #errors .card-h .aside { flex-shrink: 0; }
+.linklike { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.linklike:hover b { text-decoration: underline; }
 .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--fill-1); border-radius: var(--r-sm); }
 .seg button { border: 0; background: none; height: 30px; padding: 0 12px; border-radius: 8px; color: var(--ink-2); font-weight: 500; transition: background var(--fast); }
 .seg button.active { background: var(--card); color: var(--ink); box-shadow: var(--shadow-card); }
@@ -294,9 +296,10 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 
 <nav class="sidebar" aria-label="Hauptnavigation">
   <div class="brand"><span class="mark"><svg class="icon"><use href="#i-plane"/></svg></span><div><b>Austrian Power</b><small>Forwarder Console</small></div></div>
-  <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Übersicht</span><span class="badge err" id="err-badge" title="Fehler der letzten 15 min"></span></button>
+  <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Übersicht</span></button>
   <button class="nav" data-page="live"><svg class="icon"><use href="#i-radio"/></svg><span class="lbl">Live</span><span class="badge" id="attn-badge"></span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
+  <button class="nav" data-page="errors"><svg class="icon"><use href="#i-alert"/></svg><span class="lbl">Fehler & Warnungen</span><span class="badge err" id="err-badge" title="Fehler der letzten 15 min"></span></button>
   <div class="spacer"></div>
   <div class="conn"><span class="dot" id="live-dot"></span><span class="lbl" id="live-text">verbinde…</span></div>
   <button class="stop" id="global-pause" title="Alle ausgehenden Mails stoppen"><svg class="icon"><use href="#i-stop"/></svg><span>Mails stoppen</span></button>
@@ -329,6 +332,8 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   </section>
 
   <section class="page" id="page-crm"><div class="bento" id="crm"></div></section>
+
+  <section class="page" id="page-errors"><div class="bento" id="errors"></div></section>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -372,7 +377,7 @@ function emptyState(ic, text) { return el("div", { class: "empty" }, el("span", 
 
 // ---------- state ----------
 const S = { page: "overview", filter: "attention", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", initDone: false };
-const PAGES = { overview: ["Übersicht", "Läuft alles? Welche Fehler gibt es? Was ist zu tun?"], live: ["Live", "Sessions, die dich brauchen, stehen oben."], crm: ["CRM", "Wen wir quotiert haben, was gewonnen und was verloren wurde."] };
+const PAGES = { overview: ["Übersicht", "Läuft alles? Was ist zu tun?"], live: ["Live", "Sessions, die dich brauchen, stehen oben."], crm: ["CRM", "Wen wir quotiert haben, was gewonnen und was verloren wurde."], errors: ["Fehler & Warnungen", "Was schiefgelaufen ist. Gleiche Meldungen stehen in einer Zeile."] };
 const FILTERS = [["attention", "Achtung"], ["open", "Offen"], ["all", "Alle"], ["done", "Erledigt"]];
 
 // ---------- countdown ----------
@@ -388,7 +393,7 @@ function show(page) {
   document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + page));
   document.querySelectorAll(".nav").forEach((n) => n.classList.toggle("active", n.dataset.page === page));
   $("#page-title").textContent = PAGES[page][0]; $("#page-sub").textContent = PAGES[page][1];
-  if (page === "overview") loadOverview(); if (page === "crm") loadCrm(); if (page === "live") loadSessions();
+  if (page === "overview") loadOverview(); if (page === "crm") loadCrm(); if (page === "live") loadSessions(); if (page === "errors") loadErrors();
   history.replaceState(null, "", page === "live" && S.selected ? "#session=" + S.selected : "#" + page);
 }
 document.querySelectorAll(".nav").forEach((n) => n.addEventListener("click", () => show(n.dataset.page)));
@@ -468,15 +473,10 @@ async function loadOverview() {
   const verdictText = bad ? `${bad} Problem${bad > 1 ? "e" : ""}` : recentErr ? `${recentErr} neue Fehler` : warn ? `${warn} Warnung${warn > 1 ? "en" : ""}` : "Alles läuft";
   const sc = d.score;
   const strip = card("s12 strip",
-    el("div", { class: "verdict" }, el("i", { class: "lamp " + tone }), el("div", {}, el("b", {}, verdictText), el("div", { class: "caption" }, `Systemcheck · letzte ${d.window_hours} h`))),
+    el("div", { class: "verdict" }, el("i", { class: "lamp " + tone }), el("div", {}, recentErr && !bad ? el("button", { class: "linklike", title: "Zu Fehler & Warnungen", onclick: () => show("errors") }, el("b", {}, verdictText)) : el("b", {}, verdictText), el("div", { class: "caption" }, `Systemcheck · letzte ${d.window_hours} h`))),
     el("div", { class: "pills" }, ...d.checks.map((c) => el("span", { class: "pill " + c.level, title: `${c.name}: ${c.value} · ${c.hint}` }, el("i"), c.name))),
     el("div", { class: "score", title: "Ø Punkte je akzeptierter Quote (Preis als voll angenommen)" }, el("b", { class: "num" }, sc.per_quote == null ? "–" : Math.round(sc.per_quote)), el("span", { class: "caption" }, `/ 100 · ${sc.accepted} von ${sc.rated} akzeptiert`)),
     el("button", { class: "btn", title: "Lagebild (Systemcheck, Fehler, Zu tun, letzte Anfragen) als Text kopieren, zum Einfügen in ChatGPT/Claude", onclick: (e) => copyText("/api/context", e.currentTarget) }, icon("inbox"), "Lagebild kopieren"));
-
-  // 2. Fehler & Warnungen: grouped, newest first, live
-  const probs = card("s8",
-    head("Fehler & Warnungen", `Letzte ${PROBLEMS.hours} h · gleiche Meldungen zusammengefasst`, el("div", { class: "seg aside", id: "prob-seg" })),
-    el("div", { id: "problems" }));
 
   // 3. Zu tun: only what a human can still change; quarantined mails first
   const quarantine = d.quarantine || [], open = d.todo.length + quarantine.length;
@@ -486,7 +486,7 @@ async function loadOverview() {
       el("div", { class: "d" }, "Phishing-Verdacht, nicht beantwortet · " + (q.sender || "").replace("@hackloop.mail", "")),
       el("div", { class: "d why" }, (q.reasons || []).map((r) => r.split(":")[0].replace(/_/g, " ")).join(" · "))),
     el("button", { class: "btn sm", title: "Kein Phishing: normale Verarbeitung starten, Absender in diesem Thread vertrauen", onclick: (ev) => { ev.stopPropagation(); releaseMail(q.mail_id, ev.currentTarget); } }, icon("undo"), "Freigeben")));
-  const todo = card("s4",
+  const todo = card("s12",
     head("Zu tun", "Nur was ein Mensch jetzt noch retten kann.", el("span", { class: "aside badge-s " + (quarantine.length ? "red" : d.todo.length ? "orange" : "green") }, String(open))),
     open ? el("div", {}, ...qItems, ...d.todo.map((t) => el("div", { class: "attn-item", onclick: () => { if (t.session_id != null) select(t.session_id); } },
       el("span", { class: "ic", style: `background:var(--${t.tone}-tint);color:var(--${t.tone})` }, icon(t.tone === "blue" ? "box" : "alert")),
@@ -504,10 +504,30 @@ async function loadOverview() {
       el("table", { class: "list steps" }, el("colgroup", {}, ...["time", "request", "quote", "board", "booking"].map((name) => el("col", { class: "col-" + name }))),
         el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Anfrage"), el("th", {}, "Quote"), el("th", {}, "5U"), el("th", {}, "Buchung"))), el("tbody", {}, ...rows))) : emptyState("inbox", "Noch keine Anfragen."));
 
-  $("#overview").replaceChildren(strip, probs, todo, reqs);
-  renderProblems();
+  $("#overview").replaceChildren(strip, todo, reqs);
   $("#attn-badge").textContent = open || "";
-  const errBadge = $("#err-badge"); if (errBadge) errBadge.textContent = recentErr || "";
+  errBadge();
+}
+// red badge on the Fehler & Warnungen tab: errors of the last 15 min
+function errBadge() {
+  const n = PROBLEMS ? PROBLEMS.groups.filter((g) => g.level === "error" && Date.now() - new Date(g.last_at) < 15 * 60000).length : 0;
+  const b = $("#err-badge"); if (b) b.textContent = n || "";
+}
+const PROB_HOURS = [3, 12, 24];
+async function loadErrors() {
+  const hours = S.probHours || 3;
+  const p = await api(`/api/problems?hours=${hours}`).catch(() => null); if (!p) return;
+  PROBLEMS = p;
+  if (S.problemsSeen == null) S.problemsSeen = Math.max(0, ...PROBLEMS.groups.map((g) => g.last_event_id));
+  const range = el("div", { class: "seg" }, ...PROB_HOURS.map((h) =>
+    el("button", { class: h === hours ? "active" : "", onclick: () => { S.probHours = h; loadErrors(); } }, `${h} h`)));
+  $("#errors").replaceChildren(el("div", { class: "card s12" },
+    el("div", { class: "card-h" },
+      el("div", {}, el("h3", {}, "Fehler & Warnungen"), el("div", { class: "caption" }, `Letzte ${PROBLEMS.hours} h · gleiche Meldungen zusammengefasst` + (PROBLEMS.truncated ? " · nur die neuesten 400 Meldungen" : ""))),
+      el("div", { class: "aside", style: "display:flex;gap:8px;flex-wrap:wrap" }, range, el("div", { class: "seg", id: "prob-seg" }))),
+    el("div", { id: "problems" })));
+  renderProblems();
+  errBadge();
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden && PROBLEMS) S.problemsSeen = Math.max(S.problemsSeen || 0, ...PROBLEMS.groups.map((g) => g.last_event_id)); });
 async function releaseMail(id, btn) {
@@ -742,7 +762,7 @@ $("#global-pause").addEventListener("click", async () => { const stop = !S.globa
 
 // ---------- live stream ----------
 let refreshT = null;
-function refreshSoon() { clearTimeout(refreshT); refreshT = setTimeout(() => { loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "live") loadSessions(); if (S.page === "crm") loadCrm(); }, 500); }
+function refreshSoon() { clearTimeout(refreshT); refreshT = setTimeout(() => { loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "live") loadSessions(); if (S.page === "crm") loadCrm(); if (S.page === "errors") loadErrors(); }, 500); }
 function onEvent(e) { if (S.seen.has(e.id)) return; S.seen.add(e.id); S.lastId = Math.max(S.lastId, e.id);
   if (S.detail && e.session_id === S.selected) { const tl = $("#timeline"); if (tl) tl.append(eventItem(e, true));
     if (["mail_in", "mail_out", "quoted", "booked", "status", "human_action", "board_verdict", "extracted", "llm_call"].includes(e.kind)) loadDetail(); }
@@ -773,7 +793,7 @@ loadGate();
   const ev = await api("/api/events?since=0&limit=500").catch(() => []); S.lastId = ev.length ? ev[ev.length - 1].id : 0; ev.forEach((e) => S.seen.add(e.id));
   await Promise.all([loadStats(), loadSessions()]);
   const h = location.hash, m = h.match(/session=(\d+)/);
-  if (m) select(Number(m[1])); else if (h === "#live") show("live"); else if (h === "#crm") show("crm"); else show("overview");
+  if (m) select(Number(m[1])); else if (h === "#live") show("live"); else if (h === "#crm") show("crm"); else if (h === "#errors") show("errors"); else show("overview");
   connect();
 })();
 </script>
