@@ -16,7 +16,7 @@ The system handles one air freight mailbox from request through quote, booking a
 
 ## Where to work
 
-Business workflows live in `app/agents/`, mail handling in `app/mail/`, pricing in `app/pricing/` and the dashboard in `app/ui/`. Dashboard order values use agreed customer totals, separate currencies and one offer per request. Settings contain messages; business KPIs follow requests. External calls use `app/hackloop.py`, model calls `app/llm.py`, SQL `app/db.py` and settings `app/config.py`. Validate external evidence and keep secrets out of code and logs.
+Business workflows live in `app/agents/`, mail handling in `app/mail/`, pricing in `app/pricing/` and the dashboard in `app/ui/`. Order values use agreed customer totals, separate currencies and one offer per request. Dashboard shows KPIs, volumes and airports; Anfragen lists requests. Settings contain messages. External calls use `app/hackloop.py`, model calls `app/llm.py`, SQL `app/db.py` and settings `app/config.py`. Validate external evidence and keep secrets out of code and logs.
 
 Read references only as needed. [DEPLOY.md](DEPLOY.md) covers production, [customer voice](app/mail/customer_voice.md) wording and [technical references](context/docs/TECH_SPEC.md) background. Code and configuration define behavior; Git retains history.
 

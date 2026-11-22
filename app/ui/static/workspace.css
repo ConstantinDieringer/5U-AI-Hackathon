@@ -1,4 +1,37 @@
 /* Business workspace uses the console's shared tokens. */
+.topbar { padding: 4px 8px 12px; border: 0; border-radius: 0; box-shadow: none; background: var(--canvas); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.topbar .sub { display: none; }
+.topbar .right { flex-wrap: wrap; }
+.dashboard-controls { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+#overview h2, #requests h2 { font-size: 20px; line-height: 1.3; letter-spacing: -.025em; margin: 0; }
+#overview .card-h p { margin: 6px 0 0; }
+#overview .hero { background: linear-gradient(145deg,var(--blue-tint),var(--card)); }
+#overview .kpi .value { font-size: 30px; overflow-wrap: anywhere; }
+.volume-svg { display: block; width: 100%; height: auto; margin: 24px 0 10px; }
+.chart-grid { stroke: var(--hairline-strong); stroke-width: 1; }
+.chart-label { fill: var(--ink-2); font-size: 13px; font-family: inherit; }
+.volume-bar { fill: var(--blue); opacity: .8; }
+.volume-bar:hover, .volume-bar:focus { opacity: 1; }
+.chart-data { margin-top: 16px; }
+.world-map { display: block; width: 100%; height: auto; border-radius: var(--r-md); touch-action: pan-y; }
+.map-ocean { fill: var(--blue-tint); }
+.map-country { fill: var(--fill-2); stroke: var(--card); stroke-width: .65; }
+.map-hit { fill: transparent; }
+.map-point { fill: var(--blue); stroke: var(--card); stroke-width: 1.5; }
+.map-airport { cursor: pointer; }
+.map-airport text { fill: var(--ink); font-size: 12px; font-weight: 700; opacity: 0; paint-order: stroke; stroke: var(--card); stroke-width: 3px; }
+.map-airport:hover text, .map-airport:focus text { opacity: 1; }
+.map-airport:hover .map-point, .map-airport:focus .map-point { fill: var(--indigo); }
+.map-controls { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 12px; }
+.airport-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.airport-list .chip { padding: 6px 10px; }
+.map-source { margin-bottom: 0; }
+.map-source a { color: var(--ink-2); }
+.map-loading { padding: 80px 0; text-align: center; color: var(--ink-2); }
+.request-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 20px; }
+.airport-filter { padding: 9px 12px; border: 1px solid var(--hairline-strong); border-radius: var(--r-sm); background: var(--card); color: var(--ink); width: 110px; font: inherit; }
+.request-table td { white-space: nowrap; }
+.request-table .who .txt { max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
 .profile-settings { margin-top: 12px; padding: 10px 8px; gap: 9px; }
 .profile-settings .avatar { flex: none; width: 32px; height: 32px; font-size: 11px; }
 .profile-settings > .icon { margin-left: auto; width: 18px; height: 18px; }
@@ -44,6 +77,12 @@ button:disabled { cursor: default; opacity: .4; }
   .profile-settings > .icon { margin: 0; }
 }
 @media (max-width:899px) {
+  .topbar { top: 0; padding: 6px 0 12px; }
+  #overview .s3 { grid-column: span 6; }
+  #overview .kpi { padding: 18px; }
+  #overview .kpi .value { font-size: 24px; }
+  .dashboard-controls { align-items: center; }
+  .dashboard-controls > .caption { max-width: 45%; }
   .mail > .mail-summary { flex-wrap: wrap; gap: 8px; padding: 12px; }
   .mail-summary-text { flex-basis: 65%; }
   .mail-summary > time { margin-left: auto; }
@@ -54,6 +93,8 @@ button:disabled { cursor: default; opacity: .4; }
   .breadcrumbs { gap: 6px; }
 }
 @media (max-width:479px) {
+  .chart-label { font-size: 20px; }
+  #overview .s3 { grid-column: span 12; }
   .business-grid { grid-template-columns: 1fr; }
   .crm-filters .filter-control { flex: 1; min-width: 140px; }
   #crm .seg { flex-wrap: wrap; }

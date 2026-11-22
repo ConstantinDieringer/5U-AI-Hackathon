@@ -327,10 +327,10 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 
 <nav class="sidebar" aria-label="Hauptnavigation">
   <div class="brand"><span class="mark"><svg class="icon"><use href="#i-plane"/></svg></span><div><b>Austrian Power</b><small>Forwarder Console</small></div></div>
-  <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Übersicht</span></button>
+  <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></button>
+  <button class="nav" data-page="requests"><svg class="icon"><use href="#i-inbox"/></svg><span class="lbl">Anfragen</span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
   <div class="spacer"></div>
-  <div class="conn"><span class="dot" id="live-dot"></span><span class="lbl" id="live-text">verbinde…</span></div>
   <button class="stop" id="global-pause" title="Alle ausgehenden Mails stoppen"><svg class="icon"><use href="#i-stop"/></svg><span>Mails stoppen</span></button>
   <button class="nav profile-settings" data-page="errors" id="settings-toggle" title="Einstellungen und Meldungen" aria-expanded="false" aria-controls="page-errors"><span class="avatar">AP</span><span class="lbl">Einstellungen</span><svg class="icon"><use href="#i-settings"/></svg><span class="badge err" id="err-badge"></span></button>
 </nav>
@@ -341,6 +341,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
     <div class="right">
       <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="global-q" placeholder="Kunde, Betreff oder ID" autocomplete="off"></label>
       <button class="btn mobile-only" id="mobile-messages" title="Einstellungen"><svg class="icon"><use href="#i-settings"/></svg>Einstellungen</button>
+      <button class="btn mobile-only nav" data-page="requests">Anfragen</button>
       <button class="btn mobile-only nav" data-page="crm" title="CRM öffnen"><svg class="icon"><use href="#i-users"/></svg>CRM</button>
     </div>
   </header>
@@ -349,6 +350,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <nav id="breadcrumbs" class="breadcrumbs" aria-label="Navigationspfad"></nav>
   <section class="page active" id="page-overview"><div class="bento" id="overview"></div></section>
 
+  <section class="page" id="page-requests"><div class="bento" id="requests"></div></section>
   <section class="page" id="page-session"><div class="request-detail" id="detail"></div></section>
 
   <section class="page" id="page-crm"><div class="bento" id="crm"></div></section>
@@ -360,6 +362,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
 <aside class="drawer" id="drawer" aria-label="Kunde"><header><h3 id="drawer-title"></h3><button class="btn ghost" id="drawer-close" style="margin-left:auto" aria-label="Schließen"><svg class="icon"><use href="#i-x"/></svg></button></header><div class="body" id="drawer-body"></div></aside>
 
 <script src="/static/workspace.js"></script>
+<script src="/static/dashboard.js"></script>
 <script>
 "use strict";
 // ---------- helpers: text only via textContent (mail bodies are untrusted) ----------
@@ -406,7 +409,7 @@ function emptyState(ic, text) { return el("div", { class: "empty" }, el("span", 
 
 // ---------- state ----------
 const S = { page: "overview", q: "", selected: null, sessions: [], detail: null, lastId: 0, seen: new Set(), globalPause: false, crm: null, crmTab: "customers", crmQ: "", returnPage: "overview", foldOpen: new Set(), problemExpanded: new Set(), reply: {}, detailRequest: 0 };
-const PAGES = { overview: ["Übersicht", "Anfragen, Aufträge und Geschäftsentwicklung."], session: ["Anfrage", "E-Mail-Verlauf und aktueller Stand."], crm: ["CRM", "Kunden, Angebote und Buchungen."], errors: ["Einstellungen", "Team, Meldungen und Systemkontext."] };
+const PAGES = { overview: ["Dashboard", ""], requests: ["Anfragen", ""], session: ["Anfrage", "E-Mail-Verlauf und aktueller Stand."], crm: ["CRM", "Kunden, Angebote und Buchungen."], errors: ["Einstellungen", "Team, Meldungen und Systemkontext."] };
 
 // ---------- countdown ----------
 const remaining = (d) => d ? (new Date(d) - Date.now()) / 1000 : null;
@@ -424,13 +427,14 @@ function show(page, updateHistory = true) {
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + page));
   document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.page === (page === "session" ? S.returnPage : page)));
   $("#page-title").textContent = PAGES[page][0]; $("#page-sub").textContent = PAGES[page][1];
-  if (page === "overview") loadOverview(); if (page === "crm") loadCrm(); if (page === "errors") loadErrors();
+  if (page === "overview") loadOverview(); if (page === "requests") loadRequests(); if (page === "crm") loadCrm(); if (page === "errors") loadErrors();
   const hash = page === "session" ? "#session=" + S.selected : "#" + page;
   if (updateHistory && location.hash !== hash) history.pushState(null, "", hash);
 }
 document.querySelectorAll(".nav").forEach(n => n.addEventListener("click", () => show(n.dataset.page)));
 $("#mobile-messages").addEventListener("click", () => show("errors"));
-$("#global-q").addEventListener("keydown", e => { if (e.key === "Enter") { S.q = e.target.value.trim(); show("overview"); } });
+$("#global-q").addEventListener("keydown", e => { if (e.key === "Enter") { clearTimeout(S.globalSearchTimer); S.q = e.target.value.trim(); S.requestOffset = 0; show("requests"); } });
+$("#global-q").addEventListener("input", e => { const value = e.target.value.trim(); clearTimeout(S.globalSearchTimer); S.globalSearchTimer = setTimeout(() => { S.q = value; S.requestOffset = 0; show("requests"); }, 350); });
 document.addEventListener("toggle", e => {
   if (e.target.matches("#detail details[data-fold]")) {
     const key = e.target.dataset.fold;
@@ -507,36 +511,6 @@ async function copyText(url, btn) {
     btn.title = `Kopiert · ${Math.round(text.length / 1000)}k Zeichen`;
   } catch (e) { bufferMessage("Kopieren fehlgeschlagen: " + e.message); }
   finally { btn.disabled = false; btn.innerHTML = old; }
-}
-async function loadOverview() {
-  const request = S.overviewRequest = (S.overviewRequest || 0) + 1, query = S.q;
-  const [d, p, metrics] = await Promise.all([api("/api/status").catch(() => null), api("/api/problems?hours=24").catch(() => null), api("/api/business-metrics?days=" + (S.metricDays || 0)).catch(() => null)]); if (!d || S.page !== "overview" || request !== S.overviewRequest) return;
-  PROBLEMS = p || PROBLEMS || { groups: [], errors: 0, warnings: 0, hours: 24 };
-  if (S.problemsSeen == null) S.problemsSeen = Math.max(0, ...PROBLEMS.groups.map((g) => g.last_event_id)) ; // first load: nothing is "neu"
-  const card = (cls, ...kids) => el("div", { class: "card " + cls }, ...kids);
-  const head = (title, sub, aside) => el("div", { class: "card-h" }, el("div", {}, el("h3", {}, title), sub ? el("div", { class: "caption" }, sub) : null), aside || null);
-
-
-  // Letzte Anfragen stehen unmittelbar unter dem Systemstatus.
-  // 4. Letzte Anfragen: each request step by step
-  const queried = query ? await api("/api/sessions?q=" + encodeURIComponent(query)).catch(() => []) : null;
-  if (S.page !== "overview" || request !== S.overviewRequest) return;
-  const requests = queried ? queried.map(s => d.requests.find(r => r.id === s.id) || {
-    ...s, quote_minor: s.quote_total_minor, quote_currency: s.quote_currency,
-    steps: { quote: { state: s.first_reply_at ? "ok" : "run", label: s.first_reply_at ? "Beantwortet" : "Offen" }, board: { state: "none", label: "Im Detail" }, booking: { state: s.status === "booked" ? "ok" : "none", label: s.status === "booked" ? "Gebucht" : "Im Detail" } }
-  }) : d.requests;
-  const rows = requests.map((r) => el("tr", { onclick: () => select(r.id), tabindex: "0", onkeydown: e => { if (["Enter", " "].includes(e.key)) { e.preventDefault(); select(r.id); } } },
-    el("td", { class: "muted num" }, hm(r.created_at)),
-    el("td", {}, el("div", { class: "req" }, el("b", { title: r.lane || r.subject || "#" + r.id }, r.lane || r.subject || "#" + r.id), el("span", { class: "muted", title: [(r.customer || ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ") }, [(r.customer || "").replace("@hackloop.mail", ""), r.quote_minor != null ? money(r.quote_minor, r.quote_currency) : null].filter(Boolean).join(" · ")))),
-    el("td", {}, stepChip(r.steps.quote)), el("td", {}, stepChip(r.steps.board)), el("td", {}, stepChip(r.steps.booking))));
-  const reqs = card("s12",
-    head(query ? "Suchergebnisse" : "Letzte Anfragen", "Anfrage auswählen und E-Mail-Verlauf öffnen.", query ? el("button", { class: "btn ghost aside", onclick: () => { S.q = ""; $("#global-q").value = ""; loadOverview(); } }, "Suche löschen") : el("span", { class: "aside caption" }, requests.length + " Anfragen")),
-    rows.length ? el("div", { class: "table-scroll", role: "region", "aria-label": "Letzte Anfragen", tabindex: "0" },
-      el("table", { class: "list steps" }, el("colgroup", {}, ...["time", "request", "quote", "board", "booking"].map((name) => el("col", { class: "col-" + name }))),
-        el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", {}, "Anfrage"), el("th", {}, "Quote"), el("th", {}, "5U"), el("th", {}, "Buchung"))), el("tbody", {}, ...rows))) : emptyState("inbox", "Noch keine Anfragen."));
-
-  $("#overview").replaceChildren(reqs, metricCards(metrics));
-  errBadge();
 }
 // A passive counter replaces automatic error and warning pop-ups.
 function errBadge() {
@@ -804,7 +778,7 @@ $("#global-pause").addEventListener("click", async () => { const stop = !S.globa
 let refreshT = null;
 function refreshSoon() {
   clearTimeout(refreshT); refreshT = setTimeout(() => {
-    loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "session") loadSessions(); if (S.page === "crm") loadCrm(); if (S.page === "errors") loadErrors();
+    loadStats(); if (S.page === "overview") loadOverview(); if (S.page === "requests") loadRequests(); if (S.page === "session") loadSessions(); if (S.page === "crm") loadCrm(); if (S.page === "errors") loadErrors();
   }, 500);
 }
 function onEvent(e) {
@@ -821,9 +795,9 @@ function onEvent(e) {
   refreshSoon();
 }
 function connect() { const es = new EventSource("/api/stream?since=" + S.lastId);
-  es.onopen = () => { $("#live-dot").className = "dot on"; $("#live-text").textContent = "Live verbunden"; };
   es.onmessage = (m) => { try { onEvent(JSON.parse(m.data)); } catch (err) { console.warn(err); } };
-  es.onerror = () => { $("#live-dot").className = "dot retry"; $("#live-text").textContent = "verbinde neu…"; }; }
+  // EventSource reconnects automatically without a status badge.
+}
 
 // ---------- keyboard & boot ----------
 document.addEventListener("keydown", e => {
@@ -831,10 +805,10 @@ document.addEventListener("keydown", e => {
   if (e.key === "p" && S.detail && S.page === "session") act(S.detail.paused ? "resume" : "pause")();
   if (e.key === "/") { e.preventDefault(); $("#global-q").focus(); }
 });
-setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "session") loadDetail(); }, 20000);
+setInterval(() => { loadStats(); if (S.page === "overview") loadOverview(); else if (S.page === "requests") loadRequests(); else if (S.page === "session") loadDetail(); }, 20000);
 function routeFromHash() {
   const hash = location.hash, match = hash.match(/^#session=(\d+)$/);
-  if (match) select(Number(match[1]), false); else show(hash === "#crm" ? "crm" : hash === "#errors" ? "errors" : "overview", false);
+  if (match) select(Number(match[1]), false); else show(hash === "#requests" ? "requests" : hash === "#crm" ? "crm" : hash === "#errors" ? "errors" : "overview", false);
 }
 window.addEventListener("popstate", routeFromHash);
 window.addEventListener("hashchange", routeFromHash);

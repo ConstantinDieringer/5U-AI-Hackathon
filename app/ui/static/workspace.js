@@ -1,39 +1,12 @@
 "use strict";
 
-function metricCards(data) {
-  if (!data) return el("div", {class:"card s12"}, "Kennzahlen sind gerade nicht verfügbar.");
-  const amounts = key => data.amounts[key].length ? data.amounts[key].map(a => money(a.minor, a.currency)).join(" · ") : "0 €";
-  const values = [
-    ["Gebuchter Auftragswert", amounts("booked"), "Vereinbarte Kundenbeträge, kein fakturierter Umsatz", "hero"],
-    ["Offenes Angebotsvolumen", amounts("pipeline"), "Aktuelle Angebote ohne Buchung"],
-    ["Angebotsvolumen", amounts("offered"), "Jeweils das zuletzt gesendete Angebot"],
-    ["Buchungen", data.booked, data.awaiting_price + " weitere Preisfreigaben offen"],
-    ["Anfragen", data.requests, data.open + " noch in Bearbeitung"],
-    ["Angebote", data.quoted, pct(data.quoted, data.requests) + " der Anfragen mit Angebot"],
-    ["Buchungsquote", pct(data.booked, data.requests), "Gebuchte Aufträge je Anfrage"],
-    ["Kunden", data.customers, "Unterschiedliche anfragende Kunden"],
-    ["Ø Antwortzeit", secs(data.avg_response_s), "Bis zum ersten Angebot"],
-    ["Angebot innerhalb von 2 Minuten", pct(data.answered_within_120s, data.answered), "Anteil der beantworteten Anfragen"],
-    ["Gebuchtes Frachtgewicht", data.booked_weight_kg == null ? "Noch unbekannt" : data.booked_weight_kg.toLocaleString("de-DE") + " kg", "Gewicht für " + data.weight_known_bookings + " Buchungen erfasst"],
-    ["Offene Preisfreigaben", data.awaiting_price, "Nicht im gebuchten Auftragswert enthalten"],
-  ];
-  return el("section", {class:"s12", "aria-label":"Geschäftskennzahlen"},
-    el("div", {class:"section-heading"}, el("div", {}, el("h2", {}, "Geschäft im Überblick"), el("p", {class:"caption"}, "Nach Eingang der Anfrage im gewählten Zeitraum. Beträge bleiben nach Währung getrennt.")),
-      el("div", {class:"metric-controls"},
-        el("button", {class:"btn", onclick:e => copyMail(values.map(([label,value,sub]) => `${label}\n${value}\n${sub}`).join("\n\n"),e.currentTarget)}, icon("inbox"), "Kennzahlen kopieren"),
-        el("select", {"aria-label":"Zeitraum der Kennzahlen", onchange:e => { S.metricDays = Number(e.target.value); loadOverview(); }},
-          ...[[0,"Gesamter Zeitraum"],[1,"Letzte 24 Stunden"],[7,"Letzte 7 Tage"],[30,"Letzte 30 Tage"]].map(([v,label]) => el("option", {value:v, selected:v === (S.metricDays || 0)}, label))))),
-    data.unknown_booked_value ? el("p", {class:"caption"}, data.unknown_booked_value + " Buchungen haben keinen gesicherten Kundenbetrag und fehlen im Auftragswert.") : null,
-    el("div", {class:"business-grid"}, ...values.map(([label,value,sub,tone]) => el("div", {class:"card kpi " + (tone || "")},
-      el("div", {class:"label"}, label), el("div", {class:"value"}, String(value)), el("div", {class:"caption"}, sub)))));
-}
 
 function renderBreadcrumbs() {
   const node = $("#breadcrumbs"); if (!node) return;
-  const crumbs = [el("button", {class:"linklike", onclick:() => show("overview")}, "Übersicht")];
+  const crumbs = [el("button", {class:"linklike", onclick:() => show("overview")}, "Dashboard")];
   const separator = () => el("span", {"aria-hidden":"true"}, "/");
   if (S.page === "session") {
-    if (["crm", "errors"].includes(S.returnPage)) crumbs.push(separator(), el("button", {class:"linklike", onclick:() => show(S.returnPage)}, PAGES[S.returnPage][0]));
+    if (["requests", "crm", "errors"].includes(S.returnPage)) crumbs.push(separator(), el("button", {class:"linklike", onclick:() => show(S.returnPage)}, PAGES[S.returnPage][0]));
     const detail = S.detail?.id === S.selected ? S.detail : null;
     crumbs.push(separator(), el("span", {"aria-current":"page", class:"crumb-current", title:detail?.subject || ""}, "Anfrage #" + S.selected + (detail?.subject ? " · " + detail.subject : "")));
   } else if (S.page !== "overview") crumbs.push(separator(), el("span", {"aria-current":"page"}, PAGES[S.page][0]));

@@ -85,6 +85,15 @@ def test_customer_totals_versions_pending_and_foreign_currency():
     assert amounts(data, "offered")["EUR"] == 1_219_999
     assert amounts(data, "pipeline") == {"EUR": 20_000}
     assert data["booked_weight_kg"] == 200
+    assert len(data["booked_events"]) == 2
+    assert {e["currency"]: e["minor"] for e in data["booked_events"]} == {
+        "EUR": 130_000,
+        "USD": 60_000,
+    }
+    assert data["airports"] == [
+        {"iata": "DEL", "departures": 0, "arrivals": 5},
+        {"iata": "FRA", "departures": 5, "arrivals": 0},
+    ]
 
 
 def test_cohort_dates_not_limited_to_latest_crm_rows():
