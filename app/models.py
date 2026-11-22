@@ -230,3 +230,8 @@ class RateOption:
     tariff_version: str | None = None
     plain_total_minor: int | None = None
     breakpoint_total_minor: int | None = None
+
+    def __post_init__(self) -> None:
+        # an air quote from an airport to itself is never real (round 2530: YYZ-YYZ)
+        if self.origin.strip().upper() == self.destination.strip().upper():
+            raise ValueError(f"air option with origin == destination: {self.origin}")
