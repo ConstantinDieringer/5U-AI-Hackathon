@@ -98,7 +98,7 @@ Screens
 | Screen | Question | Grid |
 |---|---|---|
 | Übersicht (default) | Läuft alles, welche Fehler gibt es, was muss ein Mensch tun? | Status-Leiste (span 12): Ampel + Urteil, ein Pill je Pipeline-Teil (Tooltip: Wert und Hinweis), Ø Punkte, Button „Lagebild kopieren“; das Urteil „N neue Fehler“ führt zur Seite Fehler & Warnungen · Zu tun (span 12), Quarantäne zuerst · Letzte Anfragen (span 12) mit Step-Chips. Kein Punkte-Card, keine Charts. Session-Detail: Button „Kontext kopieren“ (ganze Session als Markdown für ein AI-Modell). |
-| Fehler & Warnungen | Was ist schiefgelaufen? | Eigene Seite in der Sidebar unter CRM, Badge = Fehler der letzten 15 min · eine Card (span 12): Error- und Warn-Events inkl. ERROR-Logzeilen (`log_error`), gleiche Meldung = eine Zeile mit Anzahl, Zeit, Session-Chips; Filter Fehler/Warnungen/Alle; Zeitraum 3 h/12 h/24 h; neue Fehler rot hinterlegt; „Erledigt“ je Zeile und „Alle als erledigt“. |
+| Fehler & Warnungen | Was ist schiefgelaufen? | Eigene Seite „Fehler“ in der Sidebar unter CRM, Badge = Fehler der letzten 15 min · eine Card (span 12): Error- und Warn-Events inkl. ERROR-Logzeilen (`log_error`), gleiche Meldung = eine Zeile mit Anzahl, Zeit, Session-Chips; Filter Fehler/Warnungen/Alle; Zeitraum 3 h/12 h/24 h; neue Fehler rot hinterlegt; „Erledigt“ je Zeile und „Alle als erledigt“. |
 | Live | What needs me now? | session list card (span 4) + session detail (span 8) |
 | CRM | Who did we quote, win, lose? | 4 KPIs · table card with segmented tabs · customer drawer |
 

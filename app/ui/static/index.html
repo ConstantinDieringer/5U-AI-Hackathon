@@ -299,7 +299,7 @@ textarea:focus { border-color: var(--blue); background: var(--card); }
   <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Übersicht</span></button>
   <button class="nav" data-page="live"><svg class="icon"><use href="#i-radio"/></svg><span class="lbl">Live</span><span class="badge" id="attn-badge"></span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
-  <button class="nav" data-page="errors"><svg class="icon"><use href="#i-alert"/></svg><span class="lbl">Fehler & Warnungen</span><span class="badge err" id="err-badge" title="Fehler der letzten 15 min"></span></button>
+  <button class="nav" data-page="errors" title="Fehler & Warnungen"><svg class="icon"><use href="#i-alert"/></svg><span class="lbl">Fehler</span><span class="badge err" id="err-badge" title="Fehler der letzten 15 min"></span></button>
   <div class="spacer"></div>
   <div class="conn"><span class="dot" id="live-dot"></span><span class="lbl" id="live-text">verbinde…</span></div>
   <button class="stop" id="global-pause" title="Alle ausgehenden Mails stoppen"><svg class="icon"><use href="#i-stop"/></svg><span>Mails stoppen</span></button>
@@ -523,7 +523,7 @@ async function loadErrors() {
     el("button", { class: h === hours ? "active" : "", onclick: () => { S.probHours = h; loadErrors(); } }, `${h} h`)));
   $("#errors").replaceChildren(el("div", { class: "card s12" },
     el("div", { class: "card-h" },
-      el("div", {}, el("h3", {}, "Fehler & Warnungen"), el("div", { class: "caption" }, `Letzte ${PROBLEMS.hours} h · gleiche Meldungen zusammengefasst` + (PROBLEMS.truncated ? " · nur die neuesten 400 Meldungen" : ""))),
+      el("div", {}, el("h3", {}, `Letzte ${PROBLEMS.hours} h`), el("div", { class: "caption" }, "Gleiche Meldungen zusammengefasst, neue Fehler rot hinterlegt." + (PROBLEMS.truncated ? " Nur die neuesten 400 Meldungen." : ""))),
       el("div", { class: "aside", style: "display:flex;gap:8px;flex-wrap:wrap" }, range, el("div", { class: "seg", id: "prob-seg" }))),
     el("div", { id: "problems" })));
   renderProblems();
