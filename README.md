@@ -76,6 +76,18 @@ Chrome runs headlessly by default; `--headed` compares a visible application-own
 browser. Verification attempts are bounded with `--attempts` (0 to 2). Reader mode
 tests Pure-WU's Jina fallback using only the public URL, without credentials.
 
+For SeleniumBase with a normal Chromium browser on a virtual Linux display:
+
+```bash
+docker build -f Dockerfile.portal-browser -t 5u-portal-browser .
+docker run --rm --shm-size=256m -v /absolute/path/to/results:/results 5u-portal-browser
+```
+
+This separate test image uses SeleniumBase and Xvfb, without a hosted solver or a
+personal Chrome profile. It records the browser's actual display/headless mode,
+portal-form availability and screenshots. It never claims rates were verified
+merely because a CAPTCHA was clicked or the portal form became visible.
+
 ```bash
 python -m tools.ship_check     # the essential test suite + ruff, same command as CI
 ```
