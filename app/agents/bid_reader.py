@@ -14,11 +14,12 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from pydantic import BaseModel, ValidationError
 
-from app.pricing.fx import currency_code
+from app.pricing.amounts import AMOUNT, SPACES, parse_decimal
+from app.pricing.fx import CURRENCY, currency_code
 
 log = logging.getLogger(__name__)
 
@@ -67,16 +68,41 @@ class Reading:
     transit_days: float | None
 
 
-def _numbers_in(text: str) -> set[Decimal]:
-    """Every amount written in the text, read with the bid parser's separator rules."""
-    from app.agents.bids import _number
+# A bare number counts only right after a total label in its own cell or clause.
+_LABEL_BEFORE = re.compile(
+    r"(?:all[- ]?in|total|gesamt\w*|summe|betrag|amount|price|preis|rate)\W*$", re.IGNORECASE
+)
+_UNIT_AFTER = re.compile(
+    r"\s*(?:/|per\b|pro\b|je\b|kg\b|cbm\b|m3\b|%|pcs\b|pieces?\b)", re.IGNORECASE
+)
 
-    found: set[Decimal] = set()
-    for token in _NUMBER_TOKEN.findall(text):
-        for candidate in (token, token.strip()):
-            value = _number(candidate.replace(" ", " ").replace(" ", " "))
+
+def _written_amounts(text: str) -> set[tuple[Decimal, str]]:
+    """Every (amount, currency) the text states as money: a number with its currency next
+    to it, or a bare number right after a total label when the text names exactly one
+    currency ("Gesamt | 412,80"). Weights, per-unit rates, percentages and reference
+    numbers are not money."""
+    text = text.translate(SPACES)
+    found: set[tuple[Decimal, str]] = set()
+    spans: list[tuple[int, int]] = []  # numbers written with a currency are judged only here
+    for m in AMOUNT.finditer(text):
+        spans.append(m.span())
+        if _UNIT_AFTER.match(text, m.end()):
+            continue
+        value = parse_decimal(m.group("num1") or m.group("num2") or "")
+        if value is not None:
+            found.add((value, currency_code(m.group("cur1") or m.group("cur2") or "")))
+    named = {currency_code(c) for c in re.findall(CURRENCY, text, re.IGNORECASE)}
+    if len(named) == 1:
+        (only,) = named
+        for token in _NUMBER_TOKEN.finditer(text):
+            inside = any(a <= token.start() < b for a, b in spans)
+            before = re.split(r"[\n,;]", text[: token.start()])[-1][-40:]
+            if inside or _UNIT_AFTER.match(text, token.end()) or not _LABEL_BEFORE.search(before):
+                continue
+            value = parse_decimal(token.group(0).strip())
             if value is not None:
-                found.add(value)
+                found.add((value, only))
     return found
 
 
@@ -88,15 +114,14 @@ def check(raw: str, text: str, allowed_currencies: set[str]) -> Reading | None:
         return None
     if data.total is None or data.currency is None:
         return None
-    try:
-        amount = Decimal(data.total.replace(" ", "").replace(",", ""))
-    except InvalidOperation:
+    amount = parse_decimal(data.total)
+    if amount is None:
         return None
     currency = data.currency.strip().upper()
     currency = currency_code(currency)
     if amount <= 0 or currency not in allowed_currencies:
         return None
-    if amount not in _numbers_in(text):  # the model may not invent or compute a total
+    if (amount, currency) not in _written_amounts(text):  # never invented or computed
         return None
     days = data.transit_days
     if days is not None and not 0 < days <= 30:

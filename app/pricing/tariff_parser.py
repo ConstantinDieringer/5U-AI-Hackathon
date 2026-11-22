@@ -13,6 +13,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app import llm
+from app.pricing.amounts import parse_decimal
 from app.pricing.fx import ISO_CODES
 
 
@@ -59,7 +60,8 @@ class TariffDocument(BaseModel):
         return self
 
 
-NUMBER = r"-?\d+(?:[.,]\d+)?"
+# grouped thousands first ("1,250.00", "1.250,00"), then a plain number ("2,85", "0.125")
+NUMBER = r"-?(?:\d{1,3}(?:[.,']\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
 # a currency code a sheet may be written in (convertible only with a rate, app/pricing/fx.py)
 ISO = "(?:" + "|".join(ISO_CODES) + ")"
 CODES = re.compile(r"\b[A-Z]{3}\b")
@@ -69,7 +71,10 @@ def number(value: object) -> Decimal:
     match = re.search(NUMBER, str(value))
     if not match:
         raise ValueError(f"Missing numeric tariff field: {value!r}")
-    return Decimal(match[0].replace(",", "."))
+    parsed = parse_decimal(match[0])
+    if parsed is None:
+        raise ValueError(f"Unreadable numeric tariff field: {value!r}")
+    return parsed
 
 
 def integer(value: object) -> int:
