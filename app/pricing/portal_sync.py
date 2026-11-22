@@ -272,6 +272,8 @@ def _one_rate(
             result.errors.append(f"{code}: {type(exc).__name__}: {exc}")
             if isinstance(exc, hackloop.HackloopError) and exc.status == 503:
                 result.email_fallbacks.append(code)
+            elif isinstance(exc, hackloop.HackloopError) and exc.status == 429:
+                result.rate_limited.append(code)
         return None
     if (opt.origin, opt.destination) != (origin, dest):
         log.warning(
@@ -282,6 +284,8 @@ def _one_rate(
             dest,
         )
         return None
+    if result is not None:
+        result.priced_codes.append(code)
     return opt
 
 
@@ -290,6 +294,8 @@ class PortalResult:
     options: list[RateOption] = field(default_factory=list)
     email_fallbacks: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    rate_limited: list[str] = field(default_factory=list)  # airline codes with a 429 read
+    priced_codes: list[str] = field(default_factory=list)  # airline codes with a parsed rate
 
 
 def portal_result(
@@ -327,6 +333,13 @@ def portal_result(
         ):
             best[r.airline] = r
     result.options = list(best.values())
+    if settings.portal_429_email_fallback:
+        # the rate limit left an airline without any portal price: ask it by email like a 503,
+        # but not when its other weight-break read got through
+        priced = set(result.priced_codes)
+        for code in dict.fromkeys(result.rate_limited):
+            if code not in priced and code not in result.email_fallbacks:
+                result.email_fallbacks.append(code)
     return result
 
 

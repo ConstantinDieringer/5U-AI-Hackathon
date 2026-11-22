@@ -214,6 +214,41 @@ def test_503_returns_email_fallback():
     assert set(result.email_fallbacks) == {"JP", "UV"} and not result.options
 
 
+_RATE_JP = json.loads((Path(__file__).parent / "fixtures" / "portal_rate_eur.json").read_text())
+
+
+def _fetch_jp_only_at(kg_ok: float):
+    """JP answers at `kg_ok`, every other read hits the per-minute rate limit."""
+
+    def fetch(o, d, airline, kg, cbm):
+        if airline == "JP" and kg == kg_ok:
+            return {**_RATE_JP, "origin": o, "destination": d, "valid_until": "2099-01-01T00:00:00+00:00"}
+        raise hackloop.HackloopError("GET", "/v1/portal/rates", 429, "Rate limit exceeds RFQ budget")
+
+    return fetch
+
+
+def test_429_without_any_portal_price_asks_airline_by_email():
+    portal_sync._cache.clear()
+    result = portal_sync.portal_result(
+        Rfq(origin="CGN", destination="DEL", weight_kg=121), _fetch_jp_only_at(121.0)
+    )
+    # JP is priced at the exact weight (only its next-break read hit 429): no email for JP
+    assert result.email_fallbacks == ["UV"]
+    assert [o.airline for o in result.options] == ["Juniper Cargo Lines"]
+
+
+def test_429_email_fallback_can_be_switched_off(monkeypatch):
+    portal_sync._cache.clear()
+    off = dataclasses.replace(portal_sync.settings, portal_429_email_fallback=False)
+    monkeypatch.setattr(portal_sync, "settings", off)
+    result = portal_sync.portal_result(
+        Rfq(origin="CGN", destination="DEL", weight_kg=121), _fetch_jp_only_at(121.0)
+    )
+    assert result.email_fallbacks == []
+    assert set(result.rate_limited) == {"JP", "UV"}
+
+
 def test_retry_after_is_not_capped():
     assert (
         hackloop._retry_wait(httpx.Response(429, headers={"Retry-After": "65"})) == 65
