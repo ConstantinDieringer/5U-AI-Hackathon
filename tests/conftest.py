@@ -45,6 +45,7 @@ def no_live_calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
     monkeypatch.setattr(airport_events, "_fetch_gdacs", no_feed)
     monkeypatch.setattr(airport_events, "_fetch_faa", no_feed)
+    monkeypatch.setattr(airport_events, "_fetch_weather", lambda _codes: no_feed())
     monkeypatch.setattr(airport_events, "_cache", {})
 
     def refuse(request: httpx.Request) -> httpx.Response:

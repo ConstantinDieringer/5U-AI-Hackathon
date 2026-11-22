@@ -88,6 +88,7 @@ def feeds(monkeypatch):
 
     monkeypatch.setattr(airport_events, "_fetch_gdacs", gdacs)
     monkeypatch.setattr(airport_events, "_fetch_faa", faa)
+    monkeypatch.setattr(airport_events, "_fetch_weather", lambda codes: [])
     monkeypatch.setattr(airport_events, "_cache", {})
     return calls
 
@@ -115,7 +116,11 @@ def test_faa_reads_stops_delays_and_cargo_relevant_closures():
 
 def test_events_match_airports_by_radius_and_sort_by_severity(feeds):
     result = airport_events.events_for(["MIA", "DFW", "JFK", "FRA", "bad", "MIA"])
-    assert result["sources"] == [{"name": "GDACS", "ok": True}, {"name": "FAA", "ok": True}]
+    assert result["sources"] == [
+        {"name": "GDACS", "ok": True},
+        {"name": "FAA", "ok": True},
+        {"name": "Open-Meteo", "ok": True},
+    ]
     titles = [e["title"] for e in result["events"]]
     # red before orange; within a level the closer event first (a direct airport report is 0 km)
     assert titles == ["Ground stop at JFK", "Tropical Cyclone MELISSA-26", "Delays at DFW"]

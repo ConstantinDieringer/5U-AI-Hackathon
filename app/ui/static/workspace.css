@@ -141,8 +141,6 @@ button:disabled { cursor: default; opacity: .4; }
   .crm-filters .filter-control { flex: 1; min-width: 140px; }
   #crm .seg { flex-wrap: wrap; }
 }
-.volume-total { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.volume-total b { font-size: 20px; line-height: 24px; font-weight: 650; letter-spacing: -0.02em; }
 .volume-bar { fill: var(--blue); opacity: .85; transform-box: fill-box; transform-origin: bottom; transition: opacity var(--fast); }
 .volume-bar:hover, .volume-bar:focus { opacity: 1; outline: none; }
 .volume-bar.empty { fill: var(--fill-2); opacity: 1; }

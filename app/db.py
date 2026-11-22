@@ -1515,7 +1515,8 @@ def backfill_bookings_from_confirmations() -> int:
     c = conn()
     mails = _rows(
         c.execute(
-            "SELECT m.body FROM mails m WHERE m.direction = 'in' AND m.body LIKE '%Booking reference:%'"
+            "SELECT m.body, m.received_at FROM mails m WHERE m.direction = 'in'"
+            " AND m.body LIKE '%Booking reference:%'"
             " AND m.body LIKE '%Your reference: AP-%' AND m.category IS NOT 'phishing'"
         )
     )
@@ -1528,7 +1529,24 @@ def backfill_bookings_from_confirmations() -> int:
         sid = int(found["ap"].group(1))
         if not _one(c.execute("SELECT 1 FROM sessions WHERE id = ?", (sid,))):
             continue
-        if _one(c.execute("SELECT 1 FROM bookings WHERE session_id = ?", (sid,))):
+        existing = _one(
+            c.execute(
+                "SELECT created_at, rate_id, quote_id FROM bookings WHERE session_id = ?", (sid,)
+            )
+        )
+        if existing:
+            # Earlier backfills stamped the restart time; restore the confirmation's time.
+            if (
+                existing["rate_id"] is None
+                and existing["quote_id"] is None
+                and m["received_at"]
+                and existing["created_at"] > m["received_at"]
+            ):
+                with tx() as w:
+                    w.execute(
+                        "UPDATE bookings SET created_at = ? WHERE session_id = ? AND rate_id IS NULL",
+                        (m["received_at"], sid),
+                    )
             continue
         price = found["price"]
         from app.pricing.amounts import parse_decimal
@@ -1544,6 +1562,7 @@ def backfill_bookings_from_confirmations() -> int:
             price_minor=minor,
             currency=price.group(2).upper() if price else None,
             status="confirmed",
+            booked_at=m["received_at"],
         )
         lane = found["lane"]
         s = _one(c.execute("SELECT request_json FROM sessions WHERE id = ?", (sid,)))
@@ -2290,8 +2309,11 @@ def record_booking(
     price_minor: int | None,
     currency: str | None,
     status: str = "booked",
+    booked_at: str | None = None,
 ) -> int:
+    """`booked_at` is the real booking time when a booking is recreated later (backfill)."""
     ref = team_reference(session_id)
+    created = booked_at or now()
     with tx() as c:
         c.execute(
             "INSERT INTO bookings(session_id, team_reference, booking_reference, rate_id, airline,"
@@ -2307,7 +2329,7 @@ def record_booking(
                 price_minor,
                 currency,
                 status,
-                now(),
+                created,
                 now(),
             ),
         )

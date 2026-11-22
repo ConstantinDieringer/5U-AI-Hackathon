@@ -36,9 +36,7 @@ function volumeChart(data) {
   const sig=JSON.stringify([airline,currency,currencies,small,Math.floor(start/step),buckets.map(b=>b.minor)]);
   if(VOLUME_CARD&&sig===VOLUME_SIG)return VOLUME_CARD;
   const intro=!VOLUME_CARD;VOLUME_SIG=sig;
-  const total=buckets.reduce((sum,b)=>sum+b.minor,0);
   const card=el("section",{class:"card s12 volume-chart"+(intro?" intro":"")},el("div",{class:"card-h"},el("div",{},el("h2",{},airline?"Booked airline cost":"Booked order volume"),el("p",{class:"caption"},airline?"Last 24 hours by booking time. Airline cost per hour, as no customer amounts are recorded for these bookings.":"Last 24 hours by booking time. Customer amounts per hour.")),
-    el("div",{class:"volume-total aside"},el("b",{class:"num"},money(total,currency)),el("span",{class:"caption"},"in 24 hours")),
     currencies.length>1 ? crmSelect("Currency",currencies.map(c=>[c,c]),currency,e=>{S.chartCurrency=e.target.value;loadOverview();}) : null));
   if(intro)setTimeout(()=>card.classList.remove("intro"),1600);
   if(!events.length)card.append(el("p",{class:"caption"},"No orders were booked in the last 24 hours."));

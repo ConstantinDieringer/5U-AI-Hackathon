@@ -110,6 +110,7 @@ class Settings:
     airport_events_ttl_s: float
     airport_events_gdacs_url: str
     airport_events_faa_url: str
+    airport_events_weather_url: str
     poll_interval_s: float
     db_path: str
     ui_port: int
@@ -260,6 +261,9 @@ settings = Settings(
     ),
     airport_events_faa_url=_env(
         "AIRPORT_EVENTS_FAA_URL", "https://nasstatus.faa.gov/api/airport-status-information"
+    ),
+    airport_events_weather_url=_env(
+        "AIRPORT_EVENTS_WEATHER_URL", "https://api.open-meteo.com/v1/forecast"
     ),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
     db_path=_env("DB_PATH", "data/forwarder.db"),

@@ -28,6 +28,7 @@ from typing import Any, TypeVar
 import httpx
 
 from app.config import settings
+from app.ui import airport_weather
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -238,6 +239,33 @@ def _fetch_gdacs() -> list[Hazard]:
     return parse_gdacs(response.json())
 
 
+WEATHER_BATCH = 50
+
+
+def _fetch_weather(codes: list[str]) -> list[airport_weather.WeatherAlert]:
+    """One forecast request per 50 airports: hourly weather for the next 24 hours."""
+    coords = airport_coords()
+    known = [c for c in codes if c in coords]
+    alerts: list[airport_weather.WeatherAlert] = []
+    for i in range(0, len(known), WEATHER_BATCH):
+        batch = known[i : i + WEATHER_BATCH]
+        response = httpx.get(
+            settings.airport_events_weather_url,
+            params={
+                "latitude": ",".join(f"{coords[c][0]:.4f}" for c in batch),
+                "longitude": ",".join(f"{coords[c][1]:.4f}" for c in batch),
+                "hourly": "weather_code,wind_gusts_10m,visibility,snowfall,precipitation",
+                "forecast_hours": 24,
+                "timezone": "UTC",
+            },
+            timeout=TIMEOUT_S,
+            headers=HEADERS,
+        )
+        response.raise_for_status()
+        alerts += airport_weather.parse_forecast(response.json(), batch)
+    return alerts
+
+
 def _fetch_faa() -> list[AirportNotice]:
     response = httpx.get(settings.airport_events_faa_url, timeout=TIMEOUT_S, headers=HEADERS)
     response.raise_for_status()
@@ -251,6 +279,7 @@ def events_for(codes: list[str]) -> dict[str, Any]:
         return {"enabled": False, "sources": [], "events": []}
     hazards, gdacs_ok = _cached("gdacs", _fetch_gdacs)
     notices, faa_ok = _cached("faa", _fetch_faa)
+    weather, weather_ok = _cached("weather:" + ",".join(airports), lambda: _fetch_weather(airports))
     coords = airport_coords()
     events: list[dict[str, Any]] = []
     for hazard in hazards:
@@ -294,9 +323,28 @@ def events_for(codes: list[str]) -> dict[str, Any]:
                     "url": notice.url,
                 }
             )
+    for alert in weather:
+        events.append(
+            {
+                "id": f"weather-{alert.kind}-{alert.iata}".replace(" ", "-").lower(),
+                "source": "Open-Meteo",
+                "kind": alert.kind,
+                "title": f"{alert.kind} at {alert.iata}",
+                "level": alert.level,
+                "detail": alert.detail,
+                "airports": [{"iata": alert.iata, "distance_km": 0}],
+                "starts_at": alert.starts_at,
+                "ends_at": alert.ends_at,
+                "url": "https://open-meteo.com/",
+            }
+        )
     events.sort(key=lambda e: (LEVEL_RANK.get(e["level"], 3), e["airports"][0]["distance_km"]))
     return {
         "enabled": True,
-        "sources": [{"name": "GDACS", "ok": gdacs_ok}, {"name": "FAA", "ok": faa_ok}],
+        "sources": [
+            {"name": "GDACS", "ok": gdacs_ok},
+            {"name": "FAA", "ok": faa_ok},
+            {"name": "Open-Meteo", "ok": weather_ok},
+        ],
         "events": events,
     }

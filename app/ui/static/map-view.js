@@ -34,7 +34,8 @@ function airportMapCard(points,routes) {
           el("div",{class:"map-status caption",role:"status"},"Loading map …"))),
       el("p",{class:"caption map-source"},el("a",{href:"https://github.com/mwgg/Airports",target:"_blank",rel:"noopener noreferrer"},"Airport data mwgg/Airports"),
         " · Alerts ",el("a",{href:"https://www.gdacs.org/",target:"_blank",rel:"noopener noreferrer"},"GDACS"),
-        " and ",el("a",{href:"https://nasstatus.faa.gov/",target:"_blank",rel:"noopener noreferrer"},"FAA NAS status")));
+        ", ",el("a",{href:"https://nasstatus.faa.gov/",target:"_blank",rel:"noopener noreferrer"},"FAA NAS status"),
+        " and ",el("a",{href:"https://open-meteo.com/",target:"_blank",rel:"noopener noreferrer"},"Open-Meteo")));
   }
   NETWORK_DATA={points,routes};
   requestAnimationFrame(()=>updateNetworkMap());
@@ -54,7 +55,7 @@ async function loadAirportEvents(points) {
   renderAirportEvents(data);
 }
 function eventDate(iso) {return iso?new Date(iso).toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"";}
-const EVENT_ICON={"Tropical cyclone":"wind","Earthquake":"activity","Volcano":"mountain","Flood":"droplet","Wildfire":"flame","Ground stop":"stop","Ground delay program":"clock","Delays":"clock","Airport closure":"x"};
+const EVENT_ICON={"Thunderstorms":"zap","Strong wind":"wind","Snow":"snow","Freezing rain":"snow","Low visibility":"fog","Heavy rain":"droplet","Tropical cyclone":"wind","Earthquake":"activity","Volcano":"mountain","Flood":"droplet","Wildfire":"flame","Ground stop":"stop","Ground delay program":"clock","Delays":"clock","Airport closure":"x"};
 const EVENT_LEVEL={red:"Severe",orange:"Elevated",green:"Minor"};
 const sentence=text=>text?text.charAt(0).toUpperCase()+text.slice(1):"";
 function newsItem(e) {
@@ -85,8 +86,8 @@ function renderAirportEvents(data) {
   head.append(el("div",{class:"seg news-filter",role:"tablist","aria-label":"Alert filter"},...[["all","All",data.events.length],["major","Major",major.length]].map(([key,label,n])=>
     el("button",{role:"tab","aria-selected":filter===key,class:filter===key?"active":"",onclick:()=>{S.eventFilter=key;renderAirportEvents(data);}},label,el("span",{class:"news-count"},n)))),
     down.length?el("p",{class:"news-warn"},icon("alert"),down.join(" and ")+" unreachable, showing the last known state."):"");
-  const ops=shown.filter(e=>e.source==="FAA"),hazards=shown.filter(e=>e.source!=="FAA");
-  list.replaceChildren(shown.length?el("ul",{class:"news-list"},...newsGroup("Airport operations",ops),...newsGroup("Natural hazards",hazards))
+  const ops=shown.filter(e=>e.source==="FAA"),weather=shown.filter(e=>e.source==="Open-Meteo"),hazards=shown.filter(e=>e.source==="GDACS");
+  list.replaceChildren(shown.length?el("ul",{class:"news-list"},...newsGroup("Airport operations",ops),...newsGroup("Weather at airports",weather),...newsGroup("Natural hazards",hazards))
     :emptyState("check",filter==="major"?"No major alerts near your airports.":"No known events near your airports right now."));
   markAffectedAirports();
 }
