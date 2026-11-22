@@ -287,55 +287,6 @@ class ReplyIn(BaseModel):
     mail_id: int | None = None
 
 
-class PortalCheckStartIn(BaseModel):
-    airline: str = Field(min_length=2, max_length=8)
-
-
-class PortalCheckSolveIn(BaseModel):
-    answer: str = Field(min_length=1, max_length=8)
-
-
-@app.get("/api/sessions/{session_id}/portal-check")
-def api_portal_check_options(session_id: int) -> dict[str, Any]:
-    """Lane and portal airlines for a human Portal-Check (app/ui/portal_check.py)."""
-    from app.ui import portal_check
-
-    try:
-        return portal_check.options(session_id)
-    except LookupError as e:
-        raise HTTPException(404, str(e)) from e
-    except ValueError as e:
-        raise HTTPException(422, str(e)) from e
-
-
-@app.post("/api/sessions/{session_id}/portal-check")
-def api_portal_check_start(session_id: int, body: PortalCheckStartIn) -> dict[str, Any]:
-    """Fetch one page check; the person solves the sum shown as an image."""
-    from app import hackloop
-    from app.ui import portal_check
-
-    try:
-        return portal_check.start(session_id, body.airline.upper())
-    except LookupError as e:
-        raise HTTPException(404, str(e)) from e
-    except ValueError as e:
-        raise HTTPException(422, str(e)) from e
-    except hackloop.HackloopError as e:
-        raise HTTPException(502, f"Portal-Seite: {e.detail[:200]}") from e
-
-
-@app.post("/api/portal-check/{token}")
-def api_portal_check_solve(token: str, body: PortalCheckSolveIn) -> dict[str, Any]:
-    from app.ui import portal_check
-
-    try:
-        return portal_check.solve(token, body.answer)
-    except LookupError as e:
-        raise HTTPException(410, str(e)) from e
-    except ValueError as e:
-        raise HTTPException(422, str(e)) from e
-
-
 @app.post("/api/sessions/{session_id}/draft")
 def api_draft(session_id: int) -> dict[str, Any]:
     """Emergency quote draft for a human (nothing is sent)."""

@@ -103,7 +103,6 @@ Details: Projekt-Doc `api-referenz.md` und `https://api.start-hack.5u.ai/openapi
 - Timeouts: **10 s** pro Request, max. **2 Retries** mit 1 s Abstand, nur bei Netzwerkfehler/5xx/429 (bei 429 `Retry-After` beachten).
 - Mailbox: signierte Pushes an `POST /hooks/mailbox`, Subscription über `PUT /v1/mailbox/webhook`. HMAC-SHA256 über Timestamp + Punkt + unveränderten Rohbody; Replay-Fenster 5 Minuten. Vor 202-Antwort dauerhaft in `mail_delivery` speichern; Agenten separat starten. Exakte Mail-ID dedupliziert Push/Poll auch bei vertauschter Reihenfolge. Nur Polling verändert `since_id`. Sicherheits-Polling alle 30 s bei konfiguriertem Signing-Secret, sonst mindestens 5 s, bei 429 `Retry-After` bzw. 30 s und Backoff beachten. Subscription niemals automatisch beim Start erneuern, weil PUT das Secret rotiert. Senden weiter über `POST /v1/mailbox/messages` mit `to`, `subject`, `body`, `in_reply_to`.
 - Portal: `ports` und `brackets` frei; `rates` **rate-limited (10/min, Stand 15:00)**, **eine Airline pro Aufruf** (1–4 Airlines je Lane) → nur über `hackloop.get_rate(origin, destination, airline, weight_kg, volume_cbm) -> dict` mit Rate-Limit-Zähler; `bookings` idempotent über `team_reference`. `app/pricing/portal_sync.py` erwartet zusätzlich `hackloop.get_ports() -> dict` und `hackloop.get_brackets(airline) -> dict` (rohe Antwort, Exception bei Nicht-2xx).
-- Portal-Webseite (`PORTAL_UI_URL`): nur `hackloop.portal_ui_load()`/`portal_ui_submit()` für den Portal-Check in der UI. Die Rechenaufgabe löst ausschließlich ein Mensch; ein Versuch pro Seitenprüfung.
 - LLM: OpenAI-SDK mit `base_url=f"{BASE_URL}/v1/gateway"` und `api_key=TEAM_API_KEY`.
 - Audio-Ausnahme auf Nutzerwunsch: `app/mail/audio.py` nutzt Groq Whisper mit eigenem `GROQ_API_KEY`, dann den bisherigen Gateway-Weg nur bei freigegebenem Audio-Modell, zuletzt offline CPU-Whisper `base`. Keine automatischen Konto-/Tarifänderungen; Free-Tarif separat einstellen. Gesamtes Zeitbudget 60 s, lokale Prozesse maximal 30 s, Provider-Cooldowns und atomarer Cache je Datei. Gesprochene Euro/Cent- und EN/DE-Zahlwörter werden regelbasiert normalisiert; Widersprüche bleiben blockiert. `audio_transcribed`/`audio_fallback` protokollieren den Provider, `/api/health.audio_transcription` zeigt nur Konfiguration ohne Schlüssel. Modell wird beim Docker-Build vorgeladen, kein Laufzeit-Download. Siehe `DEPLOY.md`.
 
@@ -141,7 +140,7 @@ class RateOption:             # Ergebnis aus Sheet, Portal oder Bid – immer gl
     origin: str               # IATA
     destination: str          # IATA
     transit_days: int
-    total_minor: int          # all-in, in Cent (nie float, siehe context/code-standards.md)
+    total_minor: int          # all-in, in Cent (nie float, siehe CONTEXT.md)
     currency: str             # "EUR" / "USD"
     total_eur_minor: int      # zum Vergleichen umgerechnet, Kurs mitloggen
     source: str               # "sheet" | "portal" | "bid"
@@ -429,7 +428,6 @@ CREATE TABLE IF NOT EXISTS kv (            -- z. B. since_id, dataset_version
 
 - FastAPI auf Port `UI_PORT` (8000), Bindung `0.0.0.0`.
 - Endpunkte: siehe `context/docs/design/aufgabe-c.md` Abschnitt 6. SSE über `fastapi.sse.EventSourceResponse`, ohne `event:`-Feld; Mailinhalte im Frontend nur per `textContent` rendern.
-- Portal-Check: `GET`/`POST /api/sessions/{id}/portal-check` (Airlines der Strecke, neue Aufgabe), `POST /api/portal-check/{token}` (Antwort des Menschen, einmalig, 5 Min gültig).
 - JSON-Felder in **snake_case**.
 
 ## 11. Git-Workflow

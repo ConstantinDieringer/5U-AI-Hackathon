@@ -56,7 +56,7 @@ container. So:
 1. **Nobody pushes to `main` directly**, agents included (Claude, ChatGPT automation). Work on a
    branch (`fix/<round-or-topic>`), open a PR, say in #update which case you are on. If someone
    already has a PR for that case, add to it instead of opening a second one.
-2. CI publishes `ship-check` for the PR. Record the owner, extension point, counterexample and measured result. For local checks use `python -m tools.ship_check origin/main`.
+2. CI publishes `ship-check` for the PR. Record the owner, extension point, counterexample and measured result. For local checks use `python -m tools.ship_check`.
 3. Every collaborator may merge. Announce the PR in #update and run `python -m tools.merge_pr NUMBER` from trusted main with a signed-in GitHub CLI and the read-only Railway REVIEW_TOKEN in the environment. The existing UI_USER/UI_PASSWORD login also works for the two read-only gate requests. Set PUBLIC_URL to the production HTTPS origin if needed. The command coordinates through the temporary remote branch `ops/deploy-lock`, checks the current CI and deploy gate, and waits for the merge revision to go live. After an interrupted attempt, check the PR, live revision and #update with the team before clearing a stale lock. Direct GitHub merges can bypass the command while main is unprotected.
 4. Announce the verified commit in #update. Use `python -m app.deploy_check SHA` to recheck a specific release.
 

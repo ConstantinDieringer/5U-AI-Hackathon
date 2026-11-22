@@ -96,10 +96,7 @@ def main() -> None:
     ):
         db.init_db(str(Path(tmp) / "synthetic.db"))
         cleanup.callback(db.close_thread_connection)
-        with (
-            patch.object(hackloop, "_client", blocked),
-            patch.object(hackloop, "_page_transport", transport),
-        ):
+        with patch.object(hackloop, "_client", blocked):
             results = []
             for sid, case in enumerate(cases, 1):
                 row = evaluate(case, sid)

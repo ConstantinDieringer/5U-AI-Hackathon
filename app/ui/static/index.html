@@ -590,12 +590,10 @@ function renderDetail() {
       s.paused ? el("button", { class: "btn", onclick: act("resume") }, icon("play"), "Fortsetzen") : el("button", { class: "btn", onclick: act("pause") }, icon("pause"), "Pausieren"),
       s.mode === "manual" ? el("button", { class: "btn", onclick: act("handback") }, icon("undo"), "An Agent zurückgeben") : el("button", { class: "btn", onclick: act("takeover", "Session übernehmen? Der Agent sendet danach nichts mehr in diesem Thread.") }, icon("hand"), "Übernehmen"),
       el("button", { class: "btn", onclick: loadDraft, title: "Preis aus Tarifblatt, Portal und Geboten berechnen und eine fertige Quote ins Antwortfeld setzen" }, icon("coin"), "Notfall-Quote"),
-      el("button", { class: "btn", onclick: openPortalCheck, title: "Eine Portal-Rate über die Portal-Webseite holen. Du löst die Rechenaufgabe, wir schicken die Anfrage." }, icon("search"), "Portal-Check"),
       el("button", { class: "btn", title: "Ganze Session (Mails mit Anhängen, Quotes, Agent-Schritte, Logs) als Text kopieren. In eine normale Claude-Session einfügen, sie schreibt die nächste Mail", onclick: (e) => copyText(`/api/sessions/${s.id}/context`, e.currentTarget) }, icon("inbox"), "Kontext kopieren"),
       el("a", { class: "btn ghost", href: `/api/sessions/${s.id}/context.zip`, download: "", title: "Kontext plus Original-Anhänge (Bilder, Scans, Sprachnachrichten) als ZIP herunterladen" }, icon("download"), "ZIP"),
       el("button", { class: "btn primary", onclick: () => toggleReply(true) }, icon("send"), "Antworten")),
     ...notices,
-    el("div", { id: "portal-check", class: "notice", style: "display:none;margin-top:16px;flex-direction:column;align-items:stretch;gap:8px" }),
     el("div", { id: "reply", style: "display:none;margin-top:16px" }, s.first_reply_at ? null : el("div", { class: "notice", style: "margin:0 0 12px" }, icon("alert"), "Nur die erste Quote im Thread zählt. Gesendet ist gesendet."),
       el("div", { id: "draft-info", class: "caption", style: "margin-bottom:8px" }),
       el("label", { class: "caption", for: "reply-mail" }, "Antworten auf"),
@@ -635,33 +633,6 @@ function boardCard(s) { const c = el("div", { class: "card" }, el("div", { class
   for (const b of s.board) c.append(el("div", { style: "display:flex;gap:8px;align-items:center" }, verdictBadge(b.verdict), el("span", { class: "muted" }, b.reason || ""))); return c; }
 function toggleReply(on) { const r = $("#reply"); if (!r) return; r.style.display = on ? "block" : "none"; if (on) $("#reply-text").focus(); }
 let DRAFT = null;
-// ---------- Portal-Check (human solves the portal page sum) ----------
-const errText = (e) => String(e.message || e).replace(/^\{"detail":"|"\}$/g, "");
-async function openPortalCheck() {
-  const box = $("#portal-check"); if (!box) return; box.style.display = "flex"; box.replaceChildren(el("span", { class: "caption" }, "Lade Portal-Airlines …"));
-  let o; try { o = await api(`/api/sessions/${S.selected}/portal-check`); } catch (e) { box.replaceChildren(el("span", {}, "Kein Portal-Check möglich: " + errText(e))); return; }
-  if (!o.enabled) { box.replaceChildren(el("span", {}, "Portal-Check ist aus (PORTAL_UI_CHECK=false).")); return; }
-  if (!o.airlines.length) { box.replaceChildren(el("span", {}, `Keine Portal-Airline für ${o.origin} nach ${o.destination}.`)); return; }
-  const sel = el("select", { id: "pc-airline" }, ...o.airlines.map((a) => el("option", { value: a.code }, `${a.name} (${a.code})`)));
-  box.replaceChildren(el("b", {}, `Portal-Check · ${o.origin} nach ${o.destination} · ${o.weight_kg} kg · ${o.volume_cbm} cbm`),
-    el("div", { class: "actions" }, sel, el("button", { class: "btn primary", onclick: () => startPortalCheck(sel.value) }, "Aufgabe holen"), el("button", { class: "btn ghost", onclick: () => { box.style.display = "none"; } }, "Schließen")),
-    el("div", { id: "pc-step" }));
-}
-async function startPortalCheck(code) {
-  const step = $("#pc-step"); step.replaceChildren(el("span", { class: "caption" }, "Hole Rechenaufgabe vom Portal …"));
-  let c; try { c = await post(`/api/sessions/${S.selected}/portal-check`, { airline: code }); } catch (e) { step.replaceChildren(el("span", {}, "Portal antwortet nicht: " + errText(e))); return; }
-  const input = el("input", { id: "pc-answer", inputmode: "numeric", autocomplete: "off", placeholder: "Ergebnis", style: "width:96px" });
-  const send = async () => { const answer = input.value.trim(); if (!answer) return; step.replaceChildren(el("span", { class: "caption" }, "Frage Rate ab …"));
-    try { const r = await post(`/api/portal-check/${encodeURIComponent(c.token)}`, { answer });
-      step.replaceChildren(r.ok ? el("div", {}, el("b", {}, c.airline + ": "), r.text, r.rate_id ? el("div", { class: "caption" }, "Rate-ID " + r.rate_id) : null)
-        : el("div", {}, "Abgelehnt: " + r.error, " ", el("button", { class: "btn", onclick: () => startPortalCheck(code) }, "Neue Aufgabe")));
-    } catch (e) { step.replaceChildren(el("div", {}, errText(e), " ", el("button", { class: "btn", onclick: () => startPortalCheck(code) }, "Neue Aufgabe"))); } };
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
-  step.replaceChildren(el("div", { class: "caption" }, `${c.airline} · Summe lösen (gültig ${Math.round(c.expires_in_s / 60)} Min, nur ein Versuch)`),
-    el("div", { class: "actions", style: "align-items:center" }, el("img", { src: c.image, alt: "Rechenaufgabe des Portals", width: "220", height: "70", style: "background:#fff;border-radius:6px" }), input,
-      el("button", { class: "btn primary", onclick: send }, "Rate holen"), el("button", { class: "btn ghost", onclick: () => startPortalCheck(code) }, "Neue Aufgabe")));
-  input.focus();
-}
 async function loadDraft() {
   toggleReply(true); const info = $("#draft-info"); info.textContent = "Berechne Preis aus Tarifblatt, Portal und Geboten …"; DRAFT = null;
   try {

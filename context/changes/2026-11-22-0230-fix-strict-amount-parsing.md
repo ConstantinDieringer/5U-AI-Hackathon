@@ -1,2 +1,0 @@
-One amount parser (`app/pricing/amounts.py`): bid mails and airline confirmations take only an explicit total (no per-day, per-kg, optional, minimum or insured-value amounts, never the largest of several); tariff numbers keep thousands separators; model bid totals must be written as money; same-day offers are 1 day, not 0; stray float/rounding sites go through `money()`/`to_minor()`. No flags.
-Not verified: live.

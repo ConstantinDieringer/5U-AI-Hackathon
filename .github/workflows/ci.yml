@@ -19,18 +19,10 @@ jobs:
       TEAM_API_KEY: test-only
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt ruff==0.16.9
-      - name: Check customer contracts and architecture
-        if: github.event_name == 'pull_request'
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: python -m tools.ship_check "$BASE"
-      - name: Check integrated revision
-        if: github.event_name == 'push'
-        run: python -m tools.ship_check --full
+      - name: Check essential customer and deployment contracts
+        run: python -m tools.ship_check

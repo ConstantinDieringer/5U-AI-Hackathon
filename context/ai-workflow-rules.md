@@ -1,2 +1,0 @@
-# Planning a change
-Start with AGENTS.md. Group work by customer behaviour and identify its owner, data source, public entry points and external effects. Capture unknown requirements in the PR. For new schemas, dependencies or services, check the relevant TECH_SPEC section. Use the existing offline replay for cross-workflow changes. Keep historical examples in fixtures and PRs; update the relevant area when its business contract changes.

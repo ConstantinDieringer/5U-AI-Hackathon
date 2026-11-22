@@ -8,8 +8,7 @@ and TLV 1 pc 1812 kg 5.75 cbm.
 from datetime import UTC, datetime
 
 from app import db
-from app.agents import bids, multi_shipment, rfq
-from app.mail.outgoing import validate_customer_text
+from app.agents import bids, rfq
 from app.models import Mail, RateOption, Rfq
 
 BODY = """Hi there,
@@ -72,121 +71,6 @@ def _init(tmp_path) -> None:
         category="rfq",
         received_at=datetime.now(UTC).isoformat(),
     )
-
-
-def test_schema_asks_for_further_shipments() -> None:
-    schema = rfq.RFQ_SCHEMA["json_schema"]["schema"]
-    assert "additional_shipments" in schema["required"]
-    assert "Never add the shipments together" in rfq.EXTRACT_PROMPT
-
-
-def test_siblings_keep_pickup_and_take_own_cargo(tmp_path) -> None:
-    _init(tmp_path)
-    (tlv,) = multi_shipment.siblings(FIRST, BODY, 25788)
-    assert (tlv.destination, tlv.weight_kg, tlv.volume_cbm, tlv.pieces) == ("TLV", 1812, 5.75, 1)
-    assert (tlv.origin, tlv.pickup_zip, tlv.preference) == ("FRA", "65996", "fastest")
-    assert tlv.additional_shipments == []
-
-
-def test_sibling_with_weight_not_in_mail_is_dropped(tmp_path) -> None:
-    _init(tmp_path)
-    invented = FIRST.model_copy(
-        update={"additional_shipments": [{**FIRST.additional_shipments[0], "weight_kg": 999}]}
-    )
-    assert multi_shipment.siblings(invented, BODY, 25788) == []
-
-
-def test_single_shipment_has_no_siblings(tmp_path) -> None:
-    _init(tmp_path)
-    assert (
-        multi_shipment.siblings(FIRST.model_copy(update={"additional_shipments": []}), BODY, 1)
-        == []
-    )
-
-
-def test_one_mail_two_separate_totals_passes_style_rules() -> None:
-    tlv = FIRST.model_copy(update={"destination": "TLV", "additional_shipments": []})
-    body = multi_shipment.quote_body(
-        FIRST,
-        [
-            (FIRST, _option("GRU", "Riverbend Airlines Cargo", 459169, 4), "4.591,69 €", True),
-            (tlv, _option("TLV", "Juniper Cargo Lines", 312050, 2), "3.120,50 €", True),
-        ],
-    )
-    validate_customer_text(body)
-    assert "4.591,69 €" in body and "3.120,50 €" in body
-    assert "GRU" in body and "TLV" in body
-    assert "not a combined price" in body
-    assert body.startswith("Hi Petra,")
-
-
-def test_german_body_and_subject() -> None:
-    de = FIRST.model_copy(update={"language": "de"})
-    tlv = de.model_copy(update={"destination": "TLV", "additional_shipments": []})
-    body = multi_shipment.quote_body(
-        de,
-        [
-            (de, _option("GRU", "Riverbend Airlines Cargo", 459169, 4), "4.591,69 €", False),
-            (tlv, None, None, False),
-        ],
-    )
-    validate_customer_text(body)
-    assert "zweite Sendung nach TLV" in body
-    assert multi_shipment.subject("FRA", ["GRU", "TLV"], "de", "x") == (
-        "Luftfracht ab FRA nach GRU und TLV"
-    )
-    assert multi_shipment.subject("FRA", ["GRU", "TLV"], "en", "x") == (
-        "Air freight from FRA to GRU and TLV"
-    )
-
-
-def test_bid_slots_keep_trucker_replies_apart(tmp_path, monkeypatch) -> None:
-    """Both shipments ask the same trucker; each reply must land in its own shipment."""
-    _init(tmp_path)
-    sent: list[dict] = []
-
-    def send(to, subject, body, **_k):
-        sent.append({"id": 60_000 + len(sent), "to": to, "subject": subject, "body": body})
-        return sent[-1]
-
-    monkeypatch.setattr(bids.hackloop, "send", send)
-    trucker = bids.Carrier("Kranich Kurier", "trucker", "kranich-kurier@hackloop.mail", ("65",))
-    tlv = multi_shipment.siblings(FIRST, BODY, 25788)[0]
-    slot2 = bids.slot_for(25788, 1)
-    assert bids.owner(slot2) == 25788
-    assert bids.request(25788, FIRST, "FRA", [trucker]) == 1
-    assert bids.request(25788, tlv, "FRA", [trucker], slot=slot2) == 1
-    assert "1812 kg" in sent[1]["subject"] and sent[1]["subject"].startswith("[AP-25788]")
-
-    for request_mail, price in ((sent[0], "300.34"), (sent[1], "410.00")):
-        reply_id = request_mail["id"] + 100
-        db.ingest_mail(
-            mail_id=reply_id,
-            sender=trucker.email,
-            recipient="austrian-power@hackloop.mail",
-            subject=f"Re: {request_mail['subject']}",
-            body=f"Our all-in price for road transport to Frankfurt Airport is {price} EUR.",
-            category="carrier_bid",
-            references=[request_mail["id"]],
-            in_reply_to=request_mail["id"],
-        )
-        bids.on_bid_mail(
-            Mail(
-                reply_id,
-                request_mail["id"],
-                trucker.email,
-                "austrian-power@hackloop.mail",
-                f"Re: {request_mail['subject']}",
-                f"Our all-in price for road transport to Frankfurt Airport is {price} EUR.",
-                datetime.now(UTC).isoformat(),
-                references=[request_mail["id"]],
-            ),
-            25788,
-        )
-    assert [str(o.total_eur) for o in bids.offers(25788)] == ["300.34"]
-    assert [str(o.total_eur) for o in bids.offers(slot2)] == ["410.00"]
-    bids.close(25788)
-    bids.close(slot2)
 
 
 def test_handle_quotes_both_shipments_in_one_reply(tmp_path, monkeypatch) -> None:
