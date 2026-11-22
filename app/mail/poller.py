@@ -210,7 +210,10 @@ def release(mail_id: int) -> dict[str, object]:
     """A person released a quarantined mail: run the normal flow it was kept from."""
     if not settings.agents_enabled:
         raise RuntimeError("agents are disabled: nothing may be processed or sent")
+    attachment_hold = (db.screening_get(mail_id) or {}).get("layer") == "attachment"
     released = db.release_quarantined(mail_id)
+    if attachment_hold and released["session_id"] is not None:
+        db.set_paused(released["session_id"], False, "Freigabe")  # paused by the attachment check
     raw = released["raw"]
     if not isinstance(raw, dict):
         raise TypeError(f"mail {mail_id} has no stored API copy to process")

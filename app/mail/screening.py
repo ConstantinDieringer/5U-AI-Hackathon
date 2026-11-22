@@ -435,6 +435,85 @@ def rules(mail: Mail, ctx: Context) -> Screening:
     return Screening(verdict, "rules", score, tuple(found))
 
 
+# ---------------------------------------------------------------- attachments
+
+# A role marker at the start of a line ("System: hydraulic") is ordinary in spec sheets and
+# packing lists; only the phrasing that is written to an AI counts inside a document.
+_ROLE_LINE = re.compile(r"^\s*(?:system|assistant)\s*:", re.IGNORECASE)
+
+
+def attachment_signals(name: str, text: str) -> list[Signal]:
+    """Strong signals inside one attachment's text (Layer A never sees files: they are
+    downloaded only after the gate). Only what no genuine shipping document contains: text
+    written to an AI, a request for our keys or logins, an order to keep mailing and, in the
+    simulation, a contact change. Payment wording is left out: commercial invoices
+    legitimately say "please pay this invoice"."""
+    found: list[Signal] = []
+    if ai := next((m for m in _AI.finditer(text) if not _ROLE_LINE.match(m.group(0))), None):
+        found.append(Signal("attachment_ai_instruction", 1.0, f"{name}: '{ai.group(0).strip()}'"))
+    if secret := _secret_request(text):
+        found.append(Signal("attachment_secret_request", 1.0, f"{name}: asks for '{secret}'"))
+    if m := _LOOP.search(text):
+        found.append(Signal("attachment_loop_instruction", 1.0, f"{name}: '{m.group(0)}'"))
+    if settings.simulation_static_contacts and (m := _SIMULATION_CONTACT_CHANGE.search(text)):
+        found.append(Signal("attachment_identity_change", 1.0, f"{name}: '{m.group(0)}'"))
+    return found
+
+
+def attachments_trusted(mail: Mail) -> bool:
+    """The gate is off, or a person released this sender in this thread: read files in full."""
+    from app import db
+
+    if settings.phishing_gate_mode == "off":
+        return True
+    root = mail.references[0] if mail.references else mail.id
+    return db.screening_released(address(mail.sender), root)
+
+
+def attachment_check(mail: Mail, texts: dict[str, str]) -> list[Signal]:
+    """Signals for every attachment text of a mail; empty when its attachments are trusted."""
+    if not texts or attachments_trusted(mail):
+        return []
+    return [s for name, text in texts.items() for s in attachment_signals(name, text or "")]
+
+
+def quarantine_for_attachment(mail: Mail, session_id: int, found: list[Signal]) -> bool:
+    """An attachment carries an attack. Enforce: quarantine the mail like a body hit (no
+    reply, session paused so no worker answers it; a person can release it). Shadow: log
+    only. Returns True when the mail is now held."""
+    from app import db
+
+    reasons = [f"{s.name}: {s.detail}" for s in found]
+    hold = settings.phishing_gate_mode == "enforce"
+    db.screening_block(
+        mail_id=mail.id,
+        sender=address(mail.sender),
+        thread_root=mail.references[0] if mail.references else mail.id,
+        routed_as=Category.RFQ.value,
+        reasons=reasons,
+        detail={"signals": [s.__dict__ for s in found], "mode": settings.phishing_gate_mode},
+        blocked=hold,
+    )
+    if hold:
+        db.set_paused(session_id, True, "Anhang-Prüfung")
+    db.emit(
+        "phishing" if hold else "screening",
+        (
+            "Phishing im Anhang, keine Antwort"
+            if hold
+            else "Phishing im Anhang (nur protokolliert), normale Verarbeitung läuft"
+        )
+        + f": {mail.sender} – {mail.subject[:80]}. Gründe: {'; '.join(reasons)}"[:900],
+        session_id,
+        level="error" if hold else "warn",
+        mail_id=mail.id,
+        routed_as=Category.RFQ.value,
+        layer="attachment",
+    )
+    log.warning("mail %s attachment screening: %s", mail.id, "; ".join(reasons))
+    return hold
+
+
 # ---------------------------------------------------------------- Layer B: one LLM call
 
 PROMPT = (

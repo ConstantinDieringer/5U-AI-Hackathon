@@ -2794,6 +2794,41 @@ def screening_save(
         )
 
 
+def screening_block(
+    *,
+    mail_id: int,
+    sender: str,
+    thread_root: int,
+    routed_as: str,
+    reasons: list[str],
+    detail: dict[str, Any] | None,
+    blocked: bool,
+) -> None:
+    """An attachment showed an attack after the gate let the mail in: overwrite its verdict.
+    Blocked moves the mail to quarantine, where `release_quarantined` can undo it."""
+    with tx() as c:
+        c.execute(
+            "INSERT INTO mail_screening(mail_id, sender, thread_root, verdict, layer, score,"
+            " blocked, routed_as, reasons_json, detail_json, created_at)"
+            " VALUES (?,?,?,'phishing','attachment',1.0,?,?,?,?,?)"
+            " ON CONFLICT(mail_id) DO UPDATE SET verdict = 'phishing', layer = 'attachment',"
+            " score = 1.0, blocked = excluded.blocked, routed_as = excluded.routed_as,"
+            " reasons_json = excluded.reasons_json, detail_json = excluded.detail_json",
+            (
+                mail_id,
+                sender,
+                thread_root,
+                1 if blocked else 0,
+                routed_as,
+                _json(reasons),
+                _json(detail),
+                now(),
+            ),
+        )
+        if blocked:
+            c.execute("UPDATE mails SET category = 'phishing' WHERE id = ?", (mail_id,))
+
+
 def screening_released(sender: str, thread_root: int) -> bool:
     """A person released this sender in this thread: trust the rest of the thread."""
     return (
