@@ -20,8 +20,9 @@ from app.mail import multilingual
 from app.models import Mail, Rfq
 from app.pricing import insurance
 from app.pricing.portal_sync import portal_result
-from app.pricing.pricing import resolve_origin, sheet_options, to_minor, within_arrival_deadline
+from app.pricing.pricing import resolve_origin, sheet_options, to_minor
 from app.pricing.reference import carrier_by_name
+from app.pricing.selection import select_air
 
 log = logging.getLogger(__name__)
 PORTAL_BUDGET_S = 8.0  # a human is waiting: short portal window, sheets and bids still count
@@ -123,16 +124,8 @@ def build(session_id: int) -> dict[str, Any]:
         for o in offers
         if o.carrier.kind == "airline"
     ]
-    air = within_arrival_deadline(request, air)
-    bid_opts = within_arrival_deadline(request, bid_opts)
-    choice = rfq.best_air(air, bid_opts, request.preference)
-    if liked:
-        fav = rfq.best_air(
-            [o for o in air if o.airline.lower() in liked],
-            [o for o in bid_opts if o.airline.lower() in liked],
-            request.preference,
-        )
-        choice = fav or choice
+    selection = select_air(request, air, bid_opts, liked, rfq.settings.trucker_balance)
+    choice = selection.choice
     if banned:
         warnings.append("Vom Kunden ausgeschlossen: " + ", ".join(sorted(banned)))
     if choice is None:
@@ -143,7 +136,7 @@ def build(session_id: int) -> dict[str, Any]:
     if request.door_to_port and truck is None:
         warnings.append("Kein Trucker-Gebot: Preis enthält keine Abholung, bitte ergänzen")
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0) + premium_minor
-    if not air:
+    if not any(o in air for o in selection.eligible):
         warnings.append("Kein Tarifblatt-/Portalpreis, nur Carrier-Gebote")
     body = rfq.quote_text(request, choice, total, truck, session_id)
     if request.pickup_assumed and truck is not None:
@@ -151,7 +144,7 @@ def build(session_id: int) -> dict[str, Any]:
     _, body = multilingual.localize(
         "", body, request.language, session_id, (choice.airline, choice.origin, choice.destination)
     )
-    options = sorted(air + bid_opts, key=lambda o: o.total_eur_minor)
+    options = sorted(selection.eligible, key=lambda o: o.total_eur_minor)
     return {
         "body": body,
         "total_minor": total,
