@@ -62,7 +62,6 @@
 .request-table td { white-space: nowrap; }
 .request-table .who .txt { max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
 .profile-settings { margin-top: 8px; gap: 8px; }
-.profile-settings .avatar { flex: none; }
 .profile-settings > .icon { margin-left: auto; }
 .profile-settings .badge { position: absolute; right: 4px; top: 0; }
 .topbar .mobile-only.nav { width: auto; }
