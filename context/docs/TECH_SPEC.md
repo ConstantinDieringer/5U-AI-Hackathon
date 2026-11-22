@@ -154,6 +154,7 @@ class Rfq(BaseModel):         # Pydantic (LLM-Output); die Preisrechnung liest n
     origin: str | None        # IATA; None, wenn nur PLZ
     pickup_zip: str | None    # gesetzt = Door-to-Port
     destination: str          # IATA
+    arrival_deadline: str | None = None  # ISO-Datum; harte späteste Ankunft, kein Wunsch nach fastest
     weight_kg: float          # Gesamtgewicht
     volume_cbm: float = 0.0   # Gesamtvolumen
     pieces: int | None

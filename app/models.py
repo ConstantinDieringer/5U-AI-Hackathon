@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from enum import Enum
 from typing import Literal
 
@@ -119,6 +120,7 @@ class Rfq(BaseModel):
     pieces: int | None = Field(default=None, ge=1)
     preference: Literal["cheapest", "fastest"] = "cheapest"
     ready_date: str | None = None  # ISO date
+    arrival_deadline: str | None = None  # latest arrival date, independent of preference
     language: str = "en"
     customer_name: str | None = None
     customer_questions: list[str] = Field(default_factory=list, max_length=5)
@@ -154,6 +156,11 @@ class Rfq(BaseModel):
     @classmethod
     def _zip(cls, v: object) -> object:
         return str(v).strip() or None if v is not None else None
+
+    @field_validator("arrival_deadline")
+    @classmethod
+    def _arrival_date(cls, value: str | None) -> str | None:
+        return date.fromisoformat(value).isoformat() if value is not None else None
 
     @property
     def pickup_zone(self) -> str | None:

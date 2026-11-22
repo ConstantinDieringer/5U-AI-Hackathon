@@ -393,3 +393,21 @@ def test_expired_insurance_fx_holds_quote_without_looping_clarification(monkeypa
     )
     assert rfq._price(m, m.id, request(), "DUS", time.time(), "enforce", True) is None
     assert db.get_session(m.id)["status"] == "error"
+
+
+def test_emergency_draft_includes_insurance_or_blocks_before_rates(monkeypatch):
+    from app.ui import drafts
+
+    m, req = mail(), request()
+    db.set_request(m.id, req.model_dump())
+    option = install_prices(monkeypatch, req, 92795)
+    monkeypatch.setattr(drafts, "sheet_options", lambda *a: [option])
+    monkeypatch.setattr(drafts, "portal_result", lambda *a, **kw: PortalResult([]))
+    draft = drafts.build(m.id)
+    assert (draft["total_minor"], draft["insurance_minor"]) == (102475, 9680)
+    assert amount(102475) in draft["body"]
+    other = mail("DUS to MEX, 176 kg, 1.26 cbm. Please include insurance.", 27000)
+    db.set_request(other.id, req.model_dump())
+    monkeypatch.setattr(drafts, "sheet_options", lambda *a: pytest.fail("unpriced emergency quote"))
+    with pytest.raises(ValueError, match="Versicherungskonditionen"):
+        drafts.build(other.id)

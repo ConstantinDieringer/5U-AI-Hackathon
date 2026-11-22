@@ -99,6 +99,9 @@ def text_for(draft, lang):
         "shipment": "the missing or corrected shipment details",
         "insurance": "the goods value and currency, insured coverage percentage and agreed insurance premium rate",
         "insurance_allocation": "the goods value, currency, coverage percentage and premium rate for each shipment separately",
+        "arrival_deadline": "the latest acceptable arrival date",
+        "ready_date": "the date the shipment will be ready",
+        "preference": "whether price or the shortest transit is your priority within the arrival deadline",
     }
     de = {
         "pickup_zip": "die Postleitzahl der Abholadresse",
@@ -113,6 +116,9 @@ def text_for(draft, lang):
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
         "insurance": "den Warenwert mit Währung, die Deckung in Prozent und den vereinbarten Prämiensatz der Transportversicherung",
         "insurance_allocation": "den Warenwert mit Währung, die Deckung und den Prämiensatz für jede Sendung einzeln",
+        "arrival_deadline": "das späteste akzeptable Ankunftsdatum",
+        "ready_date": "das Datum der Versandbereitschaft",
+        "preference": "ob innerhalb der Ankunftsfrist der Preis oder die kürzeste Laufzeit Vorrang hat",
     }
     labels = de if lang == "de" else en
     if "dangerous_goods" in fields:
@@ -391,7 +397,9 @@ def recover_history(mail, sid, draft):
 
 
 def request(mail, sid, draft):
-    if draft.evidence.get("workflow", "rfq") == "rfq":
+    if draft.evidence.get("workflow", "rfq") == "rfq" and not draft.evidence.get(
+        "selection_blocked"
+    ):
         recovered, draft = recover_history(mail, sid, draft)
         if recovered is not None and not draft.issues:
             previous = db.validation_get(sid)
@@ -715,6 +723,9 @@ def answer_draft(mail, sid, root, draft):
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
+    from app.mail import selection_intent
+
+    corrections.update(selection_intent.answer(own, asked))
     known = known_weights(draft, sid, mail) if settings.thousands_evidence else ()
     if "insurance" in asked:
         from app.models import CargoInsurance

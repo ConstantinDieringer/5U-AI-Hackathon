@@ -19,7 +19,7 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from functools import lru_cache
 from pathlib import Path
@@ -274,6 +274,35 @@ def most_balanced(
             return norm(ps[k], lo_p, hi_p) / 2 + norm(ts[k], lo_t, hi_t) / 2
 
     return items[min(range(len(items)), key=lambda k: (score(k), ps[k]))]
+
+
+def earliest_schedule(
+    rfq: Rfq, transit_days: int, today: date | None = None
+) -> tuple[date, date] | None:
+    """Shared planning estimate, not a confirmed flight schedule or arrival guarantee."""
+    if not rfq.ready_date:
+        return None
+    try:
+        ready = date.fromisoformat(rfq.ready_date[:10])
+    except ValueError:
+        return None
+    departure = max(ready, today or datetime.now(UTC).date())
+    if rfq.door_to_port:
+        departure += timedelta(days=1)
+    return departure, departure + timedelta(days=transit_days)
+
+
+def within_arrival_deadline(
+    rfq: Rfq, options: list[RateOption], today: date | None = None
+) -> list[RateOption]:
+    if not rfq.arrival_deadline:
+        return options
+    deadline = date.fromisoformat(rfq.arrival_deadline)
+    return [
+        option
+        for option in options
+        if (when := earliest_schedule(rfq, option.transit_days, today)) and when[1] <= deadline
+    ]
 
 
 def pick(options: list[RateOption], mode: str) -> RateOption | None:
