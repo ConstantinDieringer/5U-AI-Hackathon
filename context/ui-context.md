@@ -51,7 +51,7 @@ The jury judges UX and design, and the pitch will show the UI, so the UI is a sc
 - Deploy light in the top bar (`/api/deploy-gate`); attention list `GET /api/attention`.
 - Mail content is rendered only via `textContent`; JSON fields are snake_case.
 
-## Tests (run these while iterating; the full suite only before the PR)
+## Area tests
 
 ```
 python -m pytest -q tests/test_server.py tests/test_manual_reply_targets.py tests/test_dashboard_problems.py tests/test_context_export.py tests/test_alerts.py tests/test_board_watch.py tests/test_api_costs.py

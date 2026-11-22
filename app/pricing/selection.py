@@ -16,6 +16,7 @@ class AirSelection:
     eligible: list[RateOption]
     late: list[RateOption]
     preferred: bool
+    has_tariff_or_portal: bool
 
 
 def best_air(
@@ -41,9 +42,14 @@ def select_air(
     feasible_rates = within_arrival_deadline(request, rates, today)
     feasible_offers = within_arrival_deadline(request, offers, today)
     eligible = feasible_rates + feasible_offers
-    late = [o for o in rates + offers if o not in eligible] if request.arrival_deadline else []
+    late = []
+    if request.arrival_deadline:
+        accepted = {id(o) for o in eligible}
+        late = [o for o in rates + offers if id(o) not in accepted]
     if not eligible:
-        return AirSelection("deadline_unmet" if late else "no_options", None, [], late, False)
+        return AirSelection(
+            "deadline_unmet" if late else "no_options", None, [], late, False, False
+        )
     favourite = (
         best_air(
             [o for o in feasible_rates if o.airline.lower() in preferred],
@@ -55,4 +61,6 @@ def select_air(
         else None
     )
     choice = favourite or best_air(feasible_rates, feasible_offers, request.preference, bid_balance)
-    return AirSelection("selected", choice, eligible, late, favourite is not None)
+    return AirSelection(
+        "selected", choice, eligible, late, favourite is not None, bool(feasible_rates)
+    )

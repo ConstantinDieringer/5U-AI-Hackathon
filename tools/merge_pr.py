@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 
 import httpx
@@ -12,7 +13,7 @@ import httpx
 from app import deploy_check
 
 LOCK = "heads/ops/deploy-lock"
-FIELDS = "state,isDraft,baseRefName,headRefOid,mergeable,statusCheckRollup,isCrossRepository"
+FIELDS = "body,state,isDraft,baseRefName,headRefOid,mergeable,statusCheckRollup,isCrossRepository"
 
 
 def gh(*args: str) -> dict:
@@ -29,6 +30,14 @@ def verify_pr(pr: dict) -> str:
         or pr["mergeable"] != "MERGEABLE"
     ):
         raise ValueError("PR must be open, ready, mergeable and target this repository's main")
+    body = re.sub(r"<!--.*?-->", "", pr["body"], flags=re.DOTALL)
+    sections = re.split(r"(?m)^##[ \t]+(.+?)\s*$", body)
+    evidence = {
+        name.casefold(): value.strip() for name, value in zip(sections[1::2], sections[2::2])
+    }
+    for name in ("Customer behaviour", "Owner and extension point", "Counterexample", "Evidence"):
+        if not evidence.get(name.casefold()):
+            raise ValueError(f"PR evidence missing: {name}")
     checks = pr["statusCheckRollup"]
     if not any(c.get("name") == "ship-check" and c.get("workflowName") == "CI" for c in checks):
         raise ValueError("CI / ship-check missing for this PR head")

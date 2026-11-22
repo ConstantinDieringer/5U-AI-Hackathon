@@ -7,6 +7,7 @@ from tools.merge_pr import verify_pr
 def pr():
     return {
         "state": "OPEN",
+        "body": "## Customer behaviour\nQuote\n## Owner and extension point\npricing\n## Counterexample\nLate\n## Evidence\nReplay",
         "isDraft": False,
         "baseRefName": "main",
         "headRefOid": "abc1234",
@@ -33,4 +34,10 @@ def test_green_current_head_can_ship(pr):
 def test_failed_pending_or_missing_contract_blocks_merge(pr, change):
     pr["statusCheckRollup"][0].update(change)
     with pytest.raises(ValueError):
+        verify_pr(pr)
+
+
+def test_unfilled_review_template_blocks_merge(pr):
+    pr["body"] = "## Evidence\n<!-- describe tests -->"
+    with pytest.raises(ValueError, match="PR evidence missing"):
         verify_pr(pr)

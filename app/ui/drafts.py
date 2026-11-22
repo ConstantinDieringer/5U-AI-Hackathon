@@ -136,7 +136,7 @@ def build(session_id: int) -> dict[str, Any]:
     if request.door_to_port and truck is None:
         warnings.append("Kein Trucker-Gebot: Preis enthält keine Abholung, bitte ergänzen")
     total = choice.total_eur_minor + (to_minor(truck.total_eur) if truck else 0) + premium_minor
-    if not any(o in air for o in selection.eligible):
+    if not selection.has_tariff_or_portal:
         warnings.append("Kein Tarifblatt-/Portalpreis, nur Carrier-Gebote")
     body = rfq.quote_text(request, choice, total, truck, session_id)
     if request.pickup_assumed and truck is not None:
