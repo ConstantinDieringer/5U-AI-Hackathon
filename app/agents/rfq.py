@@ -1743,9 +1743,11 @@ def _arrival_question(mail: Mail, sid: int, rfq: Rfq, draft: RfqDraft | None = N
             "question_de": "Die verfügbaren Verbindungen passen nicht zu deinem gewünschten Ankunftstermin. Welches spätere Ankunftsdatum wäre für dich noch möglich?",
         },
     )
-    draft.evidence.update(
-        selection_blocked=True, rescue_before_clarification=True, blocking_clarification=True
-    )
+    draft.evidence.update(selection_blocked=True, blocking_clarification=True)
+    # A semantic check gets the same model recovery as any other blocked RFQ. Physical
+    # infeasibility needs a changed customer requirement, not another model opinion.
+    if any(i.get("code") == "no_feasible_option" for i in draft.issues):
+        draft.evidence["rescue_before_clarification"] = True
     clarification.request(mail, sid, draft)
 
 

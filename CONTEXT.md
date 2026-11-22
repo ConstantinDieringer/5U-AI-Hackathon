@@ -4,6 +4,7 @@ The system handles one air freight mailbox from request through quote, booking a
 
 ## Essential contracts
 
+* Use the user-selected `gpt-5.6-luna` for extraction, repair, composition and rescue unless explicitly overridden. The model decides customer meaning and evidenced corrections across the RFQ schema; code executes pricing and transport. Recovery gets 12 persisted decisions and more conversation context. Verify gateway access before rollout, including existing Railway overrides.
 * Prices and option selection come from deterministic code with evidenced rates, integer minor units or Decimal and explicit currencies. Arrival deadlines, insurance and customer restrictions apply to every quote path.
 * Missing or conflicting information is checked against the same shipment's conversation and CRM first. Remaining gaps get a persisted question in the customer's thread. Partial answers resume work without duplicate questions.
 * Booking requires current, explicit consent to the applicable offer. Questions, changes and conditions must be resolved first. Versioned reply execution is rollout controlled through `app/config.py`; its default is shadow evaluation.
