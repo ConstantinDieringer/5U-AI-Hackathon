@@ -42,9 +42,8 @@ button { font: inherit; color: inherit; cursor: pointer; letter-spacing: inherit
 .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidebar); z-index: 20; background: var(--canvas);
   border-right: 1px solid var(--hairline-strong); display: flex; flex-direction: column; padding: 16px 12px; gap: 2px; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 20px; }
-.brand .mark { width: 28px; height: 28px; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--lime);
-  background: var(--ink); }
-.brand .mark .icon { width: 15px; height: 15px; }
+.brand .mark { width: 32px; height: 32px; flex: none; display: grid; place-items: center; }
+.brand .mark img { width: 100%; height: 100%; display: block; }
 .brand b { display: block; font-size: 14px; font-weight: 600; }
 .brand small { display: block; color: var(--ink-3); font-size: 12px; }
 .nav { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 10px; border: 0; background: none;
@@ -342,7 +341,7 @@ textarea:focus { border-color: var(--accent); background: var(--card); }
 </svg>
 
 <nav class="sidebar" aria-label="Main navigation">
-  <div class="brand"><span class="mark"><svg class="icon"><use href="#i-plane"/></svg></span><div><b>Austrian Power</b><small>Forwarder Console</small></div></div>
+  <div class="brand"><span class="mark"><img src="/static/logo.png" alt="" width="32" height="32"></span><div><b>Austrian Power</b><small>Forwarder Console</small></div></div>
   <button class="nav active" data-page="overview"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></button>
   <button class="nav" data-page="requests"><svg class="icon"><use href="#i-inbox"/></svg><span class="lbl">Requests</span></button>
   <button class="nav" data-page="crm"><svg class="icon"><use href="#i-users"/></svg><span class="lbl">CRM</span></button>
@@ -356,7 +355,7 @@ textarea:focus { border-color: var(--accent); background: var(--card); }
   <div class="spacer"></div>
   <button class="stop" id="global-pause" title="Stop all outgoing mail"><svg class="icon"><use href="#i-stop"/></svg><span>Stop mail</span></button>
   <button class="nav support-nav" id="support-toggle" type="button" aria-expanded="false" aria-controls="support-panel" title="Ask the support assistant"><svg class="icon"><use href="#i-chat"/></svg><span class="lbl">Support</span></button>
-  <button class="nav profile-settings" data-page="errors" id="settings-toggle" title="Settings and messages" aria-expanded="false" aria-controls="page-errors"><span class="avatar">AP</span><span class="lbl">Settings</span><svg class="icon"><use href="#i-settings"/></svg><span class="badge err" id="err-badge"></span></button>
+  <button class="nav profile-settings" data-page="errors" id="settings-toggle" title="Settings and messages" aria-expanded="false" aria-controls="page-errors"><span class="lbl">Settings</span><svg class="icon"><use href="#i-settings"/></svg><span class="badge err" id="err-badge"></span></button>
 </nav>
 
 <div class="main">
