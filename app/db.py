@@ -3267,6 +3267,7 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
     weight_known = 0
     booked_events: list[dict[str, Any]] = []
     airports: dict[str, dict[str, Any]] = {}
+    routes: dict[tuple[str, str], int] = {}
 
     def add(kind: str, amount: int | None, currency: str | None) -> bool:
         if amount is None or not currency:
@@ -3278,6 +3279,15 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
     for r in rows:
         try:
             shipment = json.loads(r["request_json"] or "{}")
+            origin, destination = shipment.get("origin"), shipment.get("destination")
+            if (
+                isinstance(origin, str)
+                and isinstance(destination, str)
+                and re.fullmatch(r"[A-Z]{3}", origin)
+                and re.fullmatch(r"[A-Z]{3}", destination)
+                and origin != destination
+            ):
+                routes[(origin, destination)] = routes.get((origin, destination), 0) + 1
             for key in ("origin", "destination"):
                 code = shipment.get(key)
                 if isinstance(code, str) and re.fullmatch(r"[A-Z]{3}", code):
@@ -3348,6 +3358,10 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
         "weight_known_bookings": weight_known,
         "booked_events": booked_events,
         "airports": sorted(airports.values(), key=lambda a: a["iata"]),
+        "routes": [
+            {"origin": origin, "destination": destination, "requests": count}
+            for (origin, destination), count in sorted(routes.items())
+        ],
     }
 
 

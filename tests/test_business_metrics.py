@@ -94,6 +94,7 @@ def test_customer_totals_versions_pending_and_foreign_currency():
         {"iata": "DEL", "departures": 0, "arrivals": 5},
         {"iata": "FRA", "departures": 5, "arrivals": 0},
     ]
+    assert data["routes"] == [{"origin": "FRA", "destination": "DEL", "requests": 5}]
 
 
 def test_cohort_dates_not_limited_to_latest_crm_rows():
@@ -106,6 +107,18 @@ def test_cohort_dates_not_limited_to_latest_crm_rows():
     assert db.business_metrics()["requests"] == 204
     assert db.business_metrics(7)["requests"] == 203
     assert amounts(db.business_metrics(7), "offered") == {"EUR": 20_300}
+
+
+def test_map_connections_only_include_evidenced_pairs():
+    request(1)
+    sid, _ = request(2)
+    db.set_request(sid, {"origin": "DEL", "destination": "JFK", "weight_kg": 100})
+    data = db.business_metrics()
+    assert data["routes"] == [
+        {"origin": "DEL", "destination": "JFK", "requests": 1},
+        {"origin": "FRA", "destination": "DEL", "requests": 1},
+    ]
+    assert not any(r["origin"] == "FRA" and r["destination"] == "JFK" for r in data["routes"])
 
 
 def test_revised_offer_is_not_an_open_valid_price_and_response_time_is_real():
