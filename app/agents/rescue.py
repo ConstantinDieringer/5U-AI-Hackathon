@@ -93,7 +93,8 @@ Return all schema fields; empty questions unless asking. State a short operation
 # The plan's only customer-facing text is one short question. The full voice profile
 # (10 000 characters, written for whole quote mails) was sent with every rescue call.
 QUESTION_STYLE = """A question is one or two friendly, plain sentences to a business contact:
-no colons, semicolons, dashes, parentheses, lists or field names, and German uses du.
+no colons, semicolons, dashes, parentheses, lists or field names. German uses the given
+address form (du or Sie) throughout.
 """
 
 
@@ -348,6 +349,9 @@ def _decision(
                 sid,
                 model=settings.llm_rescue_model,
             )
+            from app.mail import address_form
+
+            context = {**context, "german_address_form": address_form.form(sid)}
             raw = llm.complete(
                 "thread_rescue",
                 [
