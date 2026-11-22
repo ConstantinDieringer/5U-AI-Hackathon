@@ -315,3 +315,33 @@ def test_startup_backfill_repairs_email_booking_without_reference() -> None:
                    body=conf.body, category="carrier", received_at=datetime.now(UTC).isoformat())  # fmt: skip
     db.backfill_bookings_from_confirmations()
     assert db.get_session(6882)["bookings"][0]["booking_reference"] == "BK-1TIIVV6M"
+
+
+@pytest.mark.core
+def test_tracking_reports_the_all_in_price_not_the_portal_air_rate(monkeypatch) -> None:
+    """Rounds 27/29/45/46/51/52 earned 5 of 10 tracking points. A portal booking stores the
+    portal's bare air rate (here USD, without trucking) as the booking price, and the
+    tracking answer called that "the all-in price". The customer agreed to 4.408,52 €."""
+    _booked(1223, "weidner-spielwaren@hackloop.mail", "STR", "EZE", "BK-6Z1GMPG3")
+    db.conn().execute(
+        "UPDATE bookings SET price_minor = 391000, currency = 'USD' WHERE session_id = 1223"
+    )
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    monkeypatch.setattr(tracking, "_today", lambda: date(2026, 11, 21))
+    _tracking_session(3000, "Shipment status", "Where is BK-6Z1GMPG3?")
+    tracking.handle(
+        Mail(3000, 3000, TRACK, TEAM, "Shipment status", "Where is BK-6Z1GMPG3?", ""), 3000
+    )
+    body = api.sent[-1]["body"]
+    assert "4.408,52 €" in body and "3.910" not in body and "$" not in body
+
+
+@pytest.mark.core
+def test_tracking_reports_a_customer_accepted_new_total(monkeypatch) -> None:
+    """Counterexample: after an airline price change the customer accepted a new total; that
+    total, not the original quote, is what we report."""
+    _booked(1223, "weidner-spielwaren@hackloop.mail", "STR", "EZE", "BK-6Z1GMPG3")
+    db.set_booking_customer_state(1223, "confirmed_sent", 484937)
+    record = next(r for r in db.tracking_records() if r["session_id"] == 1223)
+    assert record["price_minor"] == 484937 and record["currency"] == "EUR"
