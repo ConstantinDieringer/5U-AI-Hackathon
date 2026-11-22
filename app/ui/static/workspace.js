@@ -129,7 +129,13 @@ async function copyCrmRows(button) {
     const text = String(value ?? "").replace(/[\t\r\n]/g," ");
     return /^[=+@-]/.test(text) ? "'" + text : text;
   };
-  const text = [cols.map(([,label]) => label), ...crmRows().map(row => cols.map(([key]) => crmValue(row,key)))].map(row => row.map(safe).join("\t")).join("\n");
+  const value = (row,key) => {
+    const raw = crmValue(row,key);
+    if (["total_minor","price_minor","quote_minor"].includes(key)) return money(raw === "" ? null : raw,row.currency || "EUR");
+    if (["status","outcome","verdict"].includes(key)) return CRM_STATUS[raw] || raw || "Noch offen";
+    return raw;
+  };
+  const text = [cols.map(([,label]) => label), ...crmRows().map(row => cols.map(([key]) => value(row,key)))].map(row => row.map(safe).join("\t")).join("\n");
   try { await copyPlainText(text, button); }
   catch(e) { bufferMessage("CRM konnte nicht kopiert werden. " + e.message); }
 }
