@@ -90,6 +90,9 @@ class Rfq(BaseModel):
     customer_questions: list[str] = Field(default_factory=list, max_length=5)
     service_constraints: list[str] = Field(default_factory=list, max_length=10)
     excluded_airlines: list[str] = Field(default_factory=list)
+    # further shipments of the same mail (board reason one_of_two): raw extraction items,
+    # checked and turned into sibling requests by app.agents.multi_shipment
+    additional_shipments: list[dict] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="before")
     @classmethod
