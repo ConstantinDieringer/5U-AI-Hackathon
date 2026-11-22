@@ -64,8 +64,8 @@ button { font: inherit; color: inherit; cursor: pointer; letter-spacing: inherit
 .stop.on { background: var(--red); color: #fff; }
 
 .main { margin-left: var(--sidebar); min-height: 100vh; padding: 0 24px 40px; }
-.topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 12px 0; margin-bottom: 8px;
-  background: var(--glass); -webkit-backdrop-filter: blur(16px) saturate(1.6); backdrop-filter: blur(16px) saturate(1.6); }
+/* The top bar stays at the top of the page and scrolls away with it: no sticky band. */
+.topbar { position: static; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 12px 0; margin-bottom: 8px; background: none; }
 .topbar h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
 .topbar .sub { display: none; }
 .topbar .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }

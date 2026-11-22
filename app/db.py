@@ -3231,7 +3231,8 @@ def booking_volume_24h() -> dict[str, Any]:
     rows = _rows(
         conn().execute(
             "SELECT b.created_at AS at,b.status,b.customer_state,"
-            " COALESCE(b.customer_total_minor,q.total_minor) AS minor,q.currency"
+            " COALESCE(b.customer_total_minor,q.total_minor) AS minor,q.currency,"
+            " b.price_minor AS airline_minor,b.currency AS airline_currency"
             " FROM bookings b JOIN sessions s ON s.id=b.session_id"
             " LEFT JOIN quotes q ON q.id=COALESCE(b.quote_id,"
             " (SELECT MIN(id) FROM quotes WHERE session_id=b.session_id))"
@@ -3240,6 +3241,7 @@ def booking_volume_24h() -> dict[str, Any]:
         )
     )
     events, amounts, unknown = [], {}, 0
+    airline_events, airline_amounts = [], {}
     for row in rows:
         if row["status"] not in ("booked", "confirmed") or row["customer_state"] not in (
             None,
@@ -3247,6 +3249,13 @@ def booking_volume_24h() -> dict[str, Any]:
             "price_accepted",
         ):
             continue
+        # Airline cost is reported separately, for bookings that carry no customer amount.
+        if row["airline_minor"] is not None and row["airline_currency"]:
+            code = row["airline_currency"].upper()
+            airline_events.append(
+                {"at": row["at"], "minor": row["airline_minor"], "currency": code}
+            )
+            airline_amounts[code] = airline_amounts.get(code, 0) + row["airline_minor"]
         if row["minor"] is None or not row["currency"]:
             unknown += 1
             continue
@@ -3259,6 +3268,10 @@ def booking_volume_24h() -> dict[str, Any]:
         "events": events,
         "unknown": unknown,
         "amounts": [{"currency": c, "minor": v} for c, v in sorted(amounts.items())],
+        "airline_events": airline_events,
+        "airline_amounts": [
+            {"currency": c, "minor": v} for c, v in sorted(airline_amounts.items())
+        ],
     }
 
 
@@ -3276,6 +3289,7 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
             " q.id AS quote_id,q.total_minor,q.currency,"
             " w.session_id AS workflow_id,w.active_quote_id,w.phase,"
             " b.status AS booking_status,b.customer_state,b.customer_total_minor,b.created_at AS booked_at,"
+            " b.price_minor AS airline_minor,b.currency AS airline_currency,"
             " bq.total_minor AS booked_quote_minor,bq.currency AS booked_currency,"
             " bq.request_snapshot_json AS booked_request_json"
             " FROM sessions s"
@@ -3288,7 +3302,10 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
             (since,),
         )
     )
-    totals: dict[str, dict[str, int]] = {k: {} for k in ("booked", "offered", "pipeline")}
+    # booked_airline: what the airlines charge for settled bookings, never customer value
+    totals: dict[str, dict[str, int]] = {
+        k: {} for k in ("booked", "booked_airline", "offered", "pipeline")
+    }
     counts = {
         "requests": len(rows),
         "quoted": 0,
@@ -3345,6 +3362,7 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
         )
         if settled:
             counts["booked"] += 1
+            add("booked_airline", r["airline_minor"], r["airline_currency"])
             # A legacy unbound booking uses the first quote, never a later revision.
             amount = r["customer_total_minor"]
             if amount is None:

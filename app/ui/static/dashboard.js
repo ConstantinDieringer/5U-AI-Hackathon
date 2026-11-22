@@ -6,14 +6,16 @@ async function loadOverview() {
   const [data,volume]=await Promise.all([api("/api/business-metrics?days="+(S.metricDays ?? 1)).catch(()=>null),api("/api/booking-volume").catch(()=>null)]);
   if(S.page!=="overview" || version!==S.dashboardVersion) return;
   if(!data) {$("#overview").replaceChildren(el("div",{class:"card s12"},"Dashboard could not be loaded.",el("button",{class:"btn",onclick:loadOverview},"Try again")));return;}
-  const kpis=[["Booked order value",dashboardAmounts(data,"booked"),"Agreed customer amounts","hero"],
+  // Bookings without an agreed customer amount still show what was booked: the airline cost, labelled as such.
+  const airlineOnly=!data.amounts.booked.length && (data.amounts.booked_airline||[]).length;
+  const kpis=[airlineOnly?["Booked airline cost",dashboardAmounts(data,"booked_airline"),"No customer amounts recorded yet","hero"]:["Booked order value",dashboardAmounts(data,"booked"),"Agreed customer amounts","hero"],
     ["Open quote volume",dashboardAmounts(data,"pipeline"),"Current quotes without booking"],
     ["Bookings",data.booked, data.awaiting_price+" more price approvals open"],
     ["Booking rate",pct(data.booked,data.requests),`${data.booked} bookings from ${data.requests} requests`]];
   $("#view-controls").replaceChildren(crmSelect("Period",[[1,"Last 24 hours"],[7,"Last 7 days"],[30,"Last 30 days"],[0,"All time"]],S.metricDays ?? 1,e=>{S.metricDays=Number(e.target.value);loadOverview();}));
   const map=airportMapCard(data.airports||[],data.routes||[]);
   $("#overview").replaceChildren(...kpis.map(([label,value,sub,tone])=>el("div",{class:"card kpi s3 "+(tone||"")},el("div",{class:"label"},label),el("div",{class:"value"},String(value)),el("div",{class:"caption"},sub))),
-    ...(data.unknown_booked_value ? [el("p",{class:"s12 caption"},`${data.unknown_booked_value} bookings without a confirmed customer amount are missing from the order value.`)] : []), volumeChart(volume),map);
+    ...(data.unknown_booked_value && !airlineOnly ? [el("p",{class:"s12 caption"},`${data.unknown_booked_value} bookings without a confirmed customer amount are missing from the order value.`)] : []), volumeChart(volume),map);
 }
 function chartBuckets(events,from,to) {
   const end=new Date(to).getTime(),start=new Date(from).getTime(),step=3600000;
@@ -24,15 +26,18 @@ function chartBuckets(events,from,to) {
 let VOLUME_CARD=null,VOLUME_SIG="";
 function volumeChart(data) {
   if(!data)return el("section",{class:"card s12"},el("h2",{},"Booked order volume"),el("p",{class:"caption"},"The 24-hour chart is not available right now."));
-  const currencies=data.amounts.map(a=>a.currency), currency=currencies.includes(S.chartCurrency)?S.chartCurrency:currencies.includes("EUR")?"EUR":currencies[0]||"EUR";
-  const events=data.events.filter(e=>e.currency===currency), {buckets,step,start,end}=chartBuckets(events,data.from,data.to);
+  // Customer amounts first; bookings that only carry the airline cost are charted as airline cost.
+  const airline=!data.events.length && (data.airline_events||[]).length>0;
+  const source=airline?{amounts:data.airline_amounts,events:data.airline_events}:data;
+  const currencies=source.amounts.map(a=>a.currency), currency=currencies.includes(S.chartCurrency)?S.chartCurrency:currencies.includes("EUR")?"EUR":currencies[0]||"EUR";
+  const events=source.events.filter(e=>e.currency===currency), {buckets,step,start,end}=chartBuckets(events,data.from,data.to);
   const small=matchMedia("(max-width:600px)").matches;
   // Refreshes arrive every few seconds; rebuild (and animate) only when the plotted values change.
-  const sig=JSON.stringify([currency,currencies,small,Math.floor(start/step),buckets.map(b=>b.minor)]);
+  const sig=JSON.stringify([airline,currency,currencies,small,Math.floor(start/step),buckets.map(b=>b.minor)]);
   if(VOLUME_CARD&&sig===VOLUME_SIG)return VOLUME_CARD;
   const intro=!VOLUME_CARD;VOLUME_SIG=sig;
   const total=buckets.reduce((sum,b)=>sum+b.minor,0);
-  const card=el("section",{class:"card s12 volume-chart"+(intro?" intro":"")},el("div",{class:"card-h"},el("div",{},el("h2",{},"Booked order volume"),el("p",{class:"caption"},"Last 24 hours by booking time. Customer amounts per hour.")),
+  const card=el("section",{class:"card s12 volume-chart"+(intro?" intro":"")},el("div",{class:"card-h"},el("div",{},el("h2",{},airline?"Booked airline cost":"Booked order volume"),el("p",{class:"caption"},airline?"Last 24 hours by booking time. Airline cost per hour, as no customer amounts are recorded for these bookings.":"Last 24 hours by booking time. Customer amounts per hour.")),
     el("div",{class:"volume-total aside"},el("b",{class:"num"},money(total,currency)),el("span",{class:"caption"},"in 24 hours")),
     currencies.length>1 ? crmSelect("Currency",currencies.map(c=>[c,c]),currency,e=>{S.chartCurrency=e.target.value;loadOverview();}) : null));
   if(intro)setTimeout(()=>card.classList.remove("intro"),1600);
