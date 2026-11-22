@@ -89,6 +89,51 @@ def _codes() -> dict[str, str]:
     return out
 
 
+@lru_cache(maxsize=1)
+def _first_words() -> dict[str, str]:
+    """Capitalised first word -> canonical name ("Juniper" for "Juniper Cargo Lines"), when
+    no other carrier starts with or is spelled as that word."""
+    owners: dict[str, set[str]] = {}
+    for c in carriers():
+        words = c.name.split()
+        if len(words) >= 2 and len(words[0]) >= 4 and words[0].lower() not in _GENERIC:
+            owners.setdefault(words[0], set()).add(c.name)
+    full = {c.name.lower() for c in carriers()}
+    return {w: next(iter(n)) for w, n in owners.items() if len(n) == 1 and w.lower() not in full}
+
+
+# A bare two-letter code is a carrier only in a carrier context: "(ZS)", "ZS flights",
+# "airline ZS", "avoid ZS", "not via MD". Otherwise "QA", "CS", "HA" are ordinary
+# abbreviations (certificates, customs, paperwork), and a refusal is stored for good.
+_CODE_BEFORE = re.compile(
+    r"(?:\b(?:airlines?|carriers?|airways|fluggesellschaft|fluglinie|via|with|mit|über|ueber"
+    r"|avoid|exclude|excluding|use|using|fly|flying|book|vermeiden|ausschließen)\s+"
+    r"(?:the\s+|die\s+)?|\b(?:and|or|und|oder|nor)\s+|,\s*)$",
+    re.IGNORECASE,
+)
+_CODE_AFTER = re.compile(
+    r"^\s*(?:airlines?|carriers?|airways|flights?|cargo|flug\w*|fluggesellschaft)\b",
+    re.IGNORECASE,
+)
+
+
+def _code_in_carrier_context(sentence: str, start: int, end: int) -> bool:
+    if sentence[start - 1 : start] == "(" and sentence[end : end + 1] == ")":
+        return True
+    before, after = sentence[max(0, start - 40) : start], sentence[end : end + 30]
+    if _CODE_AFTER.search(after):
+        return True
+    if not _CODE_BEFORE.search(before):
+        return False
+    joint = re.search(r"(?:\b(?:and|or|und|oder|nor)\s+|,\s*)$", before, re.IGNORECASE)
+    if joint:
+        # a list item counts only right after a carrier code in context: "avoid ZS, MD or QA"
+        head = start - (len(before) - joint.start())
+        prev = re.search(r"\b[A-Z]{2}\b\s*$", sentence[:head])
+        return bool(prev) and _code_in_carrier_context(sentence, prev.start(), prev.start() + 2)
+    return True
+
+
 def _mentions(sentence: str) -> list[tuple[int, int, str]]:
     """(start, end, canonical name) of every carrier named in the sentence, longest spelling
     first so "Zephyr Steppe Cargo" is not also counted as "Zephyr Steppe"."""
@@ -100,9 +145,16 @@ def _mentions(sentence: str) -> list[tuple[int, int, str]]:
         if i >= 0 and name not in taken:
             hits.append((i, i + len(spelled), name))
             taken.add(name)
+    for word, name in _first_words().items():  # "Please avoid Juniper." (capitalised only)
+        m = re.search(rf"\b{re.escape(word)}\b", sentence)
+        if m and name not in taken:
+            hits.append((m.start(), m.end(), name))
+            taken.add(name)
     for m in re.finditer(r"\b[A-Z]{2}\b", sentence):  # codes in capitals only
         if re.search(r",\s*$", sentence[: m.start()]) and sentence[m.end() : m.end() + 1] == ")":
             continue  # "(Miami, US)": a country code, not a carrier
+        if not _code_in_carrier_context(sentence, m.start(), m.end()):
+            continue  # "No CS required", "QA certificate", "HA paperwork": not airlines
         name = _codes().get(m.group(0))
         if name and name not in taken:
             hits.append((m.start(), m.end(), name))

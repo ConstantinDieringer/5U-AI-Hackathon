@@ -116,3 +116,44 @@ def test_poll_cursor_does_not_skip_uncommitted_delivery(client, monkeypatch):
     with pytest.raises(sqlite3.OperationalError):
         poller.poll_once(0)
     assert store.get_since_id() == 0
+
+
+# ---------------------------------------------------------------- current words vs quoted history
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Hello,\nplease quote:\nFrom: Munich (MUC)\nTo: Chicago (ORD)\nWeight: 300 kg",
+        "Bonjour,\nDe : Paris CDG\nÀ : New York JFK\nPoids : 200 kg",
+        "Hola,\nDe: Madrid\nA: Lima\n100 kg",
+        "Hallo,\nVon: 80331 München\nNach: JFK\n50 kg",
+    ],
+)
+def test_route_labels_are_not_cut_as_quoted_history(body) -> None:
+    from app.mail.content import current_message
+
+    assert current_message(body).text == body
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Yes book it.\n\nFrom: Team <austrian-power@hackloop.mail>\nSent: Monday\nTo: x\n\nold",
+        "Ok\n\nVon: Austrian Power\nGesendet: Montag\nAn: Kunde\nBetreff: Angebot\n\nalt",
+        "Ok\n\nDe : Austrian Power\nEnvoyé : lundi\nÀ : client\nObjet : offre\n\nancien",
+    ],
+)
+def test_real_mail_headers_still_start_history(body) -> None:
+    from app.mail.content import current_message
+
+    assert current_message(body).text in ("Yes book it.", "Ok")
+
+
+def test_history_split_stays_fast_on_many_from_lines() -> None:
+    from app.mail.content import current_message
+
+    started = time.perf_counter()
+    current_message("hi\n" + "From: x\n" * 5000 + " " * 200_000)
+    current_message("\n".join([" " * 1000] * 200))  # took 40 s before: signature regex
+    assert time.perf_counter() - started < 0.5

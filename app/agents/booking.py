@@ -137,6 +137,47 @@ _PENDING_APPROVAL = re.compile(
     re.IGNORECASE,
 )
 
+# A yes that waits on something: a condition, a sign-off still to come or a later answer.
+# These never book by rules or by a second opinion ("Sounds good, but our CFO has to sign
+# first", "Go ahead with option 2 if it still arrives before Friday").
+_POLITE_IF = re.compile(
+    r"\b(?:let|tell|inform|notify)\s+(?:me|us)\s+(?:know\s+)?(?:if|when|once|whether)\b"
+    r"|\b(?:melde|meldet|sag|sagt|informier\w*)\s+(?:dich|euch|sich|mir|uns|bescheid)?\s*"
+    r"(?:bescheid\s+)?(?:wenn|falls|sobald|ob)\b",
+    re.IGNORECASE,
+)
+_CONDITION = re.compile(
+    r"\b(?:if|once|unless|provided|as\s+long\s+as|assuming|subject\s+to|on\s+condition"
+    r"|wenn|falls|sofern|vorausgesetzt|sobald|unter\s+der\s+bedingung)\b",
+    re.IGNORECASE,
+)
+_SIGN_OFF = re.compile(
+    r"\b(?:sign\w*|approv\w*|authori[sz]\w*|freigabe|freigeben|genehmig\w*|unterschr\w*"
+    r"|zustimm\w*|zustimmung)\b",
+    re.IGNORECASE,
+)
+_STILL_OPEN = re.compile(
+    r"\b(?:first|before|still|pending|has\s+to|have\s+to|needs?\s+to|must|waiting"
+    r"|erst|noch|muss|müssen|ausstehend)\b|\?",
+    re.IGNORECASE,
+)
+
+
+def _held_yes(text: str) -> bool:
+    """A yes sentence carrying a condition, a pending sign-off, or a reply that promises a
+    later answer: consent is not current and explicit yet."""
+    if _DEFERRAL.search(text):
+        return True
+    for sentence in re.split(r"(?<=[.!?\n])\s*", _POLITE_IF.sub(" ", text)):
+        if not _YES.search(sentence):
+            continue
+        if _CONDITION.search(sentence):
+            return True
+        if _SIGN_OFF.search(sentence) and _STILL_OPEN.search(sentence):
+            return True
+    # "Sounds good. Our CFO has to sign first." across sentences
+    return bool(_SIGN_OFF.search(text) and _STILL_OPEN.search(text) and _YES.search(text))
+
 
 # Changed cargo after the quote (round 86, session 24377: 753 kg quoted, the customer wrote
 # "now 5 pieces, 1317 kg", later "yes, book" and the 753 kg rate was booked). Numbers in the
@@ -212,11 +253,13 @@ def is_acceptance(body: str) -> bool | None:
         _PENDING_APPROVAL.search(sentence) and _YES.search(sentence)
         for sentence in re.split(r"[.!?\n]", text)
     )
-    if _PREBOOK_QUESTION.search(text) or pending:
+    if _PREBOOK_QUESTION.search(text) or pending or _held_yes(text):
         return None  # mentioning booking in a question/condition is not consent
     if config.settings.revision_not_acceptance and _REVISION.search(text):
         return None
     yes, no = bool(_YES.search(text)), bool(_NO.search(text))
+    if yes and not no and "?" in text:
+        return None  # a yes next to an open question is not decided yet: model or a person
     if yes and not no:
         return True
     if no and not yes:
@@ -231,7 +274,7 @@ _DEFERRAL = re.compile(
     re.IGNORECASE,
 )
 # After a pre-booking answer: "book the faster one instead" must never book the quoted one
-# (REVISION_NOT_ACCEPTANCE is off in production). Stricter only: it can stop a booking.
+# (also when REVISION_NOT_ACCEPTANCE is off). Stricter only: it can stop a booking.
 _OTHER_OPTION = re.compile(
     r"\binstead\b|\bstattdessen\b|\balternativ\w*|\bother\s+(?:airline|carrier|option|one)|"
     r"\b(?:faster|quicker|cheaper|slower)\s+(?:one|option|connection|flight|airline)|"
@@ -596,6 +639,7 @@ def _guarded(text: str) -> bool:
     )
     return bool(
         pending
+        or _held_yes(text)
         or _PREBOOK_QUESTION.search(text)
         or _REVISION.search(text)
         or _OTHER_OPTION.search(text)
@@ -626,8 +670,9 @@ def _consent(body: str, evidence: str | None, sid: int) -> bool | None:
     if label == "book":
         return True
     if verdict is True:
-        # the rules' yes stands unless the model actively objects (an outage changes nothing)
-        return True if label == "unclear" else None
+        # a yes next to a doubt word needs the model's own "book": "unclear" (also returned on
+        # timeout, budget or gateway error) holds the booking for clarification
+        return None
     return False if label == "decline" else None
 
 
