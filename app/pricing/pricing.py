@@ -155,16 +155,14 @@ def resolve_origin(rfq: Rfq) -> str | None:
 
     A named or LLM-derived airport must never override the deterministic pickup mapping. This
     covers both a destination copied into origin and plausible but wrong nearby airports.
+    Never the destination itself (round 2530: YYZ-YYZ bid requests): None asks the customer.
     """
+    destination = rfq.destination.upper()
     origin = rfq.origin.upper() if rfq.origin else None
-    if origin == rfq.destination.upper():
-        origin = None
     zone = rfq.pickup_zone
     if zone:
-        by_zone = pickup_zones().get(zone)
-        if by_zone:
-            return by_zone
-    return origin
+        origin = pickup_zones().get(zone) or origin
+    return None if origin == destination else origin
 
 
 def today() -> date:
