@@ -1,2 +1,0 @@
-Less idle DB work, no behaviour change: indexes `mails(category,direction,session_id)`, `mails(in_reply_to)`, `sessions(created_at)`; `delivery_claim`/`expire_overdue` read before taking the write lock; `init_db()` without a path runs once per process; follow-up tick walks `db.session_ids`.
-Not verified: speed on the production DB (size unknown). Follow-up still calls `get_session` per open session.

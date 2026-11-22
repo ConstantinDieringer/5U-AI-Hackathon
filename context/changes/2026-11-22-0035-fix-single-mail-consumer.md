@@ -1,1 +1,0 @@
-Mail queue has one consumer: the poller only enqueues, `webhook.run` processes in mail-id order (fixes replies handled before their root, orphan sessions). Carrier bids run in a 4-worker pool so a slow bid never stalls intake; a failed bid shows as an error event. Not verified: production orphan count before/after.

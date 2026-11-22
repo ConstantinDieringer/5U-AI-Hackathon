@@ -1,1 +1,0 @@
-- Quote PDF only on customer request (team decision, PR #77): `QUOTE_PDF_ON_REQUEST` on by default, rule-based detection in `app/mail/pdf_request.py`, also for Notfall-Quotes.

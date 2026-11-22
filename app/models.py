@@ -1,6 +1,6 @@
 """Shared data contracts between modules (TECH_SPEC section 6). Field names are binding.
 
-Money is integer cents (`*_minor`, context/code-standards.md: never floats); weights stay float.
+Money is integer cents (`*_minor`, see CONTEXT.md: never floats); weights stay float.
 """
 
 from __future__ import annotations

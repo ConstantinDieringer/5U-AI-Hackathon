@@ -1,1 +1,0 @@
-- Multilingual pipeline (PR #64): cached working copies, native subjects/replies, protected facts and explicit consent across customer agents; multilingual Whisper `base` (Docker rebuild); new deps lingua-language-detector, Babel. Details: `context/docs/multilingual-mail.md`.

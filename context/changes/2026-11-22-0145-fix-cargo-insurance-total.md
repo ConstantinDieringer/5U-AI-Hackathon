@@ -1,2 +1,0 @@
-Requested cargo insurance is priced from evidenced terms, added to the EUR all-in total and persisted separately; missing/conflicting terms block automatic and emergency quotes. Body/PDF confirm inclusion, airline bookings exclude the premium, alternatives retain it. Existing CARGO_INSURANCE=false now holds insured quotes. No new flag/model call.
-Not verified: live round. Shared insurance values across multiple shipments require allocation clarification.
