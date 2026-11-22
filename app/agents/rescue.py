@@ -267,7 +267,14 @@ def _context(mail: Mail, sid: int, root: Mail, draft: RfqDraft) -> tuple[dict, s
         # Prices/options already live in quotes and carrier evidence. Serializing the full
         # audit and extracted-event payloads again made recovery prompts several times larger.
         "events": [
-            {k: e.get(k) for k in ("id", "kind", "level", "message")}
+            {
+                **{k: e.get(k) for k in ("id", "kind", "level", "message")},
+                **(
+                    {"issues": (e.get("payload") or {}).get("issues", [])}
+                    if e["kind"] == "thread_rescue_blocked"
+                    else {}
+                ),
+            }
             for e in session["events"]
             if e["level"] in ("warn", "error") or e["kind"] in ("error", "no_price", "no_trucking")
         ][-12:],
@@ -578,7 +585,11 @@ def take_over(mail: Mail, sid: int) -> bool:
     mail = multilingual.prepare(mail, sid)
     session = db.get_session(sid)
     row = session.get("validation") or {}
-    root = Mail(**row["root"]) if row.get("root") else clarification._stored_mail(db.root_mail(sid))
+    root = (
+        Mail(**row["root"])
+        if row.get("root")
+        else clarification._stored_mail({**db.root_mail(sid), "session_id": sid})
+    )
     root = multilingual.prepare(root, sid)
     draft = (
         RfqDraft.model_validate(row["draft"])

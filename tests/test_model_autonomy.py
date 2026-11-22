@@ -160,6 +160,29 @@ def test_recovery_can_correct_new_request_fields_and_remove_obsolete_values():
 
 
 @pytest.mark.core
+def test_rejected_plan_gets_tool_feedback_for_a_fresh_decision(flow, monkeypatch):
+    mail, request, _ = flow
+    db.set_request(mail.id, request.model_dump())
+    contexts = []
+
+    def complete(purpose, messages, sid, **kwargs):
+        contexts.append(json.loads(messages[1]["content"]))
+        plan = decision("Treat 2 December 2026 as the last acceptable landing day.")
+        if len(contexts) == 1:
+            plan.corrections = []  # tool rejects a plan that leaves the date unproven
+        return plan.model_dump_json()
+
+    monkeypatch.setattr(llm, "complete", complete)
+    assert rescue.take_over(mail, mail.id)
+    assert not db.get_session(mail.id)["quotes"]
+    assert rescue.take_over(mail, mail.id)
+    assert db.get_session(mail.id)["quotes"][0]["airline"] == "Economy"
+    feedback = next(e for e in contexts[1]["events"] if e["kind"] == "thread_rescue_blocked")
+    assert {"field": "arrival_deadline", "code": "unproven"} in feedback["issues"]
+    assert len(contexts) == 2
+
+
+@pytest.mark.core
 def test_luna_uses_supported_reasoning_and_accounts_for_its_price(tmp_path, monkeypatch):
     db.init_db(str(tmp_path / "model.db"))
     captured = []

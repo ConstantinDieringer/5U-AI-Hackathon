@@ -412,9 +412,8 @@ def request(mail, sid, draft):
 
             rfq.handle_rfq(root, sid)
             return
-    if (
-        draft.evidence.get("workflow", "rfq") == "rfq"
-        and not draft.evidence.get("rescue_before_clarification")
+    if draft.evidence.get("workflow", "rfq") == "rfq" and not draft.evidence.get(
+        "rescue_before_clarification"
     ):
         draft.evidence["rescue_before_clarification"] = True
         previous = db.validation_get(sid)
@@ -426,6 +425,7 @@ def request(mail, sid, draft):
             )
             db.set_request(sid, rescued.model_dump())
             from app.agents import rfq
+
             rfq.handle_rfq(root, sid)
             return
     db.validation_save(
