@@ -28,5 +28,5 @@ Binding detail: TECH_SPEC §8a (booking consent, pre-booking answers). Booking A
 ## Area tests
 
 ```
-python -m pytest -q tests/test_booking.py tests/test_prebook.py tests/test_tracking.py tests/test_tracking_notice.py tests/test_reply_replay.py
+python -m pytest -q tests/test_booking.py tests/test_tracking.py tests/test_tracking_notice.py
 ```

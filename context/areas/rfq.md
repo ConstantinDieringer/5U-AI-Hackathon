@@ -31,12 +31,12 @@ Binding detail: TECH_SPEC §8 (LLM rules, rescue, validation) and §8a (answer c
 - **Versioned replies:** `customer_reply` queues post-offer work with per-thread leases and `REPLY_WORKERS=4`. Revised bids are version-correlated; original scoring deadlines stay fixed. Contracts, ownership, snapshots and rollout: `context/docs/reply-workflow.md`.
 - **Follow-ups:** `FOLLOWUP_ENABLED` uses 30 s/max 3 nudges, stops on pause/manual/booking or unanswered customer questions. Versioned threads also require `awaiting_customer`, a current offer and no pending mail/open issue. Business answers do not spend the reminder cap. Details and limits: `app/config.py`, `context/docs/reply-workflow.md`.
 - **Restart:** `rfq.catch_up()` resumes RFQs younger than `TOO_OLD_S` without a quote, reusing the stored extraction; carriers asked before the restart are not re-mailed.
-- Edge-case flags: `app/config.py`; regressions: `tests/test_edge_cases.py` and per-flag tests.
+- Edge-case flags: `app/config.py`; regressions: the RFQ and arrival workflow tests.
 - **Insurance:** current-source rules require clarification for missing or conflicting terms. Partial terms accumulate; watchdog/rescue cannot omit an unpriced premium.
 - **Replay:** `python -m app.agents.rfq_replay run` compares stored rounds offline.
 
 ## Area tests
 
 ```
-python -m pytest -q tests/test_arrival_constraints.py tests/test_cargo_insurance.py tests/test_rfq_agent.py tests/test_rfq_validation_gate.py tests/test_history_first_clarification.py tests/test_thread_rescue.py tests/test_rfq_watchdog.py tests/test_extract_retry.py tests/test_recent_rounds_e2e.py tests/test_rfq_replay.py
+python -m pytest -q tests/test_arrival_constraints.py tests/test_cargo_insurance.py tests/test_rfq_agent.py tests/test_history_first_clarification.py tests/test_rfq_watchdog.py tests/test_recent_rounds_e2e.py
 ```

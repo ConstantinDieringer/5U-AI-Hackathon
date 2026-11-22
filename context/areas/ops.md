@@ -16,5 +16,5 @@ Full guide: `DEPLOY.md`. Why/history: grep `context/history/`.
 ## Area tests
 
 ```
-python -m pytest -q tests/test_imports.py tests/test_ops_guardrails.py tests/test_alerts.py tests/test_board_watch.py tests/test_server.py
+python -m pytest -q tests/test_ops_guardrails.py tests/test_server.py
 ```

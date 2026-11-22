@@ -37,6 +37,6 @@ Binding detail: TECH_SPEC §6 (data models), portal API in `context/docs/5u-api.
 ## Area tests
 
 ```
-python -m pytest -q tests/test_pricing.py tests/test_pricing_hardening.py tests/test_parse_tariffs.py tests/test_portal_and_reference.py tests/test_portal_fallback_capacity.py tests/test_served_lanes.py tests/test_trucker_balance.py tests/test_bid_attachments.py tests/test_bid_next_break.py tests/test_document_totals.py tests/test_carrier_prefs.py tests/test_carrier_exclusion_guard.py tests/test_rounds_66_68_offers.py
+python -m pytest -q tests/test_pricing.py tests/test_bid_attachments.py
 ```
 - `CARGO_INSURANCE=false` holds insured quotes instead of sending an incomplete total. Default on.

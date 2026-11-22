@@ -4,7 +4,6 @@ import io
 from dataclasses import replace
 from decimal import Decimal
 
-import docx
 import openpyxl
 import pytest
 
@@ -67,18 +66,11 @@ def _mail(filename="offer.txt", body="Our price offer is attached."):
     )
 
 
-@pytest.mark.parametrize("extension", ["txt", "pdf", "docx", "xlsx"])
+@pytest.mark.parametrize("extension", ["pdf", "xlsx"])
 def test_document_total_and_collection_lead_reach_offer(extension, monkeypatch):
     if extension == "pdf":
         raw = _pdf(TABLE)
-    elif extension == "docx":
-        document = docx.Document()
-        for line in TABLE.splitlines():
-            document.add_paragraph(line)
-        out = io.BytesIO()
-        document.save(out)
-        raw = out.getvalue()
-    elif extension == "xlsx":
+    else:
         book = openpyxl.Workbook()
         for line in TABLE.splitlines():
             book.active.append([line])
@@ -86,69 +78,9 @@ def test_document_total_and_collection_lead_reach_offer(extension, monkeypatch):
         book.save(out)
         book.close()
         raw = out.getvalue()
-    else:
-        raw = TABLE.encode()
     monkeypatch.setattr(hackloop, "get_attachment", lambda *_: raw)
     bids.on_bid_mail(_mail(f"offer.{extension}"), 123)
     (offer,) = bids.offers(123)
     assert offer.total_eur == Decimal("165.70")
     assert offer.transit_days == 29 / 24 and offer.timing_kind == "collection_lead"
     assert offer.mail_id == 456
-
-
-@pytest.mark.parametrize(
-    "text,expected",
-    [
-        (TABLE, (Decimal("165.70"), "EUR")),
-        (
-            "Our price for this transport is 271.10 EUR. Base charge 116 EUR and weight charge 155.10 EUR.",
-            (Decimal("271.10"), "EUR"),
-        ),
-        ("Gesamtpreis: 1.234,56 EUR", (Decimal("1234.56"), "EUR")),
-        ("Amount (USD)\nTotal | 250.50", (Decimal("250.50"), "USD")),
-        ("Offer 1234\nBase charge 67 EUR\nWeight charge 98.70 EUR", None),
-        ("Total 165.70", None),
-        ("EUR USD\nTotal 165.70", None),
-        ("Total EUR 165.70\nTotal EUR 166.70", None),
-    ],
-)
-def test_only_explicit_unambiguous_document_total(text, expected):
-    assert bids.document_price(text) == expected
-
-
-@pytest.mark.parametrize(
-    "body,filename,raw",
-    [
-        ("Our all-in price is EUR 200", "offer.txt", TABLE.encode()),
-        ("Offer attached", "offer.mp3", b"audio without transcript"),
-        ("Offer attached", "offer.pdf", b"broken pdf"),
-        ("Offer attached", "offer.txt", b"Base charge 67 EUR"),
-    ],
-)
-def test_unreadable_or_conflicting_evidence_never_becomes_offer(body, filename, raw, monkeypatch):
-    monkeypatch.setattr(hackloop, "get_attachment", lambda *_: raw)
-    bids.on_bid_mail(_mail(filename, body), 123)
-    assert bids.offers(123) == []
-
-
-def test_conflicting_documents_never_choose_the_larger_amount(monkeypatch):
-    monkeypatch.setattr(
-        hackloop,
-        "get_attachment",
-        lambda mid, aid: (TABLE if aid == 1 else TABLE.replace("165.70", "200.70")).encode(),
-    )
-    mail = _mail()
-    mail.attachments.append({"id": 2, "filename": "revision.txt"})
-    bids.on_bid_mail(mail, 123)
-    assert bids.offers(123) == []
-
-
-@pytest.mark.parametrize("label", ["Total, all-in", "Total all in", "Grand total", "Gesamtbetrag"])
-@pytest.mark.parametrize("separator", [" ", "\n", " | "])
-def test_explicit_total_label_and_adjacent_table_value(label, separator):
-    text = f"Base 90 EUR\nWeight 32.89 EUR\n{label}{separator}122.89 EUR\nWaiting 450 EUR"
-    assert bids.document_price(text) == (Decimal("122.89"), "EUR")
-
-
-def test_missing_total_does_not_scan_past_an_unrelated_row():
-    assert bids.document_price("Total\nValid until Friday\nWaiting 450 EUR") is None

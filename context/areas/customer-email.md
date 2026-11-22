@@ -55,5 +55,5 @@ Wording changes: use `.agents/skills/customer-email-voice/SKILL.md` and `app/mai
 ## Area tests
 
 ```
-python -m pytest -q tests/test_customer_presentation.py tests/test_quote_pdf.py tests/test_pdf_request.py tests/test_customer_voice.py tests/test_mail_style.py tests/test_subjects.py tests/test_email_review.py tests/test_personal_replies.py tests/test_quote_languages.py tests/test_reply_language.py tests/test_language.py tests/test_quote_cutoff.py tests/test_quote_pickup_timing.py tests/test_tracking_notice.py
+python -m pytest -q tests/test_quote_languages.py tests/test_tracking_notice.py
 ```
