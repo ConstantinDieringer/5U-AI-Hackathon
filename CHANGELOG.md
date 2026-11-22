@@ -4,6 +4,7 @@ Only major capabilities or behavior changes belong here. Combine related work, n
 
 ## 22 November 2026
 
+* Fixed simulation identities: mailbox changes, lost mail access and communication rerouting claims are quarantined before workflow actions, including from known senders. Automatic contact changes and historical redirects are disabled by default.
 * GPT-5.6 Luna is the selected default. Recovery can interpret unfamiliar requests, correct the RFQ schema and remove superseded facts, review semantic arrival blocks, and retry rejected plans with tool feedback and a larger budget.
 * Customer replies support versioned offers and explicit approval of revised terms. Execution remains rollout controlled, with shadow evaluation as the default.
 * Multilingual requests, attachments and replies use checked translations while preserving shipment facts and consent evidence.
@@ -14,4 +15,3 @@ Only major capabilities or behavior changes belong here. Combine related work, n
 
 * Blocked requests search shipment history first, then ask the customer and resume from their answers.
 * Customer emails use shared personal wording and strict formatting rules. The additional LLM style reviewer is disabled.
-* The dashboard shows per RFQ model usage and estimated API cost.
