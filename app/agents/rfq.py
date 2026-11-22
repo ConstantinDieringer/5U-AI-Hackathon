@@ -565,8 +565,8 @@ def _valid(option: RateOption) -> str | None:
 
 
 def schedule(rfq: Rfq, transit_days: int, today: date | None = None) -> tuple[date, date] | None:
-    """Earliest departure and arrival: departure on the ready date (one day later when we
-    truck it to the airport first, never before today), arrival = departure + transit."""
+    """Earliest departure and arrival: departure on the ready date (never before today),
+    arrival = departure + transit. See pricing.earliest_schedule."""
     return earliest_schedule(rfq, transit_days, today)
 
 

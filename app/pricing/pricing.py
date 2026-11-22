@@ -277,7 +277,13 @@ def most_balanced(
 def earliest_schedule(
     rfq: Rfq, transit_days: int, today: date | None = None
 ) -> tuple[date, date] | None:
-    """Shared planning estimate, not a confirmed flight schedule or arrival guarantee."""
+    """Shared planning estimate, not a confirmed flight schedule or arrival guarantee.
+
+    Departure is the ready date (never before today), also when we truck the goods to the
+    airport: the pickup leg is same-day road transport. Round 179 (#53796, CGN-ORD door, ready
+    27 Nov, due 29 Nov): an extra truck day left only the 1-day Meridian rate in time and the
+    board rejected 1.410,83 EUR as too_high against a cheaper 2-day flight.
+    """
     if not rfq.ready_date:
         return None
     try:
@@ -285,8 +291,6 @@ def earliest_schedule(
     except ValueError:
         return None
     departure = max(ready, today or datetime.now(UTC).date())
-    if rfq.door_to_port:
-        departure += timedelta(days=1)
     return departure, departure + timedelta(days=transit_days)
 
 

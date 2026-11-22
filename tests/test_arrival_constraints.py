@@ -176,3 +176,34 @@ def test_named_or_coded_carriers_are_still_recognised(text, expected) -> None:
     from app.agents import carrier_prefs
 
     assert carrier_prefs.parse(text) == expected
+
+
+@pytest.mark.core
+def test_door_pickup_departs_on_ready_date_so_cheaper_two_day_flight_counts() -> None:
+    """Round 179 (#53796): CGN-ORD with truck pickup, ready 27 Nov, due at ORD 29 Nov.
+    An extra truck day kept only the 1-day Meridian rate; the board rejected it as too_high."""
+    from app.pricing.selection import select_air
+
+    door = Rfq(
+        origin="CGN",
+        destination="ORD",
+        pickup_zip="51871",
+        weight_kg=343,
+        volume_cbm=1.54,
+        pieces=5,
+        ready_date="2026-11-27",
+        arrival_deadline="2026-11-29",
+        preference="cheapest",
+    )
+    rates = [
+        RateOption(name, "CGN", "ORD", days, price, "EUR", price, "portal")
+        for name, days, price in (
+            ("Meridian Freightways", 1, 126567),
+            ("Aurelia Air Cargo", 2, 98000),
+            ("Xenon Cargo Airlines", 3, 70000),  # counterexample: arrives 30 Nov, too late
+        )
+    ]
+    selection = select_air(door, rates, [], set(), "50/50", TODAY)
+    assert selection.choice.airline == "Aurelia Air Cargo"
+    assert [o.airline for o in selection.late] == ["Xenon Cargo Airlines"]
+    assert rfq.schedule(door, 2, TODAY) == (date(2026, 11, 27), date(2026, 11, 29))
