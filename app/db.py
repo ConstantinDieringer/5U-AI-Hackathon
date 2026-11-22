@@ -2402,7 +2402,8 @@ def tracking_records() -> list[dict[str, Any]]:
     rows = _rows(
         conn().execute(
             "SELECT b.session_id, b.team_reference, b.booking_reference, b.rate_id, b.airline,"
-            " b.price_minor, b.currency, b.status, b.created_at AS booked_at, b.updated_at,"
+            " b.price_minor, b.currency, b.customer_total_minor, q.total_minor AS quote_total_minor,"
+            " q.currency AS quote_currency, b.status, b.created_at AS booked_at, b.updated_at,"
             " s.customer, s.subject, CASE WHEN b.quote_id IS NOT NULL THEN COALESCE(q.request_snapshot_json,s.request_json) ELSE s.request_json END AS request_json,"
             " q.origin, q.destination, q.transit_days"
             " FROM bookings b JOIN sessions s ON s.id = b.session_id"
@@ -2413,6 +2414,13 @@ def tracking_records() -> list[dict[str, Any]]:
     )
     for r in rows:
         r["request"] = json.loads(r.pop("request_json")) if r.get("request_json") else {}
+        # The customer's all-in price, never the portal's bare air rate (which can be USD and
+        # leaves out trucking): the customer-confirmed total, else the quoted total.
+        customer_total = r.pop("customer_total_minor")
+        quote_total, quote_currency = r.pop("quote_total_minor"), r.pop("quote_currency")
+        if quote_currency and (customer_total is not None or quote_total is not None):
+            r["price_minor"] = customer_total if customer_total is not None else quote_total
+            r["currency"] = quote_currency
     return rows
 
 
