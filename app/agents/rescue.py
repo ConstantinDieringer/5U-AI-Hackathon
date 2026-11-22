@@ -149,6 +149,8 @@ def _passive_after_quote(session: dict, mail: Mail, root: dict) -> bool:
 
 
 def _eligible(sid: int, mail: Mail) -> bool:
+    """May rescue own this mail now? Frees a stale unsent quote claim only when no other live
+    worker can be rendering or sending under it."""
     session = db.get_session(sid)
     root = db.root_mail(sid)
     if (
@@ -185,8 +187,13 @@ def _eligible(sid: int, mail: Mail) -> bool:
     if not session["quotes"]:
         if datetime.fromisoformat(session["deadline_at"]) <= datetime.now(UTC):
             return False
-        if session["first_reply_at"] and not db.release_unsent_quote_claim(sid):
-            return False
+        if session["first_reply_at"]:
+            from app.agents import rfq
+
+            if rfq.other_worker_active(sid):
+                return False  # a live worker may be rendering or sending under this claim
+            if not db.release_unsent_quote_claim(sid):
+                return False
     return True
 
 
@@ -544,7 +551,7 @@ def take_over(mail: Mail, sid: int) -> bool:
     """Own the next step; booking/tracking/pricing retain their durable business checks."""
     from app.agents import booking, clarification, rfq, tracking
 
-    if not _eligible(sid, mail) or rfq.is_working(sid):
+    if rfq.is_working(sid) or not _eligible(sid, mail):
         return True
     from app.mail import multilingual
 
@@ -575,7 +582,7 @@ def take_over(mail: Mail, sid: int) -> bool:
     if plan is None:
         return True
     try:
-        if not _eligible(sid, mail):
+        if rfq.is_working(sid) or not _eligible(sid, mail):
             return True
         db.rescue_answer_seen(sid, mail.id)
         if plan.action in ("continue", "retry_pricing") and not session["quotes"]:
@@ -689,7 +696,7 @@ def check_once(*, background: bool = True) -> list[int]:
     for candidate in db.rescue_candidates(before, after):
         sid = candidate["session_id"]
         mail = clarification._stored_mail(candidate)
-        if not _eligible(sid, mail) or rfq.is_working(sid):
+        if rfq.is_working(sid) or not _eligible(sid, mail):
             continue
         if background:
             # at most N owners at once: a burst of parallel model calls hits the gateway's

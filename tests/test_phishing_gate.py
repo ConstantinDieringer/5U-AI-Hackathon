@@ -446,18 +446,17 @@ def test_gate_fault_never_costs_a_round(monkeypatch):
     assert seen == [990001]
 
 
-def test_quarantine_check_fault_never_stops_a_reply(monkeypatch):
+def test_quarantine_check_fault_holds_the_reply(monkeypatch):
+    """Fail closed: when the quarantine state cannot be read, no reply leaves."""
     from app import db, hackloop
 
     def boom(_mail_id):
         raise RuntimeError("db broken")
 
-    sent = {}
     monkeypatch.setattr(db, "reply_blocked", boom)
-    monkeypatch.setattr(hackloop, "_request", lambda *a, **k: sent.update(k) or object())
-    monkeypatch.setattr(hackloop, "_json_obj", lambda _r: {"id": 1, "references": []})
-    hackloop.send("customer@hackloop.mail", "Re: x", "hello", in_reply_to=5)
-    assert sent["json"]["in_reply_to"] == 5
+    monkeypatch.setattr(hackloop, "_request", lambda *a, **k: pytest.fail("reply sent"))
+    with pytest.raises(hackloop.QuarantinedReply, match="check for mail 5 failed"):
+        hackloop.send("customer@hackloop.mail", "Re: x", "hello", in_reply_to=5)
 
 
 def test_llm_mode_off_makes_no_model_call_for_unsure_mail(box: Box, monkeypatch) -> None:

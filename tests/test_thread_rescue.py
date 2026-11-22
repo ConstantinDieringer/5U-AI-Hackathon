@@ -690,3 +690,39 @@ def test_rescue_prompt_carries_no_voice_profile(case, monkeypatch):
     system = calls[0][0][1][0]["content"]
     assert customer_voice()[:200] not in system
     assert len(system) < 4000
+
+
+def test_rescue_never_frees_a_claim_a_live_worker_holds(case):
+    """Another thread is pricing and sending under the claim: rescue must not free it, or the
+    one-quote guard reopens while that quote goes out."""
+    import threading
+
+    _, answer, _ = case
+    assert db.claim_quote_send(SID)
+    holding, done = threading.Event(), threading.Event()
+
+    def worker():
+        with rfq.working(SID):
+            holding.set()
+            done.wait(5)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    holding.wait(5)
+    try:
+        assert rescue._eligible(SID, answer) is False
+        assert db.get_session(SID)["first_reply_at"] is not None
+    finally:
+        done.set()
+        thread.join(5)
+
+
+def test_worker_itself_may_free_its_stale_unsent_claim(case):
+    """Inline recovery runs inside the worker that holds the registry entry; a stale claim
+    that provably never reached the mailbox is still released there."""
+    _, answer, _ = case
+    assert db.claim_quote_send(SID)
+    with rfq.working(SID):
+        assert rfq.other_worker_active(SID) is False
+        assert rescue._eligible(SID, answer) is True
+    assert db.get_session(SID)["first_reply_at"] is None
