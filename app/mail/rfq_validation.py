@@ -1,6 +1,7 @@
 """Deterministic RFQ gate: a model extraction is a candidate, not verified input."""
 
 import re
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app import config
@@ -240,7 +241,18 @@ _UNIT_VOLUME = rf"(?:volumen|volume)\s*(?:\(cbm\))?\s*(?:[:|]\s*)*({_NUM})\s*(?:
 _COUNT = re.compile(
     r"\b(\d+)\s*(?:(?:euro|wooden|plastic|heavy|large|small)\s+)?"
     r"(?:pieces|pcs|pallets?|cartons?|boxes|crates|cases|colli|packages|stück"
-    r"|paletten|kartons|kisten)\b",
+    r"|paletten|kartons|kisten|palettes|caisses|colis|cajas|palés|bultos|pallet|colli)\b",
+    re.IGNORECASE,
+)
+_UNITS = (
+    r"(?:pieces|pcs|pallets?|cartons?|boxes|crates|cases|colli|packages|stück|paletten|kartons|"
+    r"kisten|palettes|caisses|colis|cajas|palés|bultos)"
+)
+# "5 palettes de 230 kg", "3 crates of 120 kg", "4 Kisten zu je 80 kg": a weight per piece
+_PER_PIECE_WEIGHT = re.compile(
+    rf"\b(\d+)\s*(?:x\s*)?(?:(?:euro|wooden|plastic|heavy|large|small)\s+)?{_UNITS}\s+"
+    r"(?:of|à|a|de|zu je|zu|je)\s+(?:ca\.?\s+)?(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?)\b"
+    r"(?!\s*(?:total|in total|insgesamt|gesamt|au total|en total|in totale))",
     re.IGNORECASE,
 )
 _DIMS = re.compile(
@@ -251,7 +263,9 @@ _DIMS = re.compile(
 # cubic metres per cubic unit of the stated dimensions (US customers give inches)
 _CBM_PER = {"cm": Decimal("0.000001"), "in": Decimal("0.0254") ** 3}
 _EACH = re.compile(
-    r"\b(?:each|per (?:piece|pallet|carton)|je|pro (?:stück|palette))\b", re.IGNORECASE
+    r"\b(?:each|per (?:piece|pallet|carton)|je|pro (?:stück|palette)|chacune?|cada una?|"
+    r"ciascuna?)\b",
+    re.IGNORECASE,
 )
 _TO_KG = {"l": Decimal("0.45359237"), "t": Decimal(1000)}
 
@@ -326,6 +340,12 @@ def _unit_facts(text, expect, known=()):
         if value is not None:
             found["weight_kg"] = value
         break
+    if "weight_kg" not in found and (piece := _PER_PIECE_WEIGHT.search(text)):
+        # a weight per piece and no stated total: the total is count x piece weight
+        factor = measurements.mass_suffix(piece[3].lower()) or Decimal(1)
+        per_piece = weight_reading(piece[2], factor, (), text, expect)
+        if per_piece is not None:
+            found["weight_kg"] = int(piece[1]) * per_piece
     volumes = measurements.explicit_volumes(text)
     if len({value for value, _ in volumes}) == 1:
         found["volume_cbm"] = volumes[0][0]
@@ -424,6 +444,69 @@ def numeric_facts(text, expect=None, known=()):
     if len({value for value, _ in volumes}) == 1:
         result["volume_cbm"] = volumes[0][0]
     return result
+
+
+# "ready 11/12" is 12 November for a US sender and 11 December for a European one; the two
+# readings sit on either side of the November tariff cliff.
+_READY_WORD = (
+    r"(?:ready|available|bereit|versandbereit|abholbereit|prêt|prête|lista|listo|pronta|"
+    r"pickup|pick-up|abholung|collection)"
+)
+_SLASH_DATE = re.compile(
+    rf"\b{_READY_WORD}\b[^\n.]{{0,25}}?\b(\d{{1,2}})/(\d{{1,2}})(?:/(\d{{2,4}}))?\b(?!\s+of\b)"
+    rf"|\b(\d{{1,2}})/(\d{{1,2}})(?:/(\d{{2,4}}))?\b(?!\s+of\b)[^\n.]{{0,25}}?\b{_READY_WORD}",
+    re.IGNORECASE,
+)
+_US_SENDER = re.compile(
+    r"\b(?:USA|U\.S\.A?\.?|United States|Inc\.|LLC|Atlanta|Chicago|Miami|New York|Houston|"
+    r"Dallas|Los Angeles|Boston|Seattle|San Francisco|,\s*(?:GA|IL|FL|NY|TX|CA|MA|WA|NJ|OH)\b|"
+    r"\+1[\s-]?\(?\d{3})",
+)
+
+
+def ambiguous_ready_date(body: str, received_at: str | None = None) -> str | None:
+    """ISO ready date for an ambiguous slash date ("11/12"): month first only when the
+    signature (last lines of the mail) shows a US sender, else day first. None when the date
+    is not ambiguous (a part above 12, or both equal) or there is none."""
+    m = _SLASH_DATE.search(body or "")
+    if not m:
+        return None
+    first, second, year_text = (m[1], m[2], m[3]) if m[1] else (m[4], m[5], m[6])
+    a, b = int(first), int(second)
+    if a > 12 or b > 12 or a == b or not (a and b):
+        return None
+    tail = "\n".join((body or "").strip().splitlines()[-4:])
+    month, day = (a, b) if _US_SENDER.search(tail) else (b, a)
+    try:
+        received = datetime.fromisoformat(received_at).date() if received_at else None
+    except ValueError:
+        received = None
+    today = received or datetime.now(UTC).date()
+    year = int(year_text) if year_text else today.year
+    if year < 100:
+        year += 2000
+    if not year_text and month < today.month - 6:
+        year += 1  # "02/01" in November is next January
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+LOWER_DECK_HEIGHT_CM = Decimal(160)
+
+
+def tallest_piece_cm(text: str) -> Decimal | None:
+    """The highest piece in 'L x W x H' dimensions (height is the last figure), in cm."""
+    heights = []
+    for *_lw, height, unit in _DIMS.findall(text or ""):
+        try:
+            heights.append(
+                Decimal(height.replace(",", ".")) * measurements.length_factor(unit) * 100
+            )
+        except (ValueError, ArithmeticError):
+            continue
+    return max(heights) if heights else None
 
 
 def validate(mail, candidate, attachments=None, attachment_issues=None, corrections=None):
@@ -732,6 +815,13 @@ def validate(mail, candidate, attachments=None, attachment_issues=None, correcti
         "un_numbers": re.findall(r"\bUN\s*\d{4}\b", combined, re.IGNORECASE),
         "declared": declared[1].strip()[:120] if declared else None,
     }
+    if "ready_date" not in corrections and (
+        ready := ambiguous_ready_date(current.facts, getattr(mail, "received_at", None))
+    ):
+        if data.get("ready_date") != ready:
+            evidence["ready_date"] = {"source": "slash_date_rule", "value": ready,
+                                      "model": data.get("ready_date")}  # fmt: skip
+        data["ready_date"] = ready
     from app.mail import selection_intent
 
     data, selection_issues, selection_evidence = selection_intent.checked(

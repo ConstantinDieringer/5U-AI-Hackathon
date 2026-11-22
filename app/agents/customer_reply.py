@@ -367,7 +367,9 @@ def process(mail: Mail, sid: int, *, shadow: bool = False) -> None:
     # Preserve a prior review's open items for repeat-loop detection.
     db.reply_seen(sid, mail.id)
     if any(b.get("status") in ("booked", "confirmed") for b in session.get("bookings", [])):
-        if decision.changes:
+        if booking.wants_cancellation(mail.body):
+            booking.handle_reply(original, sid)  # portal cancellation + confirmation
+        elif decision.changes:
             _review(mail, sid, ["Änderung einer bereits gebuchten Sendung"], notify=True)
         elif session["bookings"][0].get("customer_state") == booking.PRICE_ASKED:
             if (

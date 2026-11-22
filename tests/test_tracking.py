@@ -224,3 +224,14 @@ def test_answering_customer_tracking_preserves_booking_status(two_bookings, monk
     assert db.get_session(1223)["status"] == before
     tracking.handle(mail, 1223)
     assert len(api.sent) == 1
+
+
+def test_question_naming_another_customer_never_gets_their_shipment():
+    """Route and weight fit Weidner's booking, but the question is about Hofmann: no data of
+    another customer, ask for the reference instead."""
+    _booked(1223, "weidner-spielwaren@hackloop.mail", "STR", "EZE", "BK-6Z1GMPG3")
+    records = db.tracking_records()
+    leak = "Where is our 1228 kg shipment STR to EZE? Customer: Hofmann Textilwerk"
+    assert tracking.find(leak, records) is None
+    own = "Where is our 1228 kg shipment STR to EZE? Customer: Weidner Spielwaren"
+    assert tracking.find(own, records)["booking_reference"] == "BK-6Z1GMPG3"
