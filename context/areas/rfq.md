@@ -8,7 +8,7 @@ Binding detail: TECH_SPEC §8 (LLM rules, rescue, validation) and §8a (answer c
 | Module | Role |
 |---|---|
 | `app/agents/rfq.py` | extraction, pricing call, quote send (`_price_and_quote`) |
-| `app/mail/rfq_validation.py`, `rfq_sources.py`, `lots.py` | evidence checks before pricing, lot sums |
+| `app/mail/rfq_validation.py`, `rfq_sources.py`, `lots.py`, `selection_intent.py` | evidence, lot sums and selection constraints |
 | `app/agents/clarification.py` | threaded questions, reply ledger, per-workflow cap |
 | `app/agents/rescue.py` | thread rescue owner (`LLM_RESCUE_MODEL`) |
 | `app/agents/watchdog.py` | forced quote for unanswered RFQs (`RFQ_WATCHDOG`) |

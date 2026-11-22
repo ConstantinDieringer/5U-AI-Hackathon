@@ -316,3 +316,44 @@ def test_late_preferred_airline_cannot_bypass_arrival_filter(flow, monkeypatch):
     rfq._price_and_quote(root, root.id, request(), "STR", time.time(), "enforce")
     assert len(sent) == 1
     assert db.get_session(root.id)["quotes"][0]["airline"] == "Solace Air Cargo"
+
+
+def test_multiple_shipments_each_use_the_constraint_gate_before_one_combined_reply(
+    flow, monkeypatch
+):
+    root, sent = flow
+    monkeypatch.setattr(
+        rfq,
+        "_sheets",
+        lambda r: [dataclasses.replace(o, destination=r.destination) for o in options()],
+    )
+    rfq._price_and_quote_multi(
+        root, root.id, request(), "STR", [request(destination="DFW")], time.time(), "enforce"
+    )
+    session = db.get_session(root.id)
+    assert len(sent) == 1 and len(session["quotes"]) == 1
+    audits = [e["payload"] for e in session["events"] if e["kind"] == "pricing_audit"]
+    assert len(audits) == 2
+    assert all(a["selected"]["airline"] == "Solace Air Cargo" for a in audits)
+
+
+def test_one_infeasible_shipment_does_not_send_a_partial_combined_quote(flow, monkeypatch):
+    root, sent = flow
+    monkeypatch.setattr(
+        rfq,
+        "_sheets",
+        lambda r: [
+            dataclasses.replace(
+                o,
+                destination=r.destination,
+                transit_days=30 if r.destination == "DFW" else o.transit_days,
+            )
+            for o in options()
+        ],
+    )
+    rfq._price_and_quote_multi(
+        root, root.id, request(), "STR", [request(destination="DFW")], time.time(), "enforce"
+    )
+    session = db.get_session(root.id)
+    assert len(sent) == 1 and "latest arrival date" in sent[0][0]
+    assert not session["quotes"] and session["first_reply_at"] is None

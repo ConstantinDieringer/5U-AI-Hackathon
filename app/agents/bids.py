@@ -10,6 +10,7 @@ to the session; as a fallback the reference tag `[AP-<session>]` in subject or b
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -76,6 +77,40 @@ _open: dict[int, _Request] = {}
 _cond = threading.Condition()
 _transcriptions: dict[int, int] = {}  # session -> model calls spent on bid attachments
 MAX_BID_TRANSCRIPTIONS = 5  # one per carrier at most (MAX_BID_CARRIERS default 5)
+
+
+# ---------------------------------------------------------------- bid slots
+# A mail with several shipments (board reason one_of_two) prices each shipment with its own
+# bids. The first shipment uses the session id as its slot; shipment k >= 1 uses the slot
+# -(session * 10 + k). Slots only key the in-memory waits; db rows and events always carry
+# the real session, and replies find their slot through the bid request they answer.
+
+
+def slot_for(session_id: int, index: int) -> int:
+    """Bid slot of shipment `index` (0 = the session's own request)."""
+    if not 0 <= index <= 9:
+        raise ValueError(f"shipment index out of range: {index}")
+    return session_id if index == 0 else -(session_id * 10 + index)
+
+
+def owner(slot: int) -> int:
+    """Session a bid slot belongs to."""
+    return slot if slot >= 0 else (-slot) // 10
+
+
+def _slot_of_reply(mail: Mail, session_id: int) -> int:
+    """Slot of the bid request this reply answers (its parent mail), else the session."""
+    parents = [int(x) for x in (mail.references or [])[-1:]]
+    raw_parent = (mail.raw or {}).get("in_reply_to")
+    if isinstance(raw_parent, int):
+        parents.insert(0, raw_parent)
+    for parent in parents:
+        stored = db.kv_get(f"bid.slot.{parent}", "")
+        if stored:
+            slot = int(stored)
+            if owner(slot) == session_id:
+                return slot
+    return session_id
 
 
 # ---------------------------------------------------------------- parsing
@@ -439,13 +474,20 @@ def _body(rfq: Rfq, origin: str, kind: str, billed: float | None = None) -> str:
     )
 
 
-def request(session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier]) -> int:
-    """Send one bid request per carrier and register them. Returns how many were sent."""
+def request(
+    session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier], slot: int | None = None
+) -> int:
+    """Send one bid request per carrier and register them. Returns how many were sent.
+    `slot` (see slot_for) keeps a further shipment of the same mail apart from the first."""
+    slot = session_id if slot is None else slot
     sent = 0
-    already_sent = db.bid_request_recipients(session_id)
+    if slot == session_id:
+        already_sent = db.bid_request_recipients(session_id)
+    else:
+        already_sent = set(json.loads(db.kv_get(f"bid.sent.{slot}", "[]")))
     with _cond:
-        req = _open.setdefault(session_id, _Request())
-    before = _resume(session_id, req)
+        req = _open.setdefault(slot, _Request())
+    before = _resume(session_id, req) if slot == session_id else set()
     for c in carriers:
         if c.email in before:
             continue  # asked before a restart: its reply is replayed, no second mail
@@ -479,6 +521,10 @@ def request(session_id: int, rfq: Rfq, origin: str, carriers: list[Carrier]) -> 
                 session_id=session_id,
                 raw=out,
             )
+            if slot != session_id:
+                db.kv_set(f"bid.slot.{int(out['id'])}", str(slot))
+                already_sent.add(c.email.lower())
+                db.kv_set(f"bid.sent.{slot}", json.dumps(sorted(already_sent)))
             with _cond:
                 req.asked[c.email] = c
             sent += 1
@@ -528,9 +574,17 @@ def _attachment_paths(mail: Mail, sid: int | None = None) -> list[Path]:
         from app.mail.poller import download_attachments
 
         paths = download_attachments(mail)
-        return paths + [p for p in links.linked_files(mail, sid) if p not in paths]
+        return paths + [
+            p
+            for p in links.linked_files(mail, owner(sid) if sid is not None else None)
+            if p not in paths
+        ]
     saved = documents.inbox_files(config.settings.inbox_dir / str(mail.id))
-    return saved + [p for p in links.linked_files(mail, sid) if p not in saved]
+    return saved + [
+        p
+        for p in links.linked_files(mail, owner(sid) if sid is not None else None)
+        if p not in saved
+    ]
 
 
 def _spawn(fn, *args) -> None:  # tests replace this with a direct call
@@ -545,7 +599,7 @@ def _unreadable(carrier: Carrier, sid: int, issue: str, kind: str = "bid_unreada
         req.unreadable.add(carrier.email)
         req.last_answer_at = time.monotonic()
         _cond.notify_all()
-    db.emit(kind, f"Gebot von {carrier.name}: {issue}"[:300], sid, level="warn")
+    db.emit(kind, f"Gebot von {carrier.name}: {issue}"[:300], owner(sid), level="warn")
 
 
 def _usable_voice(text: str) -> bool:
@@ -564,6 +618,7 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
     if sid is None or carrier is None:
         log.warning("bid mail %s: no session or unknown carrier, ignored", mail.id)
         return
+    sid = _slot_of_reply(mail, sid)  # below, sid is the bid slot; db/events use owner(sid)
     body = mail.body or ""
     if served_lanes.parse_refusal(body) is not None:
         _evaluate(mail, sid, carrier, body, [], [])
@@ -628,13 +683,13 @@ def _transcribe_then_evaluate(
                 None,
                 f"bid_attachment s{sid}",
                 path,
-                audit_session_id=sid,
+                audit_session_id=owner(sid),
                 accept_text=_usable_voice if doc.voice else None,
             )
             db.emit(
                 "bid_transcribed",
                 f"Gebot von {carrier.name}: {path.name} gelesen ({doc.kind.lstrip('.')})",
-                sid,
+                owner(sid),
                 transcript=text[:2000],
             )
             (spoken if doc.audio else files).append((path.name, text))
@@ -666,7 +721,7 @@ def _evaluate(
         db.emit(
             "bid_declined",
             f"{carrier.name} fliegt {refusal.lane} nicht ({len(refusal.served)} Lanes gemerkt)",
-            sid,
+            owner(sid),
         )
         return
     evidence, price, issue = _bid_evidence(body, files, spoken)
@@ -697,7 +752,7 @@ def _read_with_model(
 
     text = "\n\n".join([body] + [f"[{n}]\n{t}" for n, t in files + spoken])
     try:
-        reading = bid_reader.read(text, sid, {"EUR", "USD"})
+        reading = bid_reader.read(text, owner(sid), {"EUR", "USD"})
     except Exception:
         log.exception("bid mail %s: model reading failed", mail.id)
         reading = None
@@ -707,7 +762,7 @@ def _read_with_model(
     db.emit(
         "bid_model_read",
         f"Gebot von {carrier.name} per Modell gelesen ({issue[:80]})",
-        sid,
+        owner(sid),
         level="warn",
     )
     evidence = text if reading.transit_days is None else f"transit {reading.transit_days:g} days"
@@ -761,7 +816,7 @@ def _add_offer(
         "bid_received",
         f"Gebot {carrier.name}: {offer.total_eur} EUR"
         + (f", {offer.transit_days:g} Tage" if offer.transit_days is not None else ""),
-        sid,
+        owner(sid),
         original_amount=str(amount),
         currency=currency,
         fx_rate=str(fx),
@@ -806,8 +861,10 @@ def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None)
             return True, None
         quorum = min(len(req.asked), max(1, config.settings.bid_quorum))
         kinds = {c.kind for c in req.asked.values()}
-        if grace > 0 and len(answered & set(req.asked)) >= quorum and all(
-            k in have or k not in waiting for k in kinds
+        if (
+            grace > 0
+            and len(answered & set(req.asked)) >= quorum
+            and all(k in have or k not in waiting for k in kinds)
         ):
             return False, req.last_answer_at + grace
         return False, None
@@ -830,7 +887,7 @@ def wait(session_id: int, timeout_s: float, until_kinds: set[str] | None = None)
             "bid_quorum",
             f"{released[0]} von {released[1]} Carriern geantwortet, Rest nach {grace:.0f} s"
             " Ruhe nicht mehr abgewartet",
-            session_id,
+            owner(session_id),
             answered=released[0],
             asked=released[1],
         )
