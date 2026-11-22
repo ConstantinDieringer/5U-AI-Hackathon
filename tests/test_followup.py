@@ -254,3 +254,85 @@ def test_question_not_nudged_after_rfq_deadline(monkeypatch) -> None:
     _asked(question_age_s=60, rfq_age_s=400)  # past the 6 min deadline
     followup.tick()
     assert api.sent == []
+
+
+def _rescue_candidates() -> list[int]:
+    now = datetime.now(UTC)
+    rows = db.rescue_candidates(
+        (now - timedelta(seconds=45)).isoformat(), (now - timedelta(seconds=600)).isoformat()
+    )
+    return [int(r["id"]) for r in rows]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Is pickup not included in the total?",  # a "no" word: booking sends nothing at all
+        "Could you tell me the cut-off time? No rush.",
+    ],
+)
+def test_unanswered_question_is_not_nudged_and_stays_a_rescue_candidate(monkeypatch, body) -> None:
+    from app.agents import booking, clarification, rescue
+
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    _quoted(quote_age_s=80)
+    _reply(SID + 5, body, age_s=50)
+    row = next(m for m in db.get_session(SID)["mails"] if m["id"] == SID + 5)
+    mail = clarification._stored_mail({**row, "session_id": SID})
+    booking.handle_reply(mail, SID)  # the poller's path: rules say "not a yes", no mail goes out
+    assert api.sent == []
+    followup.tick()
+    assert api.sent == []  # a nudge in reply to the question would hide it from the rescue
+    assert _rescue_candidates() == [SID + 5]
+    assert rescue._eligible(SID, mail)
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["Is pickup included in the total?", "Thanks, received."],  # question, unclear
+)
+def test_open_reply_nobody_answered_is_not_nudged(monkeypatch, body) -> None:
+    # e.g. a rescue-owned thread whose model call is still running, or the question cap
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    _quoted(quote_age_s=80)
+    _reply(SID + 5, body, age_s=50)
+    followup.tick()
+    assert api.sent == []
+    assert _rescue_candidates() == [SID + 5]
+
+
+def test_answered_question_is_nudged_after_our_answer_goes_quiet(monkeypatch) -> None:
+    from app.agents import booking, clarification
+
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    _quoted(quote_age_s=80)
+    _reply(SID + 5, "Is pickup included in the total?", age_s=50)
+    row = next(m for m in db.get_session(SID)["mails"] if m["id"] == SID + 5)
+    booking.handle_reply(clarification._stored_mail({**row, "session_id": SID}), SID)
+    assert len(api.sent) == 1 and api.sent[0]["in_reply_to"] == SID + 5  # booking's question
+    followup.tick()
+    assert len(api.sent) == 1  # our mail is younger than 30 s
+    later = datetime.now(UTC) + timedelta(seconds=31)
+    assert followup.due(db.get_session(SID), later) == ("offer", 0)  # silence after OUR mail
+
+
+@pytest.mark.parametrize(
+    ("body", "nudged"),
+    [
+        (None, True),  # silence
+        ("Yes, please book it.", False),
+        ("No thanks, we will not proceed.", False),
+        ("I will get back to you tomorrow.", True),  # stalling: nothing to answer
+    ],
+)
+def test_silence_and_stalling_are_nudged_yes_and_no_are_not(monkeypatch, body, nudged) -> None:
+    api = Api()
+    monkeypatch.setattr(hackloop, "send", api.send)
+    _quoted(quote_age_s=80)
+    if body:
+        _reply(SID + 5, body, age_s=50)
+    followup.tick()
+    assert len(api.sent) == (1 if nudged else 0)

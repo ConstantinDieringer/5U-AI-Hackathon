@@ -7,7 +7,9 @@ at it and get back to you" and then stayed silent; only a follow-up from us move
 Rules (no LLM, no reviewer call: zero gateway cost per nudge):
 - session is `quoted`, has a quote and no booking, not paused / manual
 - the last mail between us and the customer is ours (quote, clarification, earlier nudge),
-  or a customer reply that is neither yes nor no ("I'll get back to you")
+  or a customer reply that only stalls ("I'll get back to you", "not sure yet")
+- a customer question or unclear reply we have not answered is never nudged: it stays with
+  booking / prebook / thread rescue until one of our mails answers it
 - that last mail is at least FOLLOWUP_AFTER_S old (default 30 s)
 - at most FOLLOWUP_MAX nudges (default 3), only within FOLLOWUP_WINDOW_S after the quote
   (default 900 s = portal rate_id validity)
@@ -170,12 +172,19 @@ def _due_offer(s: dict[str, Any], now: datetime) -> tuple[str, int] | None:
     if sent + answers >= settings.followup_max:
         return None
     last = conv[-1]
-    if (
-        last["direction"] == "in"
-        and booking.is_acceptance(multilingual.working_text(last["id"], str(last["body"] or "")))
-        is True
-    ):
-        return None  # the booking agent handles it
+    if last["direction"] == "in":
+        kind = booking.classify_reply(
+            multilingual.working_text(last["id"], str(last["body"] or ""))
+        )
+        if kind == "yes":
+            return None  # the booking agent handles it
+        # "answered" as db.rescue_candidates defines it (one of our mails replies to it);
+        # mail order alone is not enough, our mails carry whole-second timestamps
+        answered = any(m["direction"] == "out" and m.get("in_reply_to") == last["id"] for m in conv)
+        if kind in ("question", "unclear") and not answered:
+            # belongs to booking/prebook/rescue: a nudge in reply to it would mark it
+            # answered for the rescue supervisor and the question would never get an answer
+            return None
     if _age_s(last["received_at"], now) < settings.followup_after_s:
         return None
     return "offer", sent
