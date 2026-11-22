@@ -286,3 +286,36 @@ def test_additive_migration_preserves_legacy_quote_and_never_replays_consent(tmp
     assert not api.sent and not api.bookings
     db.reply_enroll(SID, 25055)
     assert active(db.get_session(SID)) is None
+
+
+@pytest.mark.core
+def test_pdf_ask_after_quote_sends_offer_pdf_not_review(monkeypatch, api):
+    """A customer who sent us files asks for our offer as a PDF: the offer copy goes out with
+    the code-rendered PDF, the thread waits for them, nothing is booked or reviewed."""
+    import base64
+    import io
+
+    import pdfplumber
+
+    quoted()
+    body = "We sent you our packing list earlier. Could you send me your offer as a PDF?"
+    decision = ReplyDecision(questions=["Could you send me your offer as a PDF?"])
+    monkeypatch.setattr(customer_reply, "interpret", lambda *args: decision)
+    run(incoming(body))
+    [copy] = api.sent
+    assert "current offer" in copy["body"] and "PDF" in copy["body"]
+    [pdf] = copy["attachments"]
+    assert pdf["content_type"] == "application/pdf"
+    with pdfplumber.open(io.BytesIO(base64.b64decode(pdf["content_base64"]))) as doc:
+        assert amount(150000) in (doc.pages[0].extract_text() or "")
+    assert db.reply_workflow(SID)["phase"] == "awaiting_customer"
+    assert not api.bookings
+
+
+def test_own_pdf_is_not_a_pdf_ask_after_quote(monkeypatch, api):
+    """Counterexample: the customer only sends their own PDF; no offer PDF goes out."""
+    quoted()
+    monkeypatch.setattr(customer_reply, "interpret", lambda *args: ReplyDecision())
+    run(incoming("Please find attached the packing list as a PDF."))
+    assert all(not m.get("attachments") for m in api.sent)
+    assert db.reply_workflow(SID)["phase"] == "needs_review"
