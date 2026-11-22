@@ -78,6 +78,7 @@ def test_history_excludes_other_customers_and_shipments():
     assert [r["id"] for r in db.customer_mail_history(1, OWNER, 4)] == [1]
 
 
+@pytest.mark.core
 def test_partial_answers_accumulate_and_repeat_only_for_new_mail(sent, monkeypatch):
     root = mail(1, "Origin: FRA\nDestination: JFK")
     _, draft = validate(root, RfqDraft(facts={"origin": "FRA", "destination": "JFK"}))

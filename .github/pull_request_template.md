@@ -1,18 +1,11 @@
-## Was und warum
+## Customer behaviour
+<!-- What outcome changes for the customer or team? -->
 
-<!-- Runde/Fehler-Log-Eintrag, Ursache, Fix in 2–3 Sätzen -->
+## Owner and extension point
+<!-- Which module owns this decision? Where does the next similar change go? -->
 
-## Checkliste
+## Counterexample
+<!-- A different formulation or failure, retry or old state that exercises the contract. -->
 
-- [ ] Eigener Branch, kein direkter Push auf `main`
-- [ ] Niemand sonst arbeitet am selben Fall (in #update angekündigt)
-- [ ] `python -m pytest -q` lokal grün, CI grün
-- [ ] Keine Secrets im Diff (Keys, Passwörter, Webhook-URLs)
-- [ ] Neue/geänderte Flags mit Default in der PR genannt
-- [ ] Genau eine neue Datei in `context/changes/`, `context/progress-tracker.md` nicht angefasst
-
-## Merge (nur Push-Verantwortliche/r)
-
-- [ ] Deploy-Ampel grün (`GET /api/deploy-gate`)
-- [ ] Nach dem Merge: `python -m app.deploy_check` meldet `LIVE`
-- [ ] Erst dann in #update "live" schreiben, mit Commit-Hash
+## Evidence
+<!-- Normal entry point, commands, result, and anything unverified. Review ship-check for this head. -->

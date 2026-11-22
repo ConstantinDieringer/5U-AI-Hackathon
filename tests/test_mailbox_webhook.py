@@ -133,6 +133,7 @@ def test_queue_failure_is_not_acknowledged(client, monkeypatch):
     assert post(client, {"event": "mail.received", "message": message(6)}).status_code == 503
 
 
+@pytest.mark.core
 def test_out_of_order_and_poll_push_overlap_processed_once(client, monkeypatch):
     handled = []
     monkeypatch.setattr(poller, "dispatch", lambda mail, *args: handled.append(mail.id))
@@ -176,6 +177,7 @@ def test_crash_after_store_before_dispatch_can_resume(client, monkeypatch):
     assert webhook.process_once() and calls == [501]
 
 
+@pytest.mark.core
 def test_restart_during_dispatch_does_not_duplicate_effects(client):
     webhook.enqueue(message(502), "webhook")
     db.delivery_state(502, "dispatching")

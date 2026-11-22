@@ -113,6 +113,7 @@ def test_find(two_bookings, text: str, session: int | None) -> None:
     assert (rec["session_id"] if rec else None) == session
 
 
+@pytest.mark.core
 def test_answer_from_crm(two_bookings, monkeypatch) -> None:
     api = Api()
     monkeypatch.setattr(tracking.hackloop, "send", api.send)
@@ -215,6 +216,7 @@ def test_real_tracking_questions(real_db, monkeypatch, mail_id) -> None:
     assert db.get_session(mail_id)["status"] == "answered"
 
 
+@pytest.mark.core
 def test_unknown_asks_for_reference(two_bookings, monkeypatch) -> None:
     api = Api()
     monkeypatch.setattr(tracking.hackloop, "send", api.send)

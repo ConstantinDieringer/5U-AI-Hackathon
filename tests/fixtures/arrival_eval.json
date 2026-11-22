@@ -1,0 +1,77 @@
+[
+  {
+    "case": "origin-date",
+    "text": "We will deliver to FRA by 2027-04-12. Choose the cheapest service.",
+    "action": "Economy",
+    "deadline": null
+  },
+  {
+    "case": "destination-date",
+    "text": "Keep it economical, provided the freight arrives at MAD by 2027-04-15.",
+    "action": "Standard",
+    "deadline": "2027-04-15"
+  },
+  {
+    "case": "earliest",
+    "text": "No arrival before 2027-04-13 please. After that the lowest total wins.",
+    "action": "Economy",
+    "deadline": null
+  },
+  {
+    "case": "latest",
+    "text": "Am Ziel MAD muss die Ware spätestens am 15. April 2027 ankommen. Bitte günstig.",
+    "action": "Standard",
+    "deadline": "2027-04-15"
+  },
+  {
+    "case": "soft",
+    "text": "April 15 would be nice at destination, but any later date also works. Choose the cheapest.",
+    "action": "Economy",
+    "deadline": null
+  },
+  {
+    "case": "hard",
+    "text": "Reject services reaching Madrid after 2027-04-15. Choose the lowest qualifying price.",
+    "action": "Standard",
+    "deadline": "2027-04-15"
+  },
+  {
+    "case": "price",
+    "text": "We need delivery by 2027-04-15. Pick the lowest price among those flights.",
+    "action": "Standard",
+    "deadline": "2027-04-15"
+  },
+  {
+    "case": "speed",
+    "text": "Price is secondary. Choose the fastest flight; arrival by 2027-04-15 is mandatory.",
+    "action": "Express",
+    "deadline": "2027-04-15"
+  },
+  {
+    "case": "new-correction",
+    "text": "Update: choose the cheapest. Our revised arrival deadline at MAD is 2027-04-15.\n\nOn Monday wrote:\nPick fastest and arrive by 2027-04-13.",
+    "action": "Standard",
+    "deadline": "2027-04-15"
+  },
+  {
+    "case": "withdrawn-date",
+    "text": "The old deadline is withdrawn. Choose the cheapest, whenever it arrives.\n\nOn Monday wrote:\nArrive in Madrid by 2027-04-15.",
+    "action": "Economy",
+    "deadline": null
+  },
+  {
+    "case": "conflicting-attachment",
+    "text": "Truck contents confirmed above. We need arrival at MAD by 2027-04-15. Choose cheapest.",
+    "action": "ask",
+    "deadline": null,
+    "attachment": "Arrival at MAD by 2027-04-13.",
+    "ask_field": "arrival_deadline"
+  },
+  {
+    "case": "complementary-attachment",
+    "text": "Choose the most economical flight which satisfies the consignee's attached deadline.",
+    "action": "Standard",
+    "deadline": "2027-04-15",
+    "attachment": "Arrival at MAD by 2027-04-15."
+  }
+]
