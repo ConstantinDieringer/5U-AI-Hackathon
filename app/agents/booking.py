@@ -780,7 +780,9 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
         from app.agents import prebook
 
         # round 144: "can you match their rate?" needs our answer, not "shall we book?"
-        if classify_reply(mail.body) == "question" and prebook.reply(mail, sid, s):
+        if classify_reply(mail.body) == "question" and prebook.reply(
+            mail, sid, s, count_nudges=False
+        ):
             return
     if verdict is not True:
         if verdict is None:

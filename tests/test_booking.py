@@ -418,3 +418,23 @@ def test_price_match_is_answered_on_the_live_path_without_booking(monkeypatch):
     booking.handle_reply(replace(_accept(), body=body), 1223)
     assert api.booked == []
     assert len(api.sent) == 1 and "stays as offered" in api.sent[0]["body"]
+
+
+def test_price_match_is_answered_after_both_nudges(monkeypatch):
+    """FOLLOWUP_MAX=2 nudges 5 s apart are out before most replies: still answer the price."""
+    from app.agents import followup, prebook
+
+    api = _model_says_question(monkeypatch)
+    monkeypatch.setattr(prebook, "MIN_GAP_S", 0.0)
+    _quoted_with_options(other_days=6)
+    now = datetime.now(UTC).isoformat()
+    for mid in (1300, 1301):
+        db.record_outgoing(
+            mail_id=mid, recipient=CUSTOMER, subject="Re: Fastest STR-EZE",
+            body="just checking in", category=followup.CATEGORY, session_id=1223,
+            sender=TEAM, in_reply_to=1223, references=[1223], sent_at=now,
+        )  # fmt: skip
+    body = "Could you match their rate?\n\nKlaus"
+    booking.handle_reply(replace(_accept(), body=body), 1223)
+    assert api.booked == []
+    assert [m for m in api.sent if "stays as offered" in m["body"]]
