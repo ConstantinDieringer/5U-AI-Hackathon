@@ -325,7 +325,9 @@ def test_silent_customer_still_gets_a_fourth_follow_up(api, monkeypatch):
     """With a budget above three (FOLLOWUP_MAX), a fourth nudge still goes out, and a full
     budget stops further nudges (counterexample). The default budget is 2."""
     monkeypatch.setattr(
-        followup, "settings", dataclasses.replace(followup.settings, followup_max=10)
+        followup,
+        "settings",
+        dataclasses.replace(followup.settings, followup_max=10, followup_after_s=5.0),
     )
     quoted()
 

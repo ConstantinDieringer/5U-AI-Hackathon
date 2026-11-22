@@ -421,7 +421,7 @@ def test_price_match_is_answered_on_the_live_path_without_booking(monkeypatch):
 
 
 def test_price_match_is_answered_after_both_nudges(monkeypatch):
-    """FOLLOWUP_MAX=2 nudges 5 s apart are out before most replies: still answer the price."""
+    """FOLLOWUP_MAX=2 nudges can be out before a reply arrives: still answer the price."""
     from app.agents import followup, prebook
 
     api = _model_says_question(monkeypatch)
@@ -484,7 +484,8 @@ def test_third_question_after_two_answers_stays_capped(monkeypatch):
     assert [e for e in db.get_session(1223)["events"] if e["kind"] == "prebook_budget"]
 
 
-def test_followup_waits_exactly_five_seconds():
+def test_followup_waits_a_minute_by_default():
+    """Session 48334: with 5 s the customer got three mails in 10 s."""
     from app.config import settings
 
-    assert settings.followup_after_s == 5.0
+    assert settings.followup_after_s == 60.0
