@@ -19,7 +19,7 @@ from app.agents import bids, rfq
 from app.mail import multilingual
 from app.models import Mail, Rfq
 from app.pricing.portal_sync import portal_result
-from app.pricing.pricing import resolve_origin, sheet_options, to_minor
+from app.pricing.pricing import resolve_origin, sheet_options, to_minor, within_arrival_deadline
 from app.pricing.reference import carrier_by_name
 
 log = logging.getLogger(__name__)
@@ -84,6 +84,9 @@ def build(session_id: int) -> dict[str, Any]:
         update={"language": rfq.conversation_language(mail, session_id, request.language)}
     )
     request = rfq.locate_origin(rfq.locate_pickup(request, mail, session_id), mail, session_id)
+    request, selection = rfq.checked_selection(mail, session_id, request)
+    if selection.issues:
+        raise ValueError("Auswahlziel oder Ankunftsfrist muss zuerst geklärt werden")
     origin = resolve_origin(request)
     if origin is None:
         raise ValueError("kein Abflughafen erkennbar: Ort oder PLZ beim Kunden erfragen")
@@ -111,6 +114,8 @@ def build(session_id: int) -> dict[str, Any]:
         for o in offers
         if o.carrier.kind == "airline"
     ]
+    air = within_arrival_deadline(request, air)
+    bid_opts = within_arrival_deadline(request, bid_opts)
     choice = rfq.best_air(air, bid_opts, request.preference)
     if liked:
         fav = rfq.best_air(
@@ -122,6 +127,8 @@ def build(session_id: int) -> dict[str, Any]:
     if banned:
         warnings.append("Vom Kunden ausgeschlossen: " + ", ".join(sorted(banned)))
     if choice is None:
+        if request.arrival_deadline:
+            raise ValueError("Keine verfügbare Verbindung erfüllt die gewünschte Ankunftsfrist")
         raise ValueError(f"kein Preis für {origin} → {request.destination} gefunden")
     truck = rfq.best_truck(offers) if request.door_to_port else None
     if request.door_to_port and truck is None:

@@ -97,6 +97,9 @@ def text_for(draft, lang):
         "attachments": "a readable, corrected packing specification",
         "dangerous_goods": "the applicable dangerous goods declaration and safety data sheet, the UN number and class, and clarification of any conflicting declarations",
         "shipment": "the missing or corrected shipment details",
+        "arrival_deadline": "the latest acceptable arrival date",
+        "ready_date": "the date the shipment will be ready",
+        "preference": "whether price or the shortest transit is your priority within the arrival deadline",
     }
     de = {
         "pickup_zip": "die Postleitzahl der Abholadresse",
@@ -109,6 +112,9 @@ def text_for(draft, lang):
         "attachments": "eine lesbare, korrigierte Packliste",
         "dangerous_goods": "die zutreffende Gefahrguterklärung und das Sicherheitsdatenblatt, UN-Nummer und Klasse und eine Klärung widersprüchlicher Angaben",
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
+        "arrival_deadline": "das späteste akzeptable Ankunftsdatum",
+        "ready_date": "das Datum der Versandbereitschaft",
+        "preference": "ob innerhalb der Ankunftsfrist der Preis oder die kürzeste Laufzeit Vorrang hat",
     }
     labels = de if lang == "de" else en
     if "dangerous_goods" in fields:
@@ -387,7 +393,9 @@ def recover_history(mail, sid, draft):
 
 
 def request(mail, sid, draft):
-    if draft.evidence.get("workflow", "rfq") == "rfq":
+    if draft.evidence.get("workflow", "rfq") == "rfq" and not draft.evidence.get(
+        "selection_blocked"
+    ):
         recovered, draft = recover_history(mail, sid, draft)
         if recovered is not None and not draft.issues:
             previous = db.validation_get(sid)
@@ -711,6 +719,9 @@ def answer_draft(mail, sid, root, draft):
     own = current_message(mail.body).facts
     asked = {i["field"] for i in draft.issues}
     corrections = dict(draft.evidence.get("corrections", {}))
+    from app.mail import selection_intent
+
+    corrections.update(selection_intent.answer(own, asked))
     known = known_weights(draft, sid, mail) if settings.thousands_evidence else ()
     corrections.update(
         {k: float(v) for k, v in numeric_facts(own, known=known).items() if k in asked}

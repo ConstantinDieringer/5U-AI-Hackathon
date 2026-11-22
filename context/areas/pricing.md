@@ -18,6 +18,7 @@ Binding detail: TECH_SPEC §6 (data models), portal API in `context/docs/5u-api.
 ## Rules
 
 - **Pricing is deterministic code, never the LLM.** Decimal amounts and integer cents; currency travels with every amount. Customer output stays EUR.
+- **Arrival constraints:** `Rfq.arrival_deadline` is an evidenced latest-arrival date, separate from cheapest/fastest. Filter sheet, portal and bid options by the same earliest-arrival calculation used in the quote, before balancing bids or applying carrier preferences. Unknown readiness or no feasible option asks for clarification; no late option or deadline guarantee is sent. Normal, resumed, forced and emergency-draft pricing share this gate.
 - Tracked `data/tariffs.json` and `data/portal_lanes.json` are seed data; runtime tariffs and portal snapshots live in `settings.runtime_dir` on the persistent volume.
 - **Tariffs:** one durable SQLite queue and worker; text/table parsed locally, images/scans transcribed through `llm.complete` with no pricing decisions. Sender and values validated before atomic publication and cache reload.
 - **Weight breaks:** billing at the next break is often cheaper and the board's best price uses it. Portal next-break check is active; `BID_NEXT_BREAK` asks email airlines for their next break too.
