@@ -99,6 +99,24 @@ def test_cohort_dates_not_limited_to_latest_crm_rows():
     assert amounts(db.business_metrics(7), "offered") == {"EUR": 20_300}
 
 
+def test_revised_offer_is_not_an_open_valid_price_and_response_time_is_real():
+    sid, _ = request(77)
+    db.set_status(sid, "quoted")
+    db.reply_enroll(sid, 77)
+    db.reply_revise(sid, 77, {"weight_kg": 200}, {})
+    created = datetime.now(UTC) - timedelta(seconds=90)
+    with db.tx() as c:
+        c.execute(
+            "UPDATE sessions SET created_at=?,first_reply_at=? WHERE id=?",
+            (created.isoformat(), (created + timedelta(seconds=60)).isoformat(), sid),
+        )
+    data = db.business_metrics()
+    assert amounts(data, "offered") == {"EUR": 100_000}
+    assert amounts(data, "pipeline") == {}
+    assert data["avg_response_s"] == 60
+    assert data["answered"] == data["answered_within_120s"] == 1
+
+
 def test_empty_unknown_values_and_api_validation():
     with TestClient(server.app) as client:
         data = client.get("/api/business-metrics").json()

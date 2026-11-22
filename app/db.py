@@ -2914,13 +2914,13 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
         c.execute(
             "SELECT s.id,s.customer,s.status,s.created_at,s.first_reply_at,s.request_json,"
             " q.id AS quote_id,q.total_minor,q.currency,"
+            " w.session_id AS workflow_id,w.active_quote_id,w.phase,"
             " b.status AS booking_status,b.customer_state,b.customer_total_minor,"
             " bq.total_minor AS booked_quote_minor,bq.currency AS booked_currency,"
             " bq.request_snapshot_json AS booked_request_json"
             " FROM sessions s"
             " LEFT JOIN thread_workflow w ON w.session_id=s.id"
-            " LEFT JOIN quotes q ON q.id=COALESCE(w.active_quote_id,"
-            " (SELECT MAX(id) FROM quotes WHERE session_id=s.id))"
+            " LEFT JOIN quotes q ON q.id=(SELECT MAX(id) FROM quotes WHERE session_id=s.id)"
             " LEFT JOIN bookings b ON b.session_id=s.id"
             " LEFT JOIN quotes bq ON bq.id=COALESCE(b.quote_id,"
             " (SELECT MIN(id) FROM quotes WHERE session_id=s.id))"
@@ -2980,7 +2980,11 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
             counts["awaiting_price"] += 1
         elif r["status"] not in (*LOST, "booked", "confirmed", "accepted"):
             counts["open"] += 1
-            if r["quote_id"]:
+            current_offer = not r["workflow_id"] or (
+                r["active_quote_id"] == r["quote_id"]
+                and r["phase"] not in ("repricing", "closed", "deferred")
+            )
+            if r["quote_id"] and current_offer:
                 add("pipeline", r["total_minor"], r["currency"])
         created, answered = _ts(r["created_at"]), _ts(r["first_reply_at"])
         if created and answered:

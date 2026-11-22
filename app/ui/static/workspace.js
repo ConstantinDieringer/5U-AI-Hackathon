@@ -6,7 +6,7 @@ function metricCards(data) {
   const values = [
     ["Gebuchter Auftragswert", amounts("booked"), "Vereinbarte Kundenbeträge, kein fakturierter Umsatz", "hero"],
     ["Offenes Angebotsvolumen", amounts("pipeline"), "Aktuelle Angebote ohne Buchung"],
-    ["Angebotsvolumen", amounts("offered"), "Ein aktuelles Angebot je Anfrage"],
+    ["Angebotsvolumen", amounts("offered"), "Jeweils das zuletzt gesendete Angebot"],
     ["Buchungen", data.booked, data.awaiting_price + " weitere Preisfreigaben offen"],
     ["Anfragen", data.requests, data.open + " noch in Bearbeitung"],
     ["Angebote", data.quoted, pct(data.quoted, data.requests) + " der Anfragen mit Angebot"],
