@@ -16,3 +16,4 @@ xlrd==2.0.2  # .xls attachments (Excel 97-2003)
 lingua-language-detector==2.1.1
 Babel==2.18.0
 pytest==9.1.1
+pillow-heif==1.8.1  # HEIC photos (iPhone); Pillow reads AVIF itself
