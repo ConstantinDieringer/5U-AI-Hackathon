@@ -290,7 +290,7 @@ def lookalike(sender: str, known: frozenset[str]) -> str | None:
         k_local, _, k_domain = k.partition("@")
         if local == k_local and domain != k_domain:
             return k
-        if domain != k_domain or len(k_local) < 6:
+        if (domain != k_domain and _norm(domain) != _norm(k_domain)) or len(k_local) < 6:
             continue
         a, b = _norm(local), _norm(k_local)
         limit = 2 if len(b) >= 10 else 1
@@ -301,6 +301,14 @@ def lookalike(sender: str, known: frozenset[str]) -> str | None:
         if len(words) > n and any(words[i : i + n] == k_words for i in range(len(words) - n + 1)):
             return k
     return None
+
+
+def imitated_recipient(raw: str) -> str | None:
+    """Last check before any send: the carrier, desk or known customer address `raw` imitates,
+    or None. A known address itself is never blocked."""
+    from app.mail.address_changes import verified_addresses
+
+    return lookalike(address(raw), verified_addresses())
 
 
 def _in_reply_to(mail: Mail) -> int | None:
@@ -339,11 +347,15 @@ def signals(mail: Mail, ctx: Context) -> list[Signal]:
         elif _ext(name) in _ARCHIVE_EXT:
             found.append(Signal("archive_attachment", 0.5, name))
 
-    # moderate: suspicious, never enough alone
     if not trusted:
+        # strong: an unknown sender posing as a carrier, desk or known customer is never
+        # answered (no genuine stored sender imitates another, see tests/test_phishing_gate.py)
         imitated = lookalike(sender, ctx.known_addresses)
         if imitated:
-            found.append(Signal("lookalike_sender", 0.5, f"{sender} imitates {imitated}"))
+            found.append(Signal("lookalike_sender", 1.0, f"{sender} imitates {imitated}"))
+
+    # moderate: suspicious, never enough alone
+    if not trusted:
         if (mail.references or _in_reply_to(mail)) and not ctx.thread_known:
             found.append(Signal("unknown_thread", 0.4, "reply to a thread we never saw"))
         if not ctx.thread_known and not mail.attachments and not shipment_facts(text):
@@ -513,13 +525,14 @@ def context_for(mail: Mail) -> Context:
     thread = db.thread_parties(linked)
     root = mail.references[0] if mail.references else mail.id
     customers = frozenset(address(c) for c in db.known_customers())
+    changed = frozenset(db.address_changes())
     return Context(
-        known_party=sender in fixed_addresses(),
+        known_party=sender in fixed_addresses() or sender in changed,
         known_customer=sender in customers,
         thread_known=bool(thread),
         thread_party=any(address(c or "") == sender for c in thread),
         released=db.screening_released(sender, root),
-        known_addresses=fixed_addresses() | customers,
+        known_addresses=fixed_addresses() | customers | changed,
     )
 
 

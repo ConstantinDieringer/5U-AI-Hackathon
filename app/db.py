@@ -270,6 +270,12 @@ CREATE TABLE IF NOT EXISTS mail_screening (
   created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_mail_screening_thread ON mail_screening(thread_root, sender);
+CREATE TABLE IF NOT EXISTS address_changes (  -- a verified party announced its new address
+  new_address  TEXT PRIMARY KEY,
+  old_address  TEXT NOT NULL,   -- the original verified address (carrier list, desk, customer)
+  mail_id      INTEGER NOT NULL,
+  created_at   TEXT NOT NULL
+);
 """
 
 
@@ -2238,6 +2244,35 @@ def thread_parties(mail_ids: Sequence[int]) -> list[str]:
         )
     )
     return [r["customer"] for r in rows]
+
+
+def address_change_add(old_address: str, new_address: str, mail_id: int) -> str:
+    """Record that the party behind `old_address` now writes from `new_address`; a chain of
+    changes keeps pointing at the original verified address. Returns that original."""
+    old, new = old_address.strip().lower(), new_address.strip().lower()
+    with tx() as c:
+        prior = _one(
+            c.execute("SELECT old_address FROM address_changes WHERE new_address = ?", (old,))
+        )
+        original = prior["old_address"] if prior else old
+        c.execute(
+            "INSERT OR REPLACE INTO address_changes (new_address, old_address, mail_id, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (new, original, mail_id, now()),
+        )
+    return original
+
+
+def address_changes() -> dict[str, str]:
+    """new address -> original verified address, oldest change first."""
+    return {
+        r["new_address"]: r["old_address"]
+        for r in _rows(
+            conn().execute(
+                "SELECT new_address, old_address FROM address_changes ORDER BY created_at, rowid"
+            )
+        )
+    }
 
 
 def known_customers() -> list[str]:
