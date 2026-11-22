@@ -2711,6 +2711,24 @@ def recent_rfqs(limit: int = 12) -> list[dict[str, Any]]:
     )
 
 
+def deploy_busy(window_s: int = 60) -> dict[str, int]:
+    """Work a restart would cut off: sessions being priced, and customer replies of the last
+    `window_s` seconds (an acceptance turns into a booking call right after it arrives)."""
+    since = (datetime.now(UTC) - timedelta(seconds=window_s)).isoformat(timespec="seconds")
+    c = conn()
+    # a session left in 'pricing' by a crash must not hold the gate red forever
+    stale = (datetime.now(UTC) - timedelta(seconds=400)).isoformat(timespec="seconds")
+    pricing = c.execute(
+        "SELECT COUNT(*) FROM sessions WHERE status = 'pricing' AND updated_at >= ?", (stale,)
+    ).fetchone()[0]
+    replies = c.execute(
+        "SELECT COUNT(*) FROM mails WHERE direction = 'in' AND category = 'customer'"
+        " AND received_at >= ?",
+        (since,),
+    ).fetchone()[0]
+    return {"pricing": int(pricing), "customer_replies": int(replies)}
+
+
 def expire_overdue() -> list[int]:
     """Mark open RFQ sessions past their deadline as expired. Returns their ids."""
     t = now()

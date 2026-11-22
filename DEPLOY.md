@@ -51,11 +51,13 @@ must either be cleared/changed to `base` or explicitly baked into the new image 
    `python -m app.mail.validation_replay` reads stored extractions and local attachments only:
    no mailbox polling, model calls, writes or sends. Rows without a stored extraction are
    explicitly marked and cannot establish live extraction accuracy.
-3. Deploy the sole production instance with `RFQ_VALIDATION_MODE=shadow`. Inspect
+3. (Historical rollout; the code default is now `enforce`.) Deploy the sole production
+   instance with `RFQ_VALIDATION_MODE=shadow`. Inspect
    `validation_result` events for blocked inputs and unexpected false positives.
 4. After replay acceptance, set `RFQ_VALIDATION_MODE=enforce` and restart that instance.
    Missing information triggers at most one automatic clarification. The original six-minute
-   deadline and two-call model budget remain unchanged. A clarification can cost the scoring
+   deadline and the per-session model budget (`LLM_MAX_CALLS_PER_SESSION`, thread rescue
+   separately `THREAD_RESCUE_MAX_CALLS`) remain unchanged. A clarification can cost the scoring
    opportunity for the round; this is the selected product policy.
 5. Check the session's validation panel and attention list. `unknown` means the send outcome
    is ambiguous; investigate manually, never retry blindly. `manual_review` means the reply
