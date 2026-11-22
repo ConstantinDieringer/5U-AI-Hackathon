@@ -97,6 +97,8 @@ def text_for(draft, lang):
         "attachments": "a readable, corrected packing specification",
         "dangerous_goods": "the applicable dangerous goods declaration and safety data sheet, the UN number and class, and clarification of any conflicting declarations",
         "shipment": "the missing or corrected shipment details",
+        "insurance": "the goods value and currency, insured coverage percentage and agreed insurance premium rate",
+        "insurance_allocation": "the goods value, currency, coverage percentage and premium rate for each shipment separately",
         "arrival_deadline": "the latest acceptable arrival date",
         "ready_date": "the date the shipment will be ready",
         "preference": "whether price or the shortest transit is your priority within the arrival deadline",
@@ -112,6 +114,8 @@ def text_for(draft, lang):
         "attachments": "eine lesbare, korrigierte Packliste",
         "dangerous_goods": "die zutreffende Gefahrguterklärung und das Sicherheitsdatenblatt, UN-Nummer und Klasse und eine Klärung widersprüchlicher Angaben",
         "shipment": "die fehlenden oder korrigierten Sendungsdaten",
+        "insurance": "den Warenwert mit Währung, die Deckung in Prozent und den vereinbarten Prämiensatz der Transportversicherung",
+        "insurance_allocation": "den Warenwert mit Währung, die Deckung und den Prämiensatz für jede Sendung einzeln",
         "arrival_deadline": "das späteste akzeptable Ankunftsdatum",
         "ready_date": "das Datum der Versandbereitschaft",
         "preference": "ob innerhalb der Ankunftsfrist der Preis oder die kürzeste Laufzeit Vorrang hat",
@@ -692,6 +696,8 @@ def _questions_sent(sid: int, workflow: str = "rfq") -> int:
 
 
 def ask(mail, sid, workflow, en, de):
+    if db.reply_workflow(sid) is not None:
+        return False  # post-offer questions belong to the versioned reply owner
     history = db.customer_mail_history(sid, mail.sender, mail.id)
     db.emit(
         "history_checked",
@@ -723,6 +729,19 @@ def answer_draft(mail, sid, root, draft):
 
     corrections.update(selection_intent.answer(own, asked))
     known = known_weights(draft, sid, mail) if settings.thousands_evidence else ()
+    if {"insurance", "insurance_allocation"} & asked:
+        from app.models import CargoInsurance
+        from app.pricing import insurance
+
+        previous = (
+            CargoInsurance.model_validate(draft.facts["insurance"])
+            if draft.facts.get("insurance")
+            else None
+        )
+        policy, problems = insurance.read([own], previous, requested=True)
+        # Preserve partial answers too; the next question only follows new customer evidence.
+        if not any(p.startswith("conflicting") for p in problems):
+            corrections["insurance"] = policy.model_dump() if policy else None
     corrections.update(
         {k: float(v) for k, v in numeric_facts(own, known=known).items() if k in asked}
     )
@@ -822,6 +841,10 @@ def answer_draft(mail, sid, root, draft):
 
 
 def handle_reply(mail, sid, *, resume=False):
+    from app.agents import customer_reply
+
+    if sid is not None and customer_reply.owns(sid):
+        return True
     row = db.validation_get(sid)
     if not row or row["state"] not in (
         "awaiting_clarification",

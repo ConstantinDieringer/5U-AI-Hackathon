@@ -1,6 +1,6 @@
 # Area: RFQ workflow (extraction, validation, clarification, rescue)
 
-Current behavior only. Why/history: grep `context/history/`. Flag defaults: `app/config.py`.
+Behavior and flag defaults: `app/config.py`. History: `context/history/`.
 Binding detail: TECH_SPEC §8 (LLM rules, rescue, validation) and §8a (answer contract, time budget).
 
 ## Modules
@@ -28,13 +28,15 @@ Binding detail: TECH_SPEC §8 (LLM rules, rescue, validation) and §8a (answer c
 - **Rescue cost:** rules first: a clear yes to the offer goes to the booking tool, a dangerous-goods-only gate uses the template question, a booking waiting for the airline price is skipped. Refusals and pure booking thanks skip the model (open price approvals do not). Context is compact: no bid requests or audit payloads. Incompatible plans report `thread_rescue_blocked`.
 - **LLM budget:** 8 normal calls per thread (`LLM_MAX_CALLS_PER_SESSION` may lower it) plus the 2 rescue calls; counted in the db (`db.reserve_llm_call`).
 - **Watchdog (`RFQ_WATCHDOG`, off by default):** 200 s after arrival forces one quote from real prices via the one-quote claim; skips live workers, paused/manual, phishing, open DG. No price = `watchdog_alert`. Report: `python -m app.agents.watchdog report`.
-- **Follow-ups (`FOLLOWUP_ENABLED`):** template nudge 30 s after our last unanswered mail, max 3 for the offer (within 900 s) and 3 for questions (before the RFQ deadline). Never restates the price; foreign yes/no (normalized) stops nudges; an unanswered customer question is never nudged (rescue keeps it); templates are translated at send. Stops on pause/manual/booking.
+- **Versioned replies:** `customer_reply` queues post-offer work with per-thread leases and `REPLY_WORKERS=4`. Revised bids are version-correlated; original scoring deadlines stay fixed. Contracts, ownership, snapshots and rollout: `context/docs/reply-workflow.md`.
+- **Follow-ups:** `FOLLOWUP_ENABLED` uses 30 s/max 3 nudges, stops on pause/manual/booking or unanswered customer questions. Versioned threads also require `awaiting_customer`, a current offer and no pending mail/open issue. Business answers do not spend the reminder cap. Details and limits: `app/config.py`, `context/docs/reply-workflow.md`.
 - **Restart:** `rfq.catch_up()` resumes RFQs younger than `TOO_OLD_S` without a quote, reusing the stored extraction; carriers asked before the restart are not re-mailed.
-- **Edge-case flags** (see `app/config.py` for defaults): `SELF_DELIVERY_RECOVERY`, `ASK_PICKUP_ZIP`, `CLARIFY_ONCE` (+`CLARIFY_FALLBACK_AFTER_S`), `CONFLICT_SOURCE_ANSWER`, `CUTOFF_QUESTION_NOTICE`, `TARIFF_ON_READY_DATE`, `UNIT_EVIDENCE`, `REVISION_NOT_ACCEPTANCE`, `ALL_EXCLUDED_NOTICE`, `TOTALS_SAME_LINE`, `THOUSANDS_EVIDENCE`, `CLARIFY_CAP_RESOLVE`. Tests: `tests/test_edge_cases.py` and the per-flag test files.
-- **Replay before changing behavior:** `python -m app.agents.rfq_replay` runs stored live rounds offline; the baseline diff gates option, total, airline, carriers, clarification and mail text.
+- Edge-case flags: `app/config.py`; regressions: `tests/test_edge_cases.py` and per-flag tests.
+- **Insurance:** current-source rules require clarification for missing or conflicting terms. Partial terms accumulate; watchdog/rescue cannot omit an unpriced premium.
+- **Replay:** `python -m app.agents.rfq_replay run` compares stored rounds offline.
 
-## Tests (run these while iterating; the full suite only before the PR)
+## Area tests
 
 ```
-python -m pytest -q tests/test_arrival_constraints.py tests/test_rfq_agent.py tests/test_rfq_validation_gate.py tests/test_history_first_clarification.py tests/test_thread_rescue.py tests/test_rfq_watchdog.py tests/test_extract_retry.py tests/test_recent_rounds_e2e.py tests/test_rfq_replay.py
+python -m pytest -q tests/test_arrival_constraints.py tests/test_cargo_insurance.py tests/test_rfq_agent.py tests/test_rfq_validation_gate.py tests/test_history_first_clarification.py tests/test_thread_rescue.py tests/test_rfq_watchdog.py tests/test_extract_retry.py tests/test_recent_rounds_e2e.py tests/test_rfq_replay.py
 ```

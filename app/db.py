@@ -33,6 +33,33 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
+REPLY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS request_revisions (
+ session_id INTEGER NOT NULL REFERENCES sessions(id), version INTEGER NOT NULL,
+ source_mail_id INTEGER NOT NULL, request_json TEXT NOT NULL, evidence_json TEXT NOT NULL,
+ created_at TEXT NOT NULL, PRIMARY KEY(session_id,version), UNIQUE(session_id,source_mail_id)
+);
+CREATE TABLE IF NOT EXISTS thread_workflow (
+ session_id INTEGER PRIMARY KEY REFERENCES sessions(id), request_version INTEGER NOT NULL,
+ active_quote_id INTEGER, phase TEXT NOT NULL, last_mail_id INTEGER NOT NULL,
+ open_json TEXT NOT NULL DEFAULT '[]', approval_json TEXT, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reply_decisions (
+ session_id INTEGER NOT NULL, mail_id INTEGER NOT NULL, request_version INTEGER NOT NULL,
+ decision_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(session_id,mail_id)
+);
+CREATE TABLE IF NOT EXISTS workflow_actions (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES sessions(id),
+ mail_id INTEGER NOT NULL, kind TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0,
+ status TEXT NOT NULL DEFAULT 'pending', payload_json TEXT, result_json TEXT,
+ lease_owner TEXT, lease_until REAL NOT NULL DEFAULT 0, error TEXT, updated_at TEXT NOT NULL,
+ UNIQUE(session_id,mail_id,kind,version)
+);
+CREATE INDEX IF NOT EXISTS ix_workflow_pending ON workflow_actions(status,id);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_workflow_thread_owner ON workflow_actions(session_id)
+ WHERE kind='reply' AND status='processing';
+"""
+
 DEADLINE = timedelta(minutes=6)
 ATTENTION_WINDOW_S = 90
 
@@ -122,6 +149,7 @@ CREATE TABLE IF NOT EXISTS quotes (
   currency          TEXT NOT NULL,
   air_total_minor   INTEGER,
   air_currency      TEXT,
+  insurance_minor   INTEGER NOT NULL DEFAULT 0 CHECK (insurance_minor >= 0),
   transit_days      INTEGER,
   source            TEXT CHECK (source IN ('sheet','portal','bid','manual')),
   rate_id           TEXT,
@@ -316,6 +344,7 @@ def init_db(path: str | None = None) -> None:
     c = conn()
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
+    c.executescript(REPLY_SCHEMA)
     with tx() as migration:
         columns = {row["name"] for row in migration.execute("PRAGMA table_info(llm_calls)")}
         if "accounting_json" not in columns:
@@ -325,7 +354,21 @@ def init_db(path: str | None = None) -> None:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_total_minor INTEGER")
         if "air_currency" not in quote_columns:
             migration.execute("ALTER TABLE quotes ADD COLUMN air_currency TEXT")
+        for column, kind in (
+            ("request_version", "INTEGER"),
+            ("request_snapshot_json", "TEXT"),
+            ("pricing_snapshot_json", "TEXT"),
+            ("supersedes_id", "INTEGER"),
+        ):
+            if column not in quote_columns:
+                migration.execute(f"ALTER TABLE quotes ADD COLUMN {column} {kind}")
+        if "insurance_minor" not in quote_columns:
+            migration.execute(
+                "ALTER TABLE quotes ADD COLUMN insurance_minor INTEGER NOT NULL DEFAULT 0"
+            )
         booking_columns = {row["name"] for row in migration.execute("PRAGMA table_info(bookings)")}
+        if "quote_id" not in booking_columns:
+            migration.execute("ALTER TABLE bookings ADD COLUMN quote_id INTEGER")
         # price the airline actually confirmed, and where the customer side of the booking
         # stands (see booking.py: awaiting_airline, confirmed_sent, price_change_asked, ...)
         for column, kind in (
@@ -1257,6 +1300,10 @@ def get_session(session_id: int) -> dict[str, Any] | None:
     for q in quotes:
         a = q.pop("alternatives_json")
         q["alternatives"] = json.loads(a) if a else []
+    for q in quotes:
+        for column in ("request_snapshot_json", "pricing_snapshot_json"):
+            q[column.removesuffix("_json")] = json.loads(q.pop(column) or "null")
+    s["workflow"] = reply_workflow(session_id)
     s["quotes"] = quotes
     s["bookings"] = _rows(c.execute("SELECT * FROM bookings WHERE session_id = ?", (session_id,)))
     s["events"] = [
@@ -1436,8 +1483,8 @@ def bid_request_recipients(session_id: int) -> set[str]:
     """Carrier addresses already contacted for this RFQ, used for restart-safe fan-out."""
     rows = conn().execute(
         "SELECT recipient FROM mails WHERE session_id = ? AND direction = 'out'"
-        " AND category = 'bid_request'",
-        (session_id,),
+        " AND category = 'bid_request' AND id>?",
+        (session_id, reply_revision_floor(session_id)),
     )
     return {str(row["recipient"] or "").strip().lower() for row in rows if row["recipient"]}
 
@@ -1627,13 +1674,16 @@ def record_quote(
     mail_id: int | None = None,
     air_total_minor: int | None = None,
     air_currency: str | None = None,
+    request_version: int | None = None,
+    supersedes_id: int | None = None,
+    insurance_minor: int = 0,
 ) -> int:
     with tx() as c:
         cur = c.execute(
             "INSERT INTO quotes(session_id, airline, origin, destination, total_minor, currency,"
             " transit_days, source, rate_id, valid_until, alternatives_json, mail_id, sent_at,"
-            " air_total_minor, air_currency)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " air_total_minor, air_currency, insurance_minor)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 session_id,
                 airline,
@@ -1650,8 +1700,36 @@ def record_quote(
                 now(),
                 air_total_minor,
                 air_currency,
+                insurance_minor,
             ),
         )
+        quote_id = int(cur.lastrowid or 0)
+        request_row = _one(c.execute("SELECT request_json FROM sessions WHERE id=?", (session_id,)))
+        audit = _one(
+            c.execute(
+                "SELECT payload_json FROM events WHERE session_id=? AND kind='pricing_audit' ORDER BY id DESC LIMIT 1",
+                (session_id,),
+            )
+        )
+        c.execute(
+            "UPDATE quotes SET request_version=?, request_snapshot_json=?, pricing_snapshot_json=?, supersedes_id=? WHERE id=?",
+            (
+                request_version or 1,
+                request_row["request_json"] if request_row else None,
+                audit["payload_json"] if audit else None,
+                supersedes_id,
+                quote_id,
+            ),
+        )
+        if request_version is not None:
+            c.execute(
+                "UPDATE thread_workflow SET active_quote_id=?, phase='awaiting_customer', updated_at=? WHERE session_id=? AND request_version=?",
+                (quote_id, now(), session_id, request_version),
+            )
+            c.execute(
+                "UPDATE sessions SET status='quoted' WHERE id=? AND status NOT IN ('booked','confirmed')",
+                (session_id,),
+            )
         c.execute(
             "UPDATE sessions SET status = 'quoted', updated_at = ? WHERE id = ?"
             " AND status IN ('new','pricing')",
@@ -1782,10 +1860,10 @@ def tracking_records() -> list[dict[str, Any]]:
         conn().execute(
             "SELECT b.session_id, b.team_reference, b.booking_reference, b.rate_id, b.airline,"
             " b.price_minor, b.currency, b.status, b.created_at AS booked_at, b.updated_at,"
-            " s.customer, s.subject, s.request_json,"
+            " s.customer, s.subject, CASE WHEN b.quote_id IS NOT NULL THEN COALESCE(q.request_snapshot_json,s.request_json) ELSE s.request_json END AS request_json,"
             " q.origin, q.destination, q.transit_days"
             " FROM bookings b JOIN sessions s ON s.id = b.session_id"
-            " LEFT JOIN quotes q ON q.id = (SELECT MIN(id) FROM quotes WHERE session_id = s.id)"
+            " LEFT JOIN quotes q ON q.id = COALESCE(b.quote_id,(SELECT MIN(id) FROM quotes WHERE session_id = s.id))"
             " ORDER BY b.created_at DESC"
         )
     )
@@ -2490,7 +2568,7 @@ def stats() -> dict[str, Any]:
     cost = _one(
         c.execute(
             "SELECT AVG(t) AS v FROM (SELECT COALESCE(SUM(l.cost_micro_usd),0) AS t FROM quotes q"
-            " LEFT JOIN llm_calls l ON l.session_id = q.session_id GROUP BY q.session_id)"
+            " LEFT JOIN llm_calls l ON l.session_id = q.session_id WHERE q.id IN (SELECT MIN(id) FROM quotes GROUP BY session_id) GROUP BY q.session_id)"
         )
     )
     board = _rows(c.execute("SELECT verdict, COUNT(*) AS n FROM board_results GROUP BY verdict"))
@@ -2777,6 +2855,22 @@ def attention_items(limit: int = 20) -> list[dict[str, Any]]:
             "status": r["status"],
         }
         for r in clarification_cap_open(limit)
+    ]
+    items += [
+        {
+            "session_id": r["session_id"],
+            "kind": "reply_workflow",
+            "reason": " · ".join(json.loads(r["open_json"])) or "Kundenanliegen benötigt Prüfung",
+            "subject": r["subject"],
+            "customer": r["customer"],
+            "status": r["phase"],
+        }
+        for r in _rows(
+            c.execute(
+                "SELECT w.*,s.subject,s.customer FROM thread_workflow w JOIN sessions s ON s.id=w.session_id WHERE w.phase='needs_review' ORDER BY w.updated_at DESC LIMIT ?",
+                (limit,),
+            )
+        )
     ]
     items += [
         {
@@ -3495,3 +3589,486 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     init_db()
     print(f"DB ready at {_db_path}")
+
+
+# ---------------------------------------------------------------- versioned replies
+
+
+def reply_workflow(sid: int) -> dict[str, Any] | None:
+    row = _one(conn().execute("SELECT * FROM thread_workflow WHERE session_id=?", (sid,)))
+    if row:
+        row["open_items"] = json.loads(row.pop("open_json"))
+        row["approval"] = json.loads(row.pop("approval_json") or "null")
+    return row
+
+
+def _reply_enroll(c: sqlite3.Connection, sid: int, mid: int) -> None:
+    if c.execute("SELECT 1 FROM thread_workflow WHERE session_id=?", (sid,)).fetchone():
+        return
+    session = _one(c.execute("SELECT request_json FROM sessions WHERE id=?", (sid,)))
+    quote = _one(
+        c.execute("SELECT * FROM quotes WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,))
+    )
+    safe = bool(
+        quote
+        and quote["request_snapshot_json"]
+        and session
+        and json.loads(quote["request_snapshot_json"])
+        == json.loads(session["request_json"] or "null")
+        and not json.loads(session["request_json"] or "{}").get("additional_shipments")
+    )
+    c.execute(
+        "INSERT INTO thread_workflow(session_id,request_version,active_quote_id,phase,last_mail_id,updated_at) VALUES (?,1,?,'interpreting',?,?)",
+        (sid, quote["id"] if safe else None, mid, now()),
+    )
+    if session and session["request_json"]:
+        c.execute(
+            "INSERT OR IGNORE INTO request_revisions VALUES (?,1,?,?,?,?)",
+            (sid, sid, session["request_json"], "{}", now()),
+        )
+
+
+def reply_enroll(sid: int, mid: int) -> dict[str, Any]:
+    """Enrol on NEW input, without ever executing historical customer approvals."""
+    with tx() as c:
+        _reply_enroll(c, sid, mid)
+    state = reply_workflow(sid)
+    assert state is not None
+    return state
+
+
+def reply_phase(sid: int, phase: str, *, open_items: list[str] | None = None) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE thread_workflow SET phase=?, open_json=?, updated_at=? WHERE session_id=?",
+            (phase, _json(open_items or []), now(), sid),
+        )
+        _emit(
+            c,
+            "reply_workflow",
+            phase,
+            sid,
+            payload={"phase": phase, "open_items": open_items or []},
+        )
+
+
+def reply_revise(sid: int, mid: int, request: dict[str, Any], evidence: dict[str, Any]) -> int:
+    with tx() as c:
+        saved = _one(
+            c.execute(
+                "SELECT version FROM request_revisions WHERE session_id=? AND source_mail_id=?",
+                (sid, mid),
+            )
+        )
+        if saved:
+            return int(saved["version"])
+        state = _one(
+            c.execute("SELECT request_version FROM thread_workflow WHERE session_id=?", (sid,))
+        )
+        if state is None:
+            raise ValueError("thread not enrolled")
+        version = int(state["request_version"]) + 1
+        c.execute(
+            "INSERT INTO request_revisions VALUES (?,?,?,?,?,?)",
+            (sid, version, mid, _json(request), _json(evidence), now()),
+        )
+        c.execute(
+            "UPDATE sessions SET request_json=?,updated_at=? WHERE id=?",
+            (_json(request), now(), sid),
+        )
+        c.execute(
+            "UPDATE thread_workflow SET request_version=?,active_quote_id=NULL,approval_json=NULL,phase='repricing',last_mail_id=?,open_json='[]',updated_at=? WHERE session_id=?",
+            (version, mid, now(), sid),
+        )
+        _emit(
+            c,
+            "request_revised",
+            "Sendungsdaten aktualisiert, bisheriges Angebot gesperrt",
+            sid,
+            payload={"version": version, "mail_id": mid, "changes": evidence},
+        )
+        return version
+
+
+def reply_decision(
+    sid: int, mid: int, decision: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    if decision is not None:
+        with tx() as c:
+            state = reply_workflow(sid)
+            cursor = c.execute(
+                "INSERT OR IGNORE INTO reply_decisions VALUES (?,?,?,?,?)",
+                (sid, mid, (state or {}).get("request_version", 1), _json(decision), now()),
+            )
+            if cursor.rowcount:
+                _emit(
+                    c,
+                    "reply_decision",
+                    "Kundenantwort ausgewertet",
+                    sid,
+                    payload={"mail_id": mid, "decision": decision},
+                )
+    row = _one(
+        conn().execute(
+            "SELECT decision_json FROM reply_decisions WHERE session_id=? AND mail_id=?", (sid, mid)
+        )
+    )
+    return json.loads(row["decision_json"]) if row else None
+
+
+def reply_enqueue(sid: int, mail: dict[str, Any], *, shadow: bool = False) -> None:
+    with tx() as c:
+        inserted = c.execute(
+            "INSERT OR IGNORE INTO workflow_actions(session_id,mail_id,kind,payload_json,updated_at) VALUES (?,?,?,?,?)",
+            (sid, mail["id"], "shadow" if shadow else "reply", _json(mail), now()),
+        ).rowcount
+        if (
+            inserted
+            and not shadow
+            and c.execute("SELECT 1 FROM quotes WHERE session_id=?", (sid,)).fetchone()
+        ):
+            _reply_enroll(c, sid, mail["id"])
+            c.execute(
+                "UPDATE thread_workflow SET phase=CASE WHEN EXISTS(SELECT 1 FROM workflow_actions e WHERE e.session_id=thread_workflow.session_id AND e.status='dispatching') THEN 'needs_review' ELSE 'interpreting' END,approval_json=NULL,updated_at=? WHERE session_id=?",
+                (now(), sid),
+            )
+
+
+def reply_claim(
+    owner: str, timestamp: float, lease_s: float = 90, kind: str | None = None
+) -> dict[str, Any] | None:
+    with tx() as c:
+        # A lease expiration cannot tell whether an external operation already happened.
+        expired = _rows(
+            c.execute(
+                "SELECT * FROM workflow_actions WHERE kind IN ('reply','shadow') AND status='processing' AND lease_until<?",
+                (timestamp,),
+            )
+        )
+        for row in expired:
+            ambiguous = c.execute(
+                "SELECT 1 FROM workflow_actions WHERE session_id=? AND mail_id=? AND status='dispatching'",
+                (row["session_id"], row["mail_id"]),
+            ).fetchone()
+            status = "unknown" if ambiguous else "pending"
+            c.execute(
+                "UPDATE workflow_actions SET status=?,lease_owner=NULL WHERE id=?",
+                (status, row["id"]),
+            )
+            if ambiguous:
+                c.execute(
+                    "UPDATE thread_workflow SET phase='needs_review',open_json=? WHERE session_id=?",
+                    (_json(["Unklarer externer Ausgang nach Neustart"]), row["session_id"]),
+                )
+                _emit(
+                    c,
+                    "reply_unknown",
+                    "Externer Ausgang unklar, keine automatische Wiederholung",
+                    row["session_id"],
+                    level="error",
+                )
+        row = _one(
+            c.execute(
+                """SELECT a.* FROM workflow_actions a WHERE a.kind IN ('reply','shadow') AND a.status='pending' AND (? IS NULL OR a.kind=?)
+          AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id=a.session_id AND (s.paused=1 OR s.mode='manual'))
+          AND NOT EXISTS (SELECT 1 FROM workflow_actions e WHERE e.session_id=a.session_id AND e.status='dispatching')
+          AND NOT EXISTS (SELECT 1 FROM workflow_actions b WHERE b.session_id=a.session_id
+            AND b.kind IN ('reply','shadow') AND (b.status='processing' OR (b.status='pending' AND b.mail_id<a.mail_id)))
+          ORDER BY a.mail_id,a.id LIMIT 1""",
+                (kind, kind),
+            )
+        )
+        if row:
+            c.execute(
+                "UPDATE workflow_actions SET status='processing',lease_owner=?,lease_until=?,updated_at=? WHERE id=?",
+                (owner, timestamp + lease_s, now(), row["id"]),
+            )
+        return row
+
+
+def reply_heartbeat(action_id: int, owner: str, timestamp: float) -> bool:
+    with tx() as c:
+        return (
+            c.execute(
+                "UPDATE workflow_actions SET lease_until=? WHERE id=? AND lease_owner=? AND status='processing'",
+                (timestamp + 90, action_id, owner),
+            ).rowcount
+            == 1
+        )
+
+
+def reply_finish(
+    action_id: int, owner: str, status: str = "done", error: str | None = None
+) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE workflow_actions SET status=?,error=?,lease_owner=NULL,updated_at=? WHERE id=? AND lease_owner=?",
+            (status, error, now(), action_id, owner),
+        )
+
+
+def reply_effect(
+    sid: int,
+    mid: int,
+    kind: str,
+    version: int,
+    *,
+    dispatch: bool = False,
+    result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with tx() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO workflow_actions(session_id,mail_id,kind,version,updated_at) VALUES (?,?,?,?,?)",
+            (sid, mid, kind, version, now()),
+        )
+        row = _one(
+            c.execute(
+                "SELECT * FROM workflow_actions WHERE session_id=? AND mail_id=? AND kind=? AND version=?",
+                (sid, mid, kind, version),
+            )
+        )
+        assert row is not None
+        if result is not None:
+            c.execute(
+                "UPDATE workflow_actions SET status='done',result_json=?,updated_at=? WHERE id=?",
+                (_json(result), now(), row["id"]),
+            )
+        elif dispatch:
+            if row["status"] != "pending":
+                raise ValueError("Action already dispatched or completed")
+            c.execute(
+                "UPDATE workflow_actions SET status='dispatching',updated_at=? WHERE id=?",
+                (now(), row["id"]),
+            )
+        return row
+
+
+def reply_has_pending(sid: int) -> bool:
+    return (
+        conn()
+        .execute(
+            "SELECT 1 FROM workflow_actions WHERE session_id=? AND kind='reply' AND status IN ('pending','processing','unknown')",
+            (sid,),
+        )
+        .fetchone()
+        is not None
+    )
+
+
+def reply_current(sid: int, mid: int, version: int) -> bool:
+    state = reply_workflow(sid)
+    context = getattr(_local, "reply_context", None)
+    if context:
+        owner, action_id = context
+        import time
+
+        lease = _one(
+            conn().execute(
+                "SELECT lease_owner,lease_until,status FROM workflow_actions WHERE id=?",
+                (action_id,),
+            )
+        )
+        if (
+            not lease
+            or lease["lease_owner"] != owner
+            or lease["lease_until"] <= time.time()
+            or lease["status"] != "processing"
+        ):
+            return False
+    if (
+        not state
+        or state["request_version"] != version
+        or is_paused(sid)
+        or is_manual(sid)
+        or reply_blocked(mid)
+    ):
+        return False
+    row = _one(
+        conn().execute(
+            "SELECT MAX(m.id) AS id FROM mails m JOIN sessions s ON s.id=m.session_id WHERE m.session_id=? AND m.direction='in' AND lower(m.sender)=lower(s.customer)",
+            (sid,),
+        )
+    )
+    # Also fence messages durably enqueued before the dispatcher has stored them as mails.
+    for delivery in _rows(
+        conn().execute(
+            "SELECT raw_json FROM mail_delivery WHERE mail_id>? AND status IN ('pending','processing','stored','dispatching')",
+            (mid,),
+        )
+    ):
+        raw = json.loads(delivery["raw_json"])
+        refs = raw.get("references") or []
+        if sid in refs or raw.get("in_reply_to") == mid:
+            return False
+    return bool(row and row["id"] == mid)
+
+
+def reply_approve(
+    sid: int, mid: int, quote_id: int, evidence: str, conditions: list[dict[str, Any]]
+) -> None:
+    with tx() as c:
+        state = reply_workflow(sid)
+        if (
+            not state
+            or state["active_quote_id"] != quote_id
+            or not reply_current(sid, mid, state["request_version"])
+        ):
+            raise ValueError("Stale approval")
+        approval = {
+            "mail_id": mid,
+            "quote_id": quote_id,
+            "version": state["request_version"],
+            "evidence": evidence,
+            "conditions": conditions,
+        }
+        c.execute(
+            "UPDATE thread_workflow SET approval_json=?,phase='booking',open_json='[]',updated_at=? WHERE session_id=?",
+            (_json(approval), now(), sid),
+        )
+
+
+def reply_authorized(sid: int, mid: int) -> bool | None:
+    state = reply_workflow(sid)
+    if not state:
+        return None
+    approval = state["approval"] or {}
+    if approval.get("kind") == "price_change":
+        booking = _one(
+            conn().execute(
+                "SELECT quote_id,customer_state,customer_total_minor FROM bookings WHERE session_id=?",
+                (sid,),
+            )
+        )
+        return bool(
+            booking
+            and booking["customer_state"] == "price_change_asked"
+            and booking["quote_id"] == approval.get("quote_id")
+            and booking["customer_total_minor"] == approval.get("customer_total_minor")
+            and approval.get("mail_id") == mid
+            and approval.get("version") == state["request_version"]
+            and state["phase"] == "booking"
+            and reply_current(sid, mid, state["request_version"])
+        )
+    return bool(
+        approval.get("mail_id") == mid
+        and approval.get("quote_id") == state["active_quote_id"]
+        and approval.get("version") == state["request_version"]
+        and state["phase"] == "booking"
+        and reply_current(sid, mid, state["request_version"])
+    )
+
+
+def reply_revision_floor(sid: int) -> int:
+    row = _one(
+        conn().execute(
+            "SELECT source_mail_id FROM request_revisions WHERE session_id=? ORDER BY version DESC LIMIT 1",
+            (sid,),
+        )
+    )
+    return int(row["source_mail_id"]) if row else 0
+
+
+def reply_accepts_bid(sid: int, mid: int, subject: str, references: Sequence[int]) -> bool:
+    state = reply_workflow(sid)
+    if not state or state["request_version"] == 1:
+        return True
+    floor = reply_revision_floor(sid)
+    if mid <= floor:
+        return False
+    asked = {
+        r[0]
+        for r in conn().execute(
+            "SELECT id FROM mails WHERE session_id=? AND id>? AND direction='out' AND category='bid_request'",
+            (sid, floor),
+        )
+    }
+    return bool(asked.intersection(references) or f"[RV-{state['request_version']}]" in subject)
+
+
+def reply_bind_booking(sid: int, quote_id: int) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE bookings SET quote_id=? WHERE session_id=? AND quote_id IS NULL",
+            (quote_id, sid),
+        )
+
+
+def reply_seen(sid: int, mid: int) -> None:
+    with tx() as c:
+        c.execute("UPDATE thread_workflow SET last_mail_id=? WHERE session_id=?", (mid, sid))
+        c.execute("INSERT OR IGNORE INTO clarification_answers VALUES (?,?)", (sid, mid))
+
+
+def reply_quote_guard(sid: int, mid: int, version: int) -> None:
+    if not reply_current(sid, mid, version):
+        from app.hackloop import CustomerSendBlocked
+
+        raise CustomerSendBlocked("Revised quote superseded by newer customer input")
+    reply_effect(sid, mid, "quote_revision", version, dispatch=True)
+
+
+def reply_interrupt(sid: int) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE thread_workflow SET phase='interpreting',approval_json=NULL,updated_at=? WHERE session_id=?",
+            (now(), sid),
+        )
+
+
+def reply_set_context(owner: str, action_id: int) -> None:
+    _local.reply_context = (owner, action_id)
+
+
+def reply_clear_context() -> None:
+    _local.reply_context = None
+
+
+def reply_unknown_effect(sid: int, mid: int) -> bool:
+    return (
+        conn()
+        .execute(
+            "SELECT 1 FROM workflow_actions WHERE session_id=? AND mail_id=? AND status='dispatching'",
+            (sid, mid),
+        )
+        .fetchone()
+        is not None
+    )
+
+
+def reply_suspend_offer(sid: int) -> None:
+    with tx() as c:
+        c.execute(
+            "UPDATE thread_workflow SET active_quote_id=NULL,approval_json=NULL WHERE session_id=?",
+            (sid,),
+        )
+
+
+def reply_approve_price(sid: int, mid: int, evidence: str) -> None:
+    with tx() as c:
+        state = reply_workflow(sid)
+        booking = _one(
+            c.execute(
+                "SELECT quote_id,customer_state,customer_total_minor FROM bookings WHERE session_id=?",
+                (sid,),
+            )
+        )
+        if (
+            not state
+            or not booking
+            or booking["customer_state"] != "price_change_asked"
+            or booking["customer_total_minor"] is None
+            or not reply_current(sid, mid, state["request_version"])
+        ):
+            raise ValueError("Stale price approval")
+        approval = {
+            "kind": "price_change",
+            "mail_id": mid,
+            "quote_id": booking["quote_id"],
+            "version": state["request_version"],
+            "customer_total_minor": booking["customer_total_minor"],
+            "evidence": evidence,
+        }
+        c.execute(
+            "UPDATE thread_workflow SET approval_json=?,phase='booking',open_json='[]',updated_at=? WHERE session_id=?",
+            (_json(approval), now(), sid),
+        )

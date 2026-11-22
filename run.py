@@ -75,6 +75,11 @@ def main() -> None:
         threading.Thread(
             target=watchdog.run, args=(stop,), name="rfq-watchdog", daemon=True
         ).start()
+    from app.agents import customer_reply
+
+    threading.Thread(
+        target=customer_reply.run, args=(stop,), name="customer-replies", daemon=True
+    ).start()
     booking.catch_up()  # acceptances that arrived while the app was down or had no booking
     from app.agents import followup
 

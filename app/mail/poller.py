@@ -212,6 +212,13 @@ def release(mail_id: int) -> dict[str, object]:
 def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
     """Hand a new mail to its agent. RFQs run in their own thread so polling goes on (bid
     replies for a waiting RFQ arrive through this same loop)."""
+    if category == Category.TRACKING and session_id is not None:
+        from app.agents import customer_reply
+
+        if (db.get_session(session_id) or {}).get("kind") == "rfq" and customer_reply.enqueue(
+            mail, session_id
+        ):
+            return
     if category == Category.RFQ and session_id is not None:
         from app.agents import rfq
 
@@ -240,7 +247,10 @@ def dispatch(mail: Mail, category: Category, session_id: int | None) -> None:
             daemon=True,
         ).start()
     elif category == Category.CUSTOMER and session_id is not None:
-        from app.agents import booking, clarification, rescue
+        from app.agents import booking, clarification, customer_reply, rescue
+
+        if customer_reply.enqueue(mail, session_id):
+            return
 
         def customer_reply():
             if rescue.is_owner(session_id):

@@ -58,6 +58,7 @@ def result(body):
         ("tr", "Kasım"),
     ],
 )
+@pytest.mark.core
 def test_fallback_and_actual_customer_wire_preserve_language(lang, month, monkeypatch):
     calls = []
 

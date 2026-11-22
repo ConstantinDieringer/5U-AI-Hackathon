@@ -25,6 +25,8 @@ from app.mail.router import address
 from app.mail.style import SIGNATURE
 from app.models import Mail, RateOption, Rfq
 from app.pricing import served_lanes
+from app.pricing.fx import CURRENCY as _CUR
+from app.pricing.fx import currency_code
 from app.pricing.lanes import airlines_for
 from app.pricing.portal_sync import next_break
 from app.pricing.pricing import chargeable_kg, money, to_minor
@@ -36,8 +38,8 @@ TAG = re.compile(r"\[AP-(\d+)\]")
 _BILLED = re.compile(r"billed at (\d+(?:\.\d+)?) kg", re.IGNORECASE)
 _MONEY = r"(?:\d{1,3}(?:[ ,.'’]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
 _AMOUNT = re.compile(
-    rf"(?:(?P<cur1>EUR|USD|€|\$)\s*(?P<num1>{_MONEY}))"
-    rf"|(?:(?P<num2>{_MONEY})\s*(?P<cur2>EUR|USD|€|\$))",
+    rf"(?:(?P<cur1>{_CUR})\s*(?P<num1>{_MONEY}))"
+    rf"|(?:(?P<num2>{_MONEY})\s*(?P<cur2>{_CUR}))",
     re.IGNORECASE,
 )
 _DAYS = re.compile(
@@ -144,7 +146,7 @@ def parse_price(text: str) -> tuple[Decimal, str] | None:
         for m in _AMOUNT.finditer(line):
             num = _number(m.group("num1") or m.group("num2") or "")
             cur = (m.group("cur1") or m.group("cur2") or "").upper()
-            cur = {"€": "EUR", "$": "USD"}.get(cur, cur)
+            cur = currency_code(cur)
             if num is None or num <= 0:
                 continue
             key = (hint, num)
@@ -162,14 +164,13 @@ def parse_transit_days(text: str) -> float | None:
 
 
 _SPACES = str.maketrans({"\u00a0": " ", "\u202f": " ", "\u2009": " ", "\u2007": " "})
-_CURRENCY = {"€": "EUR", "$": "USD"}
 # Labels of a document's final amount. Optional words between label and amount (amount, due,
 # (EUR), incl. fuel, all-in, netto ...) may not contain digits. Sub-totals never match.
 _TOTAL_LABEL = re.compile(
     r"^(?:(?:grand|net|overall|final|end)\s*[- ]?\s*)?"
     r"(?:total|sum|summe|gesamt(?:preis|betrag|summe|kosten)?|endpreis|endbetrag|"
     r"amount\s+due|to\s+pay|zu\s+zahlen)\b(?P<rest>[^\d]{0,60}?)[:=|]?\s*"
-    r"(?=(?:(?:EUR|USD|€|\$)\s*)?\d|$)",
+    rf"(?=(?:{_CUR}\s*)?\d|$)",
     re.IGNORECASE,
 )
 _PRICE_LABEL = re.compile(
@@ -226,14 +227,11 @@ def _money_at(text: str, currency: str | None) -> tuple[Decimal, str] | None:
     num = _number(raw)
     if num is None or num <= 0:
         return None
-    return money(num), _CURRENCY.get(cur, cur)
+    return money(num), currency_code(cur)
 
 
 def _label_currency(rest: str) -> str | None:
-    found = {
-        _CURRENCY.get(c.upper(), c.upper())
-        for c in re.findall(r"EUR|USD|€|\$", rest, re.IGNORECASE)
-    }
+    found = {currency_code(c) for c in re.findall(_CUR, rest, re.IGNORECASE)}
     return next(iter(found)) if len(found) == 1 else None
 
 
@@ -250,17 +248,15 @@ def document_price(text: str) -> tuple[Decimal, str] | None:
     lines = [" | ".join(_cells(line)) for line in text.translate(_SPACES).splitlines()]
     lines = [line for line in lines if line]
     found = {
-        c
-        for m in re.findall(r"\bEUR\b|\bUSD\b|€|\$", "\n".join(lines), re.IGNORECASE)
-        if (c := _CURRENCY.get(m.upper(), m.upper()))
+        c for m in re.findall(_CUR, "\n".join(lines), re.IGNORECASE) if (c := currency_code(m))
     }
     only = next(iter(found)) if len(found) == 1 else None
     header: str | None = None
     tiers: tuple[set, set] = (set(), set())
     for index, line in enumerate(lines):
-        if re.search(
-            r"\((?:EUR|USD|€|\$)\)|\bin\s+(?:EUR|USD)\b", line, re.IGNORECASE
-        ) and not re.search(r"\d", re.sub(r"\((?:EUR|USD)\)", "", line)):
+        if re.search(rf"\({_CUR}\)|\bin\s+{_CUR}", line, re.IGNORECASE) and not re.search(
+            r"\d", re.sub(rf"\({_CUR}\)", "", line, flags=re.IGNORECASE)
+        ):
             header = _label_currency(line)  # a column header such as "Amount (EUR)"
         for tier, pattern in enumerate((_TOTAL_LABEL, _PRICE_LABEL)):
             label = pattern.match(line)
@@ -278,9 +274,7 @@ def document_price(text: str) -> tuple[Decimal, str] | None:
             tail = line[label.end() :].strip().lstrip("|:= ").strip()
             if not tail and index + 1 < len(lines):
                 tail = lines[index + 1].strip()  # value in the next row
-                if not re.fullmatch(
-                    rf"(?:EUR|USD|€|\$)?\s*{_MONEY}\s*(?:EUR|USD|€|\$)?", tail, re.IGNORECASE
-                ):
+                if not re.fullmatch(rf"{_CUR}?\s*{_MONEY}\s*{_CUR}?", tail, re.IGNORECASE):
                     break
             # a price line (tier 2) needs its currency written next to the amount
             amount = _money_at(tail, currency if tier == 0 else None)
@@ -381,7 +375,7 @@ def spoken_price(text: str) -> tuple[Decimal, str] | None:
             cur = (m.group("cur1") or m.group("cur2") or "").upper()
             if num is None or num <= 0:
                 continue
-            found = (money(num), {"€": "EUR", "$": "USD"}.get(cur, cur))
+            found = (money(num), currency_code(cur))
             (totals if _SPOKEN_TOTAL.search(sentence) else others).add(found)
     pick = totals or others
     return next(iter(pick)) if len(pick) == 1 else None
@@ -504,7 +498,12 @@ def request(
             billing.append(nb)
         for billed in billing:
             subject, body = (
-                _subject(session_id, rfq, origin, c.kind, billed),
+                _subject(session_id, rfq, origin, c.kind, billed)
+                + (
+                    f" [RV-{state['request_version']}]"
+                    if (state := db.reply_workflow(session_id)) and state["request_version"] > 1
+                    else ""
+                ),
                 _body(rfq, origin, c.kind, billed),
             )
             try:
@@ -537,7 +536,8 @@ def _resume(session_id: int, req: _Request) -> set[str]:
     """After a restart: re-register carriers we already asked for this session (from the db)
     and replay the replies they already sent. Returns their emails (empty on a fresh RFQ)."""
     s = db.get_session(session_id) or {}
-    mails = s.get("mails") or []
+    floor = db.reply_revision_floor(session_id)
+    mails = [m for m in s.get("mails", []) if m["id"] > floor]
     asked: set[str] = set()
     for m in mails:
         if m["direction"] == "out" and m["category"] == "bid_request":
@@ -550,7 +550,8 @@ def _resume(session_id: int, req: _Request) -> set[str]:
         if m["direction"] == "in" and m["category"] == "carrier_bid":
             on_bid_mail(
                 Mail(int(m["id"]), session_id, str(m["sender"] or ""), "", str(m["subject"] or ""),
-                     str(m["body"] or ""), str(m["received_at"] or "")),
+                     str(m["body"] or ""), str(m["received_at"] or ""),
+                     references=[m["in_reply_to"]] if m.get("in_reply_to") else []),
                 session_id,
             )  # fmt: skip
     return asked
@@ -617,6 +618,8 @@ def on_bid_mail(mail: Mail, session_id: int | None) -> None:
     carrier = carrier_by_email(address(mail.sender))
     if sid is None or carrier is None:
         log.warning("bid mail %s: no session or unknown carrier, ignored", mail.id)
+        return
+    if not _current_bid(mail, sid):
         return
     sid = _slot_of_reply(mail, sid)  # below, sid is the bid slot; db/events use owner(sid)
     body = mail.body or ""
@@ -708,6 +711,8 @@ def _evaluate(
     spoken: list[tuple[str, str]],
 ) -> None:
     """Refusal or offer from the mail text plus everything read from its attachments."""
+    if not _current_bid(mail, sid):
+        return
     refusal = served_lanes.parse_refusal(
         "\n".join([body] + [t for _, t in spoken] + [t for _, t in files])
     )
@@ -749,10 +754,11 @@ def _read_with_model(
     """BID_LLM_FALLBACK: the rules found no unique total; one checked extraction call
     (app/agents/bid_reader.py). Only if that fails too is the bid unreadable."""
     from app.agents import bid_reader
+    from app.pricing.fx import convertible
 
     text = "\n\n".join([body] + [f"[{n}]\n{t}" for n, t in files + spoken])
     try:
-        reading = bid_reader.read(text, owner(sid), {"EUR", "USD"})
+        reading = bid_reader.read(text, owner(sid), convertible())
     except Exception:
         log.exception("bid mail %s: model reading failed", mail.id)
         reading = None
@@ -786,6 +792,8 @@ def _add_offer(
     sources: list[str],
     via: str = "rules",
 ) -> None:
+    if not _current_bid(mail, sid):
+        return
     amount, currency = price
     from app.pricing.fx import eur_rate
 
@@ -808,7 +816,12 @@ def _add_offer(
         float(billed[1]) if (billed := _BILLED.search(mail.subject or "")) else None,
     )
     with _cond:
+        # FX/document reads may have overlapped a request revision.
+        if not _current_bid(mail, sid):
+            return
         req = _open.setdefault(sid, _Request())
+        if any(previous.mail_id == mail.id for previous in req.offers):
+            return
         req.offers.append(offer)
         req.last_answer_at = time.monotonic()
         _cond.notify_all()
@@ -926,3 +939,18 @@ def airline_option(offer: Offer, rfq: Rfq, origin: str, chargeable_kg: float) ->
         fx_source=offer.fx_source,
         fx_valid_until=offer.fx_valid_until,
     )
+
+
+def _current_bid(mail: Mail, sid: int) -> bool:
+    references = list(mail.references)
+    if mail.raw.get("in_reply_to"):
+        references.append(int(mail.raw["in_reply_to"]))
+    accepted = db.reply_accepts_bid(owner(sid), mail.id, mail.subject, references)
+    if not accepted:
+        db.emit(
+            "stale_bid",
+            "Veraltetes oder nicht zuordenbares Gebot ausgeschlossen",
+            sid,
+            mail_id=mail.id,
+        )
+    return accepted

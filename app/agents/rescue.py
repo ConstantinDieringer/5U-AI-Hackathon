@@ -151,6 +151,10 @@ def _passive_after_quote(session: dict, mail: Mail, root: dict) -> bool:
 def _eligible(sid: int, mail: Mail) -> bool:
     """May rescue own this mail now? Frees a stale unsent quote claim only when no other live
     worker can be rendering or sending under it."""
+    from app.agents import customer_reply
+
+    if customer_reply.owns(sid):
+        return False
     session = db.get_session(sid)
     root = db.root_mail(sid)
     if (

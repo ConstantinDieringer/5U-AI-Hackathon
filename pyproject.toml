@@ -1,6 +1,7 @@
 # Tool settings only; dependencies stay in requirements.txt (TECH_SPEC §2).
 [tool.pytest.ini_options]
 markers = [
+  "core: customer-facing and operational contracts for every product PR",
   "slow: replay and full-app tests (> 2 s each); skip while iterating with -m \"not slow\"",
 ]
 

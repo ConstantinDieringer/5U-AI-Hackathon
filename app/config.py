@@ -87,6 +87,8 @@ class Settings:
     email_review_enabled: bool
     reply_in_customer_language: bool
     quote_pdf: bool
+    portal_ui_check: bool
+    portal_ui_url: str
     quote_pdf_on_request: bool
     poll_interval_s: float
     db_path: str
@@ -135,7 +137,10 @@ class Settings:
     runtime_dir: Path
     usd_eur_rate: str
     usd_eur_valid_until: str
+    fx_eur_rates: str
+    fx_valid_until: str
     use_breakpoints: bool
+    portal_429_email_fallback: bool
     served_lanes_ttl_s: float
     rfq_validation_mode: str
     webhook_secret: str
@@ -149,6 +154,8 @@ class Settings:
     followup_window_s: float
     followup_check_every_s: float
     tracking_notice_check_every_s: float
+    reply_workflow_mode: str
+    reply_workers: int
     prebook_answer: bool
     phishing_gate_mode: str
     phishing_gate_llm_mode: str
@@ -213,6 +220,9 @@ settings = Settings(
     reply_in_customer_language=_flag("REPLY_IN_CUSTOMER_LANGUAGE", True),
     # 5U wants the quote as a PDF attachment: built by code from the priced option, no LLM
     quote_pdf=_flag("QUOTE_PDF", True),
+    # human-in-the-loop portal check: a person solves the portal page sum in our UI
+    portal_ui_check=_flag("PORTAL_UI_CHECK", True),
+    portal_ui_url=_env("PORTAL_UI_URL", "https://start-hack.5u.ai/portal/ui"),
     # team decision 22.11.: the PDF goes out only when the customer asks for it
     quote_pdf_on_request=_flag("QUOTE_PDF_ON_REQUEST", True),
     poll_interval_s=float(_env("POLL_INTERVAL_S", "1.5")),
@@ -287,7 +297,12 @@ settings = Settings(
     ),
     usd_eur_rate=_env("USD_EUR_RATE"),
     usd_eur_valid_until=_env("USD_EUR_VALID_UNTIL"),
+    # EUR per unit for every foreign currency we accept, e.g. "USD=0.92,JPY=0.0061,GBP=1.17"
+    # (app/pricing/fx.py); one shared expiry. Missing = that currency is not converted.
+    fx_eur_rates=_env("FX_EUR_RATES"),
+    fx_valid_until=_env("FX_VALID_UNTIL"),
     use_breakpoints=_flag("USE_BREAKPOINTS", True),
+    portal_429_email_fallback=_flag("PORTAL_429_EMAIL_FALLBACK", True),
     served_lanes_ttl_s=float(_env("CARRIER_OBSERVATION_TTL_S", _env("SERVED_LANES_TTL_S", "3600"))),
     rfq_validation_mode=_env("RFQ_VALIDATION_MODE", "enforce"),
     webhook_secret=_env("MAILBOX_WEBHOOK_SECRET"),
@@ -317,6 +332,8 @@ settings = Settings(
     tracking_notice_check_every_s=max(5.0, float(_env("TRACKING_NOTICE_CHECK_EVERY_S", "30"))),
     # customer answers our quote with questions: answer them from the stored quote and ask
     # for the go-ahead (app/agents/prebook.py); false = today's generic clarification
+    reply_workflow_mode=_env("REPLY_WORKFLOW_MODE", "shadow").lower(),
+    reply_workers=max(1, min(16, int(_env("REPLY_WORKERS", "4")))),
     prebook_answer=_flag("PREBOOK_ANSWER"),
     # phishing gate: off | shadow (classify and log, block nothing) | enforce
     phishing_gate_mode=_env("PHISHING_GATE_MODE", "enforce").lower(),
@@ -365,3 +382,6 @@ for _name, _mode in (
 ):
     if _mode not in ("off", "shadow", "enforce"):
         raise ValueError(f"{_name} must be off, shadow or enforce")
+
+if settings.reply_workflow_mode not in ("off", "shadow", "enforce"):
+    raise ValueError("REPLY_WORKFLOW_MODE must be off, shadow or enforce")

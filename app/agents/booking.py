@@ -38,6 +38,7 @@ from app.mail.subjects import shipment_subject
 from app.models import Mail
 from app.pricing.pricing import to_minor
 from app.pricing.reference import airline_email
+from app.quotes import operational as selected_quote
 
 log = logging.getLogger(__name__)
 
@@ -76,13 +77,13 @@ _DECLINE = re.compile(  # wins over any "yes" word ("we will not proceed")
 _CONFIRMED = re.compile(r"\bBooking\s+(BK-[A-Za-z0-9]+)\s+confirmed\b", re.IGNORECASE)
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
-_locks: dict[int, threading.Lock] = {}
+_locks: dict[int, threading.RLock] = {}
 _locks_guard = threading.Lock()
 
 
-def _lock(session_id: int) -> threading.Lock:
+def _lock(session_id: int) -> threading.RLock:
     with _locks_guard:
-        return _locks.setdefault(session_id, threading.Lock())
+        return _locks.setdefault(session_id, threading.RLock())
 
 
 # ---------------------------------------------------------------- intent
@@ -146,7 +147,13 @@ _CARGO_FIELDS = (
         ),
         0.0,
     ),
-    ("volume_cbm", "Volumen", "cbm", re.compile(_NUMBER + r"\s*(?:cbm|m3|m³)", re.IGNORECASE), 0.01),
+    (
+        "volume_cbm",
+        "Volumen",
+        "cbm",
+        re.compile(_NUMBER + r"\s*(?:cbm|m3|m³)", re.IGNORECASE),
+        0.01,
+    ),
 )
 
 
@@ -296,9 +303,14 @@ def _fresh_rate_id(quote: dict[str, Any], request: dict[str, Any]) -> str | None
 def _book_portal(sid: int, quote: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     """Book the quoted rate; on expired/unknown fetch a fresh one once. Raises HackloopError."""
     ref = db.team_reference(sid)
+    state = db.reply_workflow(sid)
+    if state and not db.reply_authorized(sid, (state.get("approval") or {}).get("mail_id", 0)):
+        raise hackloop.CustomerSendBlocked("Approval superseded before booking transport")
     try:
         return hackloop.book(quote["rate_id"], ref)
     except hackloop.HackloopError as e:
+        if db.reply_workflow(sid) is not None:
+            raise  # a replacement rate needs a new offer and a new approval
         if e.status not in (404, 410):
             raise
         db.emit(db.Ev.WARN, f"Rate {quote['rate_id']} {e.status}: hole neue Rate", sid)
@@ -309,6 +321,9 @@ def _book_portal(sid: int, quote: dict[str, Any], request: dict[str, Any]) -> di
 
 
 def _book_by_email(sid: int, quote: dict[str, Any], request: dict[str, Any], to: str) -> None:
+    state = db.reply_workflow(sid)
+    if state and not db.reply_authorized(sid, (state.get("approval") or {}).get("mail_id", 0)):
+        raise hackloop.CustomerSendBlocked("Approval superseded before booking email")
     ref = db.team_reference(sid)
     subject = f"[{ref}] Booking request {quote['origin']} to {quote['destination']}"
     # The customer total includes trucking and may include a commercial adjustment.
@@ -393,10 +408,36 @@ def _confirm_to_customer(
     session = db.get_session(sid) or {}
     quotes = session.get("quotes") or []
     if quotes:
-        quote = quotes[0]
+        quote = selected_quote(session) or quotes[0]
         subject = shipment_subject(
             quote.get("origin"), quote.get("destination"), language(mail.body, sid), subject
         )
+    workflow = session.get("workflow")
+    version = workflow["request_version"] if workflow else 0
+    if (
+        workflow
+        and category == "booking_confirmation"
+        and (workflow.get("approval") or {}).get("conditions")
+    ):
+        checked = (
+            "Ich habe deine Buchungsbedingungen geprüft und dieses Angebot erfüllt sie."
+            if language(mail.body, sid) == "de"
+            else "I have checked your booking conditions and this offer meets them."
+        )
+        text = checked + "\n\n" + text
+    if workflow:
+        effect = db.reply_effect(sid, mail.id, category, version)
+        if effect["status"] == "done":
+            return True
+        if effect["status"] != "pending":
+            return False
+
+    def before_send() -> None:
+        if workflow:
+            if not db.reply_current(sid, mail.id, version):
+                raise hackloop.CustomerSendBlocked("Customer confirmation superseded")
+            db.reply_effect(sid, mail.id, category, version, dispatch=True)
+
     sent = hackloop.send_customer(
         to,
         subject,
@@ -406,6 +447,7 @@ def _confirm_to_customer(
         protected_terms=protected_terms,
         language_code=multilingual.mail_language(mail),
         tracking_booked=category == "booking_confirmation",
+        guard_transport=before_send if workflow else None,
     )
     text = sent["body"]
     subject = sent["subject"]
@@ -420,6 +462,8 @@ def _confirm_to_customer(
         in_reply_to=mail.id,
         raw=sent,
     )
+    if workflow:
+        db.reply_effect(sid, mail.id, category, version, result={"mail_id": sent["id"]})
     return True
 
 
@@ -526,6 +570,9 @@ def _mail_acceptance(
     mail: Mail, evidence: str | None = None, sid: int | None = None
 ) -> bool | None:
     """Rules plus CONSENT_LLM_CHECK (_consent, needs a session), then the multilingual guard."""
+    workflow_verdict = db.reply_authorized(sid, mail.id) if sid is not None else None
+    if workflow_verdict is not None:
+        return workflow_verdict if workflow_verdict else None
     verdict = (
         _consent(mail.body, evidence, sid)
         if sid is not None
@@ -562,7 +609,7 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
             log.info("session %s already booked, reply %s ignored", sid, mail.id)
         return
     changes = cargo_revision(mail.body, s.get("request"))
-    if changes or db.kv_get(_revised_key(sid)) is not None:
+    if not s.get("workflow") and (changes or db.kv_get(_revised_key(sid)) is not None):
         _hand_over_revision(mail, sid, changes)
         return
     verdict = _mail_acceptance(mail, consent_evidence, sid)
@@ -599,7 +646,9 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
             level="warn",
         )
         return
-    quote = s["quotes"][0]  # only our first quote in a thread counts
+    quote = selected_quote(s)
+    if quote is None:
+        return
     from app.agents import carrier_prefs
 
     customer = address(mail.sender)
@@ -608,6 +657,10 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
         raise ValueError("customer exclusion blocks booking the quoted carrier")
     request = s.get("request") or {}
     db.emit(db.Ev.STATUS, "Kunde hat angenommen: buche", sid)
+    if s.get("workflow"):
+        if not db.reply_authorized(sid, mail.id):
+            return
+        db.reply_effect(sid, mail.id, "book", s["workflow"]["request_version"], dispatch=True)
     portal_price: tuple[int, str] | None = None
 
     if quote.get("source") == "portal" and quote.get("rate_id"):
@@ -659,6 +712,7 @@ def _handle(mail: Mail, sid: int, *, consent_evidence: str | None = None) -> Non
             currency=quote["currency"],
         )
 
+    db.reply_bind_booking(sid, quote["id"])
     log.info("session %s booked %s", sid, booking_ref)
     if portal_price is not None and _differs(quote, portal_price):
         _ask_price_change(sid, mail, portal_price)
@@ -701,7 +755,7 @@ def _quoted_air(quote: dict[str, Any]) -> tuple[int, str] | None:
     trucking is part of it (then unknown, and a change cannot be measured)."""
     if quote.get("air_total_minor") is not None and quote.get("air_currency"):
         return int(quote["air_total_minor"]), str(quote["air_currency"]).upper()
-    if _has_trucking(quote):
+    if _has_trucking(quote) or quote.get("insurance_minor", 0):
         return None
     return int(quote["total_minor"]), str(quote["currency"]).upper()
 
@@ -734,7 +788,7 @@ def _settle(sid: int, mail: Mail) -> None:
     s = db.get_session(sid)
     if not s or not s.get("quotes") or not s.get("bookings"):
         return
-    quote, b = s["quotes"][0], s["bookings"][0]
+    quote, b = selected_quote(s), s["bookings"][0]
     actual = _airline_price(sid)
     if actual is not None and _differs(quote, actual):
         _ask_price_change(sid, mail, actual)
@@ -783,7 +837,7 @@ def _alternative(quote: dict[str, Any], below_minor: int) -> dict[str, Any] | No
         air = a.get("total_eur_minor")
         if not a.get("airline") or a["airline"] == quote["airline"] or air is None:
             continue
-        total = int(air) + truck_minor
+        total = int(air) + truck_minor + int(quote.get("insurance_minor", 0))
         if total < below_minor and (best is None or total < best["total_minor"]):
             best = {"airline": a["airline"], "total_minor": total, "days": a.get("transit_days")}
     return best
@@ -857,7 +911,7 @@ def _price_change_text(
 def _ask_price_change(sid: int, mail: Mail, actual: tuple[int, str]) -> None:
     """The airline's price differs from our quote: tell the customer before confirming."""
     s = db.get_session(sid) or {}
-    quote, b = s["quotes"][0], s["bookings"][0]
+    quote, b = selected_quote(s), s["bookings"][0]
     quoted = _quoted_air(quote)
     shown = amount(actual[0], actual[1])
     if quoted is None or quoted[1] != actual[1] or quoted[1] != str(quote["currency"]).upper():
@@ -908,7 +962,7 @@ def _on_price_change_answer(
 ) -> None:
     """Yes to the new total: confirm at it. Anything else (no, the alternative, unclear):
     a human decides, because the booking cannot be cancelled or swapped by the agent."""
-    quote = s["quotes"][0]
+    quote = selected_quote(s)
     text = own_text(mail.body)
     alt = _alternative(quote, int(b.get("customer_total_minor") or 0))
     wants_other = bool(_WANTS_OTHER.search(text)) or bool(
@@ -973,7 +1027,7 @@ def _late_price_change(sid: int) -> None:
                 or actual is None
                 or mail is None
                 or not s.get("quotes")
-                or not _differs(s["quotes"][0], actual)
+                or not _differs(selected_quote(s) or s["quotes"][0], actual)
             ):
                 return
             _ask_price_change(sid, mail, actual)
@@ -1031,7 +1085,7 @@ def catch_up() -> None:
         full = db.get_session(int(s["id"]))
         if not full or not full.get("quotes") or full.get("bookings"):
             continue
-        quote_mail = full["quotes"][0].get("mail_id") or 0
+        quote_mail = (selected_quote(full) or {}).get("mail_id") or 0
         replies = [
             m
             for m in full["mails"]
@@ -1052,8 +1106,10 @@ def catch_up() -> None:
             body=str(r["body"] or ""),
             received_at=str(r["received_at"]),
         )
-        from app.agents import rescue
+        from app.agents import customer_reply, rescue
 
+        if customer_reply.enabled():
+            continue
         threading.Thread(
             target=rescue.take_over if rescue.is_owner(int(s["id"])) else handle_reply,
             args=(mail, int(s["id"])),

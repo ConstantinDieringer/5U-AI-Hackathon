@@ -56,13 +56,9 @@ container. So:
 1. **Nobody pushes to `main` directly**, agents included (Claude, ChatGPT automation). Work on a
    branch (`fix/<round-or-topic>`), open a PR, say in #update which case you are on. If someone
    already has a PR for that case, add to it instead of opening a second one.
-2. **CI must be green** (`.github/workflows/ci.yml`: full pytest with dummy keys, plus a
-   secrets scan). Run `python -m pytest -q` locally first.
-3. **One merge owner per hour** (named in #update). Only that person merges, one PR at a time,
-   only while the deploy light is green (see below).
-4. **A fix is live only when the instance runs it.** After the merge run
-   `python -m app.deploy_check` (waits until `/api/health` → `build_revision` equals
-   `origin/main`, exit 0 = live). Only then write "live" in #update, with the commit hash.
+2. CI publishes `ship-check` for the PR. Record the owner, extension point, counterexample and measured result. For local checks use `python -m tools.ship_check origin/main`.
+3. Every collaborator may merge. Announce the PR in #update and run `python -m tools.merge_pr NUMBER` from trusted main with a signed-in GitHub CLI and the read-only Railway REVIEW_TOKEN in the environment. The existing UI_USER/UI_PASSWORD login also works for the two read-only gate requests. Set PUBLIC_URL to the production HTTPS origin if needed. The command coordinates through the temporary remote branch `ops/deploy-lock`, checks the current CI and deploy gate, and waits for the merge revision to go live. After an interrupted attempt, check the PR, live revision and #update with the team before clearing a stale lock. Direct GitHub merges can bypass the command while main is unprotected.
+4. Announce the verified commit in #update. Use `python -m app.deploy_check SHA` to recheck a specific release.
 
 ### Review agents never use the team key
 
@@ -93,7 +89,7 @@ A push to `main` restarts the live container. While it restarts, nobody answers 
 Rounds 4, 9, 15, 16 and 17 had one to four pushes between 2 minutes before and 4 minutes after
 their RFQ and got no answer (a correlation, not a proven cause).
 
-**The rule: one person pushes to `main`, and only while the deploy light is green.**
+**The rule: every team member can merge one PR at a time while the deploy light is green.**
 The light sits in the dashboard's top bar ("Deploy: frei" / "Deploy: warten", hover for the
 reason) and is `GET /api/deploy-gate` (`safe`, `reason`, `seconds_to_next`). Green means the
 newest RFQ has our answer (or its 360 s window is over) and the next RFQ is more than
@@ -101,7 +97,7 @@ newest RFQ has our answer (or its 360 s window is over) and the next RFQ is more
 read from the last arrivals, nothing is hardcoded. Railway builds before it restarts: push at
 the start of a green window, not at its end. Say in the team chat who is pushing.
 
-1. Run `python -m pytest -q` first. Push nothing that is red.
+1. Require green ship-check for the current PR head.
 2. Wait for green, then push. Never push while a session is in `pricing`.
 3. After the deploy, check the log for `agents loaded: bids, booking, clarification, rfq,
    tariff, tracking, watchdog` and `poller started at since_id=...`; `/api/health` shows the new
@@ -213,15 +209,18 @@ guarantee exactly-once effects across provider/network failures.
 - Board transitions other than `accepted` generate warning events (including `open`
   and `pending`); unchanged polls do not duplicate alerts. Dataset changes invalidate
   rates and trigger background snapshot refresh.
-- For USD sheets/bids set `USD_EUR_RATE` (EUR per USD, from a documented source) and
-  `USD_EUR_VALID_UNTIL` (UTC ISO timestamp with offset). Both are required; expired or
-  missing rates exclude the USD option with a warning. Portal USD prices use only
-  their own supplied `fx_eur_per_usd`. Other currencies are unsupported.
+- Foreign-currency sheets/bids (USD, JPY, GBP, CHF, ...): set `FX_EUR_RATES`
+  (EUR per unit, documented source, e.g. `USD=0.92,JPY=0.0061,GBP=1.17,CHF=1.06`) and
+  `FX_VALID_UNTIL` (UTC ISO timestamp with offset). A currency without a valid rate is
+  recognised but its option is skipped with a warning, never guessed. The legacy
+  `USD_EUR_RATE`/`USD_EUR_VALID_UNTIL` pair still covers USD if `FX_EUR_RATES` has none.
+  Portal prices use the portal's own `fx_eur_per_<ccy>` when present, else the configured
+  rate. Customer quotes stay in EUR.
 - `USE_BREAKPOINTS=true` preserves existing pricing. `python -m app.pricing.audit` prints
   the stored pricing/board evidence without sending quotes. Accepted verdicts alone
   do not establish which breakpoint formula the scorer uses; keep the default until
   comparable best-price evidence is available.
-- Before deploying, run `python -m pytest -q`; then restart the sole live instance and
+- Before deploying, verify ship-check; then restart the sole live instance and
   check `/api/health`, poller logs and tariff events. Do not run a second production poller.
 - `python -m app.agents.rfq_replay run --compare tests/fixtures/replay/baseline.json` replays
   every stored live round offline and lists what a change moves (price, airline, mail text).

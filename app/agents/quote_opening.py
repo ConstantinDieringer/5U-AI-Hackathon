@@ -72,7 +72,10 @@ OPENING_SCHEMA: dict[str, Any] = {
 # the German template addresses the customer formally, the other native ones informally
 _ADDRESS = {"de": "formal Sie", "fr": "informal tu", "es": "informal tú", "it": "informal tu"}
 _STRUCTURE = re.compile(r"[:;_()\[\]{}<>*#•…–—]|\s-\s|^\s*-")
-_CURRENCY = re.compile(r"[€$£¥]|\b(?:eur|euros?|usd|dollars?|chf|gbp)\b", re.IGNORECASE)
+_CURRENCY = re.compile(
+    r"[€$£¥₹₩₺₪円元]|\b(?:eur|euros?|usd|dollars?|chf|gbp|jpy|yen|cny|yuan|rmb)\b",
+    re.IGNORECASE,
+)
 _SIGN_OFF = re.compile(
     r"best regards|kind regards|viele gr[üu]ße|freundlichen gr[üu]ßen|austrian power",
     re.IGNORECASE,
