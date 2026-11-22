@@ -1886,6 +1886,76 @@ def list_sessions(
     return rows
 
 
+def request_catalog(
+    *,
+    q: str = "",
+    status: str = "",
+    kind: str = "",
+    airport: str = "",
+    days: int = 0,
+    sort: str = "created_at",
+    direction: str = "desc",
+    offset: int = 0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Complete paginated request catalogue; no legacy 200-row list truncation."""
+    columns = {
+        k: k
+        for k in (
+            "created_at",
+            "updated_at",
+            "customer",
+            "status",
+            "origin",
+            "destination",
+            "weight_kg",
+            "total_minor",
+            "id",
+        )
+    }
+    if sort not in columns or direction not in ("asc", "desc"):
+        raise ValueError("invalid request sorting")
+    where, args = ["1=1"], []
+    if status:
+        where.append("status=?")
+        args.append(status)
+    if kind:
+        where.append("kind=?")
+        args.append(kind)
+    if airport:
+        where.append("(origin=? OR destination=?)")
+        args.extend([airport.upper(), airport.upper()])
+    if days:
+        where.append("created_at>=?")
+        args.append((datetime.now(UTC) - timedelta(days=days)).isoformat())
+    if q:
+        where.append(
+            "(customer LIKE ? OR subject LIKE ? OR CAST(id AS TEXT)=?"
+            " OR origin LIKE ? OR destination LIKE ? OR booking_reference LIKE ?)"
+        )
+        args.extend([f"%{q}%", f"%{q}%", q.lstrip("#"), f"%{q}%", f"%{q}%", f"%{q}%"])
+    base = (
+        "WITH catalogue AS (SELECT s.id,s.kind,s.customer,s.subject,s.status,s.paused,s.mode,"
+        " s.created_at,s.updated_at,s.first_reply_at,s.deadline_at,"
+        " COALESCE(json_extract(s.request_json,'$.origin'),q.origin) AS origin,"
+        " COALESCE(json_extract(s.request_json,'$.destination'),q.destination) AS destination,"
+        " json_extract(s.request_json,'$.weight_kg') AS weight_kg,"
+        " q.total_minor,q.currency,q.airline,b.booking_reference,b.status AS booking_status"
+        " FROM sessions s LEFT JOIN quotes q ON q.id=(SELECT MAX(id) FROM quotes WHERE session_id=s.id)"
+        " LEFT JOIN bookings b ON b.session_id=s.id) SELECT * FROM catalogue WHERE "
+        + " AND ".join(where)
+    )
+    c = conn()
+    total = c.execute("SELECT COUNT(*) FROM (" + base + ")", args).fetchone()[0]
+    order = (
+        "currency ASC," if sort == "total_minor" else ""
+    ) + f"{columns[sort]} {direction},id {direction}"
+    items = _rows(
+        c.execute(base + " ORDER BY " + order + " LIMIT ? OFFSET ?", [*args, limit, offset])
+    )
+    return {"items": items, "total": total, "offset": offset, "limit": limit}
+
+
 def session_ids(status: str, limit: int = 200) -> list[int]:
     """Ids of list_sessions(status=status, limit=limit), same rows in the same order, without
     the per-row display columns. For background loops that only walk the sessions."""
@@ -3167,7 +3237,7 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
             "SELECT s.id,s.customer,s.status,s.created_at,s.first_reply_at,s.request_json,"
             " q.id AS quote_id,q.total_minor,q.currency,"
             " w.session_id AS workflow_id,w.active_quote_id,w.phase,"
-            " b.status AS booking_status,b.customer_state,b.customer_total_minor,"
+            " b.status AS booking_status,b.customer_state,b.customer_total_minor,b.created_at AS booked_at,"
             " bq.total_minor AS booked_quote_minor,bq.currency AS booked_currency,"
             " bq.request_snapshot_json AS booked_request_json"
             " FROM sessions s"
@@ -3195,6 +3265,8 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
     response: list[float] = []
     weight = 0.0
     weight_known = 0
+    booked_events: list[dict[str, Any]] = []
+    airports: dict[str, dict[str, Any]] = {}
 
     def add(kind: str, amount: int | None, currency: str | None) -> bool:
         if amount is None or not currency:
@@ -3204,6 +3276,17 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
         return True
 
     for r in rows:
+        try:
+            shipment = json.loads(r["request_json"] or "{}")
+            for key in ("origin", "destination"):
+                code = shipment.get(key)
+                if isinstance(code, str) and re.fullmatch(r"[A-Z]{3}", code):
+                    point = airports.setdefault(
+                        code, {"iata": code, "departures": 0, "arrivals": 0}
+                    )
+                    point["departures" if key == "origin" else "arrivals"] += 1
+        except (ValueError, TypeError, AttributeError):
+            pass
         if r["quote_id"]:
             counts["quoted"] += 1
             add("offered", r["total_minor"], r["currency"])
@@ -3220,6 +3303,14 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
                 amount = r["booked_quote_minor"]
             if not add("booked", amount, r["booked_currency"]):
                 counts["unknown_booked_value"] += 1
+            else:
+                booked_events.append(
+                    {
+                        "at": r["booked_at"],
+                        "minor": amount,
+                        "currency": r["booked_currency"].upper(),
+                    }
+                )
             try:
                 cargo = json.loads(r["booked_request_json"] or r["request_json"] or "{}")
                 kg = cargo.get("weight_kg")
@@ -3255,6 +3346,8 @@ def business_metrics(days: int = 0) -> dict[str, Any]:
         "avg_response_s": round(sum(response) / len(response), 1) if response else None,
         "booked_weight_kg": round(weight, 2) if weight_known else None,
         "weight_known_bookings": weight_known,
+        "booked_events": booked_events,
+        "airports": sorted(airports.values(), key=lambda a: a["iata"]),
     }
 
 
