@@ -371,6 +371,21 @@ def send_customer(
             reason=type(exc).__name__,
         )
         raise CustomerSendBlocked("Customer language translation could not be verified") from exc
+    if session_id is not None and lang.split("-")[0].lower() == "de":
+        # One address form per thread: templates, model text and notices all end up in it.
+        from app.mail import address_form
+
+        target = address_form.form(session_id)
+        subject = address_form.convert(subject, target)
+        rendered = address_form.convert(rendered, target)
+        leftover = address_form.mixed(rendered, target) + address_form.mixed(subject, target)
+        if leftover:
+            db.emit(
+                "address_form_mixed",
+                f"Anrede gemischt ({target} erwartet): " + ", ".join(sorted(set(leftover))),
+                session_id,
+                level="error",
+            )
     validate_customer_text(rendered)
     if context is not None and not has_notice(rendered):
         raise CustomerStyleError("Required tracking invitation missing from customer mail")

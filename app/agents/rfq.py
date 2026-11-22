@@ -1103,6 +1103,10 @@ def compose_quote_text(
         "expected_constraint_indices": list(range(len(rfq.service_constraints))),
     }
     conversation = quote_conversation(session_id)
+    if (rfq.language or "").lower().startswith("de"):
+        from app.mail import address_form
+
+        facts["german_address_form"] = address_form.form(session_id)
     facts["personal_opening_guidance"] = (
         "Use a brief, specific acknowledgement of our earlier exchange with this customer "
         "if it fits the supplied excerpts. Do not repeat the generic request-thanks opening."
